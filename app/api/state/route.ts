@@ -7,6 +7,7 @@ import { accounts, audit, lessons, localCredentials, rescheduleRequests } from "
 import { approvedActualHours, approvedHoursInMonth, checkinInMonth, currentMalaysiaMonth, inMonth } from "@/lib/lesson-rules";
 import { teacherMaySeeLesson } from "@/lib/access";
 import { readRevision } from "@/lib/revision";
+import { learningState } from "@/lib/learning-server";
 
 function monthlySummary(plans: Array<{ key: string; student: string; subject: string }>, rows: Array<typeof lessons.$inferSelect>, month: string) {
   const now = new Date().toISOString();
@@ -43,7 +44,7 @@ export async function GET(request: Request) {
       const visible = allLessons.filter(l => l.student === account.studentName && l.status !== "cancelled");
       const lessonIds = new Set(visible.map(l => l.id));
       const proposals = allRequests.filter(r => lessonIds.has(r.lessonId));
-      return NextResponse.json({ revision, account: { id: account.id, name: account.name, role: "student", studentName: account.studentName }, lessons: visible, proposals, month: selected });
+      return NextResponse.json({ revision, account: { id: account.id, name: account.name, role: "student", studentName: account.studentName }, lessons: visible, proposals, month: selected, learning: await learningState(account) });
     }
     if (account.role === "teacher") {
       const plans = roster.plans.filter(p => p.teacher === account.teacherName);
@@ -52,7 +53,7 @@ export async function GET(request: Request) {
       const records = visible.filter(l => l.actualStart && inMonth(l.actualStart, selected) && approvedActualHours(l) > 0).sort((a, b) => a.actualStart!.localeCompare(b.actualStart!));
       const checkins = visible.filter(l => checkinInMonth(l, selected)).sort((a, b) => (a.actualStart || a.plannedStart).localeCompare(b.actualStart || b.plannedStart));
       const lessonIds = new Set(visible.map(l => l.id));
-      return NextResponse.json({ revision, account: { id: account.id, name: account.name, role: account.role, teacherName: account.teacherName }, plans, lessons: visible, proposals: allRequests.filter(r => lessonIds.has(r.lessonId)), month: selected, summary: monthlySummary(plans, visible, selected), records, checkins });
+      return NextResponse.json({ revision, account: { id: account.id, name: account.name, role: account.role, teacherName: account.teacherName }, plans, lessons: visible, proposals: allRequests.filter(r => lessonIds.has(r.lessonId)), month: selected, summary: monthlySummary(plans, visible, selected), records, checkins, learning: await learningState(account) });
     }
     const summaryPlans = roster.allPlans.map(p => ({ key: p.key, student: p.student, subject: p.subject }));
     const records = allLessons.filter(l => l.actualStart && inMonth(l.actualStart, selected) && approvedActualHours(l) > 0).sort((a, b) => a.actualStart!.localeCompare(b.actualStart!));

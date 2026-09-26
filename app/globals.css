@@ -565,3 +565,60 @@ input[type="date"], input[type="datetime-local"], input[type="month"], input[typ
   .student-calendar-toolbar { flex-wrap: wrap; }
   .student-calendar-controls { justify-content: flex-end; width: 100%; }
 }
+
+/* Materials, homework, and private study plans */
+.learning-teacher, .student-learning-dashboard, .student-learning { display: grid; gap: 20px; min-width: 0; }
+.learning-teacher { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.learning-teacher > .notice { grid-column: 1 / -1; }
+.learning-form { display: grid; gap: 14px; }
+.learning-form label { display: grid; gap: 6px; min-width: 0; color: #29254e; font-size: 14px; font-weight: 650; }
+.learning-form input, .learning-form select, .learning-form textarea, .learning-filter select { width: 100%; min-height: 48px; padding: 10px 12px; border: 1px solid #d9d4eb; border-radius: 11px; color: #252247; background: #fff; font: inherit; }
+.learning-form textarea { min-height: 94px; resize: vertical; }
+.learning-form input[type=file], .learning-submit input[type=file] { padding: 10px; min-width: 0; }
+.learning-form .learning-score-toggle { display: flex; flex-direction: row; align-items: center; gap: 10px; }
+.learning-form .learning-score-toggle input { width: 18px; height: 18px; min-height: 0; margin: 0; }
+.learning-score-entry { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; width: 100%; }
+.learning-score-entry label { display: grid; gap: 4px; font-size: 13px; }
+.learning-score-entry input { width: 100px; min-height: 38px; padding: 7px 9px; border: 1px solid #d9d4eb; border-radius: 9px; }
+.learning-checks { display: flex; flex-wrap: wrap; gap: 9px; margin: 0; padding: 13px; border: 1px solid #e0dcef; border-radius: 11px; }
+.learning-checks legend { padding: 0 5px; color: #29254e; font-size: 14px; font-weight: 650; }
+.learning-checks label { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; border: 1px solid #e0dcef; border-radius: 9px; background: #f9f7ff; }
+.learning-checks input { width: 17px; height: 17px; min-height: 0; margin: 0; }
+.learning-list { display: grid; gap: 12px; margin-top: 20px; }
+.learning-card { display: grid; gap: 10px; min-width: 0; padding: 16px; border: 1px solid #e0dcef; border-radius: 13px; background: #fcfbff; }
+.learning-card > div:first-child { display: grid; gap: 7px; }
+.learning-card strong { color: #29254e; font-size: 16px; }
+.learning-card small { display: block; color: #706c89; font-size: 13px; overflow-wrap: anywhere; }
+.learning-card p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.learning-card-actions, .learning-file-actions, .learning-section-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.learning-section-head { justify-content: space-between; }
+.learning-file-actions a { display: inline-flex; align-items: center; gap: 5px; min-height: 40px; padding: 7px 9px; border: 1px solid #d7d0f1; border-radius: 9px; color: #4e36af; text-decoration: none; font-size: 14px; font-weight: 650; }
+.learning-file-actions a:hover { background: #f0ecff; }
+.learning-recipient-status { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid #e6e2f0; }
+.learning-recipient-status > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.learning-recipient-status strong { min-width: 100px; }
+.learning-recipient-status details { width: 100%; }
+.learning-filter { display: grid; max-width: 260px; gap: 6px; font-size: 14px; }
+.student-homework-card summary { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 13px; cursor: pointer; list-style: none; }
+.student-homework-card summary::-webkit-details-marker { display: none; }
+.student-homework-card summary small { flex: 1 1 180px; }
+.student-homework-card summary span { color: #5944ae; font-size: 14px; font-weight: 700; }
+.learning-card-detail { display: grid; gap: 14px; padding-top: 13px; border-top: 1px solid #e6e2f0; }
+.learning-submit { display: grid; gap: 10px; padding: 13px; border-radius: 11px; background: #f1eeff; }
+.learning-submit label { display: grid; gap: 6px; font-size: 14px; }
+.learning-submission-success { display: grid; gap: 6px; padding: 12px; border: 1px solid #abe0d9; border-radius: 10px; color: #075f66; background: #eafaf8; overflow-wrap: anywhere; }
+.student-study-list { display: grid; gap: 12px; }
+.student-calendar-event.event-study { color: #1763a8; background: #e4f2ff; }
+.student-calendar-dots i.event-study, .student-calendar-legend i.legend-study { background: #3792d8; }
+.student-day-lesson.lesson-study { border-color: #d2e8fb; border-left-color: #3792d8; background: #f4faff; }
+.student-day-lesson.lesson-study .student-day-lesson-top span { color: #1763a8; background: #e2f1ff; }
+.student-day-heading > button { margin-top: 12px; }
+.student-calendar-intro > div > button { margin-top: 14px; color: #2f256c; background: #fff; }
+@media (max-width: 950px) { .learning-teacher { grid-template-columns: 1fr; } }
+@media (max-width: 650px) {
+  .learning-teacher .panel, .student-learning .panel, .student-study-list { padding: 17px; }
+  .learning-file-actions a, .learning-file-actions button { flex: 1 1 auto; justify-content: center; }
+  .learning-form > button { width: 100%; }
+  .student-homework-card summary { display: grid; }
+  .learning-section-head > button { width: 100%; }
+}

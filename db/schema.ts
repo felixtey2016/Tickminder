@@ -106,3 +106,80 @@ export const audit = sqliteTable("audit", {
   after: text("after_json"),
   at: text("at").notNull(),
 });
+
+export const pdfFiles = sqliteTable("pdf_files", {
+  id: text("id").primaryKey(),
+  objectKey: text("object_key").notNull().unique(),
+  ownerId: text("owner_id").notNull(),
+  kind: text("kind").notNull(),
+  contextId: text("context_id"),
+  filename: text("filename").notNull(),
+  bytes: integer("bytes").notNull(),
+  status: text("status").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
+export const storageQuota = sqliteTable("storage_quota", {
+  id: integer("id").primaryKey(),
+  usedBytes: integer("used_bytes").notNull().default(0),
+});
+
+export const teachingMaterials = sqliteTable("teaching_materials", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  fileId: text("file_id").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
+export const materialRecipients = sqliteTable("material_recipients", {
+  id: text("id").primaryKey(),
+  materialId: text("material_id").notNull(),
+  studentName: text("student_name").notNull(),
+  subject: text("subject").notNull(),
+}, (t) => [uniqueIndex("material_recipient_unique").on(t.materialId, t.studentName, t.subject)]);
+
+export const homework = sqliteTable("homework", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  title: text("title").notNull(),
+  subject: text("subject").notNull(),
+  description: text("description").notNull(),
+  startsAt: text("starts_at").notNull(),
+  dueAt: text("due_at").notNull(),
+  maxScore: real("max_score"),
+  attachmentFileId: text("attachment_file_id"),
+  createdAt: text("created_at").notNull(),
+});
+
+export const homeworkRecipients = sqliteTable("homework_recipients", {
+  id: text("id").primaryKey(),
+  homeworkId: text("homework_id").notNull(),
+  studentName: text("student_name").notNull(),
+  score: real("score"),
+  scoredAt: text("scored_at"),
+  scoredBy: text("scored_by"),
+}, (t) => [uniqueIndex("homework_recipient_unique").on(t.homeworkId, t.studentName)]);
+
+export const homeworkSubmissions = sqliteTable("homework_submissions", {
+  id: text("id").primaryKey(),
+  homeworkId: text("homework_id").notNull(),
+  studentName: text("student_name").notNull(),
+  fileId: text("file_id").notNull().unique(),
+  submittedAt: text("submitted_at").notNull(),
+  late: integer("late", { mode: "boolean" }).notNull(),
+});
+
+export const studyBlocks = sqliteTable("study_blocks", {
+  id: text("id").primaryKey(),
+  accountId: text("account_id").notNull(),
+  title: text("title").notNull(),
+  subject: text("subject"),
+  note: text("note"),
+  startsAt: text("starts_at").notNull(),
+  endsAt: text("ends_at").notNull(),
+  homeworkId: text("homework_id"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});

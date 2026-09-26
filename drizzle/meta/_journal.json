@@ -50,6 +50,20 @@
       "when": 1790420000000,
       "tag": "0006_student_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1790409883882,
+      "tag": "0007_puzzling_red_hulk",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790422422651,
+      "tag": "0008_parched_dreaming_celestial",
+      "breakpoints": true
     }
   ]
 }

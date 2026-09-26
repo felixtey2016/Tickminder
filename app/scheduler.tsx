@@ -11,6 +11,7 @@ import { ActivityLog } from "./activity-log";
 import { useLessonWebMcp } from "./webmcp";
 import { monthlyAttendanceForPair } from "@/lib/lesson-rules";
 import { StudentPortal, TeacherPortal } from "./portals";
+import { TeacherLearning, type LearningState } from "./learning-portal";
 import { Timetable } from "./timetables";
 import { StudentAdmin, SubjectAdmin } from "./roster-forms";
 import { SheetSyncPanel } from "./sheet-sync-panel";
@@ -52,6 +53,7 @@ type Lesson = {
 };
 type State = {
     account: Account;
+    learning?: LearningState;
     revision?: number;
     plans?: Plan[];
     allPlans?: Array<Omit<Plan, "teacher"> & {
@@ -253,6 +255,30 @@ export function Scheduler() {
     finally {
         setBusy(false);
     } }
+    async function learningMutate(body: Record<string, unknown>) {
+        try {
+            setBusy(true);
+            setMessage("");
+            const send = async (payload: Record<string, unknown>) => {
+                const response = await fetch("/api/learning", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), cache: "no-store" });
+                const result = await response.json() as { error?: string; overlaps?: string[] };
+                return { response, result };
+            };
+            let { response, result } = await send(body);
+            if (response.status === 409 && body.action === "saveStudyBlock" && result.overlaps?.length) {
+                if (!window.confirm(`${result.error || t("时间重叠")}\n${result.overlaps.join("\n")}`)) return false;
+                ({ response, result } = await send({ ...body, keepOverlap: true }));
+            }
+            if (!response.ok) throw new Error(t(result.error || "保存失败，请重试"));
+            channelRef.current?.postMessage({ type: "changed" });
+            setMessage(t("已保存"));
+            await reload();
+            return true;
+        } catch (error) {
+            setMessage((error as Error).message);
+            return false;
+        } finally { setBusy(false); }
+    }
     async function logout() { await request("/api/auth", { method: "DELETE" }); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); }
     async function localLogin(username: string, password: string) { try {
         setBusy(true);
@@ -292,7 +318,7 @@ export function Scheduler() {
     if (account.role === "pending")
         return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("\u7B49\u5F85\u7BA1\u7406\u5458\u7ED1\u5B9A")}</h1><p>{t("\u5DF2\u9A8C\u8BC1 ")}{account.email}{t("\u3002\u7BA1\u7406\u5458\u9700\u8981\u6838\u5BF9\u8D26\u53F7\u5E76\u9009\u62E9\u8001\u5E08\u3001\u5B66\u751F\u6216\u7BA1\u7406\u5458\u89D2\u8272\u3002")}</p><Button variant="outline" onClick={logout}>{t("\u9000\u51FA\u767B\u5F55")}</Button></div></main>;
     const admin = account.role === "admin";
-    return <Workspace account={account} state={state} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/>;
+    return <Workspace account={account} state={state} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/>;
 }
 function BrandLogo({ small = false }: { small?: boolean }) { return <span className={`brand-logo ${small ? "small" : ""}`}><img src="/timelyo-logo.png" alt={BRAND_NAME} /></span>; }
 function LanguageSwitcher({ language, change }: { language: Language; change: (next: Language) => void }) { return <div className="language-switch" role="group" aria-label="Language / 语言"><button type="button" aria-pressed={language === "zh"} onClick={() => change("zh")}>中文</button><button type="button" aria-pressed={language === "en"} onClick={() => change("en")}>EN</button></div>; }
@@ -332,7 +358,7 @@ function PasswordChange({ name, change, logout, busy, message, language, changeL
         return;
     } setError(""); change(current, next); }}><label>{t("\u5F53\u524D\u521D\u59CB\u5BC6\u7801")}<input required type="password" autoComplete="current-password" value={current} onChange={e => setCurrent(e.target.value)}/></label><label>{t("\u65B0\u5BC6\u7801\uFF08\u81F3\u5C11 8 \u4E2A\u5B57\u7B26\uFF09")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={next} onChange={e => setNext(e.target.value)}/></label><label>{t("\u786E\u8BA4\u65B0\u5BC6\u7801")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("\u4FDD\u5B58\u65B0\u5BC6\u7801")}</Button></form>{(error || message) && <div className="error" role="alert">{t(error || message)}</div>}<Button variant="outline" onClick={logout}>{t("\u9000\u51FA\u767B\u5F55")}</Button></div></main>;
 }
-function Workspace({ account, state, lessons, message, setMessage, reload, logout, modal, setModal, mutate, busy, selectedMonth, setSelectedMonth, language, changeLanguage }: {
+function Workspace({ account, state, lessons, message, setMessage, reload, logout, modal, setModal, mutate, learningMutate, busy, selectedMonth, setSelectedMonth, language, changeLanguage }: {
     account: Account;
     state: State | null;
     lessons: Lesson[];
@@ -349,6 +375,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
         lesson: Lesson;
     } | null) => void;
     mutate: (x: Record<string, unknown>) => Promise<boolean>;
+    learningMutate: (x: Record<string, unknown>) => Promise<boolean>;
     busy: boolean;
     selectedMonth: string;
     setSelectedMonth: (x: string) => void;
@@ -366,7 +393,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
       {message && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("\u5173\u95ED")}>×</button></div>}
       {state?.error && <div className="error">{state.error}</div>}
       {account.role === "teacher" && state && !state.error && !(state.plans || []).length && <div className="notice">{t("\u76EE\u524D\u6CA1\u6709\u5206\u914D\u7ED9\u4F60\u7684\u542F\u7528\u5B66\u751F\u79D1\u76EE\u3002\u8BF7\u7BA1\u7406\u5458\u5728\u300C\u5B66\u751F\u79D1\u76EE\u300D\u4E2D\u9009\u62E9\u4F60\u4E3A\u8D1F\u8D23\u8001\u5E08\u3002")}</div>}
-      {admin ? <Tabs value={adminTab} onValueChange={setAdminTab}><TabsList className="tab-list"><TabsTrigger value="overview"><CalendarDays />{t(" \u603B\u89C8")}</TabsTrigger><TabsTrigger value="schedule"><Clock3 />{t(" \u6392\u8BFE")}</TabsTrigger><TabsTrigger value="students"><GraduationCap />{t("学生时间表")}</TabsTrigger><TabsTrigger value="teachers"><CalendarDays />{t("老师时间表")}</TabsTrigger><TabsTrigger value="subjects"><BookOpen />{t("学生科目")}</TabsTrigger><TabsTrigger value="people"><Users />{t(" \u540D\u5355\u4E0E\u6743\u9650")}</TabsTrigger><TabsTrigger value="sheet"><FileSpreadsheet />{t("课时导入")}</TabsTrigger></TabsList><TabsContent value="overview"><AdminDashboard state={state} lessons={lessons} open={setModal}/></TabsContent><TabsContent value="schedule"><Schedule state={state} lessons={lessons} mutate={mutate} open={setModal} busy={busy}/></TabsContent><TabsContent value="students"><Timetable type="student" lessons={lessons} students={state?.students || []} teachers={state?.teachers || []} month={selectedMonth} setMonth={setSelectedMonth}/></TabsContent><TabsContent value="teachers"><Timetable type="teacher" lessons={lessons} students={state?.students || []} teachers={(state?.allTeachers || []).map(row => row.name).sort()} month={selectedMonth} setMonth={setSelectedMonth}/></TabsContent><TabsContent value="subjects"><SubjectAdmin students={state?.students || []} teachers={state?.teachers || []} plans={state?.allPlans || []} mutate={mutate} busy={busy}/></TabsContent><TabsContent value="people"><RosterAdmin account={account} state={state} mutate={mutate} busy={busy}/></TabsContent><TabsContent value="sheet"><SheetSyncPanel/></TabsContent></Tabs> : account.role === "student" ? <StudentPortal lessons={lessons} proposals={state?.proposals || []} mutate={mutate} busy={busy}/> : <><TeacherPortal lessons={lessons} plans={state?.plans || []} proposals={state?.proposals || []} mutate={mutate} busy={busy}/><StatsPanel state={state}/></>}
+      {admin ? <Tabs value={adminTab} onValueChange={setAdminTab}><TabsList className="tab-list"><TabsTrigger value="overview"><CalendarDays />{t(" \u603B\u89C8")}</TabsTrigger><TabsTrigger value="schedule"><Clock3 />{t(" \u6392\u8BFE")}</TabsTrigger><TabsTrigger value="students"><GraduationCap />{t("学生时间表")}</TabsTrigger><TabsTrigger value="teachers"><CalendarDays />{t("老师时间表")}</TabsTrigger><TabsTrigger value="subjects"><BookOpen />{t("学生科目")}</TabsTrigger><TabsTrigger value="people"><Users />{t(" \u540D\u5355\u4E0E\u6743\u9650")}</TabsTrigger><TabsTrigger value="sheet"><FileSpreadsheet />{t("课时导入")}</TabsTrigger></TabsList><TabsContent value="overview"><AdminDashboard state={state} lessons={lessons} open={setModal}/></TabsContent><TabsContent value="schedule"><Schedule state={state} lessons={lessons} mutate={mutate} open={setModal} busy={busy}/></TabsContent><TabsContent value="students"><Timetable type="student" lessons={lessons} students={state?.students || []} teachers={state?.teachers || []} month={selectedMonth} setMonth={setSelectedMonth}/></TabsContent><TabsContent value="teachers"><Timetable type="teacher" lessons={lessons} students={state?.students || []} teachers={(state?.allTeachers || []).map(row => row.name).sort()} month={selectedMonth} setMonth={setSelectedMonth}/></TabsContent><TabsContent value="subjects"><SubjectAdmin students={state?.students || []} teachers={state?.teachers || []} plans={state?.allPlans || []} mutate={mutate} busy={busy}/></TabsContent><TabsContent value="people"><RosterAdmin account={account} state={state} mutate={mutate} busy={busy}/></TabsContent><TabsContent value="sheet"><SheetSyncPanel/></TabsContent></Tabs> : account.role === "student" ? <StudentPortal lessons={lessons} proposals={state?.proposals || []} mutate={mutate} learningMutate={learningMutate} learning={state?.learning || { materials: [], homework: [], submissions: [], studyBlocks: [], eligible: [] }} busy={busy}/> : <Tabs defaultValue="lessons"><TabsList className="tab-list"><TabsTrigger value="lessons">{t("课程与打卡")}</TabsTrigger><TabsTrigger value="learning">{t("教学资料与功课")}</TabsTrigger></TabsList><TabsContent value="lessons"><TeacherPortal lessons={lessons} plans={state?.plans || []} proposals={state?.proposals || []} mutate={mutate} busy={busy}/><StatsPanel state={state}/></TabsContent><TabsContent value="learning"><TeacherLearning learning={state?.learning || { materials: [], homework: [], submissions: [], studyBlocks: [], eligible: [] }} mutate={learningMutate} busy={busy}/></TabsContent></Tabs>}
     </main>
     {modal && <LessonDialog modal={modal} close={() => setModal(null)} mutate={mutate} busy={busy}/>}
   </div>;
