@@ -45,6 +45,11 @@ function ScoreEntry({ item, student, mutate, busy }: { item: Homework; student: 
   const [score, setScore] = useState<string>(saved == null ? "" : String(saved));
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
+  useEffect(() => {
+    if (!savedMessage) return;
+    const timer = window.setTimeout(() => setSavedMessage(""), 3000);
+    return () => window.clearTimeout(timer);
+  }, [savedMessage]);
   return <form className="learning-score-entry" onSubmit={async event => {
     event.preventDefault(); setSaving(true); setSavedMessage("");
     try { if (await mutate({ action: "setHomeworkScore", homeworkId: item.id, studentName: student, score })) setSavedMessage(t("分数已保存")); }
@@ -52,7 +57,7 @@ function ScoreEntry({ item, student, mutate, busy }: { item: Homework; student: 
   }}>
     <label>{t("得分")}<input type="number" min="0" max={item.maxScore ?? undefined} step="0.01" required value={score} onChange={event => { setScore(event.target.value); setSavedMessage(""); }}/></label>
     <span>/ {item.maxScore}</span><Button size="sm" variant="outline" disabled={busy || saving || score === ""}>{t("保存分数")}</Button>
-    {savedMessage && <span role="status">{savedMessage}</span>}
+    {savedMessage && <span className="learning-success-toast" role="status">{savedMessage}</span>}
   </form>;
 }
 
@@ -137,7 +142,7 @@ export function TeacherLearning({ learning, mutate, busy }: { learning: Learning
         {homeworkUploaded && <p className="muted">{t("PDF 已上传，发布功课后学生才会看到")}</p>}
         <Button disabled={disabled || !homeworkStudents.length}>{t("发布功课")}</Button>
       </form>
-      <div className="learning-list">{learning.homework.map(item => <article className="learning-card" key={item.id}><div><strong>{item.title}</strong><small>{item.subject} · {readable(item.startsAt)} → {readable(item.dueAt)}{item.maxScore != null ? ` · ${t("满分")} ${item.maxScore}` : ""}</small><p>{item.description}</p>{item.attachmentFileId && <FileLinks fileId={item.attachmentFileId}/>}</div><div className="learning-recipient-status">{item.recipients?.map(student => { const history = learning.submissions.filter(s => s.homeworkId === item.id && s.studentName === student); const latest = history[0]; const savedScore = item.scores?.find(row => row.studentName === student)?.score; return <div key={student}><strong>{student}</strong><span>{latest ? `${t("已提交")} · ${readable(latest.submittedAt)}${latest.late ? ` · ${t("迟交")}` : ""}` : t("未提交")}</span>{latest && <FileLinks fileId={latest.fileId}/ >}{savedScore != null && <span>{t("得分")}: {savedScore} / {item.maxScore}</span>}{item.maxScore != null && latest && <ScoreEntry key={`${student}:${savedScore}`} item={item} student={student} mutate={mutate} busy={disabled}/ >}{item.maxScore != null && !latest && <small>{t("学生提交后才可以填写分数")}</small>}{history.length > 1 && <details><summary>{t("查看提交记录")}</summary>{history.map(s => <p key={s.id}>{readable(s.submittedAt)}{s.late ? ` · ${t("迟交")}` : ""} <FileLinks fileId={s.fileId}/></p>)}</details>}</div>; })}</div></article>)}{!learning.homework.length && <p className="muted">{t("尚未布置功课")}</p>}</div>
+      <div className="learning-list">{learning.homework.map(item => <article className="learning-card" key={item.id}><div><strong>{item.title}</strong><small>{item.subject} · {readable(item.startsAt)} → {readable(item.dueAt)}{item.maxScore != null ? ` · ${t("满分")} ${item.maxScore}` : ""}</small><p>{item.description}</p>{item.attachmentFileId && <FileLinks fileId={item.attachmentFileId}/>}</div><div className="learning-recipient-status">{item.recipients?.map(student => { const history = learning.submissions.filter(s => s.homeworkId === item.id && s.studentName === student); const latest = history[0]; const savedScore = item.scores?.find(row => row.studentName === student)?.score; return <div key={student}><strong>{student}</strong><span>{latest ? `${t("已提交")} · ${readable(latest.submittedAt)}${latest.late ? ` · ${t("迟交")}` : ""}` : t("未提交")}</span>{latest && <FileLinks fileId={latest.fileId}/ >}{savedScore != null && <span>{t("得分")}: {savedScore} / {item.maxScore}</span>}{item.maxScore != null && latest && <ScoreEntry key={student} item={item} student={student} mutate={mutate} busy={disabled}/ >}{item.maxScore != null && !latest && <small>{t("学生提交后才可以填写分数")}</small>}{history.length > 1 && <details><summary>{t("查看提交记录")}</summary>{history.map(s => <p key={s.id}>{readable(s.submittedAt)}{s.late ? ` · ${t("迟交")}` : ""} <FileLinks fileId={s.fileId}/></p>)}</details>}</div>; })}</div></article>)}{!learning.homework.length && <p className="muted">{t("尚未布置功课")}</p>}</div>
     </section>
   </div>;
 }
