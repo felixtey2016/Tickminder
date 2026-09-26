@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1790238854412,
+      "tag": "0000_old_wildside",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1790240193500,
+      "tag": "0001_luxuriant_hardball",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790312612150,
+      "tag": "0002_mysterious_amazoness",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1790373600000,
+      "tag": "0003_student_reschedule",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1790400000000,
+      "tag": "0004_local_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1790410000000,
+      "tag": "0005_students",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1790420000000,
+      "tag": "0006_student_identity",
+      "breakpoints": true
+    }
+  ]
+}

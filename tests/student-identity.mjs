@@ -1,0 +1,30 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { DatabaseSync } from "node:sqlite";
+import ts from "typescript";
+
+const db = new DatabaseSync(":memory:");
+db.exec(`CREATE TABLE students (name text PRIMARY KEY NOT NULL, created_at text NOT NULL);
+CREATE TABLE plans (key text PRIMARY KEY, student text, subject text);
+CREATE TABLE lessons (student text);
+CREATE TABLE accounts (student_name text);
+CREATE TABLE assignments (plan_key text);
+INSERT INTO students VALUES ('Another Student','2026-09-01'),('Sample Student','2026-09-01'),('SampleStudent','2026-09-01');
+INSERT INTO plans VALUES ('Sample Student|Science','Sample Student','Science'),('SampleStudent|Math','SampleStudent','Math');
+INSERT INTO lessons VALUES ('SampleStudent'),('Sample Student');
+INSERT INTO accounts VALUES ('SampleStudent');
+INSERT INTO assignments VALUES ('SampleStudent|Math');`);
+const migration = fs.readFileSync(new URL("../drizzle/0006_student_identity.sql", import.meta.url), "utf8");
+for (const statement of migration.split("--> statement-breakpoint")) if (statement.trim()) db.exec(statement);
+assert.deepEqual(db.prepare("SELECT name FROM students ORDER BY name").all().map(x => x.name), ["Another Student", "Sample Student"]);
+assert.deepEqual(db.prepare("SELECT key FROM plans ORDER BY key").all().map(x => x.key), ["Sample Student|Math", "Sample Student|Science"]);
+assert.deepEqual(db.prepare("SELECT DISTINCT student FROM lessons").all().map(x => x.student), ["Sample Student"]);
+assert.equal(db.prepare("SELECT student_name FROM accounts").get().student_name, "Sample Student");
+assert.equal(db.prepare("SELECT plan_key FROM assignments").get().plan_key, "Sample Student|Math");
+assert.throws(() => db.exec("INSERT INTO students VALUES ('SampleStudent','samplestudent',1,'2026-09-02')"), /UNIQUE/);
+
+const source = fs.readFileSync(new URL("../lib/student-names.ts", import.meta.url), "utf8");
+const javascript = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const { studentNameKey } = await import(`data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`);
+assert.equal(studentNameKey(" Sample  Student "), studentNameKey("SampleStudent"));
+console.log("duplicate student migration and name matching passed");
