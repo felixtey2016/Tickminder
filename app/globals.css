@@ -605,6 +605,8 @@ input[type="date"], input[type="datetime-local"], input[type="month"], input[typ
 .student-homework-card summary span { color: #5944ae; font-size: 14px; font-weight: 700; }
 .learning-card-detail { display: grid; gap: 14px; padding-top: 13px; border-top: 1px solid #e6e2f0; }
 .learning-submit { display: grid; gap: 10px; padding: 13px; border-radius: 11px; background: #f1eeff; }
+.learning-dropzone { display: grid; gap: 8px; padding: 14px; border: 2px dashed #b6a8ed; border-radius: 12px; background: #fff; transition: background .15s, border-color .15s; }
+.learning-dropzone.dragging { border-color: #5a36d7; background: #e8e1ff; }
 .learning-submit label { display: grid; gap: 6px; font-size: 14px; }
 .learning-submission-success { display: grid; gap: 6px; padding: 12px; border: 1px solid #abe0d9; border-radius: 10px; color: #075f66; background: #eafaf8; overflow-wrap: anywhere; }
 .student-study-list { display: grid; gap: 12px; }
