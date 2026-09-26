@@ -15,6 +15,8 @@ const en: Record<string, string> = {
   "启用分数（例如 Past Year）": "Enable scoring (for example, past-year papers)",
   "满分": "Maximum score", "得分": "Score", "保存分数": "Save score",
   "PDF 上传失败，请重试": "PDF upload failed. Please try again.",
+  "PDF 超过单份大小限制": "PDF exceeds the per-file size limit",
+  "请求内容过大": "Request is too large", "服务器未返回有效响应": "The server did not return a valid response",
   "打开 PDF": "Open PDF", "下载": "Download", "接收学生": "Students receiving this", "请选择你负责的科目": "Select a subject you teach",
   "请选择 PDF 文件": "Select a PDF file", "PDF 教学资料": "PDF teaching materials", "编辑教学资料": "Edit material", "上传教学资料": "Upload teaching material",
   "资料标题": "Material title", "说明（可选）": "Description (optional)", "PDF 文件": "PDF file", "最多": "Up to",

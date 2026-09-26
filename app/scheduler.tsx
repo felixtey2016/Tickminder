@@ -1,5 +1,6 @@
 "use client";
 import { getLanguage, LANGUAGE_KEY, setLanguage, t, type Language } from "@/lib/i18n";
+import { alertActionFailure, readApiJson } from "@/lib/action-feedback";
 import { BRAND_NAME } from "@/lib/brand";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, CalendarDays, Clock3, FileSpreadsheet, GraduationCap, LogOut, RefreshCw, Users } from "lucide-react";
@@ -117,7 +118,7 @@ const statusLabel: Record<string, string> = { scheduled: "已安排", completed:
 const day = (iso: string) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur", month: "short", day: "numeric", weekday: "short" }).format(new Date(iso));
 const time = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
 const local = (iso: string) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso)).replace(" ", "T");
-async function request(url: string, options?: RequestInit): Promise<any> { const r = await fetch(url, { ...options, cache: "no-store" }); const v = await r.json() as any; if (!r.ok)
+async function request(url: string, options?: RequestInit): Promise<any> { const r = await fetch(url, { ...options, cache: "no-store" }); const v = await readApiJson<{ error?: string; [key: string]: any }>(r); if (!r.ok)
     throw Object.assign(new Error(t(v.error || "请求失败")), { status: r.status }); return v; }
 export function Scheduler() {
     const [language, setLanguageState] = useState<Language>("zh");
@@ -215,7 +216,7 @@ export function Scheduler() {
                     setAuth(await request("/api/auth"));
                 }
                 catch (e) {
-                    setMessage((e as Error).message);
+                    setMessage(alertActionFailure(e));
                 }
                 finally {
                     setBusy(false);
@@ -249,7 +250,7 @@ export function Scheduler() {
         return true;
     }
     catch (e) {
-        setMessage((e as Error).message);
+        setMessage(alertActionFailure(e));
         return false;
     }
     finally {
@@ -261,7 +262,7 @@ export function Scheduler() {
             setMessage("");
             const send = async (payload: Record<string, unknown>) => {
                 const response = await fetch("/api/learning", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), cache: "no-store" });
-                const result = await response.json() as { error?: string; overlaps?: string[] };
+                const result = await readApiJson<{ error?: string; overlaps?: string[] }>(response);
                 return { response, result };
             };
             let { response, result } = await send(body);
@@ -275,11 +276,11 @@ export function Scheduler() {
             await reload();
             return true;
         } catch (error) {
-            setMessage((error as Error).message);
+            setMessage(alertActionFailure(error));
             return false;
         } finally { setBusy(false); }
     }
-    async function logout() { await request("/api/auth", { method: "DELETE" }); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); }
+    async function logout() { try { await request("/api/auth", { method: "DELETE" }); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); } catch (error) { setMessage(alertActionFailure(error)); } }
     async function localLogin(username: string, password: string) { try {
         setBusy(true);
         setMessage("");
@@ -288,7 +289,7 @@ export function Scheduler() {
         setAuth(next);
     }
     catch (e) {
-        setMessage((e as Error).message);
+        setMessage(alertActionFailure(e));
     }
     finally {
         setBusy(false);
@@ -301,7 +302,7 @@ export function Scheduler() {
         setAuth(next);
     }
     catch (e) {
-        setMessage((e as Error).message);
+        setMessage(alertActionFailure(e));
     }
     finally {
         setBusy(false);
@@ -354,7 +355,7 @@ function PasswordChange({ name, change, logout, busy, message, language, changeL
     const [confirm, setConfirm] = useState("");
     const [error, setError] = useState("");
     return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("\u5148\u4FEE\u6539\u5BC6\u7801")}</h1><p>{name}{t("\uFF0C\u8FD9\u662F\u7BA1\u7406\u5458\u8BBE\u7F6E\u7684\u521D\u59CB\u5BC6\u7801\u3002\u4FEE\u6539\u540E\u5373\u53EF\u8FDB\u5165\u7F51\u7AD9\uFF1B\u4E0B\u6B21\u767B\u5F55\u65E0\u9700\u518D\u6B21\u4FEE\u6539\u3002")}</p><form onSubmit={e => { e.preventDefault(); if (next !== confirm) {
-        setError("两次输入的新密码不一致");
+        setError(alertActionFailure(new Error("两次输入的新密码不一致")));
         return;
     } setError(""); change(current, next); }}><label>{t("\u5F53\u524D\u521D\u59CB\u5BC6\u7801")}<input required type="password" autoComplete="current-password" value={current} onChange={e => setCurrent(e.target.value)}/></label><label>{t("\u65B0\u5BC6\u7801\uFF08\u81F3\u5C11 8 \u4E2A\u5B57\u7B26\uFF09")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={next} onChange={e => setNext(e.target.value)}/></label><label>{t("\u786E\u8BA4\u65B0\u5BC6\u7801")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("\u4FDD\u5B58\u65B0\u5BC6\u7801")}</Button></form>{(error || message) && <div className="error" role="alert">{t(error || message)}</div>}<Button variant="outline" onClick={logout}>{t("\u9000\u51FA\u767B\u5F55")}</Button></div></main>;
 }

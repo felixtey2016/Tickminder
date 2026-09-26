@@ -30,7 +30,7 @@ export function pdfSignatureValid(bytes: Uint8Array) {
   if (bytes.length < 16) return false;
   const prefix = new TextDecoder().decode(bytes.subarray(0, 5));
   const end = new TextDecoder().decode(bytes.subarray(Math.max(0, bytes.length - 2048)));
-  return prefix === "%PDF-" && end.includes("%%EOF");
+  return prefix === "%PDF-" && /startxref\s+\d+\s+%%EOF/.test(end);
 }
 
 export function displayPdfName(original: string, fallback: string) {

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Download, FileText, UploadCloud } from "lucide-react";
 import { t } from "@/lib/i18n";
+import { alertActionFailure, readApiJson } from "@/lib/action-feedback";
 import { Button } from "@/components/ui/button";
 
 export type Material = { id: string; title: string; description: string | null; fileId: string; filename: string; subject?: string; recipients?: Array<{ studentName: string; subject: string }> };
@@ -15,15 +16,18 @@ export type LearningMutate = (body: Record<string, unknown>) => Promise<boolean>
 const malaysiaLocal = (iso: string) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso)).replace(" ", "T");
 const readable = (iso: string) => malaysiaLocal(iso).replace("T", " ");
 const maxPdfLabel = (learning: LearningState) => `${Math.round((learning.limits?.pdfMaxBytes || 10 * 1024 * 1024) / 1048576)} MB`;
+const pdfLimit = (learning: LearningState) => learning.limits?.pdfMaxBytes || 10 * 1024 * 1024;
 
-export async function uploadPdf(file: File, kind: "material" | "homework" | "submission", homeworkId?: string) {
+export async function uploadPdf(file: File, kind: "material" | "homework" | "submission", homeworkId?: string, maxBytes = 10 * 1024 * 1024) {
+  if (file.size > maxBytes) throw new Error(`${t("PDF 超过单份大小限制")} (${(file.size / 1048576).toFixed(1)} MB > ${(maxBytes / 1048576).toFixed(0)} MB)`);
   const form = new FormData();
   form.set("file", file);
   form.set("kind", kind);
   if (homeworkId) form.set("homeworkId", homeworkId);
   const response = await fetch("/api/files", { method: "POST", body: form, cache: "no-store" });
-  const result = await response.json() as { id?: string; error?: string };
-  if (!response.ok || !result.id) throw new Error(result.error || t("PDF 上传失败，请重试"));
+  if (response.status === 413) throw new Error(t("PDF 超过单份大小限制"));
+  const result = await readApiJson<{ id?: string; error?: string }>(response);
+  if (!response.ok || !result.id) throw new Error(result.error || (response.status === 413 ? t("PDF 超过单份大小限制") : t("PDF 上传失败，请重试")));
   return result.id;
 }
 
@@ -71,24 +75,24 @@ export function TeacherLearning({ learning, mutate, busy }: { learning: Learning
   const homeworkInputKey = useState(0);
 
   async function saveMaterial(event: React.FormEvent) {
-    event.preventDefault(); setWorking(true); setError("");
+    event.preventDefault(); const form = event.currentTarget as HTMLFormElement; setWorking(true); setError("");
     try {
-      const fileId = materialId ? learning.materials.find(m => m.id === materialId)?.fileId || "" : materialUploaded || (materialFile ? await uploadPdf(materialFile, "material") : "");
+      const fileId = materialId ? learning.materials.find(m => m.id === materialId)?.fileId || "" : materialUploaded || (materialFile ? await uploadPdf(materialFile, "material", undefined, pdfLimit(learning)) : "");
       if (!fileId) throw new Error(t("请选择 PDF 文件"));
       if (!materialId) setMaterialUploaded(fileId);
       const ok = await mutate({ action: "saveMaterial", id: materialId, title: materialTitle, description: materialDescription, subject: materialSubject, students: materialStudents, fileId });
-      if (ok) { setMaterialId(""); setMaterialTitle(""); setMaterialDescription(""); setMaterialSubject(""); setMaterialStudents([]); setMaterialFile(null); setMaterialUploaded(""); materialInputKey[1](x => x + 1); }
-    } catch (caught) { setError((caught as Error).message); }
+      if (ok) { form.reset(); setMaterialId(""); setMaterialTitle(""); setMaterialDescription(""); setMaterialSubject(""); setMaterialStudents([]); setMaterialFile(null); setMaterialUploaded(""); materialInputKey[1](x => x + 1); }
+    } catch (caught) { setError(alertActionFailure(caught)); }
     finally { setWorking(false); }
   }
   async function publishHomework(event: React.FormEvent) {
-    event.preventDefault(); setWorking(true); setError("");
+    event.preventDefault(); const form = event.currentTarget as HTMLFormElement; setWorking(true); setError("");
     try {
-      const fileId = homeworkMaterial ? "" : homeworkUploaded || (homeworkFile ? await uploadPdf(homeworkFile, "homework") : "");
+      const fileId = homeworkMaterial ? "" : homeworkUploaded || (homeworkFile ? await uploadPdf(homeworkFile, "homework", undefined, pdfLimit(learning)) : "");
       if (fileId) setHomeworkUploaded(fileId);
       const ok = await mutate({ action: "publishHomework", title: homeworkTitle, subject: homeworkSubject, description: homeworkDescription, students: homeworkStudents, startsAt: homeworkStart, dueAt: homeworkDue, materialId: homeworkMaterial, fileId, scoreEnabled, maxScore });
-      if (ok) { setHomeworkTitle(""); setHomeworkSubject(""); setHomeworkDescription(""); setHomeworkStudents([]); setHomeworkStart(""); setHomeworkDue(""); setHomeworkMaterial(""); setHomeworkFile(null); setHomeworkUploaded(""); setScoreEnabled(false); setMaxScore(""); homeworkInputKey[1](x => x + 1); }
-    } catch (caught) { setError((caught as Error).message); }
+      if (ok) { form.reset(); setHomeworkTitle(""); setHomeworkSubject(""); setHomeworkDescription(""); setHomeworkStudents([]); setHomeworkStart(""); setHomeworkDue(""); setHomeworkMaterial(""); setHomeworkFile(null); setHomeworkUploaded(""); setScoreEnabled(false); setMaxScore(""); homeworkInputKey[1](x => x + 1); }
+    } catch (caught) { setError(alertActionFailure(caught)); }
     finally { setWorking(false); }
   }
   function editMaterial(material: Material) {
@@ -131,7 +135,7 @@ export function TeacherLearning({ learning, mutate, busy }: { learning: Learning
   </div>;
 }
 
-function StudentHomeworkCard({ item, submissions, mutate, busy, onPlan, maxLabel }: { item: Homework; submissions: Submission[]; mutate: LearningMutate; busy: boolean; onPlan: (item: Homework) => void; maxLabel: string }) {
+function StudentHomeworkCard({ item, submissions, mutate, busy, onPlan, maxLabel, maxBytes }: { item: Homework; submissions: Submission[]; mutate: LearningMutate; busy: boolean; onPlan: (item: Homework) => void; maxLabel: string; maxBytes: number }) {
   const [file, setFile] = useState<File | null>(null);
   const [uploadedId, setUploadedId] = useState("");
   const [working, setWorking] = useState(false);
@@ -147,8 +151,8 @@ function StudentHomeworkCard({ item, submissions, mutate, busy, onPlan, maxLabel
   async function upload() {
     if (!file) return;
     setWorking(true); setError("");
-    try { setUploadedId(await uploadPdf(file, "submission", item.id)); }
-    catch (caught) { setError((caught as Error).message); }
+    try { setUploadedId(await uploadPdf(file, "submission", item.id, maxBytes)); }
+    catch (caught) { setError(alertActionFailure(caught)); }
     finally { setWorking(false); }
   }
   async function submit() {
@@ -175,7 +179,7 @@ export function StudentLearning({ learning, mutate, busy, onPlan }: { learning: 
   const subjects = useMemo(() => [...new Set(learning.materials.map(m => m.subject).filter(Boolean))], [learning.materials]);
   const [filter, setFilter] = useState("");
   return <div className="student-learning">
-    <section className="panel"><p className="eyebrow">{t("功课")}</p><h2>{t("我的功课")}</h2><div className="learning-list">{learning.homework.map(item => <StudentHomeworkCard key={item.id} item={item} submissions={learning.submissions.filter(s => s.homeworkId === item.id)} mutate={mutate} busy={busy} onPlan={onPlan} maxLabel={maxPdfLabel(learning)}/>)}{!learning.homework.length && <p className="muted">{t("目前没有功课")}</p>}</div></section>
+    <section className="panel"><p className="eyebrow">{t("功课")}</p><h2>{t("我的功课")}</h2><div className="learning-list">{learning.homework.map(item => <StudentHomeworkCard key={item.id} item={item} submissions={learning.submissions.filter(s => s.homeworkId === item.id)} mutate={mutate} busy={busy} onPlan={onPlan} maxLabel={maxPdfLabel(learning)} maxBytes={pdfLimit(learning)}/>)}{!learning.homework.length && <p className="muted">{t("目前没有功课")}</p>}</div></section>
     <section className="panel"><p className="eyebrow">{t("PDF 教学资料")}</p><h2>{t("我的教学资料")}</h2><label className="learning-filter">{t("按科目查找")}<select value={filter} onChange={e => setFilter(e.target.value)}><option value="">{t("全部科目")}</option>{subjects.map(subject => <option key={subject}>{subject}</option>)}</select></label><div className="learning-list">{learning.materials.filter(item => !filter || item.subject === filter).map(item => <article className="learning-card" key={item.id}><strong>{item.title}</strong><small>{item.subject}</small>{item.description && <p>{item.description}</p>}<FileLinks fileId={item.fileId}/></article>)}{!learning.materials.length && <p className="muted">{t("目前没有教学资料")}</p>}</div></section>
   </div>;
 }

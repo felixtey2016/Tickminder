@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import { validTestPdf } from "./valid-test-pdf.mjs";
 
 // Run only against an isolated local Wrangler D1/R2 state, never a public URL.
 const origin = "http://127.0.0.1:5174";
@@ -67,8 +68,9 @@ async function main() {
   assert.equal(teacherState.status, 200);
   assert.deepEqual(teacherState.data.learning.eligible, [{ student: "Test Student A", subject: "Science" }, { student: "Test Student C", subject: "Science" }]);
   assert.equal((await request(a, "/api/learning", { action: "saveMaterial", title: "Test", subject: "Science", students: ["Test Student B"], fileId: "x" })).status, 403);
-  const validPdf = new TextEncoder().encode("%PDF-1.4\n1 0 obj <</Type /Catalog>> endobj\n%%EOF\n");
+  const validPdf = validTestPdf();
   assert.equal((await request(a, "/api/files", pdfForm("material", new TextEncoder().encode("not a PDF")), true)).status, 400);
+  assert.equal((await request(a, "/api/files", pdfForm("material", new TextEncoder().encode("%PDF-1.4\n%%EOF\n")), true)).status, 400);
   assert.equal((await request(a, "/api/files", pdfForm("material", new Uint8Array(10 * 1024 * 1024 + 1).fill(65)), true)).status, 413);
   const uploaded = await request(a, "/api/files", pdfForm("material", validPdf), true);
   assert.equal(uploaded.status, 200, JSON.stringify(uploaded.data));

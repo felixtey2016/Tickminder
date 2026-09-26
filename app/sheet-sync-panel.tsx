@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { t } from "@/lib/i18n";
+import { alertActionFailure, readApiJson } from "@/lib/action-feedback";
 import { Button } from "@/components/ui/button";
 import type { SyncMode } from "@/lib/sheet-sync";
 
@@ -37,13 +38,13 @@ export function SheetSyncPanel() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action, mode, month: preview?.month, previewToken: preview?.previewToken }),
       });
-      const result = await response.json() as Preview & { error?: string; written?: number };
+      const result = await readApiJson<Preview & { error?: string; written?: number }>(response);
       if (!response.ok) throw new Error(result.error || "导入失败，请重试。");
       if (action === "preview") setPreview(result);
       else { setDone(true); setPreview(null); setMessage(`${t("已导入")} ${result.written || 0} ${t("个学生科目的课时。")} ${t("再次导入会覆盖相同单元格，不会累加。")}`); }
     } catch (error) {
       if (action === "commit") setPreview(null);
-      setMessage(t(error instanceof Error ? error.message : "导入失败，请重试。"));
+      setMessage(alertActionFailure(error, "导入失败，请重试。"));
     } finally { setBusy(false); }
   }
 
