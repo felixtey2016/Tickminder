@@ -21,15 +21,20 @@ export async function cleanOldStagedFiles() {
     AND NOT EXISTS (SELECT 1 FROM homework h WHERE h.attachment_file_id = f.id)
     AND NOT EXISTS (SELECT 1 FROM homework_submissions s WHERE s.file_id = f.id) LIMIT 20`, old);
   for (const file of candidates) {
-    await pdfBucket().delete(file.objectKey);
-    const deleted = await learningDb().prepare("DELETE FROM pdf_files WHERE id = ? AND status = 'staged'").bind(file.id).run();
-    if (deleted.meta.changes) await learningDb().prepare("UPDATE storage_quota SET used_bytes = max(0, used_bytes - ?) WHERE id = 1").bind(file.bytes).run();
+    try {
+      await pdfBucket().delete(file.objectKey);
+      const deleted = await learningDb().prepare("DELETE FROM pdf_files WHERE id = ? AND status = 'staged'").bind(file.id).run();
+      if (deleted.meta.changes) await learningDb().prepare("UPDATE storage_quota SET used_bytes = max(0, used_bytes - ?) WHERE id = 1").bind(file.bytes).run();
+    } catch { /* Retry cleanup on a later upload without blocking this upload. */ }
   }
   const unused = await rows<{ id: string }>(`SELECT f.id FROM pdf_files f WHERE f.status = 'attached' AND f.created_at < ?
     AND NOT EXISTS (SELECT 1 FROM teaching_materials m WHERE m.file_id = f.id)
     AND NOT EXISTS (SELECT 1 FROM homework h WHERE h.attachment_file_id = f.id)
     AND NOT EXISTS (SELECT 1 FROM homework_submissions s WHERE s.file_id = f.id) LIMIT 20`, old);
-  for (const file of unused) await deleteUnreferencedFile(file.id);
+  for (const file of unused) {
+    try { await deleteUnreferencedFile(file.id); }
+    catch { /* Retry cleanup on a later upload. */ }
+  }
 }
 
 export async function deleteUnreferencedFile(fileId: string) {
