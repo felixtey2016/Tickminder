@@ -19,6 +19,7 @@ export const plans = sqliteTable("plans", {
   subject: text("subject").notNull(),
   teacherName: text("teacher_name").notNull(),
   duration: real("duration").notNull().default(1),
+  onlineLink: text("online_link"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   createdAt: text("created_at").notNull(),
 });
@@ -27,6 +28,7 @@ export const accounts = sqliteTable("accounts", {
   id: text("id").primaryKey(),
   email: text("email").notNull(),
   name: text("name").notNull(),
+  nameConfirmedAt: text("name_confirmed_at"),
   role: text("role").notNull().default("pending"),
   teacherName: text("teacher_name"),
   studentName: text("student_name"),

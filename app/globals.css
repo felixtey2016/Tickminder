@@ -633,14 +633,22 @@ input[type="date"], input[type="datetime-local"], input[type="month"], input[typ
 .home-intro h2 { margin: 0; color: #29234f; font-size: clamp(23px, 3vw, 30px); }
 .home-intro > p:last-child { margin: 8px 0 0; color: #706b88; }
 .home-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.home-card { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; min-height: 218px; padding: 22px; border: 1px solid #e3def2; border-radius: 18px; background: #fff; color: #29234f; text-align: left; box-shadow: 0 8px 25px #2722520a; cursor: pointer; transition: border-color .15s, transform .15s, box-shadow .15s; }
-.home-card:hover, .home-card:focus-visible { border-color: #8b73e8; box-shadow: 0 12px 30px #5941bb1b; transform: translateY(-2px); }
-.home-card:focus-visible { outline: 3px solid #a792f2; outline-offset: 2px; }
+.home-card { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; min-height: 218px; padding: 22px; border: 1px solid #e3def2; border-radius: 18px; background: #fff; color: #29234f; text-align: left; box-shadow: 0 8px 25px #2722520a; transition: border-color .15s, transform .15s, box-shadow .15s; }
+.home-card:hover, .home-card:focus-within { border-color: #8b73e8; box-shadow: 0 12px 30px #5941bb1b; transform: translateY(-2px); }
+.home-card:focus-within { outline: 3px solid #a792f2; outline-offset: 2px; }
+.home-card-main { display: flex; flex: 1 1 auto; flex-direction: column; align-items: flex-start; gap: 10px; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.home-card-main:focus-visible { outline: 2px solid #6849cf; outline-offset: 4px; }
 .home-card-icon { display: grid; place-items: center; width: 39px; height: 39px; border-radius: 11px; background: #eee9ff; color: #5737be; }
 .home-card-label { color: #6f6987; font-size: 14px; font-weight: 650; }
 .home-card strong { max-width: 100%; font-size: clamp(24px, 3vw, 31px); line-height: 1.12; overflow-wrap: anywhere; }
 .home-card-detail { color: #706b88; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .home-card-action { display: inline-flex; align-items: center; gap: 2px; margin-top: auto; color: #5637bd; font-size: 14px; font-weight: 750; }
+.online-lesson-link { display: inline-flex; align-items: center; gap: 6px; width: fit-content; min-height: 38px; padding: 7px 11px; border: 1px solid #b9a8f1; border-radius: 9px; background: #f1edff; color: #4d32b3; font-size: 14px; font-weight: 700; text-decoration: none; }
+.online-lesson-link:hover, .online-lesson-link:focus-visible { background: #e5ddff; text-decoration: underline; }
+.teacher-plan-link { display: grid; gap: 10px; margin-top: 12px; padding: 16px; border: 1px solid #e3def2; border-radius: 13px; background: #fbfaff; }
+.teacher-plan-link label { display: grid; gap: 6px; }
+.teacher-plan-link input { min-width: 0; width: 100%; }
+.teacher-plan-link button { width: fit-content; }
 @media (max-width: 1050px) { .home-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 650px) { .home-intro { padding: 20px; } .home-cards { grid-template-columns: 1fr; gap: 12px; } .home-card { min-height: 0; padding: 18px; } }
 [hidden] { display: none !important; }

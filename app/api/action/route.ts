@@ -9,6 +9,7 @@ import { readRoster } from "@/lib/roster";
 import { teacherMaySeeLesson } from "@/lib/access";
 import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 import { studentNameKey } from "@/lib/student-names";
+import { normalizeOnlineLink } from "@/lib/online-link";
 
 type Body = Record<string, unknown>;
 const str = (v: unknown) => typeof v === "string" ? v.trim() : "";
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
   let data: Body;
   try { data = await request.json(); } catch { return bad("Invalid request"); }
   const action = str(data.action);
-  if (actor.role === "teacher" && !["attendance", "proposeReschedule"].includes(action)) return bad("Administrator access required", 403);
+  if (actor.role === "teacher" && !["attendance", "proposeReschedule", "updateOnlineLink"].includes(action)) return bad("Administrator access required", 403);
   if (actor.role === "student" && action !== "respondReschedule") return bad("Student access only", 403);
   const db = getDb();
   const now = new Date().toISOString();
@@ -116,6 +117,7 @@ export async function POST(request: Request) {
     }
     if (action === "savePlan") {
       const student = str(data.student), subject = str(data.subject), teacherName = str(data.teacherName);
+      const onlineLink = normalizeOnlineLink(data.onlineLink);
       const duration = Number(data.duration);
       if (!student || !subject || student.length > 80 || subject.length > 80 || student.includes("|") || subject.includes("|")) return bad("Enter a student and subject up to 80 characters without |");
       const registeredStudent = await db.select({ active: students.active }).from(students).where(eq(students.name, student)).get();
@@ -138,9 +140,19 @@ export async function POST(request: Request) {
           await db.insert(audit).values({ id: crypto.randomUUID(), lessonId: lesson.id, actorId: actor.id, action: "reassignTeacher", before: JSON.stringify(lesson), after: JSON.stringify({ teacherName }), at: now });
         }
       }
-      if (before) await db.update(plans).set({ teacherName, duration, active }).where(eq(plans.key, key));
-      else await db.insert(plans).values({ key, student, subject, teacherName, duration, active, createdAt: now });
-      await db.insert(audit).values({ id: crypto.randomUUID(), lessonId: `plan:${key}`, actorId: actor.id, action: "savePlan", before: before ? JSON.stringify(before) : null, after: JSON.stringify({ key, teacherName, duration, active }), at: now });
+      if (before) await db.update(plans).set({ teacherName, duration, active, onlineLink }).where(eq(plans.key, key));
+      else await db.insert(plans).values({ key, student, subject, teacherName, duration, active, onlineLink, createdAt: now });
+      await db.insert(audit).values({ id: crypto.randomUUID(), lessonId: `plan:${key}`, actorId: actor.id, action: "savePlan", before: before ? JSON.stringify(before) : null, after: JSON.stringify({ key, teacherName, duration, active, onlineLink }), at: now });
+      return NextResponse.json({ ok: true });
+    }
+    if (action === "updateOnlineLink") {
+      if (actor.role !== "teacher" || !actor.teacherName) return bad("只有负责老师可以修改网课链接", 403);
+      const key = str(data.key);
+      const plan = key ? await db.select().from(plans).where(eq(plans.key, key)).get() : null;
+      if (!plan || !plan.active || plan.teacherName !== actor.teacherName) return bad("只能修改自己负责的启用学生科目", 403);
+      const onlineLink = normalizeOnlineLink(data.onlineLink);
+      await db.update(plans).set({ onlineLink }).where(eq(plans.key, key));
+      await db.insert(audit).values({ id: crypto.randomUUID(), lessonId: `plan:${key}`, actorId: actor.id, action: "updateOnlineLink", before: JSON.stringify({ onlineLink: plan.onlineLink }), after: JSON.stringify({ onlineLink }), at: now });
       return NextResponse.json({ ok: true });
     }
     if (action === "bind") {

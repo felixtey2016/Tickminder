@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { BookOpen, CalendarDays, ChevronRight, ClipboardCheck, Clock3, type LucideIcon } from "lucide-react";
 import { getLanguage, t } from "@/lib/i18n";
 import type { LearningState } from "./learning-portal";
+import { OnlineLessonLink } from "./online-lesson-link";
 
 type Role = "admin" | "teacher" | "student";
 type Lesson = {
@@ -16,6 +17,7 @@ type Lesson = {
   status: string;
   chargeable?: boolean | null;
   replacementFor?: string | null;
+  onlineLink?: string | null;
 };
 type HomeCard = { label: string; value: string; detail: string; action: string; Icon: LucideIcon; destination: string };
 
@@ -79,12 +81,12 @@ export function HomeDashboard({ role, name, lessons, learning, onNavigate }: {
 
   return <section className="home-dashboard" aria-label={t("主页")}>
     <div className="home-intro"><p className="eyebrow">{t("今天一览")}</p><h2>{t("你好")}{name ? `，${name}` : ""}</h2><p>{t("常用信息和入口都在这里。")}</p></div>
-    <div className="home-cards">{cards.map(card => <button key={card.label} type="button" className="home-card" onClick={() => onNavigate(card.destination)} aria-label={`${t(card.label)}：${card.value}。${t(card.action)}`}>
+    <div className="home-cards">{cards.map(card => <article key={card.label} className="home-card"><button type="button" className="home-card-main" onClick={() => onNavigate(card.destination)} aria-label={`${t(card.label)}：${card.value}。${t(card.action)}`}>
       <span className="home-card-icon"><card.Icon size={21} aria-hidden="true"/></span>
       <span className="home-card-label">{t(card.label)}</span>
       <strong>{card.value}</strong>
       <span className="home-card-detail">{card.detail}</span>
       <span className="home-card-action">{t(card.action)} <ChevronRight size={17} aria-hidden="true"/></span>
-    </button>)}</div>
+    </button>{card.label === "下一堂课" && <OnlineLessonLink href={next?.onlineLink}/>}</article>)}</div>
   </section>;
 }

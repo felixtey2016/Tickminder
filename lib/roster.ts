@@ -18,6 +18,7 @@ export async function readRoster() {
       subject: p.subject,
       teacher: p.teacherName,
       duration: p.duration,
+      onlineLink: p.onlineLink,
     })),
     allTeachers: teacherRows,
     students: [...activeStudents].sort(),

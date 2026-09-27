@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { StudentCalendar } from "./student-calendar";
 import { StudentLearning, type Homework, type LearningMutate, type LearningState, type StudyBlock } from "./learning-portal";
 
-type Lesson = { id: string; subject: string; teacherName: string; plannedStart: string; plannedEnd: string; actualStart: string | null; actualEnd: string | null; status: string; attendanceKind?: string | null };
+type Lesson = { id: string; subject: string; teacherName: string; plannedStart: string; plannedEnd: string; actualStart: string | null; actualEnd: string | null; status: string; attendanceKind?: string | null; onlineLink?: string | null };
 type Proposal = { lessonId: string; status: string; proposedStart: string; proposedEnd: string };
 const local = (iso: string) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso)).replace(" ", "T");
 type Form = { id: string; title: string; date: string; start: string; end: string; subject: string; note: string; homeworkId: string };

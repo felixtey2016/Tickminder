@@ -20,6 +20,7 @@ type Account = {
     id?: string;
     name: string;
     email?: string;
+    nameConfirmedAt?: string | null;
     username?: string | null;
     mustChangePassword?: boolean;
     role: "admin" | "teacher" | "student" | "pending";
@@ -33,6 +34,7 @@ type Plan = {
     subject: string;
     teacher: string;
     duration: number;
+    onlineLink?: string | null;
 };
 type Lesson = {
     id: string;
@@ -51,6 +53,7 @@ type Lesson = {
     kind: string;
     seriesId: string | null;
     replacementFor: string | null;
+    onlineLink?: string | null;
 };
 type State = {
     account: Account;
@@ -158,8 +161,8 @@ export function Scheduler() {
             setState(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
             setAuth(previous => {
                 if (!previous?.account || !next.account || previous.account.id !== next.account.id) return previous;
-                const updated = { ...previous.account, role: next.account.role, teacherName: next.account.teacherName || null, studentName: next.account.studentName || null };
-                return previous.account.role === updated.role && previous.account.teacherName === updated.teacherName && previous.account.studentName === updated.studentName ? previous : { ...previous, account: updated };
+                const updated = { ...previous.account, name: next.account.name, role: next.account.role, teacherName: next.account.teacherName || null, studentName: next.account.studentName || null };
+                return previous.account.name === updated.name && previous.account.role === updated.role && previous.account.teacherName === updated.teacherName && previous.account.studentName === updated.studentName ? previous : { ...previous, account: updated };
             });
         } catch (error) {
             if (requestId !== latestStateRequest.current) return;
@@ -172,10 +175,10 @@ export function Scheduler() {
     }, [selectedMonth, auth?.account?.id]);
     const reload = useCallback(() => refreshState(false), [refreshState]);
     useEffect(() => { let active = true; request("/api/auth").then(a => { if (active) setAuth(a); }).catch(e => { if (active) setMessage(e.message); }); return () => { active = false; }; }, []);
-    useEffect(() => { if (auth?.account && auth.account.role !== "pending" && !auth.account.mustChangePassword) void reload(); }, [auth?.account?.id, auth?.account?.role, auth?.account?.mustChangePassword, reload]);
+    useEffect(() => { if (auth?.account && auth.account.role !== "pending" && !auth.account.mustChangePassword && auth.account.nameConfirmedAt) void reload(); }, [auth?.account?.id, auth?.account?.role, auth?.account?.mustChangePassword, auth?.account?.nameConfirmedAt, reload]);
     useEffect(() => {
         const account = auth?.account;
-        if (!account || account.mustChangePassword) return;
+        if (!account || account.mustChangePassword || !account.nameConfirmedAt) return;
         let active = true;
         let checking = false;
         let lastForegroundCheck = 0;
@@ -210,7 +213,7 @@ export function Scheduler() {
         document.addEventListener("visibilitychange", foregroundCheck);
         window.addEventListener("focus", foregroundCheck);
         return () => { active = false; window.clearInterval(timer); channel?.close(); if (channelRef.current === channel) channelRef.current = null; document.removeEventListener("visibilitychange", foregroundCheck); window.removeEventListener("focus", foregroundCheck); };
-    }, [auth?.account?.id, auth?.account?.role, auth?.account?.mustChangePassword, busy, refreshState]);
+    }, [auth?.account?.id, auth?.account?.role, auth?.account?.mustChangePassword, auth?.account?.nameConfirmedAt, busy, refreshState]);
     useEffect(() => {
         if (!auth || auth.account || !auth.clientId || !googleButton.current)
             return;
@@ -317,6 +320,16 @@ export function Scheduler() {
     finally {
         setBusy(false);
     } }
+    async function confirmName(name: string) { try {
+        setBusy(true);
+        setMessage("");
+        await request("/api/profile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
+        setAuth(await request("/api/auth"));
+    } catch (error) {
+        setMessage(alertActionFailure(error));
+    } finally {
+        setBusy(false);
+    } }
     const lessons = useMemo(() => [...(state?.lessons || [])].sort((a, b) => a.plannedStart.localeCompare(b.plannedStart)), [state]);
     useLessonWebMcp(auth?.account?.role, lessons, reload);
     if (!auth)
@@ -326,6 +339,8 @@ export function Scheduler() {
     const account = auth.account;
     if (account.mustChangePassword)
         return <PasswordChange name={account.name} change={changePassword} logout={logout} busy={busy} message={message} language={language} changeLanguage={changeLanguage}/>;
+    if (!account.nameConfirmedAt)
+        return <NameSetup initialName={account.name} save={confirmName} logout={logout} busy={busy} message={message} language={language} changeLanguage={changeLanguage}/>;
     if (account.role === "pending")
         return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("\u7B49\u5F85\u7BA1\u7406\u5458\u7ED1\u5B9A")}</h1><p>{t("\u5DF2\u9A8C\u8BC1 ")}{account.email}{t("\u3002\u7BA1\u7406\u5458\u9700\u8981\u6838\u5BF9\u8D26\u53F7\u5E76\u9009\u62E9\u8001\u5E08\u3001\u5B66\u751F\u6216\u7BA1\u7406\u5458\u89D2\u8272\u3002")}</p><Button variant="outline" onClick={logout}>{t("\u9000\u51FA\u767B\u5F55")}</Button></div></main>;
     const admin = account.role === "admin";
@@ -368,6 +383,18 @@ function PasswordChange({ name, change, logout, busy, message, language, changeL
         setError(alertActionFailure(new Error("两次输入的新密码不一致")));
         return;
     } setError(""); change(current, next); }}><label>{t("\u5F53\u524D\u521D\u59CB\u5BC6\u7801")}<input required type="password" autoComplete="current-password" value={current} onChange={e => setCurrent(e.target.value)}/></label><label>{t("\u65B0\u5BC6\u7801\uFF08\u81F3\u5C11 8 \u4E2A\u5B57\u7B26\uFF09")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={next} onChange={e => setNext(e.target.value)}/></label><label>{t("\u786E\u8BA4\u65B0\u5BC6\u7801")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("\u4FDD\u5B58\u65B0\u5BC6\u7801")}</Button></form>{(error || message) && <div className="error" role="alert">{t(error || message)}</div>}<Button variant="outline" onClick={logout}>{t("\u9000\u51FA\u767B\u5F55")}</Button></div></main>;
+}
+function NameSetup({ initialName, save, logout, busy, message, language, changeLanguage }: {
+    initialName: string;
+    save: (name: string) => Promise<void>;
+    logout: () => Promise<void>;
+    busy: boolean;
+    message: string;
+    language: Language;
+    changeLanguage: (next: Language) => void;
+}) {
+    const [name, setName] = useState(initialName);
+    return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("请确认你的姓名")}</h1><p>{t("这个名字会显示在功能菜单中。管理员会根据你的登录账号核对身份与课程权限。")}</p><form onSubmit={event => { event.preventDefault(); void save(name); }}><label>{t("显示姓名")}<input required autoComplete="name" maxLength={80} value={name} onChange={event => setName(event.target.value)}/></label><Button className="primary-full" disabled={busy || !name.trim()}>{t("保存并继续")}</Button></form>{message && <div className="error" role="alert">{message}</div>}<Button variant="outline" onClick={logout}>{t("退出登录")}</Button></div></main>;
 }
 type NavigationRole = "admin" | "teacher" | "student";
 type NavigationItem = { id: string; label: string; Icon: LucideIcon };

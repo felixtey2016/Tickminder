@@ -10,6 +10,9 @@ export function setLanguage(language: Language) {
 export function getLanguage() { return currentLanguage; }
 
 const en: Record<string, string> = {
+  "请确认你的姓名": "Confirm your name", "这个名字会显示在功能菜单中。管理员会根据你的登录账号核对身份与课程权限。": "Your name will appear in the menu. An administrator will verify your account and lesson access.",
+  "保存并继续": "Save and continue",
+  "网课链接（可选）": "Online lesson link (optional)", "网课链接已设置": "Online lesson link set", "保存网课链接": "Save online lesson link", "进入网课": "Join online lesson",
   "主页": "Home", "今天一览": "At a glance", "你好": "Hello", "常用信息和入口都在这里。": "Your key updates and shortcuts are here.",
   "目前没有已安排的后续课程": "No upcoming lesson scheduled", "查看学习日历": "View study calendar",
   "未提交功课": "Homework to submit", "查看功课要求与截止时间": "See instructions and due dates", "目前没有未提交功课": "No homework to submit",

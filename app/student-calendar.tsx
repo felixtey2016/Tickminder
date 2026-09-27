@@ -6,6 +6,7 @@ import { getLanguage, t } from "@/lib/i18n";
 import { activeLessonsOnDay, malaysiaDay, monthDays, nextScheduledLesson, shiftMonth } from "@/lib/student-calendar";
 import { Button } from "@/components/ui/button";
 import type { StudyBlock } from "./learning-portal";
+import { OnlineLessonLink } from "./online-lesson-link";
 
 type Lesson = {
   id: string;
@@ -17,6 +18,7 @@ type Lesson = {
   actualEnd: string | null;
   status: string;
   attendanceKind?: string | null;
+  onlineLink?: string | null;
 };
 type Proposal = { lessonId: string; status: string; proposedStart: string; proposedEnd: string };
 
@@ -87,6 +89,7 @@ export function StudentCalendar({ lessons, proposals, studyBlocks = [], onAddStu
           <div className="student-day-lesson-top"><strong>{lesson.subject}</strong><span>{t(lesson.attendanceKind === "early_dismissal" ? "提前结束课程" : statusText[lesson.status] || lesson.status)}</span></div>
           <p><Clock3 size={16} aria-hidden="true"/>{time(lesson.plannedStart)}–{time(lesson.plannedEnd)}</p>
           <p><span className="student-teacher-avatar" aria-hidden="true">{lesson.teacherName.charAt(0).toUpperCase()}</span>{lesson.teacherName}</p>
+          <OnlineLessonLink href={lesson.onlineLink}/>
           {lesson.actualStart && lesson.actualEnd && <small>{t("实际时间")}：{time(lesson.actualStart)}–{time(lesson.actualEnd)}</small>}
           {pending.has(lesson.id) && <a className="student-lesson-pending" href="#student-reschedule">{t("待你确认改期")} · {dateLabel(malaysiaDay(pending.get(lesson.id)!.proposedStart), { month: "short", day: "numeric" })} {time(pending.get(lesson.id)!.proposedStart)} →</a>}
         </article>)}

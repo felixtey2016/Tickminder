@@ -11,7 +11,7 @@ import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 export async function GET() {
   const account = await currentAccount();
   const local = account ? await getDb().select({ username: localCredentials.username, mustChangePassword: localCredentials.mustChangePassword }).from(localCredentials).where(eq(localCredentials.accountId, account.id)).get() : null;
-  return NextResponse.json({ account: account ? { id: account.id, email: account.email, name: account.name, role: account.role, isOwner: isOwnerAccount(account), teacherName: account.teacherName, studentName: account.studentName, username: local?.username || null, mustChangePassword: local?.mustChangePassword || false } : null, clientId: env.GOOGLE_CLIENT_ID || null });
+  return NextResponse.json({ account: account ? { id: account.id, email: account.email, name: account.name, nameConfirmedAt: account.nameConfirmedAt, role: account.role, isOwner: isOwnerAccount(account), teacherName: account.teacherName, studentName: account.studentName, username: local?.username || null, mustChangePassword: local?.mustChangePassword || false } : null, clientId: env.GOOGLE_CLIENT_ID || null });
 }
 
 export async function POST(request: Request) {
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     const existing = await db.select().from(accounts).where(eq(accounts.id, profile.id)).get();
     const bootstrapAdmin = profile.email === OWNER_EMAIL;
     if (!existing) await db.insert(accounts).values({ id: profile.id, email: profile.email, name: profile.name, role: bootstrapAdmin ? "admin" : "pending", createdAt: new Date().toISOString() });
-    else await db.update(accounts).set({ email: profile.email, name: profile.name, role: bootstrapAdmin ? "admin" : existing.role }).where(eq(accounts.id, profile.id));
+    else await db.update(accounts).set({ email: profile.email, role: bootstrapAdmin ? "admin" : existing.role }).where(eq(accounts.id, profile.id));
     const session = await createSession(profile.id);
     const response = NextResponse.json({ ok: true });
     response.cookies.set("tuition_session", session.token, { httpOnly: true, secure: true, sameSite: "lax", path: "/", expires: new Date(session.expiresAt) });
