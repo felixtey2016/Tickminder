@@ -3,6 +3,7 @@ import { currentAccount } from "@/lib/auth";
 import { change, first, learningDb, rows, studentHasHomework, teacherMayAssign } from "@/lib/learning-server";
 import { intervalsOverlap, malaysiaInputToIso, STAGED_FILE_TTL_MS, submissionRule } from "@/lib/learning";
 import { deleteUnreferencedFile } from "@/lib/pdf-storage";
+import { activeClassroomMemberNames, classroomMayManage } from "@/lib/classrooms-server";
 
 class ActionError extends Error {
   constructor(message: string, readonly status = 400, readonly overlaps?: string[]) { super(message); }
@@ -46,13 +47,19 @@ export async function POST(request: Request) {
     if (action === "saveMaterial") {
       if (actor.role !== "teacher") throw new ActionError("只有老师可以管理教学资料", 403);
       const title = str(data.title), description = str(data.description), subject = str(data.subject), fileId = str(data.fileId), id = str(data.id);
-      const students = recipients(data.students);
+      const existing = id ? await first<{ fileId: string; classroomId: string | null }>("SELECT file_id AS fileId,classroom_id AS classroomId FROM teaching_materials WHERE id = ? AND owner_id = ?", id, actor.id) : null;
+      if (id && !existing) throw new ActionError("资料不存在或无权修改", 404);
+      const requestedClassroomId = str(data.classroomId);
+      if (existing && requestedClassroomId && requestedClassroomId !== existing.classroomId) throw new ActionError("不能把资料移到其他班级", 403);
+      const classroomId = existing?.classroomId || requestedClassroomId;
+      const classroom = classroomId ? await classroomMayManage(actor, classroomId) : null;
+      if (classroomId && (!classroom || classroom.archived || classroom.subject !== subject)) throw new ActionError("班级不存在、已封存或科目不符", 403);
+      const students = classroom ? await activeClassroomMemberNames(classroomId) : recipients(data.students);
+      if (!students.length) throw new ActionError("班级尚无学生", 409);
       if (!title || title.length > 120 || description.length > 2000 || !subject || subject.length > 100) throw new ActionError("请填写资料标题、科目和有效说明");
       for (const student of students) if (!await teacherMayAssign(actor, student, subject)) throw new ActionError("只能分配给目前由你负责的学生科目", 403);
       if (id) {
-        const existing = await first<{ fileId: string }>("SELECT file_id AS fileId FROM teaching_materials WHERE id = ? AND owner_id = ?", id, actor.id);
-        if (!existing) throw new ActionError("资料不存在或无权修改", 404);
-        if (fileId && fileId !== existing.fileId) throw new ActionError("资料文件不能直接替换，请新增资料");
+        if (fileId && fileId !== existing!.fileId) throw new ActionError("资料文件不能直接替换，请新增资料");
         await db.batch([
           db.prepare("UPDATE teaching_materials SET title = ?, description = ? WHERE id = ? AND owner_id = ?").bind(title, description || null, id, actor.id),
           db.prepare("DELETE FROM material_recipients WHERE material_id = ?").bind(id),
@@ -65,7 +72,7 @@ export async function POST(request: Request) {
       if (await first("SELECT 1 AS used FROM teaching_materials WHERE file_id = ?", fileId)) throw new ActionError("这份文件已用于另一份资料", 409);
       const newId = crypto.randomUUID();
       await db.batch([
-        db.prepare("INSERT INTO teaching_materials (id, owner_id, title, description, file_id, created_at) VALUES (?, ?, ?, ?, ?, ?)").bind(newId, actor.id, title, description || null, fileId, now),
+        db.prepare("INSERT INTO teaching_materials (id, owner_id, title, description, file_id, created_at, classroom_id) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(newId, actor.id, title, description || null, fileId, now, classroomId || null),
         ...students.map(student => db.prepare("INSERT INTO material_recipients (id, material_id, student_name, subject) VALUES (?, ?, ?, ?)").bind(crypto.randomUUID(), newId, student, subject)),
         db.prepare("UPDATE pdf_files SET status = 'attached' WHERE id = ? AND owner_id = ? AND status = 'staged'").bind(fileId, actor.id),
       ]);
@@ -88,7 +95,11 @@ export async function POST(request: Request) {
     if (action === "publishHomework") {
       if (actor.role !== "teacher") throw new ActionError("只有老师可以布置功课", 403);
       const title = str(data.title), subject = str(data.subject), description = str(data.description);
-      const students = recipients(data.students);
+      const classroomId = str(data.classroomId);
+      const classroom = classroomId ? await classroomMayManage(actor, classroomId) : null;
+      if (classroomId && (!classroom || classroom.archived || classroom.subject !== subject)) throw new ActionError("班级不存在、已封存或科目不符", 403);
+      const students = classroom ? await activeClassroomMemberNames(classroomId) : recipients(data.students);
+      if (!students.length) throw new ActionError("班级尚无学生", 409);
       if (!title || title.length > 120 || !subject || subject.length > 100 || description.length > 4000) throw new ActionError("请填写有效的功课标题、科目和要求");
       const maxScore = data.scoreEnabled === true ? scoreNumber(data.maxScore, false) : null;
       const startsAt = malaysiaInputToIso(data.startsAt), dueAt = malaysiaInputToIso(data.dueAt);
@@ -99,8 +110,8 @@ export async function POST(request: Request) {
       const materialId = str(data.materialId), fileId = str(data.fileId);
       if (materialId && fileId) throw new ActionError("请选择已有资料或新 PDF，不能同时选择");
       if (materialId) {
-        const material = await first<{ fileId: string }>("SELECT m.file_id AS fileId FROM teaching_materials m JOIN material_recipients r ON r.material_id = m.id WHERE m.id = ? AND m.owner_id = ? AND r.subject = ? LIMIT 1", materialId, actor.id, subject);
-        if (!material) throw new ActionError("只能选择自己上传且科目一致的教学资料", 403);
+        const material = await first<{ fileId: string; classroomId: string | null }>("SELECT m.file_id AS fileId,m.classroom_id AS classroomId FROM teaching_materials m JOIN material_recipients r ON r.material_id = m.id WHERE m.id = ? AND m.owner_id = ? AND r.subject = ? LIMIT 1", materialId, actor.id, subject);
+        if (!material || material.classroomId !== (classroomId || null)) throw new ActionError("只能选择自己上传且属于当前班级的教学资料", 403);
         attachmentFileId = material.fileId;
       } else if (fileId) {
         await uploadedFile(fileId, actor.id, "homework");
@@ -109,8 +120,8 @@ export async function POST(request: Request) {
       }
       const id = crypto.randomUUID();
       await db.batch([
-        db.prepare("INSERT INTO homework (id, owner_id, title, subject, description, starts_at, due_at, max_score, attachment_file_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .bind(id, actor.id, title, subject, description, startsAt, dueAt, maxScore, attachmentFileId, now),
+        db.prepare("INSERT INTO homework (id, owner_id, title, subject, description, starts_at, due_at, max_score, attachment_file_id, created_at, classroom_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(id, actor.id, title, subject, description, startsAt, dueAt, maxScore, attachmentFileId, now, classroomId || null),
         ...students.map(student => db.prepare("INSERT INTO homework_recipients (id, homework_id, student_name) VALUES (?, ?, ?)").bind(crypto.randomUUID(), id, student)),
         ...(staged ? [db.prepare("UPDATE pdf_files SET status = 'attached' WHERE id = ? AND owner_id = ? AND status = 'staged'").bind(attachmentFileId, actor.id)] : []),
       ]);

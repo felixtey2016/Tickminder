@@ -14,8 +14,10 @@ const target = process.argv[4];
 const expectedTables = [
   'accounts', 'assignments', 'audit', 'lessons', 'local_credentials',
   'login_attempts', 'plans', 'reschedule_requests', 'sessions', 'students', 'teachers',
+  'pdf_files', 'storage_quota', 'teaching_materials', 'material_recipients',
+  'homework', 'homework_recipients', 'homework_submissions', 'study_blocks',
 ];
-const migrations = ['0000', '0001', '0002', '0003', '0004', '0005', '0006'];
+const migrations = ['0000', '0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009'];
 const projectRoot = resolve(import.meta.dirname, '..').toLowerCase();
 
 function targetPath(flag) {
@@ -92,7 +94,7 @@ function restoreInMemory(data) {
       const restored = db.prepare(`SELECT * FROM "${name}"`).all().map(encode).sort();
       if (JSON.stringify(original) !== JSON.stringify(restored)) throw new Error(`Restore content mismatch for ${name}`);
     }
-    for (const prefix of ['0007', '0008']) {
+    for (const prefix of ['0010']) {
       const file = readdirSync(resolve(projectRoot, 'drizzle')).find((name) => name.startsWith(prefix + '_') && name.endsWith('.sql'));
       if (!file) throw new Error(`Missing release migration ${prefix}`);
       db.exec(readFileSync(resolve(projectRoot, 'drizzle', file), 'utf8'));

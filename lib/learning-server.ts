@@ -37,9 +37,21 @@ export async function teacherSubjects(account: Account) {
     WHERE p.teacher_name = ? AND p.active = 1 AND s.active = 1 AND t.active = 1 ORDER BY p.student, p.subject`, account.teacherName);
 }
 
+function activeClassroomAccess(alias: string) {
+  return `(${alias}.classroom_id IS NULL OR EXISTS (
+    SELECT 1 FROM classroom_members cm
+    JOIN classrooms c ON c.id = cm.classroom_id
+    JOIN plans p ON p.student = cm.student_name AND p.subject = c.subject AND p.teacher_name = c.teacher_name AND p.active = 1
+    JOIN students student ON student.name = cm.student_name AND student.active = 1
+    JOIN teachers teacher ON teacher.name = c.teacher_name AND teacher.active = 1
+    WHERE cm.classroom_id = ${alias}.classroom_id AND cm.student_name = ?
+  ))`;
+}
+
 export async function studentHasHomework(account: Account, homeworkId: string) {
   if (account.role !== "student" || !account.studentName) return false;
-  return Boolean(await first(`SELECT 1 AS allowed FROM homework_recipients WHERE homework_id = ? AND student_name = ?`, homeworkId, account.studentName));
+  return Boolean(await first(`SELECT 1 AS allowed FROM homework_recipients r JOIN homework h ON h.id = r.homework_id
+    WHERE r.homework_id = ? AND r.student_name = ? AND ${activeClassroomAccess("h")}`, homeworkId, account.studentName, account.studentName));
 }
 
 export async function pdfMayRead(account: Account, fileId: string) {
@@ -47,8 +59,8 @@ export async function pdfMayRead(account: Account, fileId: string) {
   if (!file || !["staged", "attached"].includes(file.status)) return null;
   if (file.ownerId === account.id) return file;
   if (account.role === "student" && account.studentName) {
-    const material = await first(`SELECT 1 AS allowed FROM teaching_materials m JOIN material_recipients r ON r.material_id = m.id WHERE m.file_id = ? AND r.student_name = ?`, fileId, account.studentName);
-    const homework = await first(`SELECT 1 AS allowed FROM homework h JOIN homework_recipients r ON r.homework_id = h.id WHERE h.attachment_file_id = ? AND r.student_name = ?`, fileId, account.studentName);
+    const material = await first(`SELECT 1 AS allowed FROM teaching_materials m JOIN material_recipients r ON r.material_id = m.id WHERE m.file_id = ? AND r.student_name = ? AND ${activeClassroomAccess("m")}`, fileId, account.studentName, account.studentName);
+    const homework = await first(`SELECT 1 AS allowed FROM homework h JOIN homework_recipients r ON r.homework_id = h.id WHERE h.attachment_file_id = ? AND r.student_name = ? AND ${activeClassroomAccess("h")}`, fileId, account.studentName, account.studentName);
     const submission = await first(`SELECT 1 AS allowed FROM homework_submissions WHERE file_id = ? AND student_name = ?`, fileId, account.studentName);
     if (material || homework || submission) return file;
   }
@@ -63,9 +75,9 @@ export async function learningState(account: Account) {
   const limits = { pdfMaxBytes: configuredBytes(env.PDF_MAX_BYTES, DEFAULT_PDF_MAX_BYTES) };
   if (account.role === "teacher") {
     const [materials, materialRecipients, homework, homeworkRecipients, submissions, eligible] = await Promise.all([
-      rows(`SELECT m.id, m.title, m.description, m.file_id AS fileId, m.created_at AS createdAt, f.filename FROM teaching_materials m JOIN pdf_files f ON f.id = m.file_id WHERE m.owner_id = ? ORDER BY m.created_at DESC`, account.id),
+      rows(`SELECT m.id, m.title, m.description, m.file_id AS fileId, m.created_at AS createdAt, m.classroom_id AS classroomId, f.filename FROM teaching_materials m JOIN pdf_files f ON f.id = m.file_id WHERE m.owner_id = ? ORDER BY m.created_at DESC`, account.id),
       rows<{ materialId: string; studentName: string; subject: string }>(`SELECT r.material_id AS materialId, r.student_name AS studentName, r.subject FROM material_recipients r JOIN teaching_materials m ON m.id = r.material_id WHERE m.owner_id = ?`, account.id),
-      rows(`SELECT h.id, h.title, h.subject, h.description, h.starts_at AS startsAt, h.due_at AS dueAt, h.max_score AS maxScore, h.attachment_file_id AS attachmentFileId, h.created_at AS createdAt FROM homework h WHERE h.owner_id = ? ORDER BY h.created_at DESC`, account.id),
+      rows(`SELECT h.id, h.title, h.subject, h.description, h.starts_at AS startsAt, h.due_at AS dueAt, h.max_score AS maxScore, h.attachment_file_id AS attachmentFileId, h.classroom_id AS classroomId, h.created_at AS createdAt FROM homework h WHERE h.owner_id = ? ORDER BY h.created_at DESC`, account.id),
       rows<{ homeworkId: string; studentName: string; score: number | null; scoredAt: string | null }>(`SELECT r.homework_id AS homeworkId, r.student_name AS studentName, r.score, r.scored_at AS scoredAt FROM homework_recipients r JOIN homework h ON h.id = r.homework_id WHERE h.owner_id = ?`, account.id),
       rows(`SELECT s.id, s.homework_id AS homeworkId, s.student_name AS studentName, s.file_id AS fileId, s.submitted_at AS submittedAt, s.late, f.filename FROM homework_submissions s JOIN homework h ON h.id = s.homework_id JOIN pdf_files f ON f.id = s.file_id WHERE h.owner_id = ? ORDER BY s.submitted_at DESC`, account.id),
       teacherSubjects(account),
@@ -81,8 +93,8 @@ export async function learningState(account: Account) {
   }
   if (account.role === "student" && account.studentName) {
     const [materials, homework, submissions, studyBlocks] = await Promise.all([
-      rows(`SELECT m.id, m.title, m.description, m.file_id AS fileId, m.created_at AS createdAt, r.subject, f.filename FROM teaching_materials m JOIN material_recipients r ON r.material_id = m.id JOIN pdf_files f ON f.id = m.file_id WHERE r.student_name = ? ORDER BY m.created_at DESC`, account.studentName),
-      rows(`SELECT h.id, h.title, h.subject, h.description, h.starts_at AS startsAt, h.due_at AS dueAt, h.max_score AS maxScore, r.score, r.scored_at AS scoredAt, h.attachment_file_id AS attachmentFileId, h.created_at AS createdAt FROM homework h JOIN homework_recipients r ON r.homework_id = h.id WHERE r.student_name = ? ORDER BY h.due_at`, account.studentName),
+      rows(`SELECT m.id, m.title, m.description, m.file_id AS fileId, m.created_at AS createdAt, m.classroom_id AS classroomId, r.subject, f.filename FROM teaching_materials m JOIN material_recipients r ON r.material_id = m.id JOIN pdf_files f ON f.id = m.file_id WHERE r.student_name = ? AND ${activeClassroomAccess("m")} ORDER BY m.created_at DESC`, account.studentName, account.studentName),
+      rows(`SELECT h.id, h.title, h.subject, h.description, h.starts_at AS startsAt, h.due_at AS dueAt, h.max_score AS maxScore, r.score, r.scored_at AS scoredAt, h.attachment_file_id AS attachmentFileId, h.classroom_id AS classroomId, h.created_at AS createdAt FROM homework h JOIN homework_recipients r ON r.homework_id = h.id WHERE r.student_name = ? AND ${activeClassroomAccess("h")} ORDER BY h.due_at`, account.studentName, account.studentName),
       rows(`SELECT s.id, s.homework_id AS homeworkId, s.file_id AS fileId, s.submitted_at AS submittedAt, s.late, f.filename FROM homework_submissions s JOIN pdf_files f ON f.id = s.file_id WHERE s.student_name = ? ORDER BY s.submitted_at DESC`, account.studentName),
       rows(`SELECT id, title, subject, note, starts_at AS startsAt, ends_at AS endsAt, homework_id AS homeworkId, created_at AS createdAt FROM study_blocks WHERE account_id = ? ORDER BY starts_at`, account.id),
     ]);

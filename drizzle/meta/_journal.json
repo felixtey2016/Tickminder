@@ -71,6 +71,13 @@
       "when": 1790531410892,
       "tag": "0009_fixed_scream",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1790534714773,
+      "tag": "0010_familiar_albert_cleary",
+      "breakpoints": true
     }
   ]
 }

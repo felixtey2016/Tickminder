@@ -13,6 +13,7 @@ import { monthlyAttendanceForPair } from "@/lib/lesson-rules";
 import { StudentPortal, TeacherPortal } from "./portals";
 import { HomeDashboard } from "./home-dashboard";
 import { TeacherLearning, type LearningState } from "./learning-portal";
+import { ClassroomsPage, type Classroom } from "./classrooms-page";
 import { Timetable } from "./timetables";
 import { StudentAdmin, SubjectAdmin } from "./roster-forms";
 import { SheetSyncPanel } from "./sheet-sync-panel";
@@ -58,6 +59,7 @@ type Lesson = {
 type State = {
     account: Account;
     learning?: LearningState;
+    classrooms?: Classroom[];
     revision?: number;
     plans?: Plan[];
     allPlans?: Array<Omit<Plan, "teacher"> & {
@@ -293,6 +295,18 @@ export function Scheduler() {
             return false;
         } finally { setBusy(false); }
     }
+    async function classroomMutate(body: Record<string, unknown>) {
+        try {
+            setBusy(true); setMessage("");
+            const response = await fetch("/api/classrooms", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
+            const result = await readApiJson<{ error?: string; id?: string }>(response);
+            if (!response.ok) throw new Error(t(result.error || "保存失败，请重试"));
+            channelRef.current?.postMessage({ type: "changed" });
+            setMessage(t("已保存")); await reload();
+            return { ok: true, id: result.id };
+        } catch (error) { setMessage(alertActionFailure(error)); return { ok: false }; }
+        finally { setBusy(false); }
+    }
     async function logout() { try { await request("/api/auth", { method: "DELETE" }); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); } catch (error) { setMessage(alertActionFailure(error)); } }
     async function localLogin(username: string, password: string) { try {
         setBusy(true);
@@ -344,7 +358,7 @@ export function Scheduler() {
     if (account.role === "pending")
         return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("\u7B49\u5F85\u7BA1\u7406\u5458\u7ED1\u5B9A")}</h1><p>{t("\u5DF2\u9A8C\u8BC1 ")}{account.email}{t("\u3002\u7BA1\u7406\u5458\u9700\u8981\u6838\u5BF9\u8D26\u53F7\u5E76\u9009\u62E9\u8001\u5E08\u3001\u5B66\u751F\u6216\u7BA1\u7406\u5458\u89D2\u8272\u3002")}</p><Button variant="outline" onClick={logout}>{t("\u9000\u51FA\u767B\u5F55")}</Button></div></main>;
     const admin = account.role === "admin";
-    return <Workspace account={account} state={state} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/>;
+    return <Workspace account={account} state={state} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/>;
 }
 function BrandLogo({ small = false }: { small?: boolean }) { return <span className={`brand-logo ${small ? "small" : ""}`}><img src="/timelyo-logo.png" alt={BRAND_NAME} /></span>; }
 function LanguageSwitcher({ language, change }: { language: Language; change: (next: Language) => void }) { return <div className="language-switch" role="group" aria-label="Language / 语言"><button type="button" aria-pressed={language === "zh"} onClick={() => change("zh")}>中文</button><button type="button" aria-pressed={language === "en"} onClick={() => change("en")}>EN</button></div>; }
@@ -401,6 +415,7 @@ type NavigationItem = { id: string; label: string; Icon: LucideIcon };
 const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
     admin: [
         { id: "home", label: "主页", Icon: LayoutDashboard },
+        { id: "classrooms", label: "班级", Icon: Users },
         { id: "overview", label: "课程总览", Icon: LayoutDashboard },
         { id: "attention", label: "异常待办", Icon: AlertCircle },
         { id: "schedule", label: "安排课程", Icon: Clock3 },
@@ -418,6 +433,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
     ],
     teacher: [
         { id: "home", label: "主页", Icon: LayoutDashboard },
+        { id: "classrooms", label: "班级", Icon: Users },
         { id: "lessons", label: "课程与打卡", Icon: CalendarDays },
         { id: "attendance", label: "打卡记录", Icon: ClipboardCheck },
         { id: "hours", label: "上课记录", Icon: Clock3 },
@@ -427,6 +443,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
     ],
     student: [
         { id: "home", label: "主页", Icon: LayoutDashboard },
+        { id: "classrooms", label: "我的班级", Icon: Users },
         { id: "calendar", label: "学习日历", Icon: CalendarDays },
         { id: "homework", label: "我的功课", Icon: BookOpen },
         { id: "materials", label: "我的教学资料", Icon: FileText },
@@ -434,7 +451,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
     ],
 };
 
-function Workspace({ account, state, lessons, message, setMessage, reload, logout, modal, setModal, mutate, learningMutate, busy, selectedMonth, setSelectedMonth, language, changeLanguage }: {
+function Workspace({ account, state, lessons, message, setMessage, reload, logout, modal, setModal, mutate, learningMutate, classroomMutate, busy, selectedMonth, setSelectedMonth, language, changeLanguage }: {
     account: Account;
     state: State | null;
     lessons: Lesson[];
@@ -446,6 +463,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
     setModal: (x: { type: "attendance" | "review" | "edit" | "cancel"; lesson: Lesson } | null) => void;
     mutate: (x: Record<string, unknown>) => Promise<boolean>;
     learningMutate: (x: Record<string, unknown>) => Promise<boolean>;
+    classroomMutate: (x: Record<string, unknown>) => Promise<{ ok: boolean; id?: string }>;
     busy: boolean;
     selectedMonth: string;
     setSelectedMonth: (x: string) => void;
@@ -490,6 +508,9 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
     let pageContent: React.ReactNode = null;
     if (activeView === "home") {
         pageContent = <HomeDashboard role={role} name={account.name} lessons={lessons} learning={learning} onNavigate={choose}/>;
+    } else if (activeView === "classrooms") {
+        const classPlans = role === "teacher" ? (state?.plans || []).map(plan => ({ student: plan.student, subject: plan.subject, teacherName: account.teacherName || "", active: true })) : (state?.allPlans || []).map(plan => ({ student: plan.student, subject: plan.subject, teacherName: plan.teacherName, active: plan.active }));
+        pageContent = <ClassroomsPage role={role} classes={state?.classrooms || []} learning={learning} teacherName={account.teacherName} teachers={role === "teacher" && account.teacherName ? [account.teacherName] : state?.teachers || []} plans={classPlans} mutate={classroomMutate} learningMutate={learningMutate} busy={busy} onCalendar={() => choose("calendar")}/>;
     } else if (role === "admin") {
         if (["overview", "attention", "activity"].includes(activeView)) {
             pageContent = <AdminDashboard state={state} lessons={lessons} open={setModal} view={activeView as "overview" | "attention" | "activity"}/>;

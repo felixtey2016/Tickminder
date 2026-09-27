@@ -133,6 +133,7 @@ export const teachingMaterials = sqliteTable("teaching_materials", {
   description: text("description"),
   fileId: text("file_id").notNull(),
   createdAt: text("created_at").notNull(),
+  classroomId: text("classroom_id"),
 });
 
 export const materialRecipients = sqliteTable("material_recipients", {
@@ -153,6 +154,37 @@ export const homework = sqliteTable("homework", {
   maxScore: real("max_score"),
   attachmentFileId: text("attachment_file_id"),
   createdAt: text("created_at").notNull(),
+  classroomId: text("classroom_id"),
+});
+
+export const classrooms = sqliteTable("classrooms", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  subject: text("subject").notNull(),
+  teacherName: text("teacher_name").notNull(),
+  createdBy: text("created_by").notNull(),
+  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export const classroomMembers = sqliteTable("classroom_members", {
+  id: text("id").primaryKey(),
+  classroomId: text("classroom_id").notNull(),
+  studentName: text("student_name").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (t) => [uniqueIndex("classroom_member_unique").on(t.classroomId, t.studentName)]);
+
+export const classroomAnnouncements = sqliteTable("classroom_announcements", {
+  id: text("id").primaryKey(),
+  classroomId: text("classroom_id").notNull(),
+  authorId: text("author_id").notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
 });
 
 export const homeworkRecipients = sqliteTable("homework_recipients", {

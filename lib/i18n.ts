@@ -10,6 +10,15 @@ export function setLanguage(language: Language) {
 export function getLanguage() { return currentLanguage; }
 
 const en: Record<string, string> = {
+  "班级": "Classrooms", "我的班级": "My classrooms", "新建班级": "Create classroom", "尚未加入班级": "You have not joined a classroom yet", "尚未建立班级": "No classrooms yet",
+  "班级设置": "Classroom settings", "编辑班级": "Edit classroom", "班级名称": "Classroom name", "例如：Form 4 Science 小班": "For example: Form 4 Science group", "班级说明（可选）": "Description (optional)",
+  "班级学生": "Class members", "请先选择已绑定学生的老师和科目": "Choose a teacher and subject with assigned students first", "保存班级": "Save classroom",
+  "已封存": "Archived", "管理名单": "Manage members", "确定重新开放这个班级？": "Reopen this classroom?", "确定封存这个班级？学生仍能查看已发布内容。": "Archive this classroom? Students can still view published content.",
+  "重新开放": "Reopen", "封存班级": "Archive classroom", "班级内容": "Classroom content", "公告": "Announcements", "教学资料": "Materials", "班级公告": "Class announcements", "最新消息": "Latest announcements",
+  "公告标题": "Announcement title", "公告内容": "Announcement text", "置顶公告": "Pin announcement", "保存公告": "Save announcement", "发布公告": "Post announcement", "置顶": "Pinned", "确定删除这则公告？": "Delete this announcement?", "尚无公告": "No announcements yet",
+  "移出班级后，该学生不能再查看班级内容；已有提交记录会保留。": "Removed students lose access to classroom content. Their submission records remain.",
+  "班级已封存。已发布资料和功课仍可在原菜单查看。": "This classroom is archived. Published materials and homework remain in their original menu pages.",
+  "请由负责老师在班级中发布资料和功课。": "The assigned teacher can publish materials and homework here.", "发布给班级所有学生": "Publish to all class members",
   "请确认你的姓名": "Confirm your name", "这个名字会显示在功能菜单中。管理员会根据你的登录账号核对身份与课程权限。": "Your name will appear in the menu. An administrator will verify your account and lesson access.",
   "保存并继续": "Save and continue",
   "网课链接（可选）": "Online lesson link (optional)", "网课链接已设置": "Online lesson link set", "保存网课链接": "Save online lesson link", "进入网课": "Join online lesson",

@@ -6,8 +6,8 @@ import { t } from "@/lib/i18n";
 import { alertActionFailure, readApiJson } from "@/lib/action-feedback";
 import { Button } from "@/components/ui/button";
 
-export type Material = { id: string; title: string; description: string | null; fileId: string; filename: string; subject?: string; recipients?: Array<{ studentName: string; subject: string }> };
-export type Homework = { id: string; title: string; subject: string; description: string; startsAt: string; dueAt: string; maxScore?: number | null; score?: number | null; scoredAt?: string | null; attachmentFileId: string | null; recipients?: string[]; scores?: Array<{ studentName: string; score: number | null; scoredAt: string | null }> };
+export type Material = { id: string; title: string; description: string | null; fileId: string; filename: string; subject?: string; classroomId?: string | null; recipients?: Array<{ studentName: string; subject: string }> };
+export type Homework = { id: string; title: string; subject: string; description: string; startsAt: string; dueAt: string; maxScore?: number | null; score?: number | null; scoredAt?: string | null; attachmentFileId: string | null; classroomId?: string | null; recipients?: string[]; scores?: Array<{ studentName: string; score: number | null; scoredAt: string | null }> };
 export type Submission = { id: string; homeworkId: string; studentName?: string; fileId: string; filename: string; submittedAt: string; late: number | boolean };
 export type StudyBlock = { id: string; title: string; subject: string | null; note: string | null; startsAt: string; endsAt: string; homeworkId: string | null };
 export type LearningState = { materials: Material[]; homework: Homework[]; submissions: Submission[]; studyBlocks: StudyBlock[]; eligible: Array<{ student: string; subject: string }>; limits?: { pdfMaxBytes: number } };
@@ -61,19 +61,19 @@ function ScoreEntry({ item, student, mutate, busy }: { item: Homework; student: 
   </form>;
 }
 
-export function TeacherLearning({ learning, mutate, busy, view }: { learning: LearningState; mutate: LearningMutate; busy: boolean; view: "materials" | "homework" }) {
-  const subjects = [...new Set(learning.eligible.map(p => p.subject))].sort();
+export function TeacherLearning({ learning, mutate, busy, view, classroom }: { learning: LearningState; mutate: LearningMutate; busy: boolean; view: "materials" | "homework"; classroom?: { id: string; subject: string; members: string[] } }) {
+  const subjects = classroom ? [classroom.subject] : [...new Set(learning.eligible.map(p => p.subject))].sort();
   const [materialId, setMaterialId] = useState("");
   const [materialTitle, setMaterialTitle] = useState("");
   const [materialDescription, setMaterialDescription] = useState("");
-  const [materialSubject, setMaterialSubject] = useState("");
-  const [materialStudents, setMaterialStudents] = useState<string[]>([]);
+  const [materialSubject, setMaterialSubject] = useState(classroom?.subject || "");
+  const [materialStudents, setMaterialStudents] = useState<string[]>(classroom?.members || []);
   const [materialFile, setMaterialFile] = useState<File | null>(null);
   const [materialUploaded, setMaterialUploaded] = useState("");
   const [homeworkTitle, setHomeworkTitle] = useState("");
-  const [homeworkSubject, setHomeworkSubject] = useState("");
+  const [homeworkSubject, setHomeworkSubject] = useState(classroom?.subject || "");
   const [homeworkDescription, setHomeworkDescription] = useState("");
-  const [homeworkStudents, setHomeworkStudents] = useState<string[]>([]);
+  const [homeworkStudents, setHomeworkStudents] = useState<string[]>(classroom?.members || []);
   const [homeworkStart, setHomeworkStart] = useState("");
   const [homeworkDue, setHomeworkDue] = useState("");
   const [homeworkMaterial, setHomeworkMaterial] = useState("");
@@ -92,8 +92,8 @@ export function TeacherLearning({ learning, mutate, busy, view }: { learning: Le
       const fileId = materialId ? learning.materials.find(m => m.id === materialId)?.fileId || "" : materialUploaded || (materialFile ? await uploadPdf(materialFile, "material", undefined, pdfLimit(learning)) : "");
       if (!fileId) throw new Error(t("请选择 PDF 文件"));
       if (!materialId) setMaterialUploaded(fileId);
-      const ok = await mutate({ action: "saveMaterial", id: materialId, title: materialTitle, description: materialDescription, subject: materialSubject, students: materialStudents, fileId });
-      if (ok) { form.reset(); setMaterialId(""); setMaterialTitle(""); setMaterialDescription(""); setMaterialSubject(""); setMaterialStudents([]); setMaterialFile(null); setMaterialUploaded(""); materialInputKey[1](x => x + 1); }
+      const ok = await mutate({ action: "saveMaterial", id: materialId, title: materialTitle, description: materialDescription, subject: materialSubject, students: materialStudents, fileId, classroomId: classroom?.id });
+      if (ok) { form.reset(); setMaterialId(""); setMaterialTitle(""); setMaterialDescription(""); setMaterialSubject(classroom?.subject || ""); setMaterialStudents(classroom?.members || []); setMaterialFile(null); setMaterialUploaded(""); materialInputKey[1](x => x + 1); }
     } catch (caught) { setError(alertActionFailure(caught)); }
     finally { setWorking(false); }
   }
@@ -102,8 +102,8 @@ export function TeacherLearning({ learning, mutate, busy, view }: { learning: Le
     try {
       const fileId = homeworkMaterial ? "" : homeworkUploaded || (homeworkFile ? await uploadPdf(homeworkFile, "homework", undefined, pdfLimit(learning)) : "");
       if (fileId) setHomeworkUploaded(fileId);
-      const ok = await mutate({ action: "publishHomework", title: homeworkTitle, subject: homeworkSubject, description: homeworkDescription, students: homeworkStudents, startsAt: homeworkStart, dueAt: homeworkDue, materialId: homeworkMaterial, fileId, scoreEnabled, maxScore });
-      if (ok) { form.reset(); setHomeworkTitle(""); setHomeworkSubject(""); setHomeworkDescription(""); setHomeworkStudents([]); setHomeworkStart(""); setHomeworkDue(""); setHomeworkMaterial(""); setHomeworkFile(null); setHomeworkUploaded(""); setScoreEnabled(false); setMaxScore(""); homeworkInputKey[1](x => x + 1); }
+      const ok = await mutate({ action: "publishHomework", title: homeworkTitle, subject: homeworkSubject, description: homeworkDescription, students: homeworkStudents, startsAt: homeworkStart, dueAt: homeworkDue, materialId: homeworkMaterial, fileId, scoreEnabled, maxScore, classroomId: classroom?.id });
+      if (ok) { form.reset(); setHomeworkTitle(""); setHomeworkSubject(classroom?.subject || ""); setHomeworkDescription(""); setHomeworkStudents(classroom?.members || []); setHomeworkStart(""); setHomeworkDue(""); setHomeworkMaterial(""); setHomeworkFile(null); setHomeworkUploaded(""); setScoreEnabled(false); setMaxScore(""); homeworkInputKey[1](x => x + 1); }
     } catch (caught) { setError(alertActionFailure(caught)); }
     finally { setWorking(false); }
   }
@@ -119,25 +119,25 @@ export function TeacherLearning({ learning, mutate, busy, view }: { learning: Le
       <form className="learning-form" onSubmit={saveMaterial}>
         <label>{t("资料标题")}<input required maxLength={120} value={materialTitle} onChange={e => setMaterialTitle(e.target.value)}/></label>
         <label>{t("说明（可选）")}<textarea maxLength={2000} value={materialDescription} onChange={e => setMaterialDescription(e.target.value)}/></label>
-        <label>{t("科目")}<select required value={materialSubject} onChange={e => { setMaterialSubject(e.target.value); setMaterialStudents([]); }}><option value="">{t("请选择")}</option>{subjects.map(subject => <option key={subject}>{subject}</option>)}</select></label>
-        <StudentChecks eligible={learning.eligible} subject={materialSubject} selected={materialStudents} onChange={setMaterialStudents}/>
+        <label>{t("科目")}<select required disabled={Boolean(classroom)} value={materialSubject} onChange={e => { setMaterialSubject(e.target.value); setMaterialStudents([]); }}><option value="">{t("请选择")}</option>{subjects.map(subject => <option key={subject}>{subject}</option>)}</select></label>
+        {classroom ? <p className="muted">{t("发布给班级所有学生")} · {classroom.members.length}</p> : <StudentChecks eligible={learning.eligible} subject={materialSubject} selected={materialStudents} onChange={setMaterialStudents}/>}
         {!materialId && <label>{t("PDF 文件")} · {t("最多")} {maxPdfLabel(learning)}<input key={materialInputKey[0]} type="file" accept="application/pdf,.pdf" required={!materialUploaded} onChange={e => { setMaterialFile(e.target.files?.[0] || null); setMaterialUploaded(""); }}/></label>}
         {materialUploaded && <p className="muted">{t("PDF 已上传，保存资料后才会分配给学生")}</p>}
         <Button disabled={disabled || !materialStudents.length || (!materialId && !materialFile && !materialUploaded)}><UploadCloud size={17}/>{materialId ? t("保存资料") : t("上传并分配")}</Button>
-        {materialId && <Button type="button" variant="outline" onClick={() => { setMaterialId(""); setMaterialTitle(""); setMaterialDescription(""); setMaterialStudents([]); setMaterialSubject(""); }}>{t("取消编辑")}</Button>}
+        {materialId && <Button type="button" variant="outline" onClick={() => { setMaterialId(""); setMaterialTitle(""); setMaterialDescription(""); setMaterialStudents(classroom?.members || []); setMaterialSubject(classroom?.subject || ""); }}>{t("取消编辑")}</Button>}
       </form>
       <div className="learning-list">{learning.materials.map(material => <article className="learning-card" key={material.id}><div><strong>{material.title}</strong><small>{material.recipients?.map(r => r.studentName).join("、")} · {material.recipients?.[0]?.subject}</small>{material.description && <p>{material.description}</p>}<FileLinks fileId={material.fileId}/></div><div className="learning-card-actions"><Button size="sm" variant="outline" onClick={() => editMaterial(material)}>{t("编辑")}</Button><Button size="sm" variant="outline" disabled={disabled} onClick={() => { if (window.confirm(t("确定删除这份教学资料？"))) void mutate({ action: "deleteMaterial", id: material.id }); }}>{t("删除")}</Button></div></article>)}{!learning.materials.length && <p className="muted">{t("尚未上传教学资料")}</p>}</div>
     </section>
     <section className="panel" hidden={view !== "homework"}><p className="eyebrow">{t("功课")}</p><h2>{t("布置功课")}</h2>
       <form className="learning-form" onSubmit={publishHomework}>
         <label>{t("功课标题")}<input required maxLength={120} value={homeworkTitle} onChange={e => setHomeworkTitle(e.target.value)}/></label>
-        <label>{t("科目")}<select required value={homeworkSubject} onChange={e => { setHomeworkSubject(e.target.value); setHomeworkStudents([]); setHomeworkMaterial(""); }}><option value="">{t("请选择")}</option>{subjects.map(subject => <option key={subject}>{subject}</option>)}</select></label>
-        <StudentChecks eligible={learning.eligible} subject={homeworkSubject} selected={homeworkStudents} onChange={setHomeworkStudents}/>
+        <label>{t("科目")}<select required disabled={Boolean(classroom)} value={homeworkSubject} onChange={e => { setHomeworkSubject(e.target.value); setHomeworkStudents([]); setHomeworkMaterial(""); }}><option value="">{t("请选择")}</option>{subjects.map(subject => <option key={subject}>{subject}</option>)}</select></label>
+        {classroom ? <p className="muted">{t("发布给班级所有学生")} · {classroom.members.length}</p> : <StudentChecks eligible={learning.eligible} subject={homeworkSubject} selected={homeworkStudents} onChange={setHomeworkStudents}/>}
         <label>{t("完成要求")}<textarea maxLength={4000} value={homeworkDescription} onChange={e => setHomeworkDescription(e.target.value)} placeholder={t("例如：教材页码、题号或完成要求")}/></label>
         <label className="learning-score-toggle"><input type="checkbox" checked={scoreEnabled} onChange={event => { setScoreEnabled(event.target.checked); if (!event.target.checked) setMaxScore(""); }}/>{t("启用分数（例如 Past Year）")}</label>
         {scoreEnabled && <label>{t("满分")}<input required type="number" min="0.01" max="10000" step="0.01" value={maxScore} onChange={event => setMaxScore(event.target.value)}/></label>}
         <div className="form-pair"><label>{t("开始日期与时间")}<input type="datetime-local" required value={homeworkStart} onChange={e => { setHomeworkStart(e.target.value); if (!homeworkDue || homeworkDue < e.target.value) setHomeworkDue(e.target.value); }}/></label><label>{t("截止日期与时间")}<input type="datetime-local" required min={homeworkStart} value={homeworkDue} onChange={e => setHomeworkDue(e.target.value)}/></label></div>
-        <label>{t("已有教学资料（可选）")}<select value={homeworkMaterial} onChange={e => { setHomeworkMaterial(e.target.value); if (e.target.value) { setHomeworkFile(null); setHomeworkUploaded(""); homeworkInputKey[1](x => x + 1); } }}><option value="">{t("不附加已有资料")}</option>{learning.materials.filter(m => m.recipients?.some(r => r.subject === homeworkSubject)).map(m => <option key={m.id} value={m.id}>{m.title}</option>)}</select></label>
+        <label>{t("已有教学资料（可选）")}<select value={homeworkMaterial} onChange={e => { setHomeworkMaterial(e.target.value); if (e.target.value) { setHomeworkFile(null); setHomeworkUploaded(""); homeworkInputKey[1](x => x + 1); } }}><option value="">{t("不附加已有资料")}</option>{learning.materials.filter(m => m.recipients?.some(r => r.subject === homeworkSubject) && (m.classroomId || null) === (classroom?.id || null)).map(m => <option key={m.id} value={m.id}>{m.title}</option>)}</select></label>
         {!homeworkMaterial && <label>{t("或上传新 PDF（可选）")} · {t("最多")} {maxPdfLabel(learning)}<input key={homeworkInputKey[0]} type="file" accept="application/pdf,.pdf" onChange={e => { setHomeworkFile(e.target.files?.[0] || null); setHomeworkUploaded(""); }}/></label>}
         {homeworkUploaded && <p className="muted">{t("PDF 已上传，发布功课后学生才会看到")}</p>}
         <Button disabled={disabled || !homeworkStudents.length}>{t("发布功课")}</Button>

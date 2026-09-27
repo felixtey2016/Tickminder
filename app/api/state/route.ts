@@ -8,6 +8,7 @@ import { approvedActualHours, approvedHoursInMonth, checkinInMonth, currentMalay
 import { teacherMaySeeLesson } from "@/lib/access";
 import { readRevision } from "@/lib/revision";
 import { learningState } from "@/lib/learning-server";
+import { classroomsState } from "@/lib/classrooms-server";
 
 function monthlySummary(plans: Array<{ key: string; student: string; subject: string }>, rows: Array<typeof lessons.$inferSelect>, month: string) {
   const now = new Date().toISOString();
@@ -49,7 +50,7 @@ export async function GET(request: Request) {
       const visible = allLessons.filter(l => l.student === account.studentName && l.status !== "cancelled");
       const lessonIds = new Set(visible.map(l => l.id));
       const proposals = allRequests.filter(r => lessonIds.has(r.lessonId));
-      return NextResponse.json({ revision, account: { id: account.id, name: account.name, role: "student", studentName: account.studentName }, lessons: visible.map(withOnlineLink), proposals, month: selected, learning: await learningState(account) });
+      return NextResponse.json({ revision, account: { id: account.id, name: account.name, role: "student", studentName: account.studentName }, lessons: visible.map(withOnlineLink), proposals, month: selected, learning: await learningState(account), classrooms: await classroomsState(account) });
     }
     if (account.role === "teacher") {
       const plans = roster.plans.filter(p => p.teacher === account.teacherName);
@@ -58,7 +59,7 @@ export async function GET(request: Request) {
       const records = visible.filter(l => l.actualStart && inMonth(l.actualStart, selected) && approvedActualHours(l) > 0).sort((a, b) => a.actualStart!.localeCompare(b.actualStart!));
       const checkins = visible.filter(l => checkinInMonth(l, selected)).sort((a, b) => (a.actualStart || a.plannedStart).localeCompare(b.actualStart || b.plannedStart));
       const lessonIds = new Set(visible.map(l => l.id));
-      return NextResponse.json({ revision, account: { id: account.id, name: account.name, role: account.role, teacherName: account.teacherName }, plans, lessons: visible.map(withOnlineLink), proposals: allRequests.filter(r => lessonIds.has(r.lessonId)), month: selected, summary: monthlySummary(plans, visible, selected), records, checkins, learning: await learningState(account) });
+      return NextResponse.json({ revision, account: { id: account.id, name: account.name, role: account.role, teacherName: account.teacherName }, plans, lessons: visible.map(withOnlineLink), proposals: allRequests.filter(r => lessonIds.has(r.lessonId)), month: selected, summary: monthlySummary(plans, visible, selected), records, checkins, learning: await learningState(account), classrooms: await classroomsState(account) });
     }
     const summaryPlans = roster.allPlans.map(p => ({ key: p.key, student: p.student, subject: p.subject }));
     const records = allLessons.filter(l => l.actualStart && inMonth(l.actualStart, selected) && approvedActualHours(l) > 0).sort((a, b) => a.actualStart!.localeCompare(b.actualStart!));
@@ -66,7 +67,7 @@ export async function GET(request: Request) {
     const users = await db.select().from(accounts).all();
     const credentials = await db.select({ accountId: localCredentials.accountId, username: localCredentials.username, mustChangePassword: localCredentials.mustChangePassword }).from(localCredentials).all();
     const changes = await db.select().from(audit).orderBy(desc(audit.at)).limit(30).all();
-    return NextResponse.json({ revision, account: { id: account.id, name: account.name, role: account.role }, plans: roster.plans, allPlans: roster.allPlans, students: roster.students, allStudents: roster.allStudents, teachers: roster.teachers, allTeachers: roster.allTeachers, lessons: allLessons.map(withOnlineLink), proposals: allRequests, month: selected, summary: monthlySummary(summaryPlans, allLessons, selected), records, checkins, users: users.map(u => ({ ...u, username: credentials.find(c => c.accountId === u.id)?.username || null, mustChangePassword: credentials.find(c => c.accountId === u.id)?.mustChangePassword || false })), activity: changes.map(c => ({ ...c, actorName: users.find(u => u.id === c.actorId)?.name || c.actorId, lessonName: (() => { const lesson = allLessons.find(l => l.id === c.lessonId); return lesson ? `${lesson.student} · ${lesson.subject}` : c.lessonId; })() })) });
+    return NextResponse.json({ revision, account: { id: account.id, name: account.name, role: account.role }, plans: roster.plans, allPlans: roster.allPlans, students: roster.students, allStudents: roster.allStudents, teachers: roster.teachers, allTeachers: roster.allTeachers, lessons: allLessons.map(withOnlineLink), proposals: allRequests, month: selected, summary: monthlySummary(summaryPlans, allLessons, selected), records, checkins, classrooms: await classroomsState(account), users: users.map(u => ({ ...u, username: credentials.find(c => c.accountId === u.id)?.username || null, mustChangePassword: credentials.find(c => c.accountId === u.id)?.mustChangePassword || false })), activity: changes.map(c => ({ ...c, actorName: users.find(u => u.id === c.actorId)?.name || c.actorId, lessonName: (() => { const lesson = allLessons.find(l => l.id === c.lessonId); return lesson ? `${lesson.student} · ${lesson.subject}` : c.lessonId; })() })) });
   } catch (error) {
     return NextResponse.json({ account: { name: account.name, role: account.role }, error: error instanceof Error ? error.message : "Data unavailable" }, { status: 503 });
   }
