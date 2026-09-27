@@ -18,6 +18,7 @@ const en: Record<string, string> = {
   "选择 PDF 后点击提交功课；选择文件本身不会提交。": "Choose a PDF, then click Submit homework. Selecting a file does not submit it.",
   "已选择": "Selected", "电脑端也可将 PDF 拖到这里": "On a computer, you can also drag a PDF here", "正在提交…": "Submitting…",
   "PDF 上传失败，请重试": "PDF upload failed. Please try again.",
+  "当前登录的是学生账号，请切换到老师账号后上传功课附件": "You are signed in as a student. Sign in with a teacher account to upload a homework attachment.",
   "PDF 超过单份大小限制": "PDF exceeds the per-file size limit",
   "请求内容过大": "Request is too large", "服务器未返回有效响应": "The server did not return a valid response",
   "打开 PDF": "Open PDF", "下载": "Download", "接收学生": "Students receiving this", "请选择你负责的科目": "Select a subject you teach",

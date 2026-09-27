@@ -23,7 +23,8 @@ export async function POST(request: Request) {
     if (!(file instanceof File) || file.type !== "application/pdf") return errorResponse("请选择 PDF 文件", 400);
     if (file.size <= 0 || file.size > limits.perFile) return errorResponse("PDF 超过单份大小限制", 413);
     if (actor.role === "teacher" && !["material", "homework"].includes(kind)) return errorResponse("老师只能上传教学资料或功课附件", 403);
-    if (actor.role === "student" && (kind !== "submission" || !contextId || !await studentHasHomework(actor, contextId))) return errorResponse("只能上传自己功课的 PDF", 403);
+    if (actor.role === "student" && kind !== "submission") return errorResponse("当前登录的是学生账号，请切换到老师账号后上传功课附件", 403);
+    if (actor.role === "student" && (!contextId || !await studentHasHomework(actor, contextId))) return errorResponse("只能上传自己功课的 PDF", 403);
     if (actor.role === "student") {
       const homework = await first<{ startsAt: string; dueAt: string }>("SELECT starts_at AS startsAt, due_at AS dueAt FROM homework WHERE id = ?", contextId);
       const submitted = await first("SELECT 1 AS found FROM homework_submissions WHERE homework_id = ? AND student_name = ?", contextId, actor.studentName);

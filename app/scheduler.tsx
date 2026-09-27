@@ -148,6 +148,12 @@ export function Scheduler() {
         try {
             const next = await request(`/api/state?month=${selectedMonth}`) as State;
             if (requestId !== latestStateRequest.current) return;
+            if (next.account?.id && next.account.id !== auth?.account?.id) {
+                setAuth(await request("/api/auth"));
+                setState(null);
+                revisionRef.current = null;
+                return;
+            }
             revisionRef.current = typeof next.revision === "number" ? next.revision : null;
             setState(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
             setAuth(previous => {
@@ -163,7 +169,7 @@ export function Scheduler() {
                 catch { /* Retry on the next foreground check. */ }
             } else if (!silent) setMessage((error as Error).message);
         }
-    }, [selectedMonth]);
+    }, [selectedMonth, auth?.account?.id]);
     const reload = useCallback(() => refreshState(false), [refreshState]);
     useEffect(() => { let active = true; request("/api/auth").then(a => { if (active) setAuth(a); }).catch(e => { if (active) setMessage(e.message); }); return () => { active = false; }; }, []);
     useEffect(() => { if (auth?.account && auth.account.role !== "pending" && !auth.account.mustChangePassword) void reload(); }, [auth?.account?.id, auth?.account?.role, auth?.account?.mustChangePassword, reload]);
@@ -181,8 +187,12 @@ export function Scheduler() {
                     const next = await request("/api/auth");
                     if (active && JSON.stringify(next.account) !== JSON.stringify(account)) setAuth(next);
                 } else {
-                    const { revision } = await request("/api/revision") as { revision: number };
-                    if (active && (revisionRef.current === null || revision !== revisionRef.current)) await refreshState(true);
+                    const { revision, accountId } = await request("/api/revision") as { revision: number; accountId: string };
+                    if (active && accountId !== account.id) {
+                        setAuth(await request("/api/auth"));
+                        setState(null);
+                        revisionRef.current = null;
+                    } else if (active && (revisionRef.current === null || revision !== revisionRef.current)) await refreshState(true);
                 }
             } catch (error) {
                 const status = (error as Error & { status?: number }).status;
