@@ -11,13 +11,14 @@ import { DatabaseSync } from 'node:sqlite';
 const command = process.argv[2];
 const option = process.argv[3];
 const target = process.argv[4];
-const expectedTables = [
+const baseTables = [
   'accounts', 'assignments', 'audit', 'lessons', 'local_credentials',
   'login_attempts', 'plans', 'reschedule_requests', 'sessions', 'students', 'teachers',
   'pdf_files', 'storage_quota', 'teaching_materials', 'material_recipients',
   'homework', 'homework_recipients', 'homework_submissions', 'study_blocks',
 ];
-const migrations = ['0000', '0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009'];
+const classroomTables = ['classrooms', 'classroom_members', 'classroom_announcements'];
+const baseMigrations = ['0000', '0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009'];
 const projectRoot = resolve(import.meta.dirname, '..').toLowerCase();
 
 function targetPath(flag) {
@@ -46,7 +47,8 @@ function dpapi(mode, value) {
 }
 
 function validateExport(data) {
-  if (!data || data.format !== 'timelyo-d1-v1' || !data.tables ||
+  const expectedTables = data?.format === 'timelyo-d1-v2' ? [...baseTables, ...classroomTables] : baseTables;
+  if (!data || !['timelyo-d1-v1', 'timelyo-d1-v2'].includes(data.format) || !data.tables ||
       Object.keys(data.tables).sort().join('|') !== expectedTables.slice().sort().join('|')) {
     throw new Error('Incomplete database export');
   }
@@ -57,15 +59,16 @@ function validateExport(data) {
       if (table.columns.some((column) => !Object.hasOwn(row, column))) throw new Error(`Incomplete ${name} row`);
     }
   }
+  return expectedTables;
 }
 
 function sha256(bytes) { return createHash('sha256').update(bytes).digest('hex'); }
 
 function restoreInMemory(data) {
-  validateExport(data);
+  const expectedTables = validateExport(data);
   const db = new DatabaseSync(':memory:');
   try {
-    for (const prefix of migrations) {
+    for (const prefix of [...baseMigrations, ...(data.format === 'timelyo-d1-v2' ? ['0010'] : [])]) {
       const file = readdirSync(resolve(projectRoot, 'drizzle')).find((name) => name.startsWith(prefix + '_') && name.endsWith('.sql'));
       if (!file) throw new Error(`Missing migration ${prefix}`);
       db.exec(readFileSync(resolve(projectRoot, 'drizzle', file), 'utf8'));
@@ -94,10 +97,9 @@ function restoreInMemory(data) {
       const restored = db.prepare(`SELECT * FROM "${name}"`).all().map(encode).sort();
       if (JSON.stringify(original) !== JSON.stringify(restored)) throw new Error(`Restore content mismatch for ${name}`);
     }
-    for (const prefix of ['0010']) {
-      const file = readdirSync(resolve(projectRoot, 'drizzle')).find((name) => name.startsWith(prefix + '_') && name.endsWith('.sql'));
-      if (!file) throw new Error(`Missing release migration ${prefix}`);
-      db.exec(readFileSync(resolve(projectRoot, 'drizzle', file), 'utf8'));
+    if (data.format === 'timelyo-d1-v1') {
+      const releaseMigration = readdirSync(resolve(projectRoot, 'drizzle')).find((name) => name.startsWith('0010_') && name.endsWith('.sql'));
+      if (releaseMigration) db.exec(readFileSync(resolve(projectRoot, 'drizzle', releaseMigration), 'utf8'));
     }
     for (const name of expectedTables) {
       const count = db.prepare(`SELECT count(*) AS count FROM "${name}"`).get().count;
