@@ -10,6 +10,15 @@ export function setLanguage(language: Language) {
 export function getLanguage() { return currentLanguage; }
 
 const en: Record<string, string> = {
+  "主页": "Home", "今天一览": "At a glance", "你好": "Hello", "常用信息和入口都在这里。": "Your key updates and shortcuts are here.",
+  "目前没有已安排的后续课程": "No upcoming lesson scheduled", "查看学习日历": "View study calendar",
+  "未提交功课": "Homework to submit", "查看功课要求与截止时间": "See instructions and due dates", "目前没有未提交功课": "No homework to submit",
+  "查看我的功课": "View my homework", "个人学习安排": "Personal study plan", "在日历中安排学习时间": "Plan study time in the calendar",
+  "打开学习日历": "Open study calendar", "查看课程与打卡": "View lessons and check-in", "今日待打卡": "Today's check-ins",
+  "查看今天的课程": "See today's lessons", "前往打卡": "Go to check-in", "已布置功课": "Assigned homework",
+  "查看学生提交情况": "See student submissions", "查看布置功课": "View assigned homework", "查看课程日历": "View lesson calendar",
+  "今日课程": "Today's lessons", "查看今天的排课": "See today's schedule", "漏打卡及待处理缺席": "Missed check-ins and absences to review",
+  "查看异常待办": "View items to review",
   "功能菜单": "Feature menu", "打开功能菜单": "Open feature menu", "关闭功能菜单": "Close feature menu",
   "课程与打卡": "Lessons and check-in", "教学资料与功课": "Materials and homework",
   "时间重叠": "Time overlap",

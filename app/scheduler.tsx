@@ -11,6 +11,7 @@ import { ActivityLog } from "./activity-log";
 import { useLessonWebMcp } from "./webmcp";
 import { monthlyAttendanceForPair } from "@/lib/lesson-rules";
 import { StudentPortal, TeacherPortal } from "./portals";
+import { HomeDashboard } from "./home-dashboard";
 import { TeacherLearning, type LearningState } from "./learning-portal";
 import { Timetable } from "./timetables";
 import { StudentAdmin, SubjectAdmin } from "./roster-forms";
@@ -372,6 +373,7 @@ type NavigationRole = "admin" | "teacher" | "student";
 type NavigationItem = { id: string; label: string; Icon: LucideIcon };
 const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
     admin: [
+        { id: "home", label: "主页", Icon: LayoutDashboard },
         { id: "overview", label: "课程总览", Icon: LayoutDashboard },
         { id: "attention", label: "异常待办", Icon: AlertCircle },
         { id: "schedule", label: "安排课程", Icon: Clock3 },
@@ -388,6 +390,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "activity", label: "修改记录", Icon: History },
     ],
     teacher: [
+        { id: "home", label: "主页", Icon: LayoutDashboard },
         { id: "lessons", label: "课程与打卡", Icon: CalendarDays },
         { id: "attendance", label: "打卡记录", Icon: ClipboardCheck },
         { id: "hours", label: "上课记录", Icon: Clock3 },
@@ -396,8 +399,8 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "homework", label: "布置功课", Icon: BookOpen },
     ],
     student: [
+        { id: "home", label: "主页", Icon: LayoutDashboard },
         { id: "calendar", label: "学习日历", Icon: CalendarDays },
-        { id: "study", label: "个人学习", Icon: Clock3 },
         { id: "homework", label: "我的功课", Icon: BookOpen },
         { id: "materials", label: "我的教学资料", Icon: FileText },
         { id: "reschedule", label: "待确认的改期申请", Icon: ClipboardCheck },
@@ -451,9 +454,16 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
     const activeView = items.some(item => item.id === selectedView) ? selectedView : items[0].id;
     const title = items.find(item => item.id === activeView)?.label || items[0].label;
     const learning = state?.learning || { materials: [], homework: [], submissions: [], studyBlocks: [], eligible: [] };
-    const showMonth = role === "teacher" || (role === "admin" && ["overview", "attention", "schedule", "calendar", "list", "students", "teachers"].includes(activeView));
+    const showMonth = (role === "teacher" && activeView === "hours") || (role === "admin" && ["overview", "attention", "schedule", "calendar", "list", "students", "teachers"].includes(activeView));
+    const choose = (id: string) => {
+        setSelectedView(id);
+        if (!desktop) setMenuOpen(false);
+        window.scrollTo(0, 0);
+    };
     let pageContent: React.ReactNode = null;
-    if (role === "admin") {
+    if (activeView === "home") {
+        pageContent = <HomeDashboard role={role} name={account.name} lessons={lessons} learning={learning} onNavigate={choose}/>;
+    } else if (role === "admin") {
         if (["overview", "attention", "activity"].includes(activeView)) {
             pageContent = <AdminDashboard state={state} lessons={lessons} open={setModal} view={activeView as "overview" | "attention" | "activity"}/>;
         } else if (["schedule", "calendar", "list"].includes(activeView)) {
@@ -471,7 +481,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
             pageContent = <SheetSyncPanel/>;
         }
     } else if (role === "student") {
-        pageContent = <StudentPortal lessons={lessons} proposals={state?.proposals || []} mutate={mutate} learningMutate={learningMutate} learning={learning} busy={busy} view={activeView as "calendar" | "study" | "homework" | "materials" | "reschedule"}/>;
+        pageContent = <StudentPortal lessons={lessons} proposals={state?.proposals || []} mutate={mutate} learningMutate={learningMutate} learning={learning} busy={busy} view={activeView as "calendar" | "homework" | "materials" | "reschedule"}/>;
     } else if (role === "teacher") {
         if (["lessons", "attendance", "students"].includes(activeView)) {
             pageContent = <TeacherPortal lessons={lessons} plans={state?.plans || []} proposals={state?.proposals || []} mutate={mutate} busy={busy} view={activeView as "lessons" | "attendance" | "students"}/>;
@@ -481,11 +491,6 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
             pageContent = <TeacherLearning learning={learning} mutate={learningMutate} busy={busy} view={activeView as "materials" | "homework"}/>;
         }
     }
-    const choose = (id: string) => {
-        setSelectedView(id);
-        if (!desktop) setMenuOpen(false);
-        window.scrollTo(0, 0);
-    };
     return <div className="app-shell">
         <header className="topbar">
             <div className="brand"><BrandLogo small/><div><strong>{BRAND_NAME}</strong><span>{t("课时工作台")} · GMT+8</span></div></div>

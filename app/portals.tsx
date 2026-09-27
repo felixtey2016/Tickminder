@@ -98,7 +98,7 @@ export function StudentPortal({ lessons, proposals, mutate, learningMutate, lear
     learningMutate: LearningMutate;
     learning: LearningState;
     busy: boolean;
-    view: "calendar" | "study" | "homework" | "materials" | "reschedule";
+    view: "calendar" | "homework" | "materials" | "reschedule";
 }) {
     const sorted = [...lessons].sort((a, b) => a.plannedStart.localeCompare(b.plannedStart));
     const pending = proposals.filter(p => p.status === "pending");

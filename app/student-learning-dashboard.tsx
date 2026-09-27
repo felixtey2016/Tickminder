@@ -12,7 +12,7 @@ type Proposal = { lessonId: string; status: string; proposedStart: string; propo
 const local = (iso: string) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso)).replace(" ", "T");
 type Form = { id: string; title: string; date: string; start: string; end: string; subject: string; note: string; homeworkId: string };
 
-export function StudentLearningDashboard({ lessons, proposals, learning, mutate, busy, view }: { lessons: Lesson[]; proposals: Proposal[]; learning: LearningState; mutate: LearningMutate; busy: boolean; view: "calendar" | "study" | "homework" | "materials" }) {
+export function StudentLearningDashboard({ lessons, proposals, learning, mutate, busy, view }: { lessons: Lesson[]; proposals: Proposal[]; learning: LearningState; mutate: LearningMutate; busy: boolean; view: "calendar" | "homework" | "materials" }) {
   const [form, setForm] = useState<Form | null>(null);
   const [saving, setSaving] = useState(false);
   function add(day: string) { setForm({ id: "", title: "", date: day, start: "18:00", end: "19:00", subject: "", note: "", homeworkId: "" }); }
@@ -30,12 +30,8 @@ export function StudentLearningDashboard({ lessons, proposals, learning, mutate,
     const ok = await mutate({ action: "saveStudyBlock", id: form.id, title: form.title, startsAt: `${form.date}T${form.start}`, endsAt: `${form.date}T${form.end}`, subject: form.subject, note: form.note, homeworkId: form.homeworkId });
     setSaving(false); if (ok) setForm(null);
   }
-  const upcoming = learning.studyBlocks.filter(block => block.endsAt >= new Date().toISOString()).slice(0, 12);
   return <div className="student-learning-dashboard">
     {view === "calendar" && <StudentCalendar lessons={lessons} proposals={proposals} studyBlocks={learning.studyBlocks} onAddStudy={add} onEditStudy={edit}/>}
-    {view === "study" && <section className="panel student-study-list"><div className="learning-section-head"><div><p className="eyebrow">{t("个人学习")}</p><h2>{t("接下来的学习安排")}</h2></div><Button variant="outline" onClick={() => add(local(new Date().toISOString()).slice(0, 10))}>{t("新增学习安排")}</Button></div>
-      {upcoming.length ? upcoming.map(block => <article className="learning-card" key={block.id}><strong>{block.title}</strong><small>{local(block.startsAt).replace("T", " ")}–{local(block.endsAt).slice(11)} · {t("个人学习")}</small>{block.subject && <p>{block.subject}</p>}<Button size="sm" variant="outline" onClick={() => edit(block)}>{t("编辑")}</Button></article>) : <p className="muted">{t("尚未安排个人学习时间")}</p>}
-    </section>}
     {(view === "homework" || view === "materials") && <StudentLearning learning={learning} mutate={mutate} busy={busy} onPlan={plan} view={view}/>}
     <Dialog open={Boolean(form)} onOpenChange={open => { if (!open) setForm(null); }}><DialogContent className="lesson-dialog"><DialogHeader><DialogTitle>{form?.id ? t("编辑学习安排") : t("新增学习安排")}</DialogTitle></DialogHeader>{form && <form className="learning-form" onSubmit={save}>
       {form.homeworkId && <p className="muted">{t("已关联功课。安排学习时间不会自动提交功课。")}</p>}
