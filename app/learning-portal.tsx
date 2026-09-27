@@ -61,7 +61,7 @@ function ScoreEntry({ item, student, mutate, busy }: { item: Homework; student: 
   </form>;
 }
 
-export function TeacherLearning({ learning, mutate, busy }: { learning: LearningState; mutate: LearningMutate; busy: boolean }) {
+export function TeacherLearning({ learning, mutate, busy, view }: { learning: LearningState; mutate: LearningMutate; busy: boolean; view: "materials" | "homework" }) {
   const subjects = [...new Set(learning.eligible.map(p => p.subject))].sort();
   const [materialId, setMaterialId] = useState("");
   const [materialTitle, setMaterialTitle] = useState("");
@@ -113,9 +113,9 @@ export function TeacherLearning({ learning, mutate, busy }: { learning: Learning
     document.getElementById("teacher-material-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
   const disabled = busy || working;
-  return <div className="learning-teacher">
+  return <div className="learning-teacher learning-single-view">
     {error && <p className="notice" role="alert">{error}</p>}
-    <section className="panel" id="teacher-material-form"><p className="eyebrow">{t("PDF 教学资料")}</p><h2>{materialId ? t("编辑教学资料") : t("上传教学资料")}</h2>
+    <section className="panel" id="teacher-material-form" hidden={view !== "materials"}><p className="eyebrow">{t("PDF 教学资料")}</p><h2>{materialId ? t("编辑教学资料") : t("上传教学资料")}</h2>
       <form className="learning-form" onSubmit={saveMaterial}>
         <label>{t("资料标题")}<input required maxLength={120} value={materialTitle} onChange={e => setMaterialTitle(e.target.value)}/></label>
         <label>{t("说明（可选）")}<textarea maxLength={2000} value={materialDescription} onChange={e => setMaterialDescription(e.target.value)}/></label>
@@ -128,7 +128,7 @@ export function TeacherLearning({ learning, mutate, busy }: { learning: Learning
       </form>
       <div className="learning-list">{learning.materials.map(material => <article className="learning-card" key={material.id}><div><strong>{material.title}</strong><small>{material.recipients?.map(r => r.studentName).join("、")} · {material.recipients?.[0]?.subject}</small>{material.description && <p>{material.description}</p>}<FileLinks fileId={material.fileId}/></div><div className="learning-card-actions"><Button size="sm" variant="outline" onClick={() => editMaterial(material)}>{t("编辑")}</Button><Button size="sm" variant="outline" disabled={disabled} onClick={() => { if (window.confirm(t("确定删除这份教学资料？"))) void mutate({ action: "deleteMaterial", id: material.id }); }}>{t("删除")}</Button></div></article>)}{!learning.materials.length && <p className="muted">{t("尚未上传教学资料")}</p>}</div>
     </section>
-    <section className="panel"><p className="eyebrow">{t("功课")}</p><h2>{t("布置功课")}</h2>
+    <section className="panel" hidden={view !== "homework"}><p className="eyebrow">{t("功课")}</p><h2>{t("布置功课")}</h2>
       <form className="learning-form" onSubmit={publishHomework}>
         <label>{t("功课标题")}<input required maxLength={120} value={homeworkTitle} onChange={e => setHomeworkTitle(e.target.value)}/></label>
         <label>{t("科目")}<select required value={homeworkSubject} onChange={e => { setHomeworkSubject(e.target.value); setHomeworkStudents([]); setHomeworkMaterial(""); }}><option value="">{t("请选择")}</option>{subjects.map(subject => <option key={subject}>{subject}</option>)}</select></label>
@@ -193,11 +193,11 @@ function StudentHomeworkCard({ item, submissions, mutate, busy, onPlan, maxLabel
   </details>;
 }
 
-export function StudentLearning({ learning, mutate, busy, onPlan }: { learning: LearningState; mutate: LearningMutate; busy: boolean; onPlan: (item: Homework) => void }) {
+export function StudentLearning({ learning, mutate, busy, onPlan, view }: { learning: LearningState; mutate: LearningMutate; busy: boolean; onPlan: (item: Homework) => void; view: "homework" | "materials" }) {
   const subjects = useMemo(() => [...new Set(learning.materials.map(m => m.subject).filter(Boolean))], [learning.materials]);
   const [filter, setFilter] = useState("");
   return <div className="student-learning">
-    <section className="panel"><p className="eyebrow">{t("功课")}</p><h2>{t("我的功课")}</h2><div className="learning-list">{learning.homework.map(item => <StudentHomeworkCard key={item.id} item={item} submissions={learning.submissions.filter(s => s.homeworkId === item.id)} mutate={mutate} busy={busy} onPlan={onPlan} maxLabel={maxPdfLabel(learning)} maxBytes={pdfLimit(learning)}/>)}{!learning.homework.length && <p className="muted">{t("目前没有功课")}</p>}</div></section>
-    <section className="panel"><p className="eyebrow">{t("PDF 教学资料")}</p><h2>{t("我的教学资料")}</h2><label className="learning-filter">{t("按科目查找")}<select value={filter} onChange={e => setFilter(e.target.value)}><option value="">{t("全部科目")}</option>{subjects.map(subject => <option key={subject}>{subject}</option>)}</select></label><div className="learning-list">{learning.materials.filter(item => !filter || item.subject === filter).map(item => <article className="learning-card" key={item.id}><strong>{item.title}</strong><small>{item.subject}</small>{item.description && <p>{item.description}</p>}<FileLinks fileId={item.fileId}/></article>)}{!learning.materials.length && <p className="muted">{t("目前没有教学资料")}</p>}</div></section>
+    <section className="panel" hidden={view !== "homework"}><p className="eyebrow">{t("功课")}</p><h2>{t("我的功课")}</h2><div className="learning-list">{learning.homework.map(item => <StudentHomeworkCard key={item.id} item={item} submissions={learning.submissions.filter(s => s.homeworkId === item.id)} mutate={mutate} busy={busy} onPlan={onPlan} maxLabel={maxPdfLabel(learning)} maxBytes={pdfLimit(learning)}/>)}{!learning.homework.length && <p className="muted">{t("目前没有功课")}</p>}</div></section>
+    <section className="panel" hidden={view !== "materials"}><p className="eyebrow">{t("PDF 教学资料")}</p><h2>{t("我的教学资料")}</h2><label className="learning-filter">{t("按科目查找")}<select value={filter} onChange={e => setFilter(e.target.value)}><option value="">{t("全部科目")}</option>{subjects.map(subject => <option key={subject}>{subject}</option>)}</select></label><div className="learning-list">{learning.materials.filter(item => !filter || item.subject === filter).map(item => <article className="learning-card" key={item.id}><strong>{item.title}</strong><small>{item.subject}</small>{item.description && <p>{item.description}</p>}<FileLinks fileId={item.fileId}/></article>)}{!learning.materials.length && <p className="muted">{t("目前没有教学资料")}</p>}</div></section>
   </div>;
 }

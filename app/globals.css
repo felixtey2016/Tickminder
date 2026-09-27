@@ -625,3 +625,34 @@ input[type="date"], input[type="datetime-local"], input[type="month"], input[typ
   .student-homework-card summary { display: grid; }
   .learning-section-head > button { width: 100%; }
 }
+
+/* One feature per page, reached from the role-specific menu. */
+[hidden] { display: none !important; }
+.topbar { position: sticky; top: 0; z-index: 80; }
+.top-actions .menu-toggle { display: inline-flex; align-items: center; justify-content: center; min-width: 42px; min-height: 42px; border-color: #ffffff80; background: #ffffff22; color: #fff; }
+.top-actions .menu-toggle:hover { background: #ffffff38; color: #fff; }
+.top-actions .menu-toggle svg { color: #fff; }
+.app-body { display: grid; grid-template-columns: minmax(0, 1fr); min-height: calc(100vh - 78px); }
+.app-body.menu-open { grid-template-columns: 268px minmax(0, 1fr); }
+.app-body .workspace { width: 100%; max-width: 1480px; min-width: 0; margin: 0 auto; }
+.workspace-menu { position: sticky; top: 78px; height: calc(100dvh - 78px); overflow-y: auto; padding: 20px 12px 30px; background: #232549; color: #f4f2ff; box-shadow: 6px 0 24px #211d4b18; }
+.workspace-menu .signed-in-identity { display: grid; gap: 5px; margin: 0 5px 20px; padding: 15px 12px; border: 1px solid #ffffff25; border-radius: 14px; color: #ddd8f6; font-size: 12px; overflow-wrap: anywhere; }
+.workspace-menu .signed-in-identity strong { color: #fff; font-size: 16px; }
+.workspace-menu .signed-in-method { color: #d3cbf4; }
+.menu-links { display: grid; gap: 4px; }
+.menu-link { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 46px; padding: 10px 13px; border: 0; border-radius: 11px; background: transparent; color: #d8d6ee; text-align: left; font-size: 14px; font-weight: 650; }
+.menu-link svg { flex: 0 0 auto; }
+.menu-link:hover, .menu-link:focus-visible { background: #ffffff18; color: #fff; }
+.menu-link.active { color: #fff; background: #6849cf; box-shadow: 0 5px 14px #150d4d35; }
+.menu-utilities { display: grid; gap: 4px; margin-top: 18px; padding-top: 12px; border-top: 1px solid #ffffff2b; }
+.menu-backdrop { display: none; }
+.schedule-single-view, .people-single-view, .portal-single-view, .learning-single-view { grid-template-columns: minmax(0, 1fr); }
+.portal-single-view > aside:not(:has(> section:not([hidden]))) { display: none; }
+
+@media (max-width: 900px) {
+  .topbar { height: 68px; }
+  .app-body, .app-body.menu-open { display: block; min-height: calc(100vh - 68px); }
+  .workspace-menu { position: fixed; z-index: 92; top: 68px; bottom: 0; left: 0; width: min(320px, 86vw); height: auto; }
+  .menu-backdrop { display: block; position: fixed; z-index: 91; inset: 68px 0 0; width: 100%; border: 0; background: #15133199; }
+  .app-body .workspace { padding-top: 25px; }
+}

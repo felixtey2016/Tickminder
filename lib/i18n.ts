@@ -10,6 +10,7 @@ export function setLanguage(language: Language) {
 export function getLanguage() { return currentLanguage; }
 
 const en: Record<string, string> = {
+  "功能菜单": "Feature menu", "打开功能菜单": "Open feature menu", "关闭功能菜单": "Close feature menu",
   "课程与打卡": "Lessons and check-in", "教学资料与功课": "Materials and homework",
   "时间重叠": "Time overlap",
   "启用分数（例如 Past Year）": "Enable scoring (for example, past-year papers)",

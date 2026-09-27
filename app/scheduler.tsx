@@ -3,9 +3,8 @@ import { getLanguage, LANGUAGE_KEY, setLanguage, t, type Language } from "@/lib/
 import { alertActionFailure, readApiJson } from "@/lib/action-feedback";
 import { BRAND_NAME } from "@/lib/brand";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, CalendarDays, Clock3, FileSpreadsheet, GraduationCap, LogOut, RefreshCw, Users } from "lucide-react";
+import { AlertCircle, BookOpen, CalendarDays, ClipboardCheck, Clock3, FileSpreadsheet, FileText, GraduationCap, History, LayoutDashboard, List, LogOut, Menu, RefreshCw, ShieldCheck, UserRoundPlus, Users, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LessonCalendar } from "./week-calendar";
 import { ActivityLog } from "./activity-log";
@@ -369,6 +368,42 @@ function PasswordChange({ name, change, logout, busy, message, language, changeL
         return;
     } setError(""); change(current, next); }}><label>{t("\u5F53\u524D\u521D\u59CB\u5BC6\u7801")}<input required type="password" autoComplete="current-password" value={current} onChange={e => setCurrent(e.target.value)}/></label><label>{t("\u65B0\u5BC6\u7801\uFF08\u81F3\u5C11 8 \u4E2A\u5B57\u7B26\uFF09")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={next} onChange={e => setNext(e.target.value)}/></label><label>{t("\u786E\u8BA4\u65B0\u5BC6\u7801")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("\u4FDD\u5B58\u65B0\u5BC6\u7801")}</Button></form>{(error || message) && <div className="error" role="alert">{t(error || message)}</div>}<Button variant="outline" onClick={logout}>{t("\u9000\u51FA\u767B\u5F55")}</Button></div></main>;
 }
+type NavigationRole = "admin" | "teacher" | "student";
+type NavigationItem = { id: string; label: string; Icon: LucideIcon };
+const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
+    admin: [
+        { id: "overview", label: "课程总览", Icon: LayoutDashboard },
+        { id: "attention", label: "异常待办", Icon: AlertCircle },
+        { id: "schedule", label: "安排课程", Icon: Clock3 },
+        { id: "calendar", label: "课程日历", Icon: CalendarDays },
+        { id: "list", label: "课程列表", Icon: List },
+        { id: "students", label: "学生时间表", Icon: GraduationCap },
+        { id: "teachers", label: "老师时间表", Icon: CalendarDays },
+        { id: "subjects", label: "学生科目", Icon: BookOpen },
+        { id: "teacherRoster", label: "老师名单", Icon: Users },
+        { id: "studentRoster", label: "学生名单", Icon: GraduationCap },
+        { id: "binding", label: "绑定 Google 账号", Icon: ShieldCheck },
+        { id: "accounts", label: "创建登录账号", Icon: UserRoundPlus },
+        { id: "sheet", label: "课时导入", Icon: FileSpreadsheet },
+        { id: "activity", label: "修改记录", Icon: History },
+    ],
+    teacher: [
+        { id: "lessons", label: "课程与打卡", Icon: CalendarDays },
+        { id: "attendance", label: "打卡记录", Icon: ClipboardCheck },
+        { id: "hours", label: "上课记录", Icon: Clock3 },
+        { id: "students", label: "负责的学生与科目", Icon: Users },
+        { id: "materials", label: "PDF 教学资料", Icon: FileText },
+        { id: "homework", label: "布置功课", Icon: BookOpen },
+    ],
+    student: [
+        { id: "calendar", label: "学习日历", Icon: CalendarDays },
+        { id: "study", label: "个人学习", Icon: Clock3 },
+        { id: "homework", label: "我的功课", Icon: BookOpen },
+        { id: "materials", label: "我的教学资料", Icon: FileText },
+        { id: "reschedule", label: "待确认的改期申请", Icon: ClipboardCheck },
+    ],
+};
+
 function Workspace({ account, state, lessons, message, setMessage, reload, logout, modal, setModal, mutate, learningMutate, busy, selectedMonth, setSelectedMonth, language, changeLanguage }: {
     account: Account;
     state: State | null;
@@ -377,14 +412,8 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
     setMessage: (x: string) => void;
     reload: () => Promise<void>;
     logout: () => Promise<void>;
-    modal: {
-        type: "attendance" | "review" | "edit" | "cancel";
-        lesson: Lesson;
-    } | null;
-    setModal: (x: {
-        type: "attendance" | "review" | "edit" | "cancel";
-        lesson: Lesson;
-    } | null) => void;
+    modal: { type: "attendance" | "review" | "edit" | "cancel"; lesson: Lesson } | null;
+    setModal: (x: { type: "attendance" | "review" | "edit" | "cancel"; lesson: Lesson } | null) => void;
     mutate: (x: Record<string, unknown>) => Promise<boolean>;
     learningMutate: (x: Record<string, unknown>) => Promise<boolean>;
     busy: boolean;
@@ -393,21 +422,102 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
     language: Language;
     changeLanguage: (next: Language) => void;
 }) {
-    const admin = account.role === "admin";
-    const [adminTab, setAdminTab] = useState("overview");
-    const adminTitle = ({ overview: "课程总览", schedule: "安排课程", students: "学生时间表", teachers: "老师时间表", subjects: "学生科目", people: "名单与权限", sheet: "课时导入" } as Record<string, string>)[adminTab] || "课程总览";
+    const role = account.role as NavigationRole;
+    const items = NAV_ITEMS[role];
+    const [selectedView, setSelectedView] = useState(items[0].id);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [desktop, setDesktop] = useState(false);
+    useEffect(() => {
+        setSelectedView(NAV_ITEMS[role][0].id);
+    }, [role, account.id]);
+    useEffect(() => {
+        const query = window.matchMedia("(min-width: 901px)");
+        const sync = () => {
+            setDesktop(query.matches);
+            setMenuOpen(query.matches);
+        };
+        sync();
+        query.addEventListener("change", sync);
+        return () => query.removeEventListener("change", sync);
+    }, []);
+    useEffect(() => {
+        if (!menuOpen || desktop) return;
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === "Escape") setMenuOpen(false);
+        };
+        window.addEventListener("keydown", closeOnEscape);
+        return () => window.removeEventListener("keydown", closeOnEscape);
+    }, [menuOpen, desktop]);
+    const activeView = items.some(item => item.id === selectedView) ? selectedView : items[0].id;
+    const title = items.find(item => item.id === activeView)?.label || items[0].label;
+    const learning = state?.learning || { materials: [], homework: [], submissions: [], studyBlocks: [], eligible: [] };
+    const showMonth = role === "teacher" || (role === "admin" && ["overview", "attention", "schedule", "calendar", "list", "students", "teachers"].includes(activeView));
+    let pageContent: React.ReactNode = null;
+    if (role === "admin") {
+        if (["overview", "attention", "activity"].includes(activeView)) {
+            pageContent = <AdminDashboard state={state} lessons={lessons} open={setModal} view={activeView as "overview" | "attention" | "activity"}/>;
+        } else if (["schedule", "calendar", "list"].includes(activeView)) {
+            pageContent = <Schedule state={state} lessons={lessons} mutate={mutate} open={setModal} busy={busy} view={activeView === "schedule" ? "create" : activeView as "calendar" | "list"}/>;
+        } else if (activeView === "students") {
+            pageContent = <Timetable type="student" lessons={lessons} students={state?.students || []} teachers={state?.teachers || []} month={selectedMonth} setMonth={setSelectedMonth}/>;
+        } else if (activeView === "teachers") {
+            pageContent = <Timetable type="teacher" lessons={lessons} students={state?.students || []} teachers={(state?.allTeachers || []).map(row => row.name).sort()} month={selectedMonth} setMonth={setSelectedMonth}/>;
+        } else if (activeView === "subjects") {
+            pageContent = <SubjectAdmin students={state?.students || []} teachers={state?.teachers || []} plans={state?.allPlans || []} mutate={mutate} busy={busy}/>;
+        } else if (["teacherRoster", "studentRoster", "binding", "accounts"].includes(activeView)) {
+            const view = activeView === "teacherRoster" ? "teachers" : activeView === "studentRoster" ? "students" : activeView as "binding" | "accounts";
+            pageContent = <RosterAdmin account={account} state={state} mutate={mutate} busy={busy} view={view}/>;
+        } else if (activeView === "sheet") {
+            pageContent = <SheetSyncPanel/>;
+        }
+    } else if (role === "student") {
+        pageContent = <StudentPortal lessons={lessons} proposals={state?.proposals || []} mutate={mutate} learningMutate={learningMutate} learning={learning} busy={busy} view={activeView as "calendar" | "study" | "homework" | "materials" | "reschedule"}/>;
+    } else if (role === "teacher") {
+        if (["lessons", "attendance", "students"].includes(activeView)) {
+            pageContent = <TeacherPortal lessons={lessons} plans={state?.plans || []} proposals={state?.proposals || []} mutate={mutate} busy={busy} view={activeView as "lessons" | "attendance" | "students"}/>;
+        } else if (activeView === "hours") {
+            pageContent = <StatsPanel state={state}/>;
+        } else {
+            pageContent = <TeacherLearning learning={learning} mutate={learningMutate} busy={busy} view={activeView as "materials" | "homework"}/>;
+        }
+    }
+    const choose = (id: string) => {
+        setSelectedView(id);
+        if (!desktop) setMenuOpen(false);
+        window.scrollTo(0, 0);
+    };
     return <div className="app-shell">
-    <header className="topbar"><div className="brand"><BrandLogo small/><div><strong>{BRAND_NAME}</strong><span>{t("\u8BFE\u65F6\u5DE5\u4F5C\u53F0")} · GMT+8</span></div></div><div className="top-actions"><LanguageSwitcher language={language} change={changeLanguage}/><Button size="sm" variant="outline" onClick={reload} aria-label={t("\u5237\u65B0")}><RefreshCw size={16}/></Button><Button size="sm" variant="ghost" onClick={logout} aria-label={t("\u9000\u51FA")}><LogOut size={16}/></Button></div></header>
-    <SignedInIdentity account={account}/>
-    <main className="workspace">
-      <div className="page-head"><div><p className="eyebrow">{admin ? t("管理员工作台") : account.role === "student" ? t("学生工作台") : t("老师工作台")}</p><h1>{admin ? t(adminTitle) : t("\u6211\u7684\u8BFE\u7A0B")}</h1><p>{admin ? t("\u5728\u7F51\u7AD9\u5185\u7BA1\u7406\u8BFE\u7A0B\u548C\u8BFE\u65F6\u7EDF\u8BA1\u3002") : language === "zh" ? `你好，${account.name}。这里是你的课程。` : `Hello, ${account.name}. Here are your lessons.`}</p></div>{account.role !== "student" && (!admin || !["students", "teachers"].includes(adminTab)) && <label className="month-select">{t("\u7EDF\u8BA1\u6708\u4EFD")}<input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}/></label>}</div>
-      {message && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("\u5173\u95ED")}>×</button></div>}
-      {state?.error && <div className="error">{state.error}</div>}
-      {account.role === "teacher" && state && !state.error && !(state.plans || []).length && <div className="notice">{t("\u76EE\u524D\u6CA1\u6709\u5206\u914D\u7ED9\u4F60\u7684\u542F\u7528\u5B66\u751F\u79D1\u76EE\u3002\u8BF7\u7BA1\u7406\u5458\u5728\u300C\u5B66\u751F\u79D1\u76EE\u300D\u4E2D\u9009\u62E9\u4F60\u4E3A\u8D1F\u8D23\u8001\u5E08\u3002")}</div>}
-      {admin ? <Tabs value={adminTab} onValueChange={setAdminTab}><TabsList className="tab-list"><TabsTrigger value="overview"><CalendarDays />{t(" \u603B\u89C8")}</TabsTrigger><TabsTrigger value="schedule"><Clock3 />{t(" \u6392\u8BFE")}</TabsTrigger><TabsTrigger value="students"><GraduationCap />{t("学生时间表")}</TabsTrigger><TabsTrigger value="teachers"><CalendarDays />{t("老师时间表")}</TabsTrigger><TabsTrigger value="subjects"><BookOpen />{t("学生科目")}</TabsTrigger><TabsTrigger value="people"><Users />{t(" \u540D\u5355\u4E0E\u6743\u9650")}</TabsTrigger><TabsTrigger value="sheet"><FileSpreadsheet />{t("课时导入")}</TabsTrigger></TabsList><TabsContent value="overview"><AdminDashboard state={state} lessons={lessons} open={setModal}/></TabsContent><TabsContent value="schedule"><Schedule state={state} lessons={lessons} mutate={mutate} open={setModal} busy={busy}/></TabsContent><TabsContent value="students"><Timetable type="student" lessons={lessons} students={state?.students || []} teachers={state?.teachers || []} month={selectedMonth} setMonth={setSelectedMonth}/></TabsContent><TabsContent value="teachers"><Timetable type="teacher" lessons={lessons} students={state?.students || []} teachers={(state?.allTeachers || []).map(row => row.name).sort()} month={selectedMonth} setMonth={setSelectedMonth}/></TabsContent><TabsContent value="subjects"><SubjectAdmin students={state?.students || []} teachers={state?.teachers || []} plans={state?.allPlans || []} mutate={mutate} busy={busy}/></TabsContent><TabsContent value="people"><RosterAdmin account={account} state={state} mutate={mutate} busy={busy}/></TabsContent><TabsContent value="sheet"><SheetSyncPanel/></TabsContent></Tabs> : account.role === "student" ? <StudentPortal lessons={lessons} proposals={state?.proposals || []} mutate={mutate} learningMutate={learningMutate} learning={state?.learning || { materials: [], homework: [], submissions: [], studyBlocks: [], eligible: [] }} busy={busy}/> : <Tabs defaultValue="lessons"><TabsList className="tab-list"><TabsTrigger value="lessons">{t("课程与打卡")}</TabsTrigger><TabsTrigger value="learning">{t("教学资料与功课")}</TabsTrigger></TabsList><TabsContent value="lessons"><TeacherPortal lessons={lessons} plans={state?.plans || []} proposals={state?.proposals || []} mutate={mutate} busy={busy}/><StatsPanel state={state}/></TabsContent><TabsContent value="learning"><TeacherLearning learning={state?.learning || { materials: [], homework: [], submissions: [], studyBlocks: [], eligible: [] }} mutate={learningMutate} busy={busy}/></TabsContent></Tabs>}
-    </main>
-    {modal && <LessonDialog modal={modal} close={() => setModal(null)} mutate={mutate} busy={busy}/>}
-  </div>;
+        <header className="topbar">
+            <div className="brand"><BrandLogo small/><div><strong>{BRAND_NAME}</strong><span>{t("课时工作台")} · GMT+8</span></div></div>
+            <div className="top-actions">
+                <LanguageSwitcher language={language} change={changeLanguage}/>
+                <Button size="sm" variant="outline" className="menu-toggle" onClick={() => setMenuOpen(open => !open)} aria-label={t(menuOpen ? "关闭功能菜单" : "打开功能菜单")} aria-expanded={menuOpen} aria-controls="workspace-menu"><Menu size={20}/></Button>
+            </div>
+        </header>
+        {menuOpen && !desktop && <button type="button" className="menu-backdrop" onClick={() => setMenuOpen(false)} aria-label={t("关闭功能菜单")}/>}
+        <div className={"app-body" + (menuOpen ? " menu-open" : "")}>
+            {menuOpen && <aside id="workspace-menu" className="workspace-menu" aria-label={t("功能菜单")}>
+                <SignedInIdentity account={account}/>
+                <nav className="menu-links" aria-label={t("功能菜单")}>
+                    {items.map(item => <button key={item.id} type="button" className={"menu-link" + (activeView === item.id ? " active" : "")} aria-current={activeView === item.id ? "page" : undefined} onClick={() => choose(item.id)}><item.Icon size={19} aria-hidden="true"/><span>{t(item.label)}</span></button>)}
+                </nav>
+                <div className="menu-utilities">
+                    <button type="button" className="menu-link" onClick={reload}><RefreshCw size={19}/><span>{t("刷新")}</span></button>
+                    <button type="button" className="menu-link" onClick={logout}><LogOut size={19}/><span>{t("退出登录")}</span></button>
+                </div>
+            </aside>}
+            <main className="workspace">
+                <div className="page-head"><div><p className="eyebrow">{t(role === "admin" ? "管理员工作台" : role === "student" ? "学生工作台" : "老师工作台")}</p><h1>{t(title)}</h1></div>
+                    {showMonth && <label className="month-select">{t("统计月份")}<input type="month" value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)}/></label>}
+                </div>
+                {message && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("关闭")}>×</button></div>}
+                {state?.error && <div className="error">{state.error}</div>}
+                {role === "teacher" && state && !state.error && !(state.plans || []).length && <div className="notice">{t("目前没有分配给你的启用学生科目。请管理员在「学生科目」中选择你为负责老师。")}</div>}
+                {pageContent}
+            </main>
+        </div>
+        {modal && <LessonDialog modal={modal} close={() => setModal(null)} mutate={mutate} busy={busy}/>}
+    </div>;
 }
 function StatsPanel({ state }: { state: State | null }) {
     const { records, submittedHours, approvedHours, approvedLessons } = monthlyAttendanceForPair(state?.checkins || [], state?.month || "");
@@ -439,21 +549,25 @@ function AttentionPanel({ lessons, open }: {
     </div>
   </section>;
 }
-function AdminDashboard({ state, lessons, open }: {
+function AdminDashboard({ state, lessons, open, view }: {
     state: State | null;
     lessons: Lesson[];
     open: Open;
+    view: "overview" | "attention" | "activity";
 }) {
     const summary = state?.summary || [];
     const review = lessons.filter(l => ["completed", "student_absent", "teacher_absent"].includes(l.status) && !l.reviewedAt);
     const upcoming = lessons.filter(l => l.status === "scheduled" && l.plannedStart >= new Date().toISOString()).slice(0, 8);
-    return <div className="dashboard"><div className="metric-grid"><div className="metric"><span>{t("\u5DF2\u5B8C\u6210\u8BFE\u65F6")}</span><strong>{summary.reduce((s, x) => s + x.completed, 0).toFixed(2)} <small>h</small></strong><p>{state?.month}{t(" \u00B7 \u5DF2\u6253\u5361")}</p></div><div className="metric"><span>{t("\u672A\u6765\u5DF2\u5B89\u6392\u8BFE\u65F6")}</span><strong>{summary.reduce((s, x) => s + x.upcoming, 0).toFixed(2)} <small>h</small></strong><p>{t("\u6240\u9009\u6708\u4EFD")}</p></div><div className="metric attention"><span>{t("\u5F85\u6838\u5BF9\u8BB0\u5F55")}</span><strong>{review.length}</strong><p>{t("\u5DF2\u6253\u5361\u8BFE\u65F6\u76F4\u63A5\u8BA1\u5165\u7EDF\u8BA1")}</p></div></div><div className="dashboard-columns"><section className="panel"><div className="section-head"><h2>{t("\u5F85\u6838\u5BF9\u8BB0\u5F55")}</h2><span>{review.length}{t(" \u6761")}</span></div><div className="lesson-stack">{review.length ? review.map(l => <LessonCard key={l.id} lesson={l} admin open={open}/>) : <div className="empty">{t("\u76EE\u524D\u6CA1\u6709\u5F85\u6838\u5BF9\u8BB0\u5F55\u3002")}</div>}</div></section><section className="panel"><div className="section-head"><h2>{t("\u5373\u5C06\u4E0A\u8BFE")}</h2></div>{upcoming.length ? upcoming.map(l => <div className="upcoming-item" key={l.id}><span>{day(l.plannedStart)}</span><strong>{l.student} · {l.subject}</strong><small>{time(l.plannedStart)}–{time(l.plannedEnd)} · {l.teacherName}</small></div>) : <div className="empty">{t("\u6682\u65E0\u8BFE\u7A0B\u3002")}</div>}</section></div><AttentionPanel lessons={lessons} open={open}/><section className="panel"><div className="section-head"><h2>{t("\u5B66\u751F\u79D1\u76EE\u7EDF\u8BA1")}</h2><span>{t("\u6309\u5B9E\u9645\u6253\u5361\u6708\u4EFD\u8BA1\u7B97")}</span></div><div className="summary-grid">{summary.map(s => <div className="summary-row" key={s.key}><strong>{s.key.replace("|", " · ")}</strong><span>{s.completed.toFixed(2)} h · {s.lessons}{t(" \u5802\u5DF2\u4E0A\u8BFE")}</span><span>{s.upcoming.toFixed(2)}{t(" h \u672A\u6765")}</span><span>{s.pending}{t(" \u5F85\u6253\u5361 \u00B7 ")}{s.makeupNeeded}{t(" \u5F85\u8865")}</span></div>)}</div></section><ActivityLog items={state?.activity || []}/></div>;
+    if (view === "attention") return <AttentionPanel lessons={lessons} open={open}/>;
+    if (view === "activity") return <ActivityLog items={state?.activity || []}/>;
+    return <div className="dashboard"><div className="metric-grid"><div className="metric"><span>{t("\u5DF2\u5B8C\u6210\u8BFE\u65F6")}</span><strong>{summary.reduce((s, x) => s + x.completed, 0).toFixed(2)} <small>h</small></strong><p>{state?.month}{t(" \u00B7 \u5DF2\u6253\u5361")}</p></div><div className="metric"><span>{t("\u672A\u6765\u5DF2\u5B89\u6392\u8BFE\u65F6")}</span><strong>{summary.reduce((s, x) => s + x.upcoming, 0).toFixed(2)} <small>h</small></strong><p>{t("\u6240\u9009\u6708\u4EFD")}</p></div><div className="metric attention"><span>{t("\u5F85\u6838\u5BF9\u8BB0\u5F55")}</span><strong>{review.length}</strong><p>{t("\u5DF2\u6253\u5361\u8BFE\u65F6\u76F4\u63A5\u8BA1\u5165\u7EDF\u8BA1")}</p></div></div><div className="dashboard-columns"><section className="panel"><div className="section-head"><h2>{t("\u5F85\u6838\u5BF9\u8BB0\u5F55")}</h2><span>{review.length}{t(" \u6761")}</span></div><div className="lesson-stack">{review.length ? review.map(l => <LessonCard key={l.id} lesson={l} admin open={open}/>) : <div className="empty">{t("\u76EE\u524D\u6CA1\u6709\u5F85\u6838\u5BF9\u8BB0\u5F55\u3002")}</div>}</div></section><section className="panel"><div className="section-head"><h2>{t("\u5373\u5C06\u4E0A\u8BFE")}</h2></div>{upcoming.length ? upcoming.map(l => <div className="upcoming-item" key={l.id}><span>{day(l.plannedStart)}</span><strong>{l.student} · {l.subject}</strong><small>{time(l.plannedStart)}–{time(l.plannedEnd)} · {l.teacherName}</small></div>) : <div className="empty">{t("\u6682\u65E0\u8BFE\u7A0B\u3002")}</div>}</section></div><section className="panel"><div className="section-head"><h2>{t("\u5B66\u751F\u79D1\u76EE\u7EDF\u8BA1")}</h2><span>{t("\u6309\u5B9E\u9645\u6253\u5361\u6708\u4EFD\u8BA1\u7B97")}</span></div><div className="summary-grid">{summary.map(s => <div className="summary-row" key={s.key}><strong>{s.key.replace("|", " · ")}</strong><span>{s.completed.toFixed(2)} h · {s.lessons}{t(" \u5802\u5DF2\u4E0A\u8BFE")}</span><span>{s.upcoming.toFixed(2)}{t(" h \u672A\u6765")}</span><span>{s.pending}{t(" \u5F85\u6253\u5361 \u00B7 ")}{s.makeupNeeded}{t(" \u5F85\u8865")}</span></div>)}</div></section></div>;
 }
-function RosterAdmin({ account, state, mutate, busy }: {
+function RosterAdmin({ account, state, mutate, busy, view }: {
     account: Account;
     state: State | null;
     mutate: (x: Record<string, unknown>) => Promise<boolean>;
     busy: boolean;
+    view: "teachers" | "students" | "binding" | "accounts";
 }) {
     const [teacherName, setTeacherName] = useState("");
     const [userId, setUserId] = useState("");
@@ -467,10 +581,10 @@ function RosterAdmin({ account, state, mutate, busy }: {
         setBindStudent(user?.studentName || "");
         setBindRole(user?.role === "admin" ? "admin" : user?.role === "student" ? "student" : "teacher");
     }
-    return <div className="people-layout"><section className="panel"><p className="eyebrow">{t("老师名单")}</p><h2>{t("\u8001\u5E08\u540D\u5355")}</h2><form onSubmit={async (e) => { e.preventDefault(); if (await mutate({ action: "saveTeacher", name: teacherName, active: true }))
-        setTeacherName(""); }}><label>{t("\u8001\u5E08\u59D3\u540D")}<input required maxLength={80} value={teacherName} onChange={e => setTeacherName(e.target.value)} placeholder={t("\u4F8B\u5982 Sydney")}/></label><Button disabled={busy}>{t("\u65B0\u589E\u8001\u5E08")}</Button></form>{state?.allTeachers?.map(teacherRow => <div className="user-row" key={teacherRow.name}><strong>{teacherRow.name}</strong><Button size="sm" variant="outline" disabled={busy} onClick={() => { if (!teacherRow.active || window.confirm(t("确定移除这位老师？现有课程和打卡记录会保留。"))) mutate({ action: "saveTeacher", name: teacherRow.name, active: !teacherRow.active }); }}>{teacherRow.active ? t("移除") : t("恢复")}</Button></div>)}</section>
-    <StudentAdmin students={state?.allStudents || []} mutate={mutate} busy={busy}/>
-    <section className="panel">
+    return <div className="people-layout people-single-view">{view === "teachers" && <section className="panel"><p className="eyebrow">{t("老师名单")}</p><h2>{t("\u8001\u5E08\u540D\u5355")}</h2><form onSubmit={async (e) => { e.preventDefault(); if (await mutate({ action: "saveTeacher", name: teacherName, active: true }))
+        setTeacherName(""); }}><label>{t("\u8001\u5E08\u59D3\u540D")}<input required maxLength={80} value={teacherName} onChange={e => setTeacherName(e.target.value)} placeholder={t("\u4F8B\u5982 Sydney")}/></label><Button disabled={busy}>{t("\u65B0\u589E\u8001\u5E08")}</Button></form>{state?.allTeachers?.map(teacherRow => <div className="user-row" key={teacherRow.name}><strong>{teacherRow.name}</strong><Button size="sm" variant="outline" disabled={busy} onClick={() => { if (!teacherRow.active || window.confirm(t("确定移除这位老师？现有课程和打卡记录会保留。"))) mutate({ action: "saveTeacher", name: teacherRow.name, active: !teacherRow.active }); }}>{teacherRow.active ? t("移除") : t("恢复")}</Button></div>)}</section>}
+    {view === "students" && <StudentAdmin students={state?.allStudents || []} mutate={mutate} busy={busy}/>}
+    {view === "binding" && <section className="panel">
       <p className="eyebrow">{t("绑定 Google 账号")}</p><h2>{t("\u7ED1\u5B9A Google \u8D26\u53F7")}</h2>
       <p className="muted">{t("\u6838\u5BF9 Google \u90AE\u7BB1\uFF0C\u9009\u62E9\u8001\u5E08\u3001\u5B66\u751F\u6216\u7BA1\u7406\u5458\u3002\u5B66\u751F\u7ED1\u5B9A\u540E\u53EA\u80FD\u770B\u5230\u5BF9\u5E94\u5B66\u751F\u7684\u8BFE\u7A0B\u548C\u6539\u671F\u8BF7\u6C42\u3002")}</p>
       <form onSubmit={async (e) => {
@@ -502,7 +616,7 @@ function RosterAdmin({ account, state, mutate, busy }: {
         <div><strong>{u.name}</strong><small>{u.username ? `${t("账号：")}${u.username}${u.mustChangePassword ? t(" \u00B7 \u7B49\u5F85\u9996\u6B21\u6539\u5BC6") : ""}` : u.email}</small></div>
         <div className="user-actions"><span className="status">{u.email?.toLowerCase() === "felixtey2016@gmail.com" && !u.username ? t("最高管理员") : u.role === "admin" ? t("\u7BA1\u7406\u5458") : u.role === "pending" ? t("\u5F85\u7ED1\u5B9A") : u.role === "student" ? `${t("学生")} · ${u.studentName}` : `${t("老师")} · ${u.teacherName}`}</span>{u.id !== account.id && u.email?.toLowerCase() !== "felixtey2016@gmail.com" && (u.role !== "admin" || account.isOwner) && <Button size="sm" variant="outline" disabled={busy} onClick={async () => { if (window.confirm(t("确定删除这个账号？该账号将无法再登录，课程和打卡记录会保留。")) && await mutate({ action: "deleteAccount", userId: u.id }) && userId === u.id) selectUser(""); }}>{t("删除账号")}</Button>}</div>
       </div>)}
-    </section><LocalAccountAdmin state={state} mutate={mutate} busy={busy}/></div>;
+    </section>}{view === "accounts" && <LocalAccountAdmin state={state} mutate={mutate} busy={busy}/>}</div>;
 }
 function LocalAccountAdmin({ state, mutate, busy }: {
     state: State | null;
@@ -556,12 +670,13 @@ function TeacherHome({ lessons, plans, open }: {
     plans: Plan[];
     open: Open;
 }) { const today = local(new Date().toISOString()).slice(0, 10); const current = lessons.filter(l => local(l.plannedStart).slice(0, 10) === today && l.status !== "cancelled"); const pending = lessons.filter(l => l.plannedStart < new Date().toISOString() && l.status === "scheduled"); const upcoming = lessons.filter(l => l.plannedStart > new Date().toISOString() && local(l.plannedStart).slice(0, 10) !== today && l.status !== "cancelled").slice(0, 10); return <div className="teacher-layout"><div><div className="section-head"><div><p className="eyebrow">TODAY</p><h2>{t("\u4ECA\u5929\u7684\u8BFE ")}<span>{current.length}</span></h2></div><span>{day(new Date().toISOString())}</span></div><div className="lesson-stack">{current.length ? current.map(l => <LessonCard key={l.id} lesson={l} admin={false} open={open}/>) : <div className="empty">{t("\u4ECA\u5929\u6CA1\u6709\u5B89\u6392\u8BFE\u7A0B\u3002")}</div>}</div>{pending.length > 0 && <><div className="section-head"><h2>{t("\u5F85\u786E\u8BA4 ")}<span>{pending.length}</span></h2></div><div className="lesson-stack">{pending.map(l => <LessonCard key={l.id} lesson={l} admin={false} open={open}/>)}</div></>}</div><aside><section className="panel"><p className="eyebrow">UP NEXT</p><h2>{t("\u63A5\u4E0B\u6765\u7684\u8BFE")}</h2>{upcoming.length ? upcoming.map(l => <button className="upcoming-item" key={l.id} onClick={() => open({ type: "attendance", lesson: l })}><span>{day(l.plannedStart)}</span><strong>{l.student} · {l.subject}</strong><small>{time(l.plannedStart)}–{time(l.plannedEnd)}</small></button>) : <p className="muted">{t("\u6682\u65E0\u540E\u7EED\u8BFE\u7A0B\u3002")}</p>}</section><section className="panel"><p className="eyebrow">MY STUDENTS</p><h2>{t("\u8D1F\u8D23\u7684\u5B66\u751F\u4E0E\u79D1\u76EE")}</h2>{plans.map(p => <div key={p.key} className="plan-row"><span>{p.student}</span><strong>{p.subject}</strong></div>)}</section></aside></div>; }
-function Schedule({ state, lessons, mutate, open, busy }: {
+function Schedule({ state, lessons, mutate, open, busy, view }: {
     state: State | null;
     lessons: Lesson[];
     mutate: (x: Record<string, unknown>) => Promise<boolean>;
     open: Open;
     busy: boolean;
+    view: "create" | "calendar" | "list";
 }) {
     const plans = state?.plans || [];
     const [student, setStudent] = useState("");
@@ -584,7 +699,7 @@ function Schedule({ state, lessons, mutate, open, busy }: {
             setEndTime(""); setUntil(""); setReplacementFor("");
         }
     }
-    return <div className="schedule-layout"><section className="panel create-panel"><p className="eyebrow">{t("安排课程")}</p><h2>{t("安排课程")}</h2>
+    return <div className="schedule-layout schedule-single-view"><section className="panel create-panel" hidden={view !== "create"}><p className="eyebrow">{t("安排课程")}</p><h2>{t("安排课程")}</h2>
         <form onSubmit={submit}>
             <label>{t("学生姓名")}<select required value={student} onChange={e => { setStudent(e.target.value); setKey(""); setReplacementFor(""); }}><option value="">{t("请选择")}</option>{(state?.students || []).map(n => <option key={n} value={n}>{n}</option>)}</select></label>
             {student && <label>{t("学生科目")}<select required value={key} onChange={e => { setKey(e.target.value); setReplacementFor(""); }}><option value="">{t("请选择")}</option>{subjects.map(p => <option value={p.key} key={p.key}>{p.subject}</option>)}</select></label>}
@@ -596,9 +711,9 @@ function Schedule({ state, lessons, mutate, open, busy }: {
             <label>{t("每周重复至（可留空）")}<input type="date" value={until} onChange={e => setUntil(e.target.value)}/></label>
             <Button disabled={busy || !chosen} className="primary-full">{t("保存排课")}</Button>
         </form></section>
-        <section className="panel"><div className="section-head"><div><p className="eyebrow">{t("排课")}</p><h2>{t("课程列表")}</h2></div><span>{lessons.length}{t(" 堂")}</span></div>
-            <LessonCalendar lessons={lessons} teachers={state?.teachers || []} onSelect={id => { const lesson = lessons.find(l => l.id === id); if (lesson) open({ type: "edit", lesson }); }}/>
-            <div className="lesson-stack">{lessons.length ? lessons.map(l => <LessonCard key={l.id} lesson={l} admin open={open}/>) : <div className="empty">{t("还没有排课。")}</div>}</div>
+        <section className="panel" hidden={view === "create"}><div className="section-head"><div><p className="eyebrow">{t("排课")}</p><h2>{t(view === "calendar" ? "课程日历" : "课程列表")}</h2></div><span>{lessons.length}{t(" 堂")}</span></div>
+            {view === "calendar" && <LessonCalendar lessons={lessons} teachers={state?.teachers || []} onSelect={id => { const lesson = lessons.find(l => l.id === id); if (lesson) open({ type: "edit", lesson }); }}/>}
+            {view === "list" && <div className="lesson-stack">{lessons.length ? lessons.map(l => <LessonCard key={l.id} lesson={l} admin open={open}/>) : <div className="empty">{t("还没有排课。")}</div>}</div>}
         </section>
     </div>;
 }
