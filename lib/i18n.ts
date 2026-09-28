@@ -415,6 +415,12 @@ const en: Record<string, string> = {
   "待处理": "Pending", "已接受": "Accepted", "已拒绝": "Rejected", "已失效": "No longer applicable", "已直接修改": "Changed directly",
   "管理员直接修改": "Changed by administrator", "已删除账号": "Deleted account", "系统": "System", "暂无改期记录": "No reschedule history yet",
   "改期记录暂时无法载入": "Could not load reschedule history", "重试": "Retry",
+  "PDF 已上传，尚未提交功课": "PDF uploaded. Homework is not submitted yet.", "PDF 已上传，尚未发布给学生": "PDF uploaded. It has not been shared with students yet.",
+  "PDF 储存暂未配置，请联系管理员": "PDF storage is not configured. Contact an administrator.", "PDF 上传失败，请稍后重试": "PDF upload failed. Try again later.",
+  "Google Sheet 暂时无法完成导入，请稍后重试。": "Google Sheet import failed. Try again later.", "表格月份或数据已变化，请重新预览。": "The sheet month or data changed. Preview again.",
+  "Google Sheet 导入尚未配置，请联系管理员。": "Google Sheet import is not configured. Contact an administrator.", "Google 登录验证失败，请重试": "Google sign-in verification failed. Try again.",
+  "登录失败，请稍后重试": "Sign-in failed. Try again later.", "资料暂时无法载入，请稍后刷新": "Data could not load. Refresh later.",
+  "操作暂时无法完成，请检查填写内容后重试": "Could not complete this action. Check the fields and try again.",
 };
 
 export function t(value: string) {
