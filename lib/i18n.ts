@@ -424,6 +424,10 @@ const en: Record<string, string> = {
   "教学资料已删除": "Teaching material deleted", "班级状态已更新": "Classroom status updated", "学生名单已更新": "Student roster updated",
   "账号已删除": "Account deleted", "网课链接已保存": "Online lesson link saved", "课时核对已保存": "Lesson review saved",
   "没有权限执行此操作": "You do not have permission to do this.",
+  "服务器未能确认结果，请刷新列表检查是否已保存，再决定是否重试": "The server could not confirm the result. Refresh the list and check before retrying.",
+  "服务器未能确认结果，请刷新班级列表检查后再重试": "The server could not confirm the result. Refresh the classroom list before retrying.",
+  "服务器未能确认结果，请刷新列表检查后再重试": "The server could not confirm the result. Refresh the list before retrying.",
+  "Google Sheet 导入结果未确认，请先检查表格，再重新预览。": "The Sheet import result is uncertain. Check the sheet, then preview again.",
 };
 
 export function t(value: string) {
