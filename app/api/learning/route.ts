@@ -201,6 +201,6 @@ export async function POST(request: Request) {
     }
     throw new ActionError("未知操作", 400);
   } catch (error) {
-    return response(error instanceof ActionError ? error : new ActionError("暂时无法保存，请重试", 503));
+    return response(error instanceof ActionError ? error : new ActionError("服务器未能确认结果，请刷新列表检查后再重试", 503));
   }
 }
