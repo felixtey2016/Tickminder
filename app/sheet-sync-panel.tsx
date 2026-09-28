@@ -1,7 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { t } from "@/lib/i18n";
-import { alertActionFailure, readApiJson } from "@/lib/action-feedback";
+import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
 import { Button } from "@/components/ui/button";
 import type { SyncMode } from "@/lib/sheet-sync";
 
@@ -24,11 +24,13 @@ export function SheetSyncPanel() {
   const [mode, setMode] = useState<SyncMode>("billable");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
   const [message, setMessage] = useState("");
   const [done, setDone] = useState(false);
 
   async function run(action: "preview" | "commit") {
-    if (action === "commit" && !preview) return;
+    if ((action === "commit" && !preview) || inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     setMessage("");
     setDone(false);
@@ -41,11 +43,11 @@ export function SheetSyncPanel() {
       const result = await readApiJson<Preview & { error?: string; written?: number }>(response);
       if (!response.ok) throw new Error(result.error || "导入失败，请重试。");
       if (action === "preview") setPreview(result);
-      else { setDone(true); setPreview(null); setMessage(`${t("已导入")} ${result.written || 0} ${t("个学生科目的课时。")} ${t("再次导入会覆盖相同单元格，不会累加。")}`); }
+      else { setDone(true); setPreview(null); const summary = `${t("已导入")} ${result.written || 0} ${t("个学生科目的课时。")} ${t("再次导入会覆盖相同单元格，不会累加。")}`; setMessage(summary); showActionToast("success", summary); }
     } catch (error) {
       if (action === "commit") setPreview(null);
       setMessage(alertActionFailure(error, "导入失败，请重试。"));
-    } finally { setBusy(false); }
+    } finally { inFlight.current = false; setBusy(false); }
   }
 
   return <section className="panel sheet-sync-panel">
