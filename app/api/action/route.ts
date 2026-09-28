@@ -137,7 +137,7 @@ export async function POST(request: Request) {
         const moving = all.filter(l => l.student === student && l.subject === subject && l.teacherName === before.teacherName && l.status === "scheduled");
         const movingIds = new Set(moving.map(l => l.id));
         const other = all.filter(l => !movingIds.has(l.id));
-        if (moving.some(l => findLessonConflict({ ...l, teacherName }, other))) return bad("无法更换负责老师：新老师与现有课程时间冲突");
+        for (const lesson of moving) { const slot = { ...lesson, teacherName }; const conflict = findLessonConflict(slot, other); if (conflict) return conflictReply(slot, conflict, actor.role); }
         for (const lesson of moving) {
           await db.update(lessons).set({ teacherName, updatedAt: now }).where(eq(lessons.id, lesson.id));
           await db.update(rescheduleRequests).set({ status: "stale", respondedAt: now }).where(and(eq(rescheduleRequests.lessonId, lesson.id), eq(rescheduleRequests.status, "pending")));
