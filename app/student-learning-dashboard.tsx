@@ -1,5 +1,6 @@
 "use client";
 
+import { useDialogState } from "@/lib/use-dialog-state";
 import { useState } from "react";
 import { t } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,7 @@ const local = (iso: string) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asi
 type Form = { id: string; title: string; date: string; start: string; end: string; subject: string; note: string; homeworkId: string };
 
 export function StudentLearningDashboard({ lessons, proposals, learning, mutate, busy, view }: { lessons: Lesson[]; proposals: Proposal[]; learning: LearningState; mutate: LearningMutate; busy: boolean; view: "calendar" | "homework" | "materials" }) {
-  const [form, setForm] = useState<Form | null>(null);
+  const [form, setForm] = useDialogState<Form | null>("student-study", null);
   const [saving, setSaving] = useState(false);
   function add(day: string) { setForm({ id: "", title: "", date: day, start: "18:00", end: "19:00", subject: "", note: "", homeworkId: "" }); }
   function edit(block: StudyBlock) {

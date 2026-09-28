@@ -1,6 +1,7 @@
 "use client";
 import { getLanguage, LANGUAGE_KEY, setLanguage, t, type Language } from "@/lib/i18n";
 import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
+import { clearDialogHistory, useDialogState } from "@/lib/use-dialog-state";
 import { BRAND_NAME } from "@/lib/brand";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, BookOpen, CalendarDays, ClipboardCheck, Clock3, FileSpreadsheet, FileText, GraduationCap, History, LayoutDashboard, List, LogOut, Menu, RefreshCw, ShieldCheck, UserRoundPlus, Users, type LucideIcon } from "lucide-react";
@@ -147,10 +148,10 @@ export function Scheduler() {
     const [message, setMessage] = useState("");
     const [busy, setBusy] = useState(false);
     const mutationInFlight = useRef(false);
-    const [modal, setModal] = useState<{
+    const [modal, setModal] = useDialogState<{
         type: "attendance" | "review" | "edit" | "cancel";
         lesson: Lesson;
-    } | null>(null);
+    } | null>("admin-lesson", null);
     const googleButton = useRef<HTMLDivElement>(null);
     const latestStateRequest = useRef(0);
     const revisionRef = useRef<number | null>(null);
@@ -320,7 +321,7 @@ export function Scheduler() {
         } catch (error) { alertActionFailure(error); return { ok: false }; }
         finally { mutationInFlight.current = false; setBusy(false); }
     }
-    async function logout() { try { await request("/api/auth", { method: "DELETE" }); showActionToast("success", "已退出登录"); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); } catch (error) { setMessage(alertActionFailure(error)); } }
+    async function logout() { try { await request("/api/auth", { method: "DELETE" }); clearDialogHistory(); setModal(null); showActionToast("success", "已退出登录"); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); } catch (error) { setMessage(alertActionFailure(error)); } }
     async function localLogin(username: string, password: string) { if (busy) return; try {
         setBusy(true);
         setMessage("");

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { t } from "@/lib/i18n";
+import { getLanguage, t } from "@/lib/i18n";
 import { readApiJson } from "@/lib/action-feedback";
 
 type Entry = {
@@ -10,7 +10,7 @@ type Entry = {
   requestedBy: string | null; requestedAt: string; respondedBy: string | null; respondedAt: string | null;
 };
 type History = { currentStart: string; currentEnd: string; entries: Entry[] };
-const dateTime = (iso: string) => new Intl.DateTimeFormat(undefined, {
+const dateTime = (iso: string) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", {
   timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric",
   hour: "2-digit", minute: "2-digit", hour12: false,
 }).format(new Date(iso));
@@ -49,8 +49,8 @@ export function LessonHistory({ lessonId }: { lessonId: string }) {
         {history.entries.length ? <ol>{history.entries.map(entry => <li key={entry.id}>
           <strong>{t(resultLabel[entry.status] || entry.status)}</strong>
           <span>{span(entry.originalStart, entry.originalEnd)} → {span(entry.proposedStart, entry.proposedEnd)}</span>
-          <small>{entry.type === "direct" ? t("管理员直接修改") : t("申请人")}：{entry.requestedBy || t("已删除账号")} · {dateTime(entry.requestedAt)}</small>
-          {entry.respondedAt && <small>{t("处理人")}：{entry.respondedBy || t("系统")} · {dateTime(entry.respondedAt)}</small>}
+          <small>{entry.type === "direct" ? t("管理员直接修改") : t("申请人")}：{t(entry.requestedBy || "已删除账号")} · {dateTime(entry.requestedAt)}</small>
+          {entry.respondedAt && <small>{t("处理人")}：{t(entry.respondedBy || "系统")} · {dateTime(entry.respondedAt)}</small>}
         </li>)}</ol> : <p>{t("暂无改期记录")}</p>}
       </>}
     </div>}
