@@ -12,7 +12,7 @@ assert.equal(t("排课"), "Schedule");
 assert.equal(t(" 排课 "), " Schedule ");
 assert.equal(t("Ms Sydney"), "Ms Sydney", "user-entered names stay unchanged");
 
-const files = ["scheduler.tsx", "portals.tsx", "student-calendar.tsx", "week-calendar.tsx", "activity-log.tsx", "timetables.tsx", "roster-forms.tsx", "sheet-sync-panel.tsx"];
+const files = ["scheduler.tsx", "portals.tsx", "conflict-preview.tsx", "lesson-history.tsx", "student-calendar.tsx", "week-calendar.tsx", "activity-log.tsx", "timetables.tsx", "roster-forms.tsx", "sheet-sync-panel.tsx"];
 const missing = [];
 for (const file of files) {
   const path = new URL(`../app/${file}`, import.meta.url);
