@@ -7,6 +7,7 @@ import { AlertCircle, BookOpen, CalendarDays, ClipboardCheck, Clock3, FileSpread
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LessonCalendar } from "./week-calendar";
+import { LessonHistory } from "./lesson-history";
 import { ActivityLog } from "./activity-log";
 import { useLessonWebMcp } from "./webmcp";
 import { monthlyAttendanceForPair } from "@/lib/lesson-rules";
@@ -727,7 +728,7 @@ function LessonCard({ lesson: l, admin, open }: {
     lesson: Lesson;
     admin: boolean;
     open: Open;
-}) { return <article className="lesson-card"><div className="date-tile"><strong>{day(l.plannedStart)}</strong><span>{time(l.plannedStart)}–{time(l.plannedEnd)}</span></div><div className="lesson-body"><div className="lesson-title"><strong>{l.student} · {l.subject}</strong><span className={`status status-${l.status}`}>{t(statusLabel[l.status] || l.status)}</span></div><p>{l.teacherName}{l.kind === "makeup" ? t(" \u00B7 \u8865\u8BFE") : l.kind === "extra" ? t(" \u00B7 \u52A0\u8BFE") : ""}</p>{l.note && <p className="lesson-note">{l.note}</p>}<div className="lesson-actions">{l.status !== "cancelled" && (admin || !l.reviewedAt) && <Button size="sm" onClick={() => open({ type: "attendance", lesson: l })}>{admin ? t("\u66F4\u6B63\u6253\u5361") : t("\u6253\u5F00\u6253\u5361")}</Button>}{admin && <><Button size="sm" variant="outline" onClick={() => open({ type: "edit", lesson: l })}>{t("\u6539\u671F")}</Button><Button size="sm" variant="outline" onClick={() => open({ type: "cancel", lesson: l })}>{t("\u53D6\u6D88")}</Button>{["completed", "student_absent", "teacher_absent"].includes(l.status) && <Button size="sm" variant="secondary" onClick={() => open({ type: "review", lesson: l })}>{l.reviewedAt ? t("\u91CD\u65B0\u6838\u5BF9") : t("\u6838\u5BF9")}</Button>}</>}</div></div></article>; }
+}) { return <article className="lesson-card"><div className="date-tile"><strong>{day(l.plannedStart)}</strong><span>{time(l.plannedStart)}–{time(l.plannedEnd)}</span></div><div className="lesson-body"><div className="lesson-title"><strong>{l.student} · {l.subject}</strong><span className={`status status-${l.status}`}>{t(statusLabel[l.status] || l.status)}</span></div><p>{l.teacherName}{l.kind === "makeup" ? t(" \u00B7 \u8865\u8BFE") : l.kind === "extra" ? t(" \u00B7 \u52A0\u8BFE") : ""}</p>{l.note && <p className="lesson-note">{l.note}</p>}<div className="lesson-actions">{l.status !== "cancelled" && (admin || !l.reviewedAt) && <Button size="sm" onClick={() => open({ type: "attendance", lesson: l })}>{admin ? t("\u66F4\u6B63\u6253\u5361") : t("\u6253\u5F00\u6253\u5361")}</Button>}{admin && <><Button size="sm" variant="outline" onClick={() => open({ type: "edit", lesson: l })}>{t("\u6539\u671F")}</Button><Button size="sm" variant="outline" onClick={() => open({ type: "cancel", lesson: l })}>{t("\u53D6\u6D88")}</Button>{["completed", "student_absent", "teacher_absent"].includes(l.status) && <Button size="sm" variant="secondary" onClick={() => open({ type: "review", lesson: l })}>{l.reviewedAt ? t("\u91CD\u65B0\u6838\u5BF9") : t("\u6838\u5BF9")}</Button>}</>}</div><LessonHistory lessonId={l.id}/></div></article>; }
 function TeacherHome({ lessons, plans, open }: {
     lessons: Lesson[];
     plans: Plan[];
