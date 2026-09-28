@@ -7,6 +7,7 @@ import { activeLessonsOnDay, malaysiaDay, monthDays, nextScheduledLesson, shiftM
 import { Button } from "@/components/ui/button";
 import type { StudyBlock } from "./learning-portal";
 import { OnlineLessonLink } from "./online-lesson-link";
+import { LessonHistory } from "./lesson-history";
 
 type Lesson = {
   id: string;
@@ -91,6 +92,7 @@ export function StudentCalendar({ lessons, proposals, studyBlocks = [], onAddStu
           <p><span className="student-teacher-avatar" aria-hidden="true">{lesson.teacherName.charAt(0).toUpperCase()}</span>{lesson.teacherName}</p>
           <OnlineLessonLink href={lesson.onlineLink}/>
           {lesson.actualStart && lesson.actualEnd && <small>{t("实际时间")}：{time(lesson.actualStart)}–{time(lesson.actualEnd)}</small>}
+          <LessonHistory lessonId={lesson.id}/>
           {pending.has(lesson.id) && <a className="student-lesson-pending" href="#student-reschedule">{t("待你确认改期")} · {dateLabel(malaysiaDay(pending.get(lesson.id)!.proposedStart), { month: "short", day: "numeric" })} {time(pending.get(lesson.id)!.proposedStart)} →</a>}
         </article>)}
         {selectedStudy.map(block => <article className="student-day-lesson lesson-study" key={block.id}><div className="student-day-lesson-top"><strong>{block.title}</strong><span>{t("个人学习")}</span></div><p><Clock3 size={16} aria-hidden="true"/>{time(block.startsAt)}–{time(block.endsAt)}</p>{block.subject && <p>{block.subject}</p>}{block.note && <small>{block.note}</small>}<Button size="sm" variant="outline" onClick={() => onEditStudy?.(block)}>{t("编辑学习安排")}</Button></article>)}
