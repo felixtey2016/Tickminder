@@ -488,7 +488,21 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
     const [menuOpen, setMenuOpen] = useState(false);
     const [desktop, setDesktop] = useState(false);
     useEffect(() => {
-        setSelectedView(NAV_ITEMS[role][0].id);
+        const home = NAV_ITEMS[role][0].id;
+        const valid = (view: unknown) => typeof view === "string" && NAV_ITEMS[role].some(item => item.id === view);
+        const state = window.history.state || {};
+        if (state.timelyoRole === role && valid(state.timelyoView)) setSelectedView(state.timelyoView);
+        else {
+            setSelectedView(home);
+            window.history.replaceState({ ...state, timelyoRole: role, timelyoView: home, timelyoMenu: false }, "");
+        }
+        const onPopState = () => {
+            const next = window.history.state || {};
+            setMenuOpen(false);
+            setSelectedView(next.timelyoRole === role && valid(next.timelyoView) ? next.timelyoView : home);
+        };
+        window.addEventListener("popstate", onPopState);
+        return () => window.removeEventListener("popstate", onPopState);
     }, [role, account.id]);
     useEffect(() => {
         const query = window.matchMedia("(min-width: 901px)");
@@ -512,8 +526,25 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
     const title = items.find(item => item.id === activeView)?.label || items[0].label;
     const learning = state?.learning || { materials: [], homework: [], submissions: [], studyBlocks: [], eligible: [] };
     const showMonth = (role === "teacher" && activeView === "hours") || (role === "admin" && ["overview", "attention", "schedule", "calendar", "list", "students", "teachers"].includes(activeView));
+    const closeMobileMenu = () => {
+        if (desktop) return;
+        if (window.history.state?.timelyoMenu) window.history.back();
+        setMenuOpen(false);
+    };
+    const toggleMenu = () => {
+        if (!desktop && !menuOpen) {
+            window.history.pushState({ ...(window.history.state || {}), timelyoMenu: true }, "");
+            setMenuOpen(true);
+        } else if (!desktop && menuOpen) closeMobileMenu();
+        else setMenuOpen(open => !open);
+    };
     const choose = (id: string) => {
-        setSelectedView(id);
+        if (id !== activeView) {
+            const next = { ...(window.history.state || {}), timelyoRole: role, timelyoView: id, timelyoMenu: false };
+            if (!desktop && menuOpen && window.history.state?.timelyoMenu) window.history.replaceState(next, "");
+            else window.history.pushState(next, "");
+            setSelectedView(id);
+        } else if (!desktop && menuOpen) closeMobileMenu();
         if (!desktop) setMenuOpen(false);
         window.scrollTo(0, 0);
     };
@@ -556,10 +587,10 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
             <div className="brand"><BrandLogo small/><div><strong>{BRAND_NAME}</strong><span>{t("课时工作台")} · GMT+8</span></div></div>
             <div className="top-actions">
                 <LanguageSwitcher language={language} change={changeLanguage}/>
-                <Button size="sm" variant="outline" className="menu-toggle" onClick={() => setMenuOpen(open => !open)} aria-label={t(menuOpen ? "关闭功能菜单" : "打开功能菜单")} aria-expanded={menuOpen} aria-controls="workspace-menu"><Menu size={20}/></Button>
+                <Button size="sm" variant="outline" className="menu-toggle" onClick={toggleMenu} aria-label={t(menuOpen ? "关闭功能菜单" : "打开功能菜单")} aria-expanded={menuOpen} aria-controls="workspace-menu"><Menu size={20}/></Button>
             </div>
         </header>
-        {menuOpen && !desktop && <button type="button" className="menu-backdrop" onClick={() => setMenuOpen(false)} aria-label={t("关闭功能菜单")}/>}
+        {menuOpen && !desktop && <button type="button" className="menu-backdrop" onClick={closeMobileMenu} aria-label={t("关闭功能菜单")}/>}
         <div className={"app-body" + (menuOpen ? " menu-open" : "")}>
             {menuOpen && <aside id="workspace-menu" className="workspace-menu" aria-label={t("功能菜单")}>
                 <SignedInIdentity account={account}/>
