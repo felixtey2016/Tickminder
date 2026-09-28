@@ -498,7 +498,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
         }
         const onPopState = () => {
             const next = window.history.state || {};
-            setMenuOpen(false);
+            setMenuOpen(window.matchMedia("(min-width: 901px)").matches || Boolean(next.timelyoMenu));
             setSelectedView(next.timelyoRole === role && valid(next.timelyoView) ? next.timelyoView : home);
         };
         window.addEventListener("popstate", onPopState);
