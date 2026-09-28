@@ -707,3 +707,11 @@ input[type="date"], input[type="datetime-local"], input[type="month"], input[typ
   .menu-backdrop { display: block; position: fixed; z-index: 91; inset: 68px 0 0; width: 100%; border: 0; background: #15133199; }
   .app-body .workspace { padding-top: 25px; }
 }
+
+/* Action results stay visible in the current viewport on phone and desktop. */
+.action-toast { position: fixed; z-index: 200; top: max(16px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); width: min(560px, calc(100vw - 24px)); display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; background: #fff; color: #1d2144; border: 1px solid #d6d3ed; box-shadow: 0 16px 44px rgba(26, 21, 71, .24); font-weight: 600; overflow-wrap: anywhere; }
+.action-toast.success { border-left: 5px solid #168474; }
+.action-toast.error { border-left: 5px solid #c24145; }
+.action-toast-icon { flex: none; display: grid; place-items: center; width: 23px; height: 23px; border-radius: 50%; background: #e0f5f1; color: #07675b; font-weight: 800; }
+.action-toast.error .action-toast-icon { background: #fae6e7; color: #9c242b; }
+.action-toast button { flex: none; margin-left: auto; border: 0; background: transparent; color: inherit; font-size: 26px; line-height: 22px; cursor: pointer; }
