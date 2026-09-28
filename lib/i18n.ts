@@ -423,6 +423,7 @@ const en: Record<string, string> = {
   "操作暂时无法完成，请检查填写内容后重试": "Could not complete this action. Check the fields and try again.",
   "教学资料已删除": "Teaching material deleted", "班级状态已更新": "Classroom status updated", "学生名单已更新": "Student roster updated",
   "账号已删除": "Account deleted", "网课链接已保存": "Online lesson link saved", "课时核对已保存": "Lesson review saved",
+  "没有权限执行此操作": "You do not have permission to do this.",
 };
 
 export function t(value: string) {
