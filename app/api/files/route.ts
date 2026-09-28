@@ -58,6 +58,7 @@ export async function POST(request: Request) {
       throw error;
     }
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : "PDF 上传失败，请重试", 503);
+    const message = error instanceof Error ? error.message : "";
+    return errorResponse(/PDF storage|储存.*配置|storage.*configured/i.test(message) ? "PDF 储存暂未配置，请联系管理员" : "PDF 上传失败，请稍后重试", 503);
   }
 }
