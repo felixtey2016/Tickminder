@@ -18,6 +18,8 @@ export function showActionToast(kind: ActionToast["kind"], value: string) {
 export function actionFailureMessage(error: unknown, fallback = "操作失败，请重试") {
   if (error instanceof TypeError && /fetch|network/i.test(error.message)) return t("网络连接中断，请检查网络后重试");
   const message = error instanceof Error ? error.message : fallback;
+  if (/^(Sign in required|Unauthorized)$/i.test(message)) return t("登录已过期，请重新登录");
+  if (/^(Administrator access required|Student access only|No permission)/i.test(message)) return t("没有权限执行此操作");
   if (/stack trace|internal server error|SQLITE_|D1_ERROR|wrangler|cloudflare:workers|token=|secret=/i.test(message)) return t("操作失败，请稍后重试；如仍失败请联系管理员");
   return t(message || fallback);
 }
