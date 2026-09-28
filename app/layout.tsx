@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { BRAND_NAME } from "@/lib/brand";
 import "./globals.css";
+import { ActionToastHost } from "@/components/action-toast";
 
 export const metadata: Metadata = {
   title: `${BRAND_NAME} · 排课与打卡`,
@@ -21,7 +22,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">{children}<ActionToastHost/></body>
     </html>
   );
 }
