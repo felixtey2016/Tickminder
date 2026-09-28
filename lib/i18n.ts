@@ -428,6 +428,7 @@ const en: Record<string, string> = {
   "服务器未能确认结果，请刷新班级列表检查后再重试": "The server could not confirm the result. Refresh the classroom list before retrying.",
   "服务器未能确认结果，请刷新列表检查后再重试": "The server could not confirm the result. Refresh the list before retrying.",
   "Google Sheet 导入结果未确认，请先检查表格，再重新预览。": "The Sheet import result is uncertain. Check the sheet, then preview again.",
+  "已取消课程不占时段；待确认改期仍按当前已排时间计算。": "Cancelled lessons do not occupy a slot. Pending reschedules use the current confirmed lesson time.",
 };
 
 export function t(value: string) {
