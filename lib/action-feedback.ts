@@ -15,6 +15,8 @@ export function showActionToast(kind: ActionToast["kind"], value: string) {
   window.dispatchEvent(new CustomEvent<ActionToast>(ACTION_TOAST_EVENT, { detail: { kind, message, id: at } }));
 }
 
+export function clearActionToastDedup() { lastToast = null; }
+
 export function actionFailureMessage(error: unknown, fallback = "操作失败，请重试") {
   if (error instanceof TypeError && /fetch|network/i.test(error.message)) return t("网络连接中断，请检查网络后重试");
   const message = error instanceof Error ? error.message : fallback;
