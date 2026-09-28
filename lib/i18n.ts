@@ -407,6 +407,14 @@ const en: Record<string, string> = {
   "操作失败，请稍后重试；如仍失败请联系管理员": "Action failed. Try again later or contact an administrator.", "登录已过期，请重新登录": "Your session expired. Sign in again.",
   "服务器未返回有效响应，请稍后重试": "The server did not respond correctly. Try again later.", "已退出登录": "Signed out", "登录成功": "Signed in",
   "密码已更新": "Password updated", "姓名已保存": "Name saved",
+  "课程时间冲突": "Lesson time conflict", "学生和老师的时间都有冲突": "The student and teacher both have lessons at this time",
+  "该学生已有课程": "The student already has a lesson", "老师已有课程": "The teacher already has a lesson",
+  "暂时无法检查时间": "Unable to check this time yet", "保存时系统会再检查": "The server will check again when you save",
+  "正在核对课程时间…": "Checking the schedule…", "目前没有课程冲突的时段；请另外确认老师是否有空": "No lesson conflict found. Please also confirm the teacher is available.",
+  "改期记录": "Reschedule history", "当前确认时间": "Current confirmed time", "申请人": "Requested by", "处理人": "Handled by",
+  "待处理": "Pending", "已接受": "Accepted", "已拒绝": "Rejected", "已失效": "No longer applicable", "已直接修改": "Changed directly",
+  "管理员直接修改": "Changed by administrator", "已删除账号": "Deleted account", "系统": "System", "暂无改期记录": "No reschedule history yet",
+  "改期记录暂时无法载入": "Could not load reschedule history", "重试": "Retry",
 };
 
 export function t(value: string) {
