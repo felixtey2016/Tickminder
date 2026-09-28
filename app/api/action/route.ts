@@ -4,7 +4,7 @@ import { currentAccount } from "@/lib/auth";
 import { getDb } from "@/db";
 import { accounts, assignments, audit, lessons, localCredentials, loginAttempts, plans, rescheduleRequests, sessions, students, teachers } from "@/db/schema";
 import { hashPassword, normalizeUsername, validPassword, validUsername } from "@/lib/password";
-import { findLessonConflict, generateWeekly, hoursBetween, malaysiaDate, mayCheckIn, type LessonSlot } from "@/lib/lesson-rules";
+import { findLessonConflict, generateWeekly, hoursBetween, lessonConflictReason, malaysiaDate, mayCheckIn, type LessonSlot } from "@/lib/lesson-rules";
 import { readRoster } from "@/lib/roster";
 import { teacherMaySeeLesson } from "@/lib/access";
 import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
@@ -14,6 +14,10 @@ import { normalizeOnlineLink } from "@/lib/online-link";
 type Body = Record<string, unknown>;
 const str = (v: unknown) => typeof v === "string" ? v.trim() : "";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
+const conflictReply = (slot: LessonSlot, conflict: LessonSlot, role: string) => NextResponse.json({
+  error: "课程时间冲突", conflict: { start: conflict.plannedStart, end: conflict.plannedEnd,
+    reason: lessonConflictReason(slot, conflict), ...(role === "admin" ? { student: conflict.student, teacherName: conflict.teacherName } : {}) },
+}, { status: 409 });
 const malaysiaIso = (input: unknown) => {
   const value = str(input);
   if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(value)) throw new Error("Enter a Malaysia date and time");
@@ -196,8 +200,7 @@ export async function POST(request: Request) {
       const dates = until ? generateWeekly(start, end, malaysiaIso(`${until}T23:59`)) : [{ start, end }];
       const existingSlots = await db.select().from(lessons).all();
       const newSlots: LessonSlot[] = dates.map(d => ({ student, teacherName, plannedStart: d.start, plannedEnd: d.end }));
-      const conflict = newSlots.find(slot => findLessonConflict(slot, existingSlots));
-      if (conflict) return bad("时间冲突：该学生或老师在此时段已有课程");
+      for (const slot of newSlots) { const conflict = findLessonConflict(slot, existingSlots); if (conflict) return conflictReply(slot, conflict, actor.role); }
       const records = dates.map(date => ({ id: crypto.randomUUID(), student, subject, teacherName, plannedStart: date.start, plannedEnd: date.end, kind, seriesId, replacementFor, createdBy: actor.id, updatedAt: now }));
       await db.insert(lessons).values(records);
       await db.insert(audit).values(records.map(l => ({ id: crypto.randomUUID(), lessonId: l.id, actorId: actor.id, action: "create", before: null, after: JSON.stringify(l), at: now })));
@@ -214,7 +217,9 @@ export async function POST(request: Request) {
       hoursBetween(proposedStart, proposedEnd);
       if (proposedStart <= now) return bad("Choose a future date and time");
       const other = (await db.select().from(lessons).all()).filter(l => l.id !== id);
-      if (findLessonConflict({ ...existing, plannedStart: proposedStart, plannedEnd: proposedEnd }, other)) return bad("时间冲突：该学生或老师在此时段已有课程");
+      const proposedSlot = { ...existing, plannedStart: proposedStart, plannedEnd: proposedEnd };
+      const proposedConflict = findLessonConflict(proposedSlot, other);
+      if (proposedConflict) return conflictReply(proposedSlot, proposedConflict, actor.role);
       const pending = await db.select().from(rescheduleRequests).where(and(eq(rescheduleRequests.lessonId, id), eq(rescheduleRequests.status, "pending"))).all();
       if (pending.length) return bad("This lesson already has a pending reschedule request");
       const row = { id: crypto.randomUUID(), lessonId: id, originalStart: existing.plannedStart, originalEnd: existing.plannedEnd, proposedStart, proposedEnd, status: "pending", note: str(data.note).slice(0, 500) || null, requestedBy: actor.id, requestedAt: now };
@@ -233,7 +238,9 @@ export async function POST(request: Request) {
       if (decision === "accept") {
         if (proposal.proposedStart <= now) return bad("Proposed time has passed; ask the teacher to propose again");
         const other = (await db.select().from(lessons).all()).filter(l => l.id !== id);
-        if (findLessonConflict({ ...existing, plannedStart: proposal.proposedStart, plannedEnd: proposal.proposedEnd }, other)) return bad("Time conflict; ask the teacher to propose again");
+        const acceptedSlot = { ...existing, plannedStart: proposal.proposedStart, plannedEnd: proposal.proposedEnd };
+        const acceptedConflict = findLessonConflict(acceptedSlot, other);
+        if (acceptedConflict) return conflictReply(acceptedSlot, acceptedConflict, actor.role);
         await db.update(lessons).set({ plannedStart: proposal.proposedStart, plannedEnd: proposal.proposedEnd, updatedAt: now }).where(eq(lessons.id, id));
       }
       const update = { status: decision === "accept" ? "accepted" : "rejected", respondedBy: actor.id, respondedAt: now };
@@ -293,7 +300,7 @@ export async function POST(request: Request) {
         const candidateIds = new Set(candidates.map(l => l.id));
         const slots = candidates.map(row => ({ ...row, plannedStart: new Date(Date.parse(row.plannedStart) + shift).toISOString(), plannedEnd: future ? new Date(Date.parse(row.plannedStart) + shift + Date.parse(newEnd) - Date.parse(newStart)).toISOString() : newEnd }));
         const other = (await db.select().from(lessons).all()).filter(l => !candidateIds.has(l.id));
-        if (slots.some((slot, index) => findLessonConflict(slot, [...other, ...slots.filter((_, i) => i !== index)]))) return bad("时间冲突：该学生或老师在此时段已有课程");
+        for (const [index, slot] of slots.entries()) { const conflict = findLessonConflict(slot, [...other, ...slots.filter((_, i) => i !== index)]); if (conflict) return conflictReply(slot, conflict, actor.role); }
       }
       for (const row of candidates) {
         const update = action === "cancel" ? { status: "cancelled", reviewedAt: null, reviewedBy: null, chargeable: null, updatedAt: now } : { plannedStart: new Date(Date.parse(row.plannedStart) + shift).toISOString(), plannedEnd: future ? new Date(Date.parse(row.plannedStart) + shift + Date.parse(newEnd) - Date.parse(newStart)).toISOString() : newEnd, reviewedAt: null, reviewedBy: null, chargeable: null, updatedAt: now };
