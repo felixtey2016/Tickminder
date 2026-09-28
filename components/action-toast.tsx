@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ACTION_TOAST_EVENT, type ActionToast } from "@/lib/action-feedback";
+import { ACTION_TOAST_EVENT, clearActionToastDedup, type ActionToast } from "@/lib/action-feedback";
 import { t } from "@/lib/i18n";
 
 export function ActionToastHost() {
@@ -20,6 +20,6 @@ export function ActionToastHost() {
   return <div className={`action-toast ${toast.kind}`} role={toast.kind === "error" ? "alert" : "status"} aria-live={toast.kind === "error" ? "assertive" : "polite"}>
     <span className="action-toast-icon" aria-hidden="true">{toast.kind === "success" ? "✓" : "!"}</span>
     <span>{toast.message}</span>
-    <button type="button" onClick={() => setToast(null)} aria-label={t("关闭")}>×</button>
+    <button type="button" onClick={() => { clearActionToastDedup(); setToast(null); }} aria-label={t("关闭")}>×</button>
   </div>;
 }
