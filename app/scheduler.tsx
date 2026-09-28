@@ -1,6 +1,6 @@
 "use client";
 import { getLanguage, LANGUAGE_KEY, setLanguage, t, type Language } from "@/lib/i18n";
-import { alertActionFailure, readApiJson } from "@/lib/action-feedback";
+import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
 import { BRAND_NAME } from "@/lib/brand";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, BookOpen, CalendarDays, ClipboardCheck, Clock3, FileSpreadsheet, FileText, GraduationCap, History, LayoutDashboard, List, LogOut, Menu, RefreshCw, ShieldCheck, UserRoundPlus, Users, type LucideIcon } from "lucide-react";
@@ -123,6 +123,10 @@ const statusLabel: Record<string, string> = { scheduled: "已安排", completed:
 const day = (iso: string) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur", month: "short", day: "numeric", weekday: "short" }).format(new Date(iso));
 const time = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
 const local = (iso: string) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso)).replace(" ", "T");
+function actionSuccessText(action: string) {
+    const labels: Record<string, string> = { attendance: "上课打卡已保存", proposeReschedule: "改期申请已发送", respondReschedule: "改期处理结果已保存", edit: "课程时间已更新", cancel: "课程已取消", create: "课程已安排", saveMaterial: "教学资料已保存", publishHomework: "功课已发布", submitHomework: "功课已提交", setHomeworkScore: "分数已保存", saveStudyBlock: "学习安排已保存", deleteStudyBlock: "学习安排已删除", saveClassroom: "班级已保存", saveAnnouncement: "公告已发布", deleteAnnouncement: "公告已删除", savePlan: "学生科目已保存", saveStudent: "学生已保存", saveTeacher: "老师已保存", bind: "账号绑定已保存", createLocalAccount: "账号已创建", resetLocalPassword: "密码已重置" };
+    return t(labels[action] || "操作已完成");
+}
 async function request(url: string, options?: RequestInit): Promise<any> { const r = await fetch(url, { ...options, cache: "no-store" }); const v = await readApiJson<{ error?: string; [key: string]: any }>(r); if (!r.ok)
     throw Object.assign(new Error(t(v.error || "请求失败")), { status: r.status }); return v; }
 export function Scheduler() {
@@ -140,6 +144,7 @@ export function Scheduler() {
     const [selectedMonth, setSelectedMonth] = useState(() => local(new Date().toISOString()).slice(0, 7));
     const [message, setMessage] = useState("");
     const [busy, setBusy] = useState(false);
+    const mutationInFlight = useRef(false);
     const [modal, setModal] = useState<{
         type: "attendance" | "review" | "edit" | "cancel";
         lesson: Lesson;
@@ -254,24 +259,27 @@ export function Scheduler() {
         script.addEventListener("load", setup);
         return () => { script?.removeEventListener("load", setup); };
     }, [auth, reload, language]);
-    async function mutate(body: Record<string, unknown>) { try {
+    async function mutate(body: Record<string, unknown>) { if (mutationInFlight.current) return false; mutationInFlight.current = true; try {
         setBusy(true);
         setMessage("");
         const result = await request("/api/action", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
         channelRef.current?.postMessage({ type: "changed" });
-        setMessage(result.count ? (language === "zh" ? `已更新 ${result.count} 堂课` : `Updated ${result.count} lessons`) : t("\u5DF2\u4FDD\u5B58"));
+        showActionToast("success", result.count ? (language === "zh" ? `已更新 ${result.count} 堂课` : `Updated ${result.count} lessons`) : actionSuccessText(String(body.action || "")));
         setModal(null);
         await reload();
         return true;
     }
     catch (e) {
-        setMessage(alertActionFailure(e));
+        alertActionFailure(e);
         return false;
     }
     finally {
+        mutationInFlight.current = false;
         setBusy(false);
     } }
     async function learningMutate(body: Record<string, unknown>) {
+        if (mutationInFlight.current) return false;
+        mutationInFlight.current = true;
         try {
             setBusy(true);
             setMessage("");
@@ -287,25 +295,27 @@ export function Scheduler() {
             }
             if (!response.ok) throw new Error(t(result.error || "保存失败，请重试"));
             channelRef.current?.postMessage({ type: "changed" });
-            setMessage(t("已保存"));
+            showActionToast("success", actionSuccessText(String(body.action || "")));
             await reload();
             return true;
         } catch (error) {
-            setMessage(alertActionFailure(error));
+            alertActionFailure(error);
             return false;
-        } finally { setBusy(false); }
+        } finally { mutationInFlight.current = false; setBusy(false); }
     }
     async function classroomMutate(body: Record<string, unknown>) {
+        if (mutationInFlight.current) return { ok: false };
+        mutationInFlight.current = true;
         try {
             setBusy(true); setMessage("");
             const response = await fetch("/api/classrooms", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
             const result = await readApiJson<{ error?: string; id?: string }>(response);
             if (!response.ok) throw new Error(t(result.error || "保存失败，请重试"));
             channelRef.current?.postMessage({ type: "changed" });
-            setMessage(t("已保存")); await reload();
+            showActionToast("success", actionSuccessText(String(body.action || ""))); await reload();
             return { ok: true, id: result.id };
-        } catch (error) { setMessage(alertActionFailure(error)); return { ok: false }; }
-        finally { setBusy(false); }
+        } catch (error) { alertActionFailure(error); return { ok: false }; }
+        finally { mutationInFlight.current = false; setBusy(false); }
     }
     async function logout() { try { await request("/api/auth", { method: "DELETE" }); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); } catch (error) { setMessage(alertActionFailure(error)); } }
     async function localLogin(username: string, password: string) { try {
