@@ -73,6 +73,6 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Google Sheet 导入失败。";
     const status = /月份已变化|重新预览|Month changed|Preview again|data changed/.test(message) ? 409 : /尚未配置|not configured/.test(message) ? 503 : 502;
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: status === 409 ? "表格月份或数据已变化，请重新预览。" : status === 503 ? "Google Sheet 导入尚未配置，请联系管理员。" : "Google Sheet 暂时无法完成导入，请稍后重试。" }, { status });
   }
 }
