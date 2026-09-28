@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { approvedActualHours, approvedHoursInMonth, billedHours, checkinInMonth, findLessonConflict, generateWeekly, inMonth, mayCheckIn, monthlyAttendanceForPair } from "../lib/lesson-rules.ts";
+import { approvedActualHours, approvedHoursInMonth, billedHours, checkinInMonth, findLessonConflict, lessonConflictReason, generateWeekly, inMonth, mayCheckIn, monthlyAttendanceForPair } from "../lib/lesson-rules.ts";
 import { teacherMaySeeLesson } from "../lib/access.ts";
 
 const dates = generateWeekly("2026-09-02T12:00:00.000Z", "2026-09-02T13:00:00.000Z", "2026-09-16T15:59:00.000Z");
@@ -46,6 +46,9 @@ assert.equal(findLessonConflict({ ...slot, id: "b", student: "He be", teacherNam
 assert.equal(findLessonConflict({ ...slot, id: "b", student: "Other", teacherName: "Other" }, [slot]), undefined);
 assert.equal(findLessonConflict({ ...slot, id: "b", plannedStart: slot.plannedEnd, plannedEnd: dates[1].end }, [slot]), undefined);
 assert.equal(findLessonConflict({ ...slot, id: "b" }, [{ ...slot, status: "cancelled" }]), undefined);
+assert.equal(lessonConflictReason(slot, { ...slot, student: "Other" }), "teacher");
+assert.equal(lessonConflictReason(slot, { ...slot, teacherName: "Other" }), "student");
+assert.equal(lessonConflictReason(slot, { ...slot }), "both");
 assert.equal(mayCheckIn("2026-09-25T16:00:00.000Z", "2026-09-25T15:59:00.000Z"), false);
 assert.equal(mayCheckIn("2026-09-25T16:00:00.000Z", "2026-09-25T16:00:00.000Z"), true);
 assert.equal(mayCheckIn("2026-09-26T12:00:00.000Z", "2026-09-26T02:00:00.000Z"), true);
