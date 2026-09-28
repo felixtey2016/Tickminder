@@ -319,13 +319,14 @@ export function Scheduler() {
         } catch (error) { alertActionFailure(error); return { ok: false }; }
         finally { mutationInFlight.current = false; setBusy(false); }
     }
-    async function logout() { try { await request("/api/auth", { method: "DELETE" }); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); } catch (error) { setMessage(alertActionFailure(error)); } }
-    async function localLogin(username: string, password: string) { try {
+    async function logout() { try { await request("/api/auth", { method: "DELETE" }); showActionToast("success", "已退出登录"); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); } catch (error) { setMessage(alertActionFailure(error)); } }
+    async function localLogin(username: string, password: string) { if (busy) return; try {
         setBusy(true);
         setMessage("");
         await request("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, password }) });
         const next = await request("/api/auth");
         setAuth(next);
+        showActionToast("success", "登录成功");
     }
     catch (e) {
         setMessage(alertActionFailure(e));
@@ -337,6 +338,7 @@ export function Scheduler() {
         setBusy(true);
         setMessage("");
         await request("/api/password", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ currentPassword, newPassword }) });
+        showActionToast("success", "密码已更新");
         const next = await request("/api/auth");
         setAuth(next);
     }
@@ -350,6 +352,7 @@ export function Scheduler() {
         setBusy(true);
         setMessage("");
         await request("/api/profile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
+        showActionToast("success", "姓名已保存");
         setAuth(await request("/api/auth"));
     } catch (error) {
         setMessage(alertActionFailure(error));
