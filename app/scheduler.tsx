@@ -236,6 +236,7 @@ export function Scheduler() {
                     setBusy(true);
                     await request("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(x) });
                     setAuth(await request("/api/auth"));
+                     showActionToast("success", "登录成功");
                 }
                 catch (e) {
                     setMessage(alertActionFailure(e));
