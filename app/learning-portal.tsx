@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, FileText, UploadCloud } from "lucide-react";
 import { t } from "@/lib/i18n";
-import { alertActionFailure, readApiJson } from "@/lib/action-feedback";
+import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
 import { Button } from "@/components/ui/button";
 
 export type Material = { id: string; title: string; description: string | null; fileId: string; filename: string; subject?: string; classroomId?: string | null; recipients?: Array<{ studentName: string; subject: string }> };
@@ -28,6 +28,7 @@ export async function uploadPdf(file: File, kind: "material" | "homework" | "sub
   if (response.status === 413) throw new Error(t("PDF 超过单份大小限制"));
   const result = await readApiJson<{ id?: string; error?: string }>(response);
   if (!response.ok || !result.id) throw new Error(result.error || (response.status === 413 ? t("PDF 超过单份大小限制") : t("PDF 上传失败，请重试")));
+  showActionToast("success", kind === "submission" ? "PDF 已上传，尚未提交功课" : "PDF 已上传，尚未发布给学生");
   return result.id;
 }
 
