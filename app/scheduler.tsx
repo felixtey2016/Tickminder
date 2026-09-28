@@ -130,7 +130,7 @@ function actionSuccessText(action: string) {
     return t(labels[action] || "操作已完成");
 }
 async function request(url: string, options?: RequestInit): Promise<any> { const r = await fetch(url, { ...options, cache: "no-store" }); const v = await readApiJson<{ error?: string; [key: string]: any }>(r); if (!r.ok)
-    throw Object.assign(new Error(v.conflict ? conflictDescription(v.conflict as ConflictDetail) : t(v.error || (r.status === 401 ? "登录已过期，请重新登录" : "请求失败"))), { status: r.status }); return v; }
+    throw Object.assign(new Error(v.conflict ? conflictDescription(v.conflict as ConflictDetail) : t(r.status === 401 && url !== "/api/auth" ? "登录已过期，请重新登录" : v.error || "请求失败")), { status: r.status }); return v; }
 export function Scheduler() {
     const [language, setLanguageState] = useState<Language>("zh");
     useEffect(() => {
@@ -517,7 +517,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
     useEffect(() => {
         if (!menuOpen || desktop) return;
         const closeOnEscape = (event: KeyboardEvent) => {
-            if (event.key === "Escape") setMenuOpen(false);
+            if (event.key === "Escape") { if (window.history.state?.timelyoMenu) window.history.back(); setMenuOpen(false); }
         };
         window.addEventListener("keydown", closeOnEscape);
         return () => window.removeEventListener("keydown", closeOnEscape);
@@ -624,7 +624,7 @@ function StatsPanel({ state }: { state: State | null }) {
             const start = l.actualStart || l.plannedStart;
             const end = l.actualEnd || l.plannedEnd;
             const hours = l.status === "completed" ? ((Date.parse(end) - Date.parse(start)) / 3600000).toFixed(2) + " h" : "—";
-            return <div className="record-row" key={l.id}><span>{day(start)}<small>{time(start)}–{time(end)}</small></span><strong>{l.student} · {l.subject}<small>{t(statusLabel[l.status] || l.status)} · {l.reviewedAt ? t("已确认") : t("待核对")}</small></strong><span>{l.teacherName}</span><b>{hours}</b></div>;
+            return <div className="record-row" key={l.id}><span>{day(start)}<small>{time(start)}–{time(end)}</small></span><strong>{l.student} · {l.subject}<small>{t(l.attendanceKind === "early_dismissal" ? "提前结束课程" : statusLabel[l.status] || l.status)} · {l.reviewedAt ? t("已确认") : t("待核对")}</small></strong><span>{l.teacherName}</span><b>{hours}</b></div>;
         }) : <div className="empty">{t("这个月还没有打卡记录。")}</div>}</div>
     </section>;
 }
