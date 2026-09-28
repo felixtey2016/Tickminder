@@ -421,6 +421,8 @@ const en: Record<string, string> = {
   "Google Sheet 导入尚未配置，请联系管理员。": "Google Sheet import is not configured. Contact an administrator.", "Google 登录验证失败，请重试": "Google sign-in verification failed. Try again.",
   "登录失败，请稍后重试": "Sign-in failed. Try again later.", "资料暂时无法载入，请稍后刷新": "Data could not load. Refresh later.",
   "操作暂时无法完成，请检查填写内容后重试": "Could not complete this action. Check the fields and try again.",
+  "教学资料已删除": "Teaching material deleted", "班级状态已更新": "Classroom status updated", "学生名单已更新": "Student roster updated",
+  "账号已删除": "Account deleted", "网课链接已保存": "Online lesson link saved", "课时核对已保存": "Lesson review saved",
 };
 
 export function t(value: string) {
