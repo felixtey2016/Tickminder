@@ -111,6 +111,6 @@ export async function POST(request: Request) {
     }
     throw new RequestError("未知操作");
   } catch (error) {
-    return fail(error instanceof RequestError ? error : new RequestError("暂时无法保存班级，请重试", 503));
+    return fail(error instanceof RequestError ? error : new RequestError("服务器未能确认结果，请刷新班级列表检查后再重试", 503));
   }
 }
