@@ -312,6 +312,8 @@ export async function POST(request: Request) {
     }
     return bad("Unknown action");
   } catch (error) {
-    return bad(error instanceof Error ? error.message : "Request failed");
+    const message = error instanceof Error ? error.message : "";
+    if (/^(Lesson time must be|Enter a Malaysia date and time|Invalid date and time|Invalid recurring lesson time|Recurring range is too long|End date precedes first lesson)/.test(message)) return bad(message);
+    return bad("操作暂时无法完成，请检查填写内容后重试", 503);
   }
 }
