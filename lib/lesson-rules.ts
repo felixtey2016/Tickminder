@@ -64,6 +64,12 @@ export function findLessonConflict(candidate: LessonSlot, existing: readonly Les
     candidate.plannedStart < row.plannedEnd && row.plannedStart < candidate.plannedEnd);
 }
 
+export function lessonConflictReason(candidate: LessonSlot, other: LessonSlot): "student" | "teacher" | "both" {
+  const sameStudent = studentIdentity(candidate.student) === studentIdentity(other.student);
+  const sameTeacher = candidate.teacherName === other.teacherName;
+  return sameStudent && sameTeacher ? "both" : sameStudent ? "student" : "teacher";
+}
+
 export function approvedHoursInMonth(lesson: LessonLike, month: string) {
   return lesson.actualStart && inMonth(lesson.actualStart, month) ? approvedActualHours(lesson) : 0;
 }
