@@ -10,12 +10,10 @@ import { Button } from "@/components/ui/button"
 function Dialog({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  const id = React.useRef<string | null>(null);
   const popped = React.useRef(false);
   React.useEffect(() => {
     if (!props.open) return;
     const token = crypto.randomUUID();
-    id.current = token;
     popped.current = false;
     window.history.pushState({ ...(window.history.state || {}), timelyoDialog: token }, "");
     const onPop = () => {
@@ -28,7 +26,6 @@ function Dialog({
     return () => {
       window.removeEventListener("popstate", onPop);
       if (!popped.current && window.history.state?.timelyoDialog === token) window.history.back();
-      id.current = null;
     };
   // Open and close are controlled by the caller; a Back pop closes this dialog first.
   // eslint-disable-next-line react-hooks/exhaustive-deps
