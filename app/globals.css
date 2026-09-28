@@ -724,3 +724,6 @@ input[type="date"], input[type="datetime-local"], input[type="month"], input[typ
 .lesson-history li { padding: 8px 0; border-bottom: 1px solid #ece9f6; }
 .lesson-history li span, .lesson-history li small { display: block; margin-top: 3px; overflow-wrap: anywhere; }
 .lesson-history li small { color: #68708d; }
+
+.conflict-preview { grid-column: 1 / -1; margin: 4px 0 12px; padding: 9px 11px; border: 1px solid #d6d3ed; border-radius: 10px; background: #f6f5ff; color: #4b4c72; font-size: .9rem; overflow-wrap: anywhere; }
+.conflict-preview.conflict { border-color: #d27878; background: #fff0ef; color: #8b2729; font-weight: 700; }
