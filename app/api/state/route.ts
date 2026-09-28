@@ -69,6 +69,6 @@ export async function GET(request: Request) {
     const changes = await db.select().from(audit).orderBy(desc(audit.at)).limit(30).all();
     return NextResponse.json({ revision, account: { id: account.id, name: account.name, role: account.role }, plans: roster.plans, allPlans: roster.allPlans, students: roster.students, allStudents: roster.allStudents, teachers: roster.teachers, allTeachers: roster.allTeachers, lessons: allLessons.map(withOnlineLink), proposals: allRequests, month: selected, summary: monthlySummary(summaryPlans, allLessons, selected), records, checkins, classrooms: await classroomsState(account), users: users.map(u => ({ ...u, username: credentials.find(c => c.accountId === u.id)?.username || null, mustChangePassword: credentials.find(c => c.accountId === u.id)?.mustChangePassword || false })), activity: changes.map(c => ({ ...c, actorName: users.find(u => u.id === c.actorId)?.name || c.actorId, lessonName: (() => { const lesson = allLessons.find(l => l.id === c.lessonId); return lesson ? `${lesson.student} · ${lesson.subject}` : c.lessonId; })() })) });
   } catch (error) {
-    return NextResponse.json({ account: { name: account.name, role: account.role }, error: error instanceof Error ? error.message : "Data unavailable" }, { status: 503 });
+    return NextResponse.json({ account: { name: account.name, role: account.role }, error: "资料暂时无法载入，请稍后刷新" }, { status: 503 });
   }
 }
