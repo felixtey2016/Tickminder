@@ -52,7 +52,8 @@ export async function POST(request: Request) {
     response.cookies.set("tuition_session", session.token, { httpOnly: true, secure: true, sameSite: "lax", path: "/", expires: new Date(session.expiresAt) });
     return response;
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Login failed" }, { status: 400 });
+    const message = error instanceof Error ? error.message : "";
+    return NextResponse.json({ error: /无法连接 Google 登录验证服务/.test(message) ? message : /Google login is not configured/.test(message) ? "Google 登录尚未配置" : /Invalid Google|Google signing key unavailable|Google key lookup failed/.test(message) ? "Google 登录验证失败，请重试" : "登录失败，请稍后重试" }, { status: 400 });
   }
 }
 
