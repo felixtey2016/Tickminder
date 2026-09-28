@@ -314,6 +314,6 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (/^(Lesson time must be|Enter a Malaysia date and time|Invalid date and time|Invalid recurring lesson time|Recurring range is too long|End date precedes first lesson|请输入有效的网课链接|网课链接不能超过|网课链接必须是完整的)/.test(message)) return bad(message);
-    return bad("操作暂时无法完成，请检查填写内容后重试", 503);
+    return bad("服务器未能确认结果，请刷新列表检查是否已保存，再决定是否重试", 503);
   }
 }
