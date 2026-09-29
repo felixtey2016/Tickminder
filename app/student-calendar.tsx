@@ -96,7 +96,7 @@ export function StudentCalendar({ lessons, proposals, studyBlocks = [], onAddStu
           {pending.has(lesson.id) && <a className="student-lesson-pending" href="#student-reschedule">{t("待你确认改期")} · {dateLabel(malaysiaDay(pending.get(lesson.id)!.proposedStart), { month: "short", day: "numeric" })} {time(pending.get(lesson.id)!.proposedStart)} →</a>}
         </article>)}
         {selectedStudy.map(block => <article className="student-day-lesson lesson-study" key={block.id}><div className="student-day-lesson-top"><strong>{block.title}</strong><span>{t("个人学习")}</span></div><p><Clock3 size={16} aria-hidden="true"/>{time(block.startsAt)}–{time(block.endsAt)}</p>{block.subject && <p>{block.subject}</p>}{block.note && <small>{block.note}</small>}<Button size="sm" variant="outline" onClick={() => onEditStudy?.(block)}>{t("编辑学习安排")}</Button></article>)}
-        {!selectedLessons.length && !selectedStudy.length && <div className="student-day-empty"><CalendarDays size={26} aria-hidden="true"/><p>{t("这一天没有安排，选择其他日期查看。")}</p></div>}
+        {!selectedLessons.length && !selectedStudy.length && <div className="student-day-empty"><CalendarDays size={26} aria-hidden="true"/><p>{t("当日暂无课程或学习安排。")}</p></div>}
       </aside>
     </div>
   </section>;

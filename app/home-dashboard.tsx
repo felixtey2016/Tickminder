@@ -47,7 +47,7 @@ export function HomeDashboard({ role, name, lessons, learning, onNavigate }: {
   const next = upcoming[0];
   const todayCount = lessons.filter(lesson => lesson.status !== "cancelled" && malaysiaDay(lesson.plannedStart) === today).length;
   const nextDetail = next
-    ? `${lessonTime(next.plannedStart)} · ${role === "student" ? next.teacherName : next.student} · ${next.subject}`
+    ? `${lessonTime(next.plannedStart)} · ${role === "student" ? next.teacherName : next.student}`
     : t("目前没有已安排的后续课程");
 
   let cards: HomeCard[];
@@ -66,7 +66,7 @@ export function HomeDashboard({ role, name, lessons, learning, onNavigate }: {
     cards = [
       { label: "下一堂课", value: next ? next.subject : "—", detail: nextDetail, action: "查看课程与打卡", Icon: CalendarDays, destination: "lessons" },
       { label: "今日待打卡", value: String(todayToCheckIn), detail: t("查看今天的课程"), action: "前往打卡", Icon: ClipboardCheck, destination: "lessons" },
-      { label: "已布置功课", value: String(learning.homework.length), detail: t("查看学生提交情况"), action: "查看布置功课", Icon: BookOpen, destination: "homework" },
+      { label: "已布置功课", value: String(learning.homework.length), detail: t("查看学生提交情况"), action: "管理功课", Icon: BookOpen, destination: "homework" },
     ];
   } else {
     const missed = lessons.filter(lesson => lesson.status === "scheduled" && Date.parse(lesson.plannedEnd) < now).length;
@@ -74,13 +74,13 @@ export function HomeDashboard({ role, name, lessons, learning, onNavigate }: {
       !lessons.some(makeup => makeup.replacementFor === lesson.id && makeup.status !== "cancelled")).length;
     cards = [
       { label: "下一堂课", value: next ? next.subject : "—", detail: nextDetail, action: "查看课程日历", Icon: CalendarDays, destination: "calendar" },
-      { label: "今日课程", value: String(todayCount), detail: t("查看今天的排课"), action: "查看课程日历", Icon: Clock3, destination: "calendar" },
-      { label: "异常待办", value: String(missed + absence), detail: t("漏打卡及待处理缺席"), action: "查看异常待办", Icon: ClipboardCheck, destination: "attention" },
+      { label: "今日课程", value: String(todayCount), detail: t("查看今日课程安排"), action: "查看课程日历", Icon: Clock3, destination: "calendar" },
+      { label: "出席待处理", value: String(missed + absence), detail: t("未记录出席及待处理缺席"), action: "查看出席待处理", Icon: ClipboardCheck, destination: "attention" },
     ];
   }
 
   return <section className="home-dashboard" aria-label={t("主页")}>
-    <div className="home-intro"><p className="eyebrow">{t("今天一览")}</p><h2>{t("你好")}{name ? `，${name}` : ""}</h2><p>{t("常用信息和入口都在这里。")}</p></div>
+    <div className="home-intro"><div><p className="eyebrow">{t("今日概览")}</p><h2>{t("欢迎回来")}{name ? `${getLanguage() === "zh" ? "，" : ", "}${name}` : ""}</h2></div><p className="home-date"><CalendarDays size={17} aria-hidden="true"/><time dateTime={today}>{new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur", weekday: "long", year: "numeric", month: "long", day: "numeric" }).format(new Date(now))}</time></p></div>
     <div className="home-cards">{cards.map(card => <article key={card.label} className="home-card"><button type="button" className="home-card-main" onClick={() => onNavigate(card.destination)} aria-label={`${t(card.label)}：${card.value}。${t(card.action)}`}>
       <span className="home-card-icon"><card.Icon size={21} aria-hidden="true"/></span>
       <span className="home-card-label">{t(card.label)}</span>

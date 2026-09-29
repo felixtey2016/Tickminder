@@ -393,7 +393,7 @@ function LoginForm({ googleButton, clientId, login, busy, message, language, cha
 }) {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
-    return <main className="auth-shell"><div className="auth-layout"><section className="auth-story"><BrandLogo/><strong>{BRAND_NAME}</strong><h2>{t("\u6392\u8BFE\u4E0E\u6253\u5361")}</h2><p>{t("\u8001\u5E08\u6253\u5361\u5E76\u7533\u8BF7\u6539\u671F\uFF1B\u5B66\u751F\u67E5\u770B\u8BFE\u7A0B\u5E76\u786E\u8BA4\u6539\u671F\uFF1B\u7BA1\u7406\u5458\u5B89\u6392\u4E0E\u7EDF\u8BA1\u8BFE\u65F6\u3002")}</p></section><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><div className="auth-mobile-brand"><BrandLogo small/><strong>{BRAND_NAME}</strong></div><p className="eyebrow">{language === "zh" ? `欢迎使用 ${BRAND_NAME}` : `WELCOME TO ${BRAND_NAME.toUpperCase()}`}</p><h1>{t("\u6392\u8BFE\u4E0E\u6253\u5361")}</h1><p>{t("\u8001\u5E08\u6253\u5361\u5E76\u7533\u8BF7\u6539\u671F\uFF1B\u5B66\u751F\u67E5\u770B\u8BFE\u7A0B\u5E76\u786E\u8BA4\u6539\u671F\uFF1B\u7BA1\u7406\u5458\u5B89\u6392\u4E0E\u7EDF\u8BA1\u8BFE\u65F6\u3002")}</p>
+    return <main className="auth-shell"><div className="auth-layout"><section className="auth-story"><BrandLogo/><strong>{BRAND_NAME}</strong><h2>{t("\u6392\u8BFE\u4E0E\u6253\u5361")}</h2><p>{t("管理课程安排、记录出席，集中查看功课与教学资料。")}</p></section><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><div className="auth-mobile-brand"><BrandLogo small/><strong>{BRAND_NAME}</strong></div><p className="eyebrow">{language === "zh" ? `欢迎使用 ${BRAND_NAME}` : `WELCOME TO ${BRAND_NAME.toUpperCase()}`}</p><h1>{t("登录")}</h1><p>{t("登录以继续")}</p>
     <form onSubmit={e => { e.preventDefault(); login(username, password); }}><label>{t("\u767B\u5F55\u8D26\u53F7")}<input required autoComplete="username" value={username} onChange={e => setUsername(e.target.value)}/></label><label>{t("\u5BC6\u7801")}<input required type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("\u8D26\u53F7\u5BC6\u7801\u767B\u5F55")}</Button></form>
     <p className="auth-divider">{t("\u6216\u4F7F\u7528 Google \u767B\u5F55")}</p>{clientId ? <div ref={googleButton} className="google-signin"/> : <div className="notice">{t("Google \u767B\u5F55\u5C1A\u672A\u914D\u7F6E\uFF1B\u53EF\u4EE5\u4F7F\u7528\u7BA1\u7406\u5458\u521B\u5EFA\u7684\u8D26\u53F7\u5BC6\u7801\u3002")}</div>}{busy && <small>{t("\u6B63\u5728\u9A8C\u8BC1\u8D26\u53F7\u2026")}</small>}{message && <div className="error" role="alert">{message}</div>}<span className="auth-foot">{t("\u5FD8\u8BB0\u5BC6\u7801\u8BF7\u8054\u7CFB\u7BA1\u7406\u5458\u91CD\u7F6E \u00B7 \u9A6C\u6765\u897F\u4E9A\u65F6\u95F4")}</span></div></div></main>;
 }
@@ -425,7 +425,7 @@ function NameSetup({ initialName, save, logout, busy, message, language, changeL
     changeLanguage: (next: Language) => void;
 }) {
     const [name, setName] = useState(initialName);
-    return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("请确认你的姓名")}</h1><p>{t("这个名字会显示在功能菜单中。管理员会根据你的登录账号核对身份与课程权限。")}</p><form onSubmit={event => { event.preventDefault(); void save(name); }}><label>{t("显示姓名")}<input required autoComplete="name" maxLength={80} value={name} onChange={event => setName(event.target.value)}/></label><Button className="primary-full" disabled={busy || !name.trim()}>{t("保存并继续")}</Button></form>{message && <div className="error" role="alert">{message}</div>}<Button variant="outline" onClick={logout}>{t("退出登录")}</Button></div></main>;
+    return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("请确认你的姓名")}</h1><p>{t("姓名将显示在账号菜单中。课程访问权限由管理员核实并分配。")}</p><form onSubmit={event => { event.preventDefault(); void save(name); }}><label>{t("显示姓名")}<input required autoComplete="name" maxLength={80} value={name} onChange={event => setName(event.target.value)}/></label><Button className="primary-full" disabled={busy || !name.trim()}>{t("保存并继续")}</Button></form>{message && <div className="error" role="alert">{message}</div>}<Button variant="outline" onClick={logout}>{t("退出登录")}</Button></div></main>;
 }
 type NavigationRole = "admin" | "teacher" | "student";
 type NavigationItem = { id: string; label: string; Icon: LucideIcon };
@@ -434,7 +434,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "home", label: "主页", Icon: LayoutDashboard },
         { id: "classrooms", label: "班级", Icon: Users },
         { id: "overview", label: "课程总览", Icon: LayoutDashboard },
-        { id: "attention", label: "异常待办", Icon: AlertCircle },
+        { id: "attention", label: "出席待处理", Icon: AlertCircle },
         { id: "schedule", label: "安排课程", Icon: Clock3 },
         { id: "calendar", label: "课程日历", Icon: CalendarDays },
         { id: "list", label: "课程列表", Icon: List },
@@ -452,7 +452,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "home", label: "主页", Icon: LayoutDashboard },
         { id: "classrooms", label: "班级", Icon: Users },
         { id: "lessons", label: "课程与打卡", Icon: CalendarDays },
-        { id: "attendance", label: "打卡记录", Icon: ClipboardCheck },
+        { id: "attendance", label: "出席记录", Icon: ClipboardCheck },
         { id: "hours", label: "上课记录", Icon: Clock3 },
         { id: "students", label: "负责的学生与科目", Icon: Users },
         { id: "materials", label: "PDF 教学资料", Icon: FileText },
@@ -589,7 +589,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
     }
     return <div className="app-shell">
         <header className="topbar">
-            <div className="brand"><BrandLogo small/><div><strong>{BRAND_NAME}</strong><span>{t("课时工作台")} · GMT+8</span></div></div>
+            <div className="brand"><BrandLogo small/><div><strong>{BRAND_NAME}</strong><span>{t("教学管理平台")} · GMT+8</span></div></div>
             <div className="top-actions">
                 <LanguageSwitcher language={language} change={changeLanguage}/>
                 <Button size="sm" variant="outline" className="menu-toggle" onClick={toggleMenu} aria-label={t(menuOpen ? "关闭功能菜单" : "打开功能菜单")} aria-expanded={menuOpen} aria-controls="workspace-menu"><Menu size={20}/></Button>
@@ -613,7 +613,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
                 </div>
                 {message && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("关闭")}>×</button></div>}
                 {state?.error && <div className="error">{state.error}</div>}
-                {role === "teacher" && state && !state.error && !(state.plans || []).length && <div className="notice">{t("目前没有分配给你的启用学生科目。请管理员在「学生科目」中选择你为负责老师。")}</div>}
+                {role === "teacher" && state && !state.error && !(state.plans || []).length && <div className="notice">{t("暂无负责的学生科目。请联系管理员完成课程分配。")}</div>}
                 {pageContent}
             </main>
         </div>
@@ -630,7 +630,7 @@ function StatsPanel({ state }: { state: State | null }) {
             const end = l.actualEnd || l.plannedEnd;
             const hours = l.status === "completed" ? ((Date.parse(end) - Date.parse(start)) / 3600000).toFixed(2) + " h" : "—";
             return <div className="record-row" key={l.id}><span>{day(start)}<small>{time(start)}–{time(end)}</small></span><strong>{l.student} · {l.subject}<small>{t(l.attendanceKind === "early_dismissal" ? "提前结束课程" : statusLabel[l.status] || l.status)} · {l.reviewedAt ? t("已确认") : t("待核对")}</small></strong><span>{l.teacherName}</span><b>{hours}</b></div>;
-        }) : <div className="empty">{t("这个月还没有打卡记录。")}</div>}</div>
+        }) : <div className="empty">{t("本月暂无出席记录。")}</div>}</div>
     </section>;
 }
 
@@ -643,7 +643,7 @@ function AttentionPanel({ lessons, open }: {
     const absence = lessons.filter(l => ["student_absent", "teacher_absent"].includes(l.status) && !l.chargeable &&
         !lessons.some(makeup => makeup.replacementFor === l.id && makeup.status !== "cancelled"));
     return <section className="panel">
-    <div className="section-head"><div><p className="eyebrow">{t("异常待办")}</p><h2>{t("\u5F02\u5E38\u5F85\u529E")}</h2></div><span>{missed.length + absence.length}{t(" \u6761")}</span></div>
+    <div className="section-head"><div><p className="eyebrow">{t("出席待处理")}</p><h2>{t("出席待处理")}</h2></div><span>{missed.length + absence.length}{t(" \u6761")}</span></div>
     <div className="attention-groups">
       <div><h3>{t("\u8D85\u8FC7\u65F6\u95F4\u672A\u6253\u5361 \u00B7 ")}{missed.length}</h3><div className="lesson-stack">{missed.length ? missed.map(l => <LessonCard key={l.id} lesson={l} admin open={open}/>) : <div className="empty">{t("\u6CA1\u6709\u6F0F\u6253\u5361\u8BFE\u7A0B\u3002")}</div>}</div></div>
       <div><h3>{t("\u7F3A\u5E2D\u5F85\u5904\u7406 \u00B7 ")}{absence.length}</h3><p className="muted">{t("\u5C1A\u672A\u5B89\u6392\u6709\u6548\u8865\u8BFE\uFF0C\u4E14\u672A\u6807\u8BB0\u4E3A\u6536\u8D39\uFF1B\u662F\u5426\u9700\u8981\u8865\u8BFE\u7531\u7BA1\u7406\u5458\u51B3\u5B9A\u3002")}</p><div className="lesson-stack">{absence.length ? absence.map(l => <LessonCard key={l.id} lesson={l} admin open={open}/>) : <div className="empty">{t("\u6CA1\u6709\u5F85\u5904\u7406\u7F3A\u5E2D\u3002")}</div>}</div></div>
@@ -683,7 +683,7 @@ function RosterAdmin({ account, state, mutate, busy, view }: {
         setBindRole(user?.role === "admin" ? "admin" : user?.role === "student" ? "student" : "teacher");
     }
     return <div className="people-layout people-single-view">{view === "teachers" && <section className="panel"><p className="eyebrow">{t("老师名单")}</p><h2>{t("\u8001\u5E08\u540D\u5355")}</h2><form onSubmit={async (e) => { e.preventDefault(); if (await mutate({ action: "saveTeacher", name: teacherName, active: true }))
-        setTeacherName(""); }}><label>{t("\u8001\u5E08\u59D3\u540D")}<input required maxLength={80} value={teacherName} onChange={e => setTeacherName(e.target.value)} placeholder={t("\u4F8B\u5982 Sydney")}/></label><Button disabled={busy}>{t("\u65B0\u589E\u8001\u5E08")}</Button></form>{state?.allTeachers?.map(teacherRow => <div className="user-row" key={teacherRow.name}><strong>{teacherRow.name}</strong><Button size="sm" variant="outline" disabled={busy} onClick={() => { if (!teacherRow.active || window.confirm(t("确定移除这位老师？现有课程和打卡记录会保留。"))) mutate({ action: "saveTeacher", name: teacherRow.name, active: !teacherRow.active }); }}>{teacherRow.active ? t("移除") : t("恢复")}</Button></div>)}</section>}
+        setTeacherName(""); }}><label>{t("\u8001\u5E08\u59D3\u540D")}<input required maxLength={80} value={teacherName} onChange={e => setTeacherName(e.target.value)} placeholder={t("\u4F8B\u5982 Sydney")}/></label><Button disabled={busy}>{t("\u65B0\u589E\u8001\u5E08")}</Button></form>{state?.allTeachers?.map(teacherRow => <div className="user-row" key={teacherRow.name}><strong>{teacherRow.name}</strong><Button size="sm" variant="outline" disabled={busy} onClick={() => { if (!teacherRow.active || window.confirm(t("确定移除这位老师？现有课程和出席记录会保留。"))) mutate({ action: "saveTeacher", name: teacherRow.name, active: !teacherRow.active }); }}>{teacherRow.active ? t("移除") : t("恢复")}</Button></div>)}</section>}
     {view === "students" && <StudentAdmin students={state?.allStudents || []} mutate={mutate} busy={busy}/>}
     {view === "binding" && <section className="panel">
       <p className="eyebrow">{t("绑定 Google 账号")}</p><h2>{t("\u7ED1\u5B9A Google \u8D26\u53F7")}</h2>
@@ -715,7 +715,7 @@ function RosterAdmin({ account, state, mutate, busy, view }: {
       </form>
       {state?.users?.map(u => <div className="user-row" key={u.id}>
         <div><strong>{u.name}</strong><small>{u.username ? `${t("账号：")}${u.username}${u.mustChangePassword ? t(" \u00B7 \u7B49\u5F85\u9996\u6B21\u6539\u5BC6") : ""}` : u.email}</small></div>
-        <div className="user-actions"><span className="status">{u.email?.toLowerCase() === "felixtey2016@gmail.com" && !u.username ? t("最高管理员") : u.role === "admin" ? t("\u7BA1\u7406\u5458") : u.role === "pending" ? t("\u5F85\u7ED1\u5B9A") : u.role === "student" ? `${t("学生")} · ${u.studentName}` : `${t("老师")} · ${u.teacherName}`}</span>{u.id !== account.id && u.email?.toLowerCase() !== "felixtey2016@gmail.com" && (u.role !== "admin" || account.isOwner) && <Button size="sm" variant="outline" disabled={busy} onClick={async () => { if (window.confirm(t("确定删除这个账号？该账号将无法再登录，课程和打卡记录会保留。")) && await mutate({ action: "deleteAccount", userId: u.id }) && userId === u.id) selectUser(""); }}>{t("删除账号")}</Button>}</div>
+        <div className="user-actions"><span className="status">{u.email?.toLowerCase() === "felixtey2016@gmail.com" && !u.username ? t("最高管理员") : u.role === "admin" ? t("\u7BA1\u7406\u5458") : u.role === "pending" ? t("\u5F85\u7ED1\u5B9A") : u.role === "student" ? `${t("学生")} · ${u.studentName}` : `${t("老师")} · ${u.teacherName}`}</span>{u.id !== account.id && u.email?.toLowerCase() !== "felixtey2016@gmail.com" && (u.role !== "admin" || account.isOwner) && <Button size="sm" variant="outline" disabled={busy} onClick={async () => { if (window.confirm(t("确定删除这个账号？该账号将无法再登录，课程和出席记录会保留。")) && await mutate({ action: "deleteAccount", userId: u.id }) && userId === u.id) selectUser(""); }}>{t("删除账号")}</Button>}</div>
       </div>)}
     </section>}{view === "accounts" && <LocalAccountAdmin state={state} mutate={mutate} busy={busy}/>}</div>;
 }
@@ -815,7 +815,7 @@ function Schedule({ state, lessons, mutate, open, busy, view }: {
         </form></section>
         <section className="panel" hidden={view === "create"}><div className="section-head"><div><p className="eyebrow">{t("排课")}</p><h2>{t(view === "calendar" ? "课程日历" : "课程列表")}</h2></div><span>{lessons.length}{t(" 堂")}</span></div>
             {view === "calendar" && <LessonCalendar lessons={lessons} teachers={state?.teachers || []} onSelect={id => { const lesson = lessons.find(l => l.id === id); if (lesson) open({ type: "edit", lesson }); }}/>}
-            {view === "list" && <div className="lesson-stack">{lessons.length ? lessons.map(l => <LessonCard key={l.id} lesson={l} admin open={open}/>) : <div className="empty">{t("还没有排课。")}</div>}</div>}
+            {view === "list" && <div className="lesson-stack">{lessons.length ? lessons.map(l => <LessonCard key={l.id} lesson={l} admin open={open}/>) : <div className="empty">{t("暂无已安排的课程。")}</div>}</div>}
         </section>
     </div>;
 }

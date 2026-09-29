@@ -13,7 +13,7 @@ export function StudentAdmin({ students, mutate, busy }: Common & { students: Ar
       <label>{t("学生姓名")}<input required maxLength={80} value={name} onChange={e => setName(e.target.value)}/></label>
       <Button disabled={busy}>{t("新增学生")}</Button>
     </form>
-    <div className="student-list">{students.map(student => <div className="user-row" key={student.name}><strong>{student.name}</strong><Button size="sm" variant="outline" disabled={busy} onClick={() => { if (!student.active || window.confirm(t("确定移除这位学生？现有课程和打卡记录会保留。"))) mutate({ action: "setStudentActive", name: student.name, active: !student.active }); }}>{student.active ? t("移除") : t("恢复")}</Button></div>)}</div>
+    <div className="student-list">{students.map(student => <div className="user-row" key={student.name}><strong>{student.name}</strong><Button size="sm" variant="outline" disabled={busy} onClick={() => { if (!student.active || window.confirm(t("确定移除这位学生？现有课程和出席记录会保留。"))) mutate({ action: "setStudentActive", name: student.name, active: !student.active }); }}>{student.active ? t("移除") : t("恢复")}</Button></div>)}</div>
   </section>;
 }
 
@@ -26,7 +26,7 @@ export function SubjectAdmin({ students, teachers, plans, mutate, busy }: Common
   const [active, setActive] = useState(true);
   function reset() { setStudent(""); setSubject(""); setTeacherName(""); setDuration("1"); setOnlineLink(""); setActive(true); }
   return <section className="panel subjects-panel"><p className="eyebrow">{t("学生科目")}</p><h2>{t("学生科目")}</h2>
-    <p className="muted">{t("先在名单与权限添加学生，再在这里绑定科目和负责老师。")}</p>
+    <p className="muted">{t("请先在「学生名单」添加学生，再设置科目、负责老师及网课链接。")}</p>
     <form onSubmit={async e => { e.preventDefault(); if (await mutate({ action: "savePlan", student, subject, teacherName, duration: Number(duration), onlineLink, active })) reset(); }}>
       <label>{t("学生姓名")}<select required value={student} onChange={e => setStudent(e.target.value)}><option value="">{t("请选择")}</option>{students.map(n => <option key={n} value={n}>{n}</option>)}</select></label>
       <label>{t("科目")}<input required maxLength={80} value={subject} onChange={e => setSubject(e.target.value)}/></label>
