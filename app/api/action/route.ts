@@ -35,7 +35,7 @@ export async function POST(request: Request) {
   let data: Body;
   try { data = await request.json(); } catch { return bad("Invalid request"); }
   const action = str(data.action);
-  if (actor.role === "teacher" && !["attendance", "proposeReschedule", "updateOnlineLink"].includes(action)) return bad("Administrator access required", 403);
+  if (actor.role === "teacher" && !["create", "attendance", "proposeReschedule", "updateOnlineLink"].includes(action)) return bad("Administrator access required", 403);
   if (actor.role === "student" && action !== "respondReschedule") return bad("Student access only", 403);
   const db = getDb();
   const now = new Date().toISOString();
@@ -186,6 +186,8 @@ export async function POST(request: Request) {
       const roster = await readRoster();
       const student = str(data.student), subject = str(data.subject), teacherName = str(data.teacherName);
       if (!roster.plans.some(p => p.student === student && p.subject === subject && p.teacher === teacherName) || !roster.teachers.includes(teacherName)) return bad("Choose an active student subject and its assigned teacher");
+      const activeKeys = new Set(roster.plans.filter(p => p.teacher === actor.teacherName).map(p => p.key));
+      if (actor.role === "teacher" && !teacherMaySeeLesson(actor, { student, subject, teacherName }, activeKeys)) return bad("Student is no longer active or assigned", 403);
       const start = malaysiaIso(data.start), end = malaysiaIso(data.end);
       hoursBetween(start, end);
       const kind = str(data.kind) || "regular";
@@ -196,6 +198,7 @@ export async function POST(request: Request) {
       if (kind === "makeup") {
         const original = replacementFor ? await db.select().from(lessons).where(eq(lessons.id, replacementFor)).get() : null;
         if (!original || original.student !== student || original.subject !== subject || original.status === "completed" || original.status === "scheduled") return bad("Select an absent or cancelled original lesson");
+        if (actor.role === "teacher" && !teacherMaySeeLesson(actor, original, activeKeys)) return bad("Student is no longer active or assigned", 403);
         if (original.reviewedAt && original.chargeable) return bad("Original lesson is already billable; revise its review before adding makeup");
         const existing = await db.select().from(lessons).where(eq(lessons.replacementFor, replacementFor!)).all();
         if (existing.some(l => l.status !== "cancelled")) return bad("That lesson already has an active makeup");

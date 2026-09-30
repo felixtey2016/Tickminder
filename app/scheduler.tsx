@@ -464,6 +464,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "home", label: "主页", Icon: LayoutDashboard },
         { id: "myAccount", label: "我的账号", Icon: ShieldCheck },
         { id: "classrooms", label: "班级", Icon: Users },
+        { id: "schedule", label: "安排课程", Icon: Clock3 },
         { id: "lessons", label: "课程与打卡", Icon: CalendarDays },
         { id: "attendance", label: "出席记录", Icon: ClipboardCheck },
         { id: "hours", label: "上课记录", Icon: Clock3 },
@@ -595,7 +596,11 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
     } else if (role === "student") {
         pageContent = <StudentPortal lessons={lessons} proposals={state?.proposals || []} mutate={mutate} learningMutate={learningMutate} learning={learning} busy={busy} view={activeView as "calendar" | "homework" | "materials" | "reschedule"}/>;
     } else if (role === "teacher") {
-        if (["lessons", "attendance", "students"].includes(activeView)) {
+        if (activeView === "schedule") {
+            const ownedPlans = (state?.plans || []).filter(plan => plan.teacher === account.teacherName);
+            const schedulingState = state ? { ...state, plans: ownedPlans, students: [...new Set(ownedPlans.map(plan => plan.student))].sort(), teachers: account.teacherName ? [account.teacherName] : [] } : null;
+            pageContent = <Schedule state={schedulingState} lessons={lessons} mutate={mutate} open={setModal} busy={busy} view="create"/>;
+        } else if (["lessons", "attendance", "students"].includes(activeView)) {
             pageContent = <TeacherPortal lessons={lessons} plans={state?.plans || []} proposals={state?.proposals || []} mutate={mutate} busy={busy} view={activeView as "lessons" | "attendance" | "students"}/>;
         } else if (activeView === "hours") {
             pageContent = <StatsPanel state={state}/>;

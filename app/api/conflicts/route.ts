@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   try { body = await request.json(); } catch { return bad("Invalid request"); }
   const action = str(body.action);
   if (!["create", "edit", "proposeReschedule"].includes(action)) return bad("Invalid conflict check");
-  if (actor.role !== "admin" && !(actor.role === "teacher" && action === "proposeReschedule")) return bad("No permission to check this schedule", 403);
+  if (actor.role !== "admin" && !(actor.role === "teacher" && ["create", "proposeReschedule"].includes(action))) return bad("No permission to check this schedule", 403);
   const db = getDb();
   try {
     const start = malaysiaIso(body.start), end = malaysiaIso(body.end);
@@ -39,6 +39,8 @@ export async function POST(request: Request) {
       const roster = await readRoster();
       const student = str(body.student), subject = str(body.subject), teacherName = str(body.teacherName);
       if (!roster.plans.some(p => p.student === student && p.subject === subject && p.teacher === teacherName)) return bad("Choose an active student subject and assigned teacher");
+      const activeKeys = new Set(roster.plans.filter(p => p.teacher === actor.teacherName).map(p => p.key));
+      if (actor.role === "teacher" && !teacherMaySeeLesson(actor, { student, subject, teacherName }, activeKeys)) return bad("Student is no longer active or assigned", 403);
       const until = str(body.until);
       const dates = until ? generateWeekly(start, end, malaysiaIso(`${until}T23:59`)) : [{ start, end }];
       slots = dates.map(date => ({ student, teacherName, plannedStart: date.start, plannedEnd: date.end }));
