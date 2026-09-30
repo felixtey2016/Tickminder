@@ -30,3 +30,7 @@
 Deployment version and exact source mappings are recorded in RELEASES.md after successful publication.
 
 Production v30 and private staging v26 are published. Post-release encrypted backup `timelyo-after-terms-2026-09-30` verifies all 24 tables and seven PDFs. Original business records and all PDF hashes match the immediate pre-release snapshot; five login sessions are unchanged and one session was replaced during live use. These supplemental snapshots are local encrypted copies, not a new cloud-verification claim.
+
+### Inline term creation (production v31, staging v27)
+
+The classroom create/edit form supports adding a named term directly beside its selector, automatically selecting it and keeping the classroom draft. Successful classroom saves select the assigned term filter so the new classroom remains visible. Administrators and active bound teachers can create non-current labels; students cannot create terms, and only administrators can edit terms or manage the current term. No schema or backup format changes. Actual-route permission tests, 1280px administrator/390px teacher UI flows and private staging creation/binding checks passed; duplicate-name errors keep draft values. Complete local encrypted pre-release snapshot `timelyo-before-inline-term-2026-09-30` restores 24 tables and seven PDFs.
