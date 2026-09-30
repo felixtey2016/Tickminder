@@ -59,7 +59,7 @@ export async function currentAccount(): Promise<Account | null> {
   const session = await db.select().from(sessions).where(eq(sessions.tokenHash, hash)).get();
   if (!session || session.expiresAt <= new Date().toISOString()) return null;
   const account = await db.select().from(accounts).where(eq(accounts.id, session.accountId)).get() ?? null;
-  return account;
+  return account?.disabledAt ? null : account;
 }
 
 export async function createSession(accountId: string) {

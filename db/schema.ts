@@ -33,6 +33,14 @@ export const accounts = sqliteTable("accounts", {
   teacherName: text("teacher_name"),
   studentName: text("student_name"),
   createdAt: text("created_at").notNull(),
+  disabledAt: text("disabled_at"),
+});
+
+export const googleIdentities = sqliteTable("google_identities", {
+  subject: text("subject").primaryKey(),
+  accountId: text("account_id").notNull().unique(),
+  email: text("email").notNull(),
+  linkedAt: text("linked_at").notNull(),
 });
 
 export const sessions = sqliteTable("sessions", {

@@ -5,6 +5,7 @@ import { BookOpen, FileText, Megaphone, Plus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { t } from "@/lib/i18n";
 import { StudentLearning, TeacherLearning, type LearningMutate, type LearningState } from "./learning-portal";
+import { DeleteButton, DirectoryFilters } from "./directory-tools";
 
 export type Classroom = {
   id: string; title: string; description: string | null; subject: string;
@@ -25,7 +26,9 @@ export function ClassroomsPage({ role, classes, learning, teacherName, teachers,
   const [selectedId, setSelectedId] = useState("");
   const [creating, setCreating] = useState(false);
   const [tab, setTab] = useState<"announcements" | "materials" | "homework" | "members">("announcements");
-  const selected = classes.find(item => item.id === selectedId) || classes[0] || null;
+  const [filterTeacher, setFilterTeacher] = useState(""), [filterStudent, setFilterStudent] = useState(""), [archived, setArchived] = useState(false);
+  const visibleClasses = classes.filter(item => Boolean(item.archived) === archived && (!filterTeacher || item.teacherName === filterTeacher) && (!filterStudent || item.members?.includes(filterStudent)));
+  const selected = visibleClasses.find(item => item.id === selectedId) || (role === "admin" ? null : visibleClasses[0]) || null;
   const [editingId, setEditingId] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -68,10 +71,14 @@ export function ClassroomsPage({ role, classes, learning, teacherName, teachers,
     if (result.ok) { setAnnouncementId(""); setAnnouncementTitle(""); setAnnouncementBody(""); setPinned(false); }
   }
   const canManage = role !== "student";
+  const pick = (item: Classroom) => { setSelectedId(item.id); setCreating(false); setTab("announcements"); setAnnouncementId(""); setAnnouncementTitle(""); setAnnouncementBody(""); setPinned(false); };
+  const classButtons = (items: Classroom[]) => <div className="classroom-chips">{items.map(item => <button type="button" key={item.id} className={selected?.id === item.id && !creating ? "selected" : ""} onClick={() => pick(item)}><strong>{item.title}</strong><span>{item.subject} · {item.teacherName}{item.archived ? ` · ${t("已封存")}` : ""}</span></button>)}</div>;
   return <div className="classrooms-page">
     <section className="panel classroom-picker">
       <div className="learning-section-head"><div><p className="eyebrow">{t("班级")}</p><h2>{t("我的班级")}</h2></div>{canManage && <Button size="sm" onClick={startCreate}><Plus size={16}/>{t("新建班级")}</Button>}</div>
-      {classes.length ? <div className="classroom-chips">{classes.map(item => <button type="button" key={item.id} className={selected?.id === item.id && !creating ? "selected" : ""} onClick={() => { setSelectedId(item.id); setCreating(false); setTab("announcements"); setAnnouncementId(""); setAnnouncementTitle(""); setAnnouncementBody(""); setPinned(false); }}><strong>{item.title}</strong><span>{item.subject} · {item.teacherName}{item.archived ? ` · ${t("已封存")}` : ""}</span></button>)}</div> : <p className="muted">{role === "student" ? t("尚未加入班级") : t("尚未建立班级")}</p>}
+      {role === "admin" && <DirectoryFilters teachers={[...new Set(classes.map(c => c.teacherName))].sort()} students={[...new Set(classes.flatMap(c => c.members || []))].sort()} teacher={filterTeacher} student={filterStudent} onTeacher={value => { setFilterTeacher(value); setSelectedId(""); }} onStudent={value => { setFilterStudent(value); setSelectedId(""); }}/>}<label className="check-row"><input type="checkbox" checked={archived} onChange={e => { setArchived(e.target.checked); setSelectedId(""); }}/>{t("查看已封存班级")}</label>
+      {role === "admin" ? [...new Set(visibleClasses.map(c => c.teacherName))].sort().map(name => <details className="directory-group" key={name} open={Boolean(filterTeacher || filterStudent)}><summary>{name} <span>{visibleClasses.filter(c => c.teacherName === name).length}</span></summary>{classButtons(visibleClasses.filter(c => c.teacherName === name))}</details>) : classButtons(visibleClasses)}
+      {!visibleClasses.length && <p className="muted">{t("没有符合条件的记录")}</p>}
     </section>
 
     {creating && canManage && <section className="panel classroom-form-panel"><p className="eyebrow">{t("班级设置")}</p><h2>{editingId ? t("编辑班级") : t("新建班级")}</h2>
@@ -86,7 +93,7 @@ export function ClassroomsPage({ role, classes, learning, teacherName, teachers,
     </section>}
 
     {!creating && selected && <>
-      <section className="panel classroom-intro"><div><p className="eyebrow">{selected.subject} · {selected.teacherName}</p><h2>{selected.title}</h2>{selected.description && <p>{selected.description}</p>}</div>{canManage && <div className="learning-card-actions"><Button size="sm" variant="outline" onClick={() => startEdit(selected)} disabled={Boolean(selected.archived)}>{t("管理名单")}</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => { if (window.confirm(t(selected.archived ? "确定重新开放这个班级？" : "确定封存这个班级？学生仍能查看已发布内容。"))) void mutate({ action: "archiveClassroom", id: selected.id, archived: !selected.archived }); }}>{t(selected.archived ? "重新开放" : "封存班级")}</Button></div>}</section>
+      <section className="panel classroom-intro"><div><p className="eyebrow">{selected.subject} · {selected.teacherName}</p><h2>{selected.title}</h2>{selected.description && <p>{selected.description}</p>}</div>{canManage && <div className="learning-card-actions"><Button size="sm" variant="outline" onClick={() => startEdit(selected)} disabled={Boolean(selected.archived)}>{t("管理名单")}</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => { if (window.confirm(t(selected.archived ? "确定重新开放这个班级？" : "确定封存这个班级？学生仍能查看已发布内容。"))) void mutate({ action: "archiveClassroom", id: selected.id, archived: !selected.archived }); }}>{t(selected.archived ? "重新开放" : "封存班级")}</Button><DeleteButton kind="classroom" id={selected.id} busy={busy} mutate={async body => (await mutate(body)).ok} message="永久删除这个班级及其公告、资料、功课和提交记录？共用 PDF 会保留，此操作无法恢复。"/></div>}</section>
       <div className="classroom-tabs" role="tablist" aria-label={t("班级内容")}>
         {([{ id: "announcements", Icon: Megaphone, label: "公告" }, { id: "materials", Icon: FileText, label: "教学资料" }, { id: "homework", Icon: BookOpen, label: "功课" }, ...(canManage ? [{ id: "members", Icon: Users, label: "学生名单" }] : [])] as const).map(item => <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id as typeof tab)}><item.Icon size={17}/>{t(item.label)}</button>)}
       </div>

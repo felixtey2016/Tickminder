@@ -9,6 +9,7 @@ import { readRoster } from "@/lib/roster";
 import { teacherMaySeeLesson } from "@/lib/access";
 import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 import { studentNameKey } from "@/lib/student-names";
+import { first } from "@/lib/learning-server";
 import { normalizeOnlineLink } from "@/lib/online-link";
 
 type Body = Record<string, unknown>;
@@ -53,10 +54,11 @@ export async function POST(request: Request) {
       if (await db.select({ accountId: localCredentials.accountId }).from(localCredentials).where(eq(localCredentials.username, username)).get()) return bad("此账号名已被使用");
       if (role === "teacher" && !(await readRoster()).teachers.includes(teacherName)) return bad("请选择启用的老师");
       if (role === "student" && !(await readRoster()).students.includes(studentName)) return bad("请选择已登记的学生");
+      if (role !== "admin" && await first("SELECT 1 AS found FROM accounts WHERE role = ? AND " + (role === "teacher" ? "teacher_name" : "student_name") + " = ? AND disabled_at IS NULL", role, role === "teacher" ? teacherName : studentName)) return bad("此身份已有账号，请使用现有账号连接 Google，避免重复创建", 409);
       const id = `local:${crypto.randomUUID()}`;
       const passwordHash = await hashPassword(password);
-      await db.insert(accounts).values({ id, email: "", name, role, teacherName: role === "teacher" ? teacherName : null, studentName: role === "student" ? studentName : null, createdAt: now });
-      await db.insert(localCredentials).values({ accountId: id, username, passwordHash, mustChangePassword: true, updatedAt: now });
+      await db.batch([db.insert(accounts).values({ id, email: "", name, role, teacherName: role === "teacher" ? teacherName : null, studentName: role === "student" ? studentName : null, createdAt: now }),
+        db.insert(localCredentials).values({ accountId: id, username, passwordHash, mustChangePassword: true, updatedAt: now })]);
       await db.insert(audit).values({ id: crypto.randomUUID(), lessonId: `account:${id}`, actorId: actor.id, action: "createLocalAccount", before: null, after: JSON.stringify({ username, name, role, teacherName: role === "teacher" ? teacherName : null, studentName: role === "student" ? studentName : null }), at: now });
       return NextResponse.json({ ok: true });
     }
@@ -75,19 +77,18 @@ export async function POST(request: Request) {
       await db.insert(audit).values({ id: crypto.randomUUID(), lessonId: `account:${userId}`, actorId: actor.id, action: "resetLocalPassword", before: null, after: JSON.stringify({ username: credential.username }), at: now });
       return NextResponse.json({ ok: true });
     }
-    if (action === "deleteAccount") {
+    if (action === "deleteAccount" || action === "restoreAccount") {
       const userId = str(data.userId);
       const target = userId ? await db.select().from(accounts).where(eq(accounts.id, userId)).get() : null;
       if (!target) return bad("Account not found", 404);
       if (target.id === actor.id || target.email.toLowerCase() === OWNER_EMAIL) return bad("Cannot delete the owner account", 403);
       if (target.role === "admin" && !isOwnerAccount(actor)) return bad("Only the owner can remove administrators", 403);
-      const credential = await db.select().from(localCredentials).where(eq(localCredentials.accountId, userId)).get();
-      await db.delete(sessions).where(eq(sessions.accountId, userId));
-      await db.delete(assignments).where(eq(assignments.accountId, userId));
-      await db.delete(localCredentials).where(eq(localCredentials.accountId, userId));
-      if (credential) await db.delete(loginAttempts).where(eq(loginAttempts.username, credential.username));
-      await db.delete(accounts).where(eq(accounts.id, userId));
-      await db.insert(audit).values({ id: crypto.randomUUID(), lessonId: `account:${userId}`, actorId: actor.id, action: "deleteAccount", before: JSON.stringify({ id: target.id, name: target.name, role: target.role, email: target.email, username: credential?.username || null }), after: null, at: now });
+      if (action === "restoreAccount" && ["teacher", "student"].includes(target.role) && await first("SELECT 1 AS found FROM accounts WHERE id <> ? AND role = ? AND " + (target.role === "teacher" ? "teacher_name" : "student_name") + " = ? AND disabled_at IS NULL", target.id, target.role, target.role === "teacher" ? target.teacherName : target.studentName)) return bad("此身份已有账号，请使用现有账号连接 Google，避免重复创建", 409);
+      await db.batch([
+        db.update(accounts).set({ disabledAt: action === "deleteAccount" ? now : null }).where(eq(accounts.id, userId)),
+        db.delete(sessions).where(eq(sessions.accountId, userId)),
+        db.insert(audit).values({ id: crypto.randomUUID(), lessonId: `account:${userId}`, actorId: actor.id, action, at: now }),
+      ]);
       return NextResponse.json({ ok: true });
     }
     if (action === "saveTeacher") {
@@ -130,6 +131,7 @@ export async function POST(request: Request) {
       const teacher = await db.select().from(teachers).where(eq(teachers.name, teacherName)).get();
       if (!teacher?.active) return bad("Choose an active teacher");
       const key = `${student}|${subject}`;
+      if (data.editingKey && str(data.editingKey) !== key) return bad("编辑时不能更换学生或科目，请新增绑定");
       const active = data.active !== false;
       const before = await db.select().from(plans).where(eq(plans.key, key)).get();
       if (before && before.teacherName !== teacherName) {
@@ -173,6 +175,8 @@ export async function POST(request: Request) {
         const roster = await readRoster();
         if (!roster.students.includes(studentName)) return bad("Choose a student from the roster");
       }
+      if (target.disabledAt) return bad("请先恢复账号", 409);
+      if (role !== "admin" && await first("SELECT 1 AS found FROM accounts WHERE role = ? AND " + (role === "teacher" ? "teacher_name" : "student_name") + " = ? AND id <> ? AND disabled_at IS NULL", role, role === "teacher" ? teacherName : studentName, userId)) return bad("此身份已有账号，请使用现有账号连接 Google，避免重复创建", 409);
       const update = { role, teacherName: role === "teacher" ? teacherName : null, studentName: role === "student" ? studentName : null };
       await db.update(accounts).set(update).where(eq(accounts.id, userId));
       await db.insert(audit).values({ id: crypto.randomUUID(), lessonId: `account:${userId}`, actorId: actor.id, action: "bind", before: JSON.stringify({ role: target.role, teacherName: target.teacherName, studentName: target.studentName }), after: JSON.stringify(update), at: now });

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { accounts, localCredentials, loginAttempts, sessions } from "@/db/schema";
+import { accounts, googleIdentities, localCredentials, loginAttempts, sessions } from "@/db/schema";
 import { createSession, currentAccount, hashToken, verifyGoogleCredential } from "@/lib/auth";
 import { normalizeUsername, validUsername, verifyPassword } from "@/lib/password";
 import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
@@ -11,7 +11,7 @@ import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 export async function GET() {
   const account = await currentAccount();
   const local = account ? await getDb().select({ username: localCredentials.username, mustChangePassword: localCredentials.mustChangePassword }).from(localCredentials).where(eq(localCredentials.accountId, account.id)).get() : null;
-  return NextResponse.json({ account: account ? { id: account.id, email: account.email, name: account.name, nameConfirmedAt: account.nameConfirmedAt, role: account.role, isOwner: isOwnerAccount(account), teacherName: account.teacherName, studentName: account.studentName, username: local?.username || null, mustChangePassword: local?.mustChangePassword || false } : null, clientId: env.GOOGLE_CLIENT_ID || null });
+  return NextResponse.json({ account: account ? { id: account.id, email: account.email, name: account.name, nameConfirmedAt: account.nameConfirmedAt, role: account.role, isOwner: isOwnerAccount(account), teacherName: account.teacherName, studentName: account.studentName, googleLinked: Boolean(account.email), username: local?.username || null, mustChangePassword: local?.mustChangePassword || false } : null, clientId: env.GOOGLE_CLIENT_ID || null });
 }
 
 export async function POST(request: Request) {
@@ -33,6 +33,8 @@ export async function POST(request: Request) {
         await db.insert(loginAttempts).values({ username, ...next }).onConflictDoUpdate({ target: loginAttempts.username, set: next });
         return NextResponse.json({ error: "账号或密码错误" }, { status: 401 });
       }
+      const loginAccount = await db.select().from(accounts).where(eq(accounts.id, credential.accountId)).get();
+      if (!loginAccount || loginAccount.disabledAt) return NextResponse.json({ error: "账号已停用，请联系管理员" }, { status: 403 });
       await db.delete(loginAttempts).where(eq(loginAttempts.username, username));
       const session = await createSession(credential.accountId);
       const response = NextResponse.json({ ok: true });
@@ -43,11 +45,15 @@ export async function POST(request: Request) {
     if (!credential) return NextResponse.json({ error: "Google 登录资料缺失" }, { status: 400 });
     const profile = await verifyGoogleCredential(credential);
     const db = getDb();
-    const existing = await db.select().from(accounts).where(eq(accounts.id, profile.id)).get();
+    const identity = await db.select().from(googleIdentities).where(eq(googleIdentities.subject, profile.id)).get();
+    const accountId = identity?.accountId || profile.id;
+    const existing = await db.select().from(accounts).where(eq(accounts.id, accountId)).get();
+    if (existing?.disabledAt) return NextResponse.json({ error: "账号已停用，请联系管理员" }, { status: 403 });
     const bootstrapAdmin = profile.email === OWNER_EMAIL;
     if (!existing) await db.insert(accounts).values({ id: profile.id, email: profile.email, name: profile.name, role: bootstrapAdmin ? "admin" : "pending", createdAt: new Date().toISOString() });
-    else await db.update(accounts).set({ email: profile.email, role: bootstrapAdmin ? "admin" : existing.role }).where(eq(accounts.id, profile.id));
-    const session = await createSession(profile.id);
+    else await db.update(accounts).set({ email: profile.email, role: bootstrapAdmin ? "admin" : existing.role }).where(eq(accounts.id, accountId));
+    await db.insert(googleIdentities).values({ subject: profile.id, accountId, email: profile.email, linkedAt: new Date().toISOString() }).onConflictDoNothing();
+    const session = await createSession(accountId);
     const response = NextResponse.json({ ok: true });
     response.cookies.set("tuition_session", session.token, { httpOnly: true, secure: true, sameSite: "lax", path: "/", expires: new Date(session.expiresAt) });
     return response;

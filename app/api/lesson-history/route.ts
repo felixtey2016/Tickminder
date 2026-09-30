@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import { accounts, audit, lessons, rescheduleRequests } from "@/db/schema";
 import { readRoster } from "@/lib/roster";
 import { teacherMaySeeLesson } from "@/lib/access";
+import { mergedAccountNames } from "@/lib/merged-account-names";
 
 const bad = (error: string, status: number) => NextResponse.json({ error }, { status });
 type TimePair = { plannedStart?: unknown; plannedEnd?: unknown };
@@ -33,7 +34,8 @@ export async function GET(request: Request) {
   const actorIds = new Set([...requests.flatMap(row => [row.requestedBy, row.respondedBy]), ...relevant.map(row => row.actorId)].filter(Boolean));
   const names = new Map((await db.select({ id: accounts.id, name: accounts.name }).from(accounts).all())
     .filter(row => actorIds.has(row.id)).map(row => [row.id, row.name]));
-  const nameOf = (accountId: string | null) => accountId ? names.get(accountId) || "已删除账号" : null;
+  const mergedNames = await mergedAccountNames();
+  const nameOf = (accountId: string | null) => accountId ? names.get(accountId) || mergedNames.get(accountId) || "已删除账号" : null;
   const entries = [
     ...requests.map(row => ({
       id: row.id, type: "request", originalStart: row.originalStart, originalEnd: row.originalEnd,

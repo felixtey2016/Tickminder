@@ -40,7 +40,9 @@ export async function GET(request: Request) {
       } });
     }
     const hasClassrooms = await db.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'classrooms'").first();
+    const hasIdentities = await db.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'google_identities'").first();
     const names = hasClassrooms ? [...baseTables, ...classroomTables] : [...baseTables];
+    if (hasIdentities) (names as string[]).push("google_identities");
     const tables: Record<string, { columns: string[]; rows: Record<string, unknown>[] }> = {};
     for (const name of names) {
       const info = await db.prepare(`PRAGMA table_info("${name}")`).all<{ name: string }>();
@@ -49,7 +51,7 @@ export async function GET(request: Request) {
       const result = await db.prepare(`SELECT * FROM "${name}"`).all<Record<string, unknown>>();
       tables[name] = { columns, rows: result.results };
     }
-    return Response.json({ format: hasClassrooms ? "timelyo-d1-v2" : "timelyo-d1-v1", tables }, { headers: noStore });
+    return Response.json({ format: hasIdentities ? "timelyo-d1-v3" : hasClassrooms ? "timelyo-d1-v2" : "timelyo-d1-v1", tables }, { headers: noStore });
   } catch {
     return Response.json({ error: "Backup export unavailable" }, { status: 503, headers: noStore });
   }
