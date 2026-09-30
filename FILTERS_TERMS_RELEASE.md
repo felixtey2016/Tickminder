@@ -28,3 +28,5 @@
 - Terms organize existing classrooms; creating a new term does not create new classroom copies automatically. Administrators edit a classroom or create a new one for the new term.
 
 Deployment version and exact source mappings are recorded in RELEASES.md after successful publication.
+
+Production v30 and private staging v26 are published. Post-release encrypted backup `timelyo-after-terms-2026-09-30` verifies all 24 tables and seven PDFs. Original business records and all PDF hashes match the immediate pre-release snapshot; five login sessions are unchanged and one session was replaced during live use. These supplemental snapshots are local encrypted copies, not a new cloud-verification claim.
