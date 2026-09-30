@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useFilterPreference } from "@/lib/filter-preferences";
+import { Button } from "@/components/ui/button";
 import { getLanguage, t } from "@/lib/i18n";
 import { timetableHours, timetableLessons, type TimetableLesson } from "@/lib/timetable";
 
@@ -22,8 +23,8 @@ function clock(iso: string) {
 }
 
 export function Timetable({ type, lessons, students, teachers, month, setMonth }: Props) {
-  const [name, setName] = useState("");
-  const [studentFilter, setStudentFilter] = useState("");
+  const [name, setName] = useFilterPreference<string>(`timetable-${type}-name`, "");
+  const [studentFilter, setStudentFilter] = useFilterPreference<string>(`timetable-${type}-student`, "");
   const names = type === "student" ? students : teachers;
   const teacherStudents = [...new Set(lessons.filter(l => l.teacherName === name).map(l => l.student))].sort();
   const rows = timetableLessons(lessons, month, type, name, type === "teacher" ? studentFilter : "");
@@ -36,6 +37,7 @@ export function Timetable({ type, lessons, students, teachers, month, setMonth }
       <label>{t("月份")}<input type="month" value={month} onChange={e => setMonth(e.target.value)}/></label>
       {type === "teacher" && <label>{t("学生姓名（可选）")}<select value={studentFilter} disabled={!name} onChange={e => setStudentFilter(e.target.value)}><option value="">{t("所有学生")}</option>{teacherStudents.map(n => <option key={n} value={n}>{n}</option>)}</select></label>}
     </div>
+    <Button type="button" size="sm" variant="outline" onClick={()=>{setName("");setStudentFilter("");}}>{t("重置筛选")}</Button>
     {name ? <><div className="timetable-summary"><strong>{rows.length} {t("堂课")}</strong><span>{hours.toFixed(2)} h {t("课程时长（含已安排）")}</span><span>{completed.length} {t("堂已完成")}</span></div>
       <div className="timetable-list">{rows.length ? rows.map(l => {
         const checkedIn = l.status === "completed" && Boolean(l.actualStart && l.actualEnd);

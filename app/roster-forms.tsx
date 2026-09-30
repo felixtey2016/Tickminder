@@ -1,4 +1,6 @@
 "use client";
+import { useFilterPreference } from "@/lib/filter-preferences";
+import { BulkDeleteTool } from "./bulk-delete";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -22,13 +24,14 @@ function PlanForm({ students, teachers, mutate, busy, plan, saved }: Props & { p
   </form>;
 }
 export function SubjectAdmin({ students, teachers, plans, mutate, busy }: Props & { plans: Plan[] }) {
-  const [teacher, setTeacher] = useState(""), [student, setStudent] = useState(""), [removed, setRemoved] = useState(false);
+  const [teacher, setTeacher] = useFilterPreference<string>("subjects-teacher", ""), [student, setStudent] = useFilterPreference<string>("subjects-student", ""), [removed, setRemoved] = useFilterPreference<boolean>("subjects-removed", false);
   const [editing, setEditing] = useDialogState<Plan | null>("plan-edit", null), [creating, setCreating] = useDialogState<boolean | null>("plan-create", null);
   const visible = plans.filter(p => p.active !== removed && (!teacher || p.teacherName === teacher) && (!student || p.student === student));
   const groups = [...new Set(visible.map(p => p.teacherName))].sort();
   return <section className="panel subjects-panel"><div className="section-head"><h2>{t("学生科目")}</h2><Button onClick={() => setCreating(true)}>{t("新增学生科目")}</Button></div>
-    <DirectoryFilters teachers={[...new Set([...teachers, ...plans.map(p => p.teacherName)])].sort()} students={[...new Set([...students, ...plans.map(p => p.student)])].sort()} teacher={teacher} student={student} onTeacher={setTeacher} onStudent={setStudent}/>
+    <DirectoryFilters teachers={[...new Set([...teachers, ...plans.map(p => p.teacherName)])].sort()} students={[...new Set([...students, ...plans.map(p => p.student)])].sort()} teacher={teacher} student={student} onTeacher={setTeacher} onStudent={setStudent}/><Button size="sm" variant="outline" onClick={() => { setTeacher(""); setStudent(""); setRemoved(false); }}>{t("重置筛选")}</Button>
     <label className="check-row"><input type="checkbox" checked={removed} onChange={e => setRemoved(e.target.checked)}/>{t("查看停用科目")}</label>
+    <BulkDeleteTool kind="plan" records={visible.map(p=>({id:p.key,label:p.student+" · "+p.subject}))} mutate={mutate} busy={busy}/>
     {groups.map(name => <details className="directory-group" key={name} open={Boolean(teacher || student)}><summary>{name} <span>{visible.filter(p => p.teacherName === name).length}</span></summary>{visible.filter(p => p.teacherName === name).map(p => <div className="user-row" key={p.key}><div><strong>{p.student} · {p.subject}</strong><small>{p.duration} h · {t(p.active ? "启用" : "停用")}</small><small>{t(p.onlineLink ? "网课链接已设置" : "尚未设置网课链接")}</small></div><div className="user-actions"><Button size="sm" variant="outline" onClick={() => setEditing(p)}>{t("编辑")}</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => void mutate({ action: "savePlan", ...p, active: !p.active })}>{t(p.active ? "停用" : "恢复")}</Button><DeleteButton kind="plan" id={p.key} mutate={mutate} busy={busy} message="永久删除此学生科目绑定？历史课程会保留，仍有课程或班级使用时需要先处理。"/></div></div>)}</details>)}
     {!visible.length && <p className="empty">{t("没有符合条件的记录")}</p>}
     <Dialog open={Boolean(creating)} onOpenChange={open => setCreating(open ? true : null)}><DialogContent className="lesson-dialog directory-dialog"><DialogHeader><DialogTitle>{t("新增学生科目")}</DialogTitle></DialogHeader><p className="muted">{t("请先在「学生名单」添加学生，再设置科目、负责老师及网课链接。")}</p><PlanForm students={students} teachers={teachers} mutate={mutate} busy={busy} saved={() => setCreating(null)}/></DialogContent></Dialog>

@@ -19,6 +19,9 @@ const harness = {
   learningDb: () => d1,
   first: async (sql, ...args) => db.prepare(sql).get(...args) || null,
   rows: async (sql, ...args) => db.prepare(sql).all(...args),
+  change: async (action, actorId, id, after) => db.prepare('INSERT INTO audit (id,lesson_id,actor_id,action,after_json,at) VALUES (?,?,?,?,?,?)').run(crypto.randomUUID(),id,actorId,action,JSON.stringify(after),new Date().toISOString()),
+  teacherMayAssign: async () => false,
+  classroomMemberNames: async id => db.prepare('SELECT student_name FROM classroom_members WHERE classroom_id=?').all(id).map(r=>r.student_name),
   currentAccount: async () => actor,
   verifyPassword: async (password, stored) => password === stored,
   verifyGoogleCredential: async token => { if (token !== 'verified-google-proof') throw new Error('Bad proof'); return { id: 'duplicate', email: 'teacher@example.test' }; },
@@ -32,7 +35,7 @@ const harness = {
   NextResponse: { json: (data, options) => Response.json(data, options) },
 };
 globalThis.__accountTest = harness;
-const stub = `data:text/javascript;base64,${Buffer.from('export const {learningDb,first,rows,currentAccount,verifyPassword,verifyGoogleCredential,OWNER_EMAIL,isOwnerAccount,classroomMayManage,deleteUnreferencedFile,NextResponse}=globalThis.__accountTest;').toString('base64')}`;
+const stub = `data:text/javascript;base64,${Buffer.from('export const {learningDb,first,rows,change,teacherMayAssign,classroomMemberNames,currentAccount,verifyPassword,verifyGoogleCredential,OWNER_EMAIL,isOwnerAccount,classroomMayManage,deleteUnreferencedFile,NextResponse}=globalThis.__accountTest;').toString('base64')}`;
 async function load(file, mergeUrl) {
   let source = readFileSync(new URL('../' + file, import.meta.url), 'utf8');
   source = source.replace(/from "(@\/[^\"]+|next\/server)"/g, (_, path) => `from "${path === '@/lib/account-merge' ? mergeUrl : stub}"`);
@@ -84,5 +87,36 @@ actor = {id:'student',role:'student'};
 assert.equal((await manage.POST(request({kind:'account',id:'other',confirm:true}))).status,403);
 actor = null;
 assert.equal((await link.POST(request({}))).status,401);
+// Previews use the actual deletion route, remain read-only and reject stale state.
+actor={id:'admin',role:'admin',email:''};
+for(const id of ['lesson-a','lesson-b']) db.prepare('INSERT INTO lessons (id,student,subject,teacher_name,planned_start,planned_end,actual_start,actual_end,status,chargeable,reviewed_at,created_by,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id,'Synthetic Student','Science','Teacher','2026-09-01T00:00:00Z','2026-09-01T01:00:00Z','2026-09-01T00:00:00Z','2026-09-01T01:00:00Z','completed',1,now,'admin',now);
+db.prepare('INSERT INTO reschedule_requests (id,lesson_id,original_start,original_end,proposed_start,proposed_end,requested_by,requested_at) VALUES (?,?,?,?,?,?,?,?)').run('req','lesson-a','a','b','c','d','admin',now);
+const entries=['lesson-a','lesson-b'].map(id=>({kind:'lesson',id}));
+const previewResponse=await manage.POST(request({action:'previewDelete',entries}));assert.equal(previewResponse.status,200);const preview=await previewResponse.json();
+assert.equal(preview.items.length,2);assert.equal(preview.items.reduce((s,i)=>s+i.hours,0),2);assert.equal(preview.items[0].effects.find(e=>e.table==='reschedule_requests').count,1);
+assert.equal(db.prepare('SELECT count(*) AS n FROM lessons').get().n,2);
+db.prepare("UPDATE lessons SET note='updated' WHERE id='lesson-a'").run();
+assert.equal((await manage.POST(request({entries,confirm:true,fingerprint:preview.fingerprint,previewAt:preview.previewAt}))).status,409);
+assert.equal(db.prepare('SELECT count(*) AS n FROM lessons').get().n,2);
+const fresh=await (await manage.POST(request({action:'previewDelete',entries}))).json();
+assert.equal((await manage.POST(request({entries,confirm:true,fingerprint:fresh.fingerprint,previewAt:'2020-01-01T00:00:00Z'}))).status,409);
+assert.equal((await manage.POST(request({entries,confirm:true,fingerprint:fresh.fingerprint,previewAt:fresh.previewAt}))).status,200);
+assert.equal(db.prepare('SELECT count(*) AS n FROM lessons').get().n,0);assert.equal(db.prepare('SELECT count(*) AS n FROM reschedule_requests').get().n,0);
+const blocked=await (await manage.POST(request({action:'previewDelete',entries:[{kind:'account',id:'admin'},{kind:'account',id:'other'}]}))).json();
+assert.equal(blocked.blocked.length,1);assert.equal(blocked.items.length,1);
+assert.equal((await manage.POST(request({entries:[{kind:'account',id:'other'},{kind:'account',id:'admin'}],confirm:true,fingerprint:blocked.fingerprint,previewAt:blocked.previewAt}))).status,403);
+assert.ok(db.prepare("SELECT id FROM accounts WHERE id='other'").get(),'Blocked batch deletes nothing');
+actor={id:'student',role:'student'};
+const denied=await (await manage.POST(request({action:'previewDelete',entries:[{kind:'homework',id:'unrelated'}]}))).json();assert.equal(denied.items.length,0);assert.equal(denied.blocked.length,1);
+actor=null;assert.equal((await manage.POST(request({action:'previewDelete',entries}))).status,401);
+const classes=(await load('app/api/classrooms/route.ts')).module;
+actor={id:'other',role:'teacher',teacherName:'Other'};assert.equal((await classes.POST(request({action:'saveTerm',name:'2026 Semester 2'}))).status,403);
+actor={id:'admin',role:'admin'};
+const term1=await (await classes.POST(request({action:'saveTerm',name:'2026 Semester 2',isCurrent:true}))).json();assert.ok(term1.id);
+const term2=await (await classes.POST(request({action:'saveTerm',name:'2027 Semester 1',isCurrent:true}))).json();assert.ok(term2.id);
+assert.equal(db.prepare('SELECT count(*) AS n FROM academic_terms WHERE is_current=1').get().n,1);
+assert.equal(db.prepare('SELECT id FROM academic_terms WHERE is_current=1').get().id,term2.id);
+assert.equal((await classes.POST(request({action:'saveTerm',name:'2027 Semester 1'}))).status,409);
+assert.equal((await classes.POST(request({action:'saveTerm',name:'Updated',id:'missing'}))).status,404);
 delete globalThis.__accountTest; db.close();
 console.log('Account proof, explicit merge, rollback, deletion permissions and shared PDF preservation passed');

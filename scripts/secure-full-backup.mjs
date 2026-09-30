@@ -140,9 +140,10 @@ async function main() {
     if (dbBytes.length > 20 * 1024 * 1024) throw new Error('Database export exceeds expected size');
     const database = JSON.parse(dbBytes.toString('utf8'));
     const expectedTables = ['accounts','assignments','audit','lessons','local_credentials','login_attempts','plans','reschedule_requests','sessions','students','teachers','pdf_files','storage_quota','teaching_materials','material_recipients','homework','homework_recipients','homework_submissions','study_blocks'];
-    if (['timelyo-d1-v2','timelyo-d1-v3'].includes(database.format)) expectedTables.push('classrooms','classroom_members','classroom_announcements');
-    if (database.format === 'timelyo-d1-v3') expectedTables.push('google_identities');
-    if (!['timelyo-d1-v1','timelyo-d1-v2','timelyo-d1-v3'].includes(database.format) || JSON.stringify(Object.keys(database.tables || {}).sort()) !== JSON.stringify(expectedTables.sort())) {
+    if (['timelyo-d1-v2','timelyo-d1-v3','timelyo-d1-v4'].includes(database.format)) expectedTables.push('classrooms','classroom_members','classroom_announcements');
+    if (['timelyo-d1-v3','timelyo-d1-v4'].includes(database.format)) expectedTables.push('google_identities');
+    if (database.format === 'timelyo-d1-v4') expectedTables.push('academic_terms');
+    if (!['timelyo-d1-v1','timelyo-d1-v2','timelyo-d1-v3','timelyo-d1-v4'].includes(database.format) || JSON.stringify(Object.keys(database.tables || {}).sort()) !== JSON.stringify(expectedTables.sort())) {
       throw new Error(`Unexpected database export format=${String(database.format)} tables=${Object.keys(database.tables || {}).join(',')}`);
     }
     for (const name of expectedTables) {

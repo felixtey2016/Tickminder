@@ -32,9 +32,26 @@ export async function POST(request: Request) {
   try {
     if (await first("SELECT 1 AS mustChange FROM local_credentials WHERE account_id = ? AND must_change_password = 1", actor.id)) throw new RequestError("请先修改初始密码", 403);
     const db = learningDb();
+    if (action === "saveTerm") {
+      if (actor.role !== "admin") throw new RequestError("只有管理员可以管理学期", 403);
+      const name = str(data.name);
+      if (!name || name.length > 80) throw new RequestError("请输入学期名称（最多 80 字）");
+      if (id && !await first("SELECT id FROM academic_terms WHERE id = ?", id)) throw new RequestError("学期不存在", 404);
+      const duplicate = await first("SELECT id FROM academic_terms WHERE name = ? COLLATE NOCASE AND id <> ?", name, id);
+      if (duplicate) throw new RequestError("学期名称已存在", 409);
+      const termId = id || crypto.randomUUID();
+      const statements = [];
+      if (data.isCurrent === true) statements.push(db.prepare("UPDATE academic_terms SET is_current = 0 WHERE is_current = 1").bind());
+      statements.push(id ? db.prepare("UPDATE academic_terms SET name = ?, is_current = ? WHERE id = ?").bind(name, data.isCurrent === true ? 1 : 0, termId) : db.prepare("INSERT INTO academic_terms (id,name,is_current,created_at) VALUES (?,?,?,?)").bind(termId, name, data.isCurrent === true ? 1 : 0, now));
+      await db.batch(statements);
+      await change("saveTerm", actor.id, termId, {name, isCurrent: data.isCurrent === true});
+      return NextResponse.json({ok: true, id: termId});
+    }
     if (action === "saveClassroom") {
       const title = str(data.title), description = str(data.description);
       if (!title || title.length > 100 || description.length > 1000) throw new RequestError("请输入班级名称（最多 100 字）及有效说明");
+      const termId = str(data.termId) || null;
+      if (termId && !await first("SELECT id FROM academic_terms WHERE id = ?", termId)) throw new RequestError("学期不存在", 404);
       const students = selectedStudents(data.students);
       const existing = id ? await classroomMayManage(actor, id) : null;
       if (id && !existing) throw new RequestError("班级不存在或无权修改", 404);
@@ -44,11 +61,11 @@ export async function POST(request: Request) {
       if (existing?.archived) throw new RequestError("已封存班级不能修改名单", 409);
       await eligible(teacherName, subject, students);
       if (!id) {
-        const duplicate = await first("SELECT 1 AS found FROM classrooms WHERE teacher_name = ? AND subject = ? AND lower(title) = lower(?) AND archived = 0", teacherName, subject, title);
+        const duplicate = await first("SELECT 1 AS found FROM classrooms WHERE teacher_name = ? AND subject = ? AND lower(title) = lower(?) AND archived = 0 AND term_id IS ?", teacherName, subject, title, termId);
         if (duplicate) throw new RequestError("这位老师已有同名同科目的班级", 409);
         const classId = crypto.randomUUID();
         await db.batch([
-          db.prepare("INSERT INTO classrooms (id,title,description,subject,teacher_name,created_by,archived,created_at,updated_at) VALUES (?,?,?,?,?,?,0,?,?)").bind(classId, title, description || null, subject, teacherName, actor.id, now, now),
+          db.prepare("INSERT INTO classrooms (id,title,description,subject,teacher_name,created_by,archived,created_at,updated_at,term_id) VALUES (?,?,?,?,?,?,0,?,?,?)").bind(classId, title, description || null, subject, teacherName, actor.id, now, now, termId),
           ...students.map(student => db.prepare("INSERT INTO classroom_members (id,classroom_id,student_name,created_at) VALUES (?,?,?,?)").bind(crypto.randomUUID(), classId, student, now)),
         ]);
         await change("createClassroom", actor.id, classId, { title, subject, teacherName, studentCount: students.length });
@@ -58,7 +75,7 @@ export async function POST(request: Request) {
       const added = students.filter(student => !previous.includes(student));
       const removed = previous.filter(student => !students.includes(student));
       await db.batch([
-        db.prepare("UPDATE classrooms SET title = ?, description = ?, updated_at = ? WHERE id = ?").bind(title, description || null, now, id),
+        db.prepare("UPDATE classrooms SET title = ?, description = ?, updated_at = ?, term_id = ? WHERE id = ?").bind(title, description || null, now, termId, id),
         ...removed.map(student => db.prepare("DELETE FROM classroom_members WHERE classroom_id = ? AND student_name = ?").bind(id, student)),
         ...added.map(student => db.prepare("INSERT INTO classroom_members (id,classroom_id,student_name,created_at) VALUES (?,?,?,?)").bind(crypto.randomUUID(), id, student, now)),
       ]);
@@ -71,7 +88,7 @@ export async function POST(request: Request) {
           ...(homework.results || []).map(item => db.prepare("INSERT OR IGNORE INTO homework_recipients (id,homework_id,student_name) VALUES (?,?,?)").bind(crypto.randomUUID(), item.id, student)),
         ]);
       }
-      await change("updateClassroom", actor.id, id, { title, added, removed });
+      await change("updateClassroom", actor.id, id, { title, termId, added, removed });
       return NextResponse.json({ ok: true, id });
     }
     if (action === "archiveClassroom") {

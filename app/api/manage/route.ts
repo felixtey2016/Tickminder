@@ -5,20 +5,17 @@ import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 import { classroomMayManage } from "@/lib/classrooms-server";
 import { deleteUnreferencedFile } from "@/lib/pdf-storage";
 
+
 class DeleteError extends Error { constructor(message: string, public status = 409) { super(message); } }
-export async function POST(request: Request) {
-  if (request.headers.get("origin") !== new URL(request.url).origin) return NextResponse.json({ error: "没有权限执行此操作" }, { status: 403 });
-  const actor = await currentAccount();
-  if (!actor) return NextResponse.json({ error: "登录已过期，请重新登录" }, { status: 401 });
-  try {
-    const data = await request.json() as Record<string, unknown>;
-    if (data.confirm !== true) throw new DeleteError("请确认永久删除", 400);
-    const id = typeof data.id === "string" ? data.id : "";
-    const kind = data.kind;
-    if (!id || !["account", "teacher", "student", "plan", "lesson", "classroom", "homework"].includes(kind as string)) throw new DeleteError("请求格式无效", 400);
-    if (actor.role !== "admin" && !(actor.role === "teacher" && ["classroom", "homework"].includes(kind as string))) throw new DeleteError("没有权限执行此操作", 403);
-    if (await first("SELECT 1 AS found FROM local_credentials WHERE account_id = ? AND must_change_password = 1", actor.id)) throw new DeleteError("请先修改初始密码", 403);
-    const db = learningDb(), statements = [], files: string[] = [];
+type Entry = { kind: string; id: string };
+type Snapshot = {table: string; records: Record<string, unknown>[]};
+async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof currentAccount>>>, kind: string, id: string) {
+    if (!id || !["account", "teacher", "student", "plan", "lesson", "classroom", "homework"].includes(kind)) throw new DeleteError("请求格式无效", 400);
+    if (actor.role !== "admin" && !(actor.role === "teacher" && ["classroom", "homework"].includes(kind))) throw new DeleteError("没有权限执行此操作", 403);
+    const raw = learningDb();
+    const operations: Array<{sql: string; params: unknown[]}> = [];
+    const db = {prepare: (sql: string) => ({bind: (...params: unknown[]) => {operations.push({sql, params});return raw.prepare(sql).bind(...params);}})};
+    const statements = [], files: string[] = [];
     if (kind === "account") {
       const target = await first<{ role: string; email: string }>("SELECT role,email FROM accounts WHERE id = ?", id);
       if (!target) throw new DeleteError("Account not found", 404);
@@ -71,12 +68,57 @@ export async function POST(request: Request) {
       for (const table of ["homework", "teaching_materials", "classroom_announcements", "classroom_members"]) statements.push(db.prepare(`DELETE FROM ${table} WHERE classroom_id = ?`).bind(id));
       statements.push(db.prepare("DELETE FROM classrooms WHERE id = ?").bind(id));
     }
-    statements.push(db.prepare("INSERT INTO audit (id,lesson_id,actor_id,action,after_json,at) VALUES (?,?,?,'permanentDelete',?,?)").bind(crypto.randomUUID(), `${kind}:${id}`, actor.id, JSON.stringify({ kind, id }), new Date().toISOString()));
+
+    const snapshots: Snapshot[] = [];
+    for (const op of operations) {
+      const deleted = op.sql.match(/^DELETE FROM (\w+) WHERE ([\s\S]+)$/);
+      const updated = op.sql.match(/^UPDATE (\w+) SET homework_id = NULL WHERE ([\s\S]+)$/);
+      const match = deleted || updated;
+      if (match) snapshots.push({table: match[1], records: await rows<Record<string, unknown>>('SELECT * FROM '+match[1]+' WHERE '+match[2]+' ORDER BY rowid', ...op.params)});
+    }
+    const primary = snapshots.find(s => s.table === ({account:'accounts',teacher:'teachers',student:'students',plan:'plans',lesson:'lessons',homework:'homework',classroom:'classrooms'} as Record<string,string>)[kind])?.records[0];
+    const label = primary ? String(primary.title || primary.name || (primary.student ? String(primary.student)+' · '+String(primary.subject) : id)) : id;
+    const effects = snapshots.map(s => ({table: s.table, count: s.records.length, retained: s.table === 'study_blocks' && kind !== 'account'})).filter(s=>s.count);
+    const lessonRows = snapshots.filter(s => s.table === 'lessons').flatMap(s=>s.records);
+    const hours = lessonRows.reduce((sum, l) => {
+      const diff = l.actual_start && l.actual_end ? (Date.parse(String(l.actual_end))-Date.parse(String(l.actual_start)))/3600000 : 0;
+      return sum + (l.status === 'completed' && l.reviewed_at && diff > 0 && diff <= 12 ? diff : 0);
+    }, 0);
+    return { statements, files, snapshots, summary: {kind,id,label,effects,hours:Number(hours.toFixed(2)),checkedIn:lessonRows.filter(l=>['completed','student_absent','teacher_absent'].includes(String(l.status))).length, date:kind==='lesson'?primary?.planned_start:undefined} };
+}
+async function proof(actorId: string, plans: Array<Awaited<ReturnType<typeof planDeletion>>>, at: string) {
+  const payload = JSON.stringify({actorId, at, snapshots: plans.map(p=>p.snapshots)});
+  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(payload)));
+  return Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+}
+export async function POST(request: Request) {
+  if (request.headers.get("origin") !== new URL(request.url).origin) return NextResponse.json({error:"没有权限执行此操作"},{status:403});
+  const actor = await currentAccount();
+  if (!actor) return NextResponse.json({error:"登录已过期，请重新登录"},{status:401});
+  try {
+    const data = await request.json() as Record<string,unknown>;
+    const preview = data.action === 'previewDelete';
+    if (!preview && data.confirm !== true) throw new DeleteError("请确认永久删除",400);
+    if (await first("SELECT 1 AS found FROM local_credentials WHERE account_id = ? AND must_change_password = 1",actor.id)) throw new DeleteError("请先修改初始密码",403);
+    const entries = (Array.isArray(data.entries) ? data.entries : [{kind:data.kind,id:data.id}]) as Entry[];
+    if (!entries.length || entries.length > 50 || entries.some(e=>!e || typeof e.kind !== 'string' || typeof e.id !== 'string') || new Set(entries.map(e=>e.kind+':'+e.id)).size !== entries.length || new Set(entries.map(e=>e.kind)).size !== 1) throw new DeleteError("请选择 1 至 50 条同类记录",400);
+    const plans: Array<Awaited<ReturnType<typeof planDeletion>>> = [], blocked: Array<{kind:string;id:string;error:string}> = [];
+    for (const entry of entries) {
+      try { plans.push(await planDeletion(actor,entry.kind,entry.id)); }
+      catch (e) { if (!preview) throw e; if (!(e instanceof DeleteError)) throw e; blocked.push({...entry,error:e.message}); }
+    }
+    const previewAt = preview ? new Date().toISOString() : String(data.previewAt || '');
+    if (preview) return NextResponse.json({ok:true,items:plans.map(p=>p.summary),blocked,previewAt,fingerprint:await proof(actor.id,plans,previewAt)});
+    if (Array.isArray(data.entries)) {
+      const age = Date.now()-Date.parse(previewAt);
+      if (!Number.isFinite(age) || age < 0 || age > 300000 || data.fingerprint !== await proof(actor.id,plans,previewAt)) throw new DeleteError("记录已更新或预览已过期，请重新预览后确认",409);
+    }
+    const db = learningDb();
+    const statements = plans.flatMap(p=>p.statements);
+    for (const entry of entries) statements.push(db.prepare("INSERT INTO audit (id,lesson_id,actor_id,action,after_json,at) VALUES (?,?,?,'permanentDelete',?,?)").bind(crypto.randomUUID(),entry.kind+':'+entry.id,actor.id,JSON.stringify(entry),new Date().toISOString()));
     await db.batch(statements);
-    let cleanupPending = false;
-    for (const file of files) { try { await deleteUnreferencedFile(file); } catch { cleanupPending = true; } }
-    return NextResponse.json({ ok: true, warning: cleanupPending ? "记录已删除，部分文件清理尚未完成，请联系管理员" : undefined });
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof DeleteError ? error.message : "删除未能确认，请刷新列表后再试" }, { status: error instanceof DeleteError ? error.status : 503 });
-  }
+    let cleanupPending=false;
+    for (const file of new Set(plans.flatMap(p=>p.files))) {try {await deleteUnreferencedFile(file);} catch {cleanupPending=true;}}
+    return NextResponse.json({ok:true,deletedCount:entries.length,warning:cleanupPending?"记录已删除，部分文件清理尚未完成，请联系管理员":undefined});
+  } catch (e) {return NextResponse.json({error:e instanceof DeleteError?e.message:"删除未能确认，请刷新列表后再试"},{status:e instanceof DeleteError?e.status:503});}
 }

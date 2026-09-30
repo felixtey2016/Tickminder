@@ -175,6 +175,14 @@ export const classrooms = sqliteTable("classrooms", {
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
+  termId: text("term_id"),
+});
+
+export const academicTerms = sqliteTable("academic_terms", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  isCurrent: integer("is_current", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at").notNull(),
 });
 
 export const classroomMembers = sqliteTable("classroom_members", {

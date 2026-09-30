@@ -809,3 +809,12 @@ input[type=file]::file-selector-button { border: 0; border-radius: 6px; padding:
 .account-connect label{display:grid;gap:8px}
 .google-link-busy{pointer-events:none;opacity:.6}
 @media(max-width:600px){.directory-filters{grid-template-columns:1fr;gap:12px}.directory-group>summary{padding:15px}.directory-group>.user-row{margin:0 12px;flex-wrap:wrap}.directory-group .user-actions{flex-wrap:wrap}.directory-dialog{width:calc(100vw - 24px)!important}.directory-group .lesson-card{padding:14px}.section-head{flex-wrap:wrap;gap:12px}}
+
+/* Selection and impact dialogs retain the existing Timelyo surfaces. */
+.delete-selection,.delete-impact{display:grid;gap:12px;max-height:50vh;overflow:auto;padding:4px;}
+.delete-impact article{padding:14px;border:1px solid var(--border);border-radius:12px;overflow-wrap:anywhere;}
+.delete-impact small{display:block;margin-top:6px;}
+.delete-impact ul{margin:10px 0;padding-left:22px;}
+.delete-impact li{margin:4px 0;}
+.delete-selection .check-row{padding:10px;border-bottom:1px solid var(--border);}
+.deletion-dialog{max-height:90dvh;overflow-y:auto;}

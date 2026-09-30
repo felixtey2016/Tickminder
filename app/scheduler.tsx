@@ -1,4 +1,6 @@
 "use client";
+import { BulkDeleteTool } from "./bulk-delete";
+import { FilterScope, useFilterPreference } from "@/lib/filter-preferences";
 import { getLanguage, LANGUAGE_KEY, setLanguage, t, type Language } from "@/lib/i18n";
 import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
 import { clearDialogHistory, useDialogState } from "@/lib/use-dialog-state";
@@ -68,6 +70,7 @@ type State = {
     account: Account;
     learning?: LearningState;
     classrooms?: Classroom[];
+    terms?: Array<{id: string; name: string; isCurrent: number}>;
     revision?: number;
     plans?: Plan[];
     allPlans?: Array<Omit<Plan, "teacher"> & {
@@ -132,7 +135,7 @@ const day = (iso: string) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "z
 const time = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
 const local = (iso: string) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso)).replace(" ", "T");
 function actionSuccessText(action: string) {
-    const labels: Record<string, string> = { permanentDelete: "记录已永久删除", restoreAccount: "账号已恢复", attendance: "上课打卡已保存", proposeReschedule: "改期申请已发送", respondReschedule: "改期处理结果已保存", edit: "课程时间已更新", cancel: "课程已取消", create: "课程已安排", saveMaterial: "教学资料已保存", deleteMaterial: "教学资料已删除", publishHomework: "功课已发布", submitHomework: "功课已提交", setHomeworkScore: "分数已保存", saveStudyBlock: "学习安排已保存", deleteStudyBlock: "学习安排已删除", saveClassroom: "班级已保存", archiveClassroom: "班级状态已更新", saveAnnouncement: "公告已发布", deleteAnnouncement: "公告已删除", savePlan: "学生科目已保存", saveStudent: "学生已保存", setStudentActive: "学生名单已更新", saveTeacher: "老师已保存", bind: "账号绑定已保存", deleteAccount: "账号已停用", updateOnlineLink: "网课链接已保存", review: "课时核对已保存", createLocalAccount: "账号已创建", resetLocalPassword: "密码已重置" };
+    const labels: Record<string, string> = { saveTerm: "学期已保存", permanentDelete: "记录已永久删除", restoreAccount: "账号已恢复", attendance: "上课打卡已保存", proposeReschedule: "改期申请已发送", respondReschedule: "改期处理结果已保存", edit: "课程时间已更新", cancel: "课程已取消", create: "课程已安排", saveMaterial: "教学资料已保存", deleteMaterial: "教学资料已删除", publishHomework: "功课已发布", submitHomework: "功课已提交", setHomeworkScore: "分数已保存", saveStudyBlock: "学习安排已保存", deleteStudyBlock: "学习安排已删除", saveClassroom: "班级已保存", archiveClassroom: "班级状态已更新", saveAnnouncement: "公告已发布", deleteAnnouncement: "公告已删除", savePlan: "学生科目已保存", saveStudent: "学生已保存", setStudentActive: "学生名单已更新", saveTeacher: "老师已保存", bind: "账号绑定已保存", deleteAccount: "账号已停用", updateOnlineLink: "网课链接已保存", review: "课时核对已保存", createLocalAccount: "账号已创建", resetLocalPassword: "密码已重置" };
     return t(labels[action] || "操作已完成");
 }
 async function request(url: string, options?: RequestInit): Promise<any> { const r = await fetch(url, { ...options, cache: "no-store" }); const v = await readApiJson<{ error?: string; [key: string]: any }>(r); if (!r.ok)
@@ -149,7 +152,7 @@ export function Scheduler() {
         clientId: string | null;
     } | null>(null);
     const [state, setState] = useState<State | null>(null);
-    const [selectedMonth, setSelectedMonth] = useState(() => local(new Date().toISOString()).slice(0, 7));
+    const [selectedMonth, setSelectedMonth] = useFilterPreference<string>("reporting-month", local(new Date().toISOString()).slice(0, 7), auth?.account?.id);
     const [message, setMessage] = useState("");
     const [busy, setBusy] = useState(false);
     const mutationInFlight = useRef(false);
@@ -274,7 +277,7 @@ export function Scheduler() {
         setMessage("");
         const result = await request(body.action === "permanentDelete" ? "/api/manage" : "/api/action", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
         channelRef.current?.postMessage({ type: "changed" });
-        showActionToast("success", result.count ? (language === "zh" ? `已更新 ${result.count} 堂课` : `Updated ${result.count} lessons`) : actionSuccessText(String(body.action || "")));
+        showActionToast("success", result.deletedCount ? t("记录已永久删除") + ` · ${result.deletedCount}` : result.count ? (language === "zh" ? `已更新 ${result.count} 堂课` : `Updated ${result.count} lessons`) : actionSuccessText(String(body.action || "")));
         setModal(null);
         await reload();
         if (result.warning) showActionToast("error", result.warning);
@@ -571,7 +574,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
         pageContent = <AccountSettings/>;
     } else if (activeView === "classrooms") {
         const classPlans = role === "teacher" ? (state?.plans || []).map(plan => ({ student: plan.student, subject: plan.subject, teacherName: account.teacherName || "", active: true })) : (state?.allPlans || []).map(plan => ({ student: plan.student, subject: plan.subject, teacherName: plan.teacherName, active: plan.active }));
-        pageContent = <ClassroomsPage role={role} classes={state?.classrooms || []} learning={learning} teacherName={account.teacherName} teachers={role === "teacher" && account.teacherName ? [account.teacherName] : state?.teachers || []} plans={classPlans} mutate={classroomMutate} learningMutate={learningMutate} busy={busy} onCalendar={() => choose("calendar")}/>;
+        pageContent = <ClassroomsPage role={role} classes={state?.classrooms || []} terms={state?.terms || []} learning={learning} teacherName={account.teacherName} teachers={role === "teacher" && account.teacherName ? [account.teacherName] : state?.teachers || []} plans={classPlans} mutate={classroomMutate} learningMutate={learningMutate} busy={busy} onCalendar={() => choose("calendar")}/>;
     } else if (role === "admin") {
         if (["overview", "attention", "activity"].includes(activeView)) {
             pageContent = <AdminDashboard state={state} lessons={lessons} open={setModal} view={activeView as "overview" | "attention" | "activity"}/>;
@@ -627,7 +630,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
                 {message && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("关闭")}>×</button></div>}
                 {state?.error && <div className="error">{state.error}</div>}
                 {role === "teacher" && state && !state.error && !(state.plans || []).length && <div className="notice">{t("暂无负责的学生科目。请联系管理员完成课程分配。")}</div>}
-                {pageContent}
+                <FilterScope.Provider value={account.id || "anonymous"}>{pageContent}</FilterScope.Provider>
             </main>
         </div>
         {modal && <LessonDialog modal={modal} close={() => setModal(null)} mutate={mutate} busy={busy}/>}
@@ -743,7 +746,7 @@ function Schedule({ state, lessons, mutate, open, busy, view }: {
     view: "create" | "calendar" | "list";
 }) {
     const plans = state?.plans || [];
-    const [filterTeacher, setFilterTeacher] = useState(""), [filterStudent, setFilterStudent] = useState(""), [cancelled, setCancelled] = useState(false);
+    const [filterTeacher, setFilterTeacher] = useFilterPreference<string>("courses-teacher", ""), [filterStudent, setFilterStudent] = useFilterPreference<string>("courses-student", ""), [cancelled, setCancelled] = useFilterPreference<boolean>("courses-cancelled", false);
     const visible = lessons.filter(l => (l.status === "cancelled") === cancelled && (!state?.month || local(l.plannedStart).slice(0,7) === state.month) && (!filterTeacher || l.teacherName === filterTeacher) && (!filterStudent || l.student === filterStudent));
     const groups = [...new Set(visible.map(l => l.teacherName))].sort();
     const [student, setStudent] = useState("");
@@ -781,7 +784,7 @@ function Schedule({ state, lessons, mutate, open, busy, view }: {
         </form></section>
         <section className="panel" hidden={view === "create"}><div className="section-head"><div><p className="eyebrow">{t("排课")}</p><h2>{t(view === "calendar" ? "课程日历" : "课程列表")}</h2></div><span>{visible.length}{t(" 堂")}</span></div>
             {view === "calendar" && <LessonCalendar lessons={lessons.filter(l => l.status !== "cancelled")} teachers={state?.teachers || []} onSelect={id => { const lesson = lessons.find(l => l.id === id); if (lesson) open({ type: "edit", lesson }); }}/>}
-            {view === "list" && <><DirectoryFilters teachers={[...new Set(lessons.map(l => l.teacherName))].sort()} students={[...new Set(lessons.map(l => l.student))].sort()} teacher={filterTeacher} student={filterStudent} onTeacher={setFilterTeacher} onStudent={setFilterStudent}/><label className="check-row"><input type="checkbox" checked={cancelled} onChange={e => setCancelled(e.target.checked)}/>{t("查看已取消课程")}</label>{groups.map(name => <details className="directory-group" key={name} open={Boolean(filterTeacher || filterStudent)}><summary>{name} <span>{visible.filter(l => l.teacherName === name).length}</span></summary><div className="lesson-stack">{visible.filter(l => l.teacherName === name).map(l => <LessonCard key={l.id} lesson={l} admin open={open} mutate={mutate} busy={busy}/>)}</div></details>)}{!visible.length && <p className="empty">{t("没有符合条件的记录")}</p>}</>}
+            {view === "list" && <><DirectoryFilters teachers={[...new Set(lessons.map(l => l.teacherName))].sort()} students={[...new Set(lessons.map(l => l.student))].sort()} teacher={filterTeacher} student={filterStudent} onTeacher={setFilterTeacher} onStudent={setFilterStudent}/><Button variant="outline" size="sm" onClick={() => { setFilterTeacher(""); setFilterStudent(""); setCancelled(false); }}>{t("重置筛选")}</Button><label className="check-row"><input type="checkbox" checked={cancelled} onChange={e => setCancelled(e.target.checked)}/>{t("查看已取消课程")}</label><BulkDeleteTool kind="lesson" records={visible.map(l=>({id:l.id,label:l.student+" · "+l.subject+" · "+day(l.plannedStart)+" "+time(l.plannedStart)}))} mutate={mutate} busy={busy}/>{groups.map(name => <details className="directory-group" key={name} open={Boolean(filterTeacher || filterStudent)}><summary>{name} <span>{visible.filter(l => l.teacherName === name).length}</span></summary><div className="lesson-stack">{visible.filter(l => l.teacherName === name).map(l => <LessonCard key={l.id} lesson={l} admin open={open} mutate={mutate} busy={busy}/>)}</div></details>)}{!visible.length && <p className="empty">{t("没有符合条件的记录")}</p>}</>}
         </section>
     </div>;
 }

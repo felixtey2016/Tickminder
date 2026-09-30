@@ -1,5 +1,8 @@
 "use client";
 
+import { useFilterPreference } from "@/lib/filter-preferences";
+import { BulkDeleteTool } from "./bulk-delete";
+import { TermManager, type Term } from "./term-manager";
 import { useMemo, useState } from "react";
 import { BookOpen, FileText, Megaphone, Plus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,7 +12,7 @@ import { DeleteButton, DirectoryFilters } from "./directory-tools";
 
 export type Classroom = {
   id: string; title: string; description: string | null; subject: string;
-  teacherName: string; archived: number | boolean; createdAt: string; updatedAt: string;
+  teacherName: string; termId?: string | null; archived: number | boolean; createdAt: string; updatedAt: string;
   members?: string[];
   announcements: Array<{ id: string; title: string; body: string; pinned: number | boolean; authorName: string; createdAt: string; updatedAt: string }>;
 };
@@ -19,15 +22,19 @@ type Plan = { student: string; subject: string; teacherName: string; active: boo
 
 const dateLabel = (iso: string) => new Intl.DateTimeFormat("zh-MY", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
-export function ClassroomsPage({ role, classes, learning, teacherName, teachers, plans, mutate, learningMutate, busy, onCalendar }: {
-  role: Role; classes: Classroom[]; learning: LearningState; teacherName?: string | null;
+export function ClassroomsPage({ role, classes, terms, learning, teacherName, teachers, plans, mutate, learningMutate, busy, onCalendar }: {
+  role: Role; classes: Classroom[]; terms: Term[]; learning: LearningState; teacherName?: string | null;
   teachers: string[]; plans: Plan[]; mutate: ClassMutate; learningMutate: LearningMutate; busy: boolean; onCalendar: () => void;
 }) {
   const [selectedId, setSelectedId] = useState("");
   const [creating, setCreating] = useState(false);
   const [tab, setTab] = useState<"announcements" | "materials" | "homework" | "members">("announcements");
-  const [filterTeacher, setFilterTeacher] = useState(""), [filterStudent, setFilterStudent] = useState(""), [archived, setArchived] = useState(false);
-  const visibleClasses = classes.filter(item => Boolean(item.archived) === archived && (!filterTeacher || item.teacherName === filterTeacher) && (!filterStudent || item.members?.includes(filterStudent)));
+  const [filterTeacher, setFilterTeacher] = useFilterPreference<string>("classes-teacher", ""), [filterStudent, setFilterStudent] = useFilterPreference<string>("classes-student", ""), [archived, setArchived] = useFilterPreference<boolean>("classes-archived", false);
+  const [filterTerm,setFilterTerm] = useFilterPreference<string>("classes-term", "current");
+  const currentTerm = terms.find(term=>term.isCurrent);
+  const effectiveTerm = filterTerm==="current" ? currentTerm?.id || "all" : filterTerm;
+  const [termId,setTermId] = useState("");
+  const visibleClasses = classes.filter(item => Boolean(item.archived) === archived && (effectiveTerm === "all" || (effectiveTerm === "unassigned" ? !item.termId : item.termId === effectiveTerm)) && (!filterTeacher || item.teacherName === filterTeacher) && (!filterStudent || item.members?.includes(filterStudent)));
   const selected = visibleClasses.find(item => item.id === selectedId) || (role === "admin" ? null : visibleClasses[0]) || null;
   const [editingId, setEditingId] = useState("");
   const [title, setTitle] = useState("");
@@ -54,15 +61,15 @@ export function ClassroomsPage({ role, classes, learning, teacherName, teachers,
   classLearning.submissions = learning.submissions.filter(item => classHomeworkIds.has(item.homeworkId));
 
   function startCreate() {
-    setCreating(true); setEditingId(""); setTitle(""); setDescription(""); setTeacher(teacherName || ""); setSubject(""); setMembers([]);
+    setTermId(currentTerm?.id || ""); setCreating(true); setEditingId(""); setTitle(""); setDescription(""); setTeacher(teacherName || ""); setSubject(""); setMembers([]);
   }
   function startEdit(item: Classroom) {
-    setCreating(true); setEditingId(item.id); setTitle(item.title); setDescription(item.description || "");
+    setTermId(item.termId || ""); setCreating(true); setEditingId(item.id); setTitle(item.title); setDescription(item.description || "");
     setTeacher(item.teacherName); setSubject(item.subject); setMembers(item.members || []);
   }
   async function saveClassroom(event: React.FormEvent) {
     event.preventDefault();
-    const result = await mutate({ action: "saveClassroom", id: editingId, title, description, teacherName: teacher, subject, students: members });
+    const result = await mutate({ action: "saveClassroom", id: editingId, title, description, termId, teacherName: teacher, subject, students: members });
     if (result.ok) { setCreating(false); if (result.id) setSelectedId(result.id); setTab("announcements"); }
   }
   async function saveAnnouncement(event: React.FormEvent) {
@@ -72,11 +79,14 @@ export function ClassroomsPage({ role, classes, learning, teacherName, teachers,
   }
   const canManage = role !== "student";
   const pick = (item: Classroom) => { setSelectedId(item.id); setCreating(false); setTab("announcements"); setAnnouncementId(""); setAnnouncementTitle(""); setAnnouncementBody(""); setPinned(false); };
-  const classButtons = (items: Classroom[]) => <div className="classroom-chips">{items.map(item => <button type="button" key={item.id} className={selected?.id === item.id && !creating ? "selected" : ""} onClick={() => pick(item)}><strong>{item.title}</strong><span>{item.subject} · {item.teacherName}{item.archived ? ` · ${t("已封存")}` : ""}</span></button>)}</div>;
+  const classButtons = (items: Classroom[]) => <div className="classroom-chips">{items.map(item => <button type="button" key={item.id} className={selected?.id === item.id && !creating ? "selected" : ""} onClick={() => pick(item)}><strong>{item.title}</strong><span>{item.subject} · {item.teacherName} · {terms.find(term=>term.id===item.termId)?.name || t("未分类")}{item.archived ? ` · ${t("已封存")}` : ""}</span></button>)}</div>;
   return <div className="classrooms-page">
     <section className="panel classroom-picker">
       <div className="learning-section-head"><div><p className="eyebrow">{t("班级")}</p><h2>{t("我的班级")}</h2></div>{canManage && <Button size="sm" onClick={startCreate}><Plus size={16}/>{t("新建班级")}</Button>}</div>
+      <div className="directory-filters"><label>{t("学期")}<select value={filterTerm} onChange={e=>{setFilterTerm(e.target.value);setSelectedId("");}}><option value="current">{t("当前学期")}{currentTerm?` · ${currentTerm.name}`:""}</option><option value="all">{t("所有学期")}</option><option value="unassigned">{t("未分类")}</option>{terms.map(term=><option key={term.id} value={term.id}>{term.name}</option>)}</select></label></div>
+      {role === "admin" && <TermManager terms={terms} mutate={mutate} busy={busy}/>}
       {role === "admin" && <DirectoryFilters teachers={[...new Set(classes.map(c => c.teacherName))].sort()} students={[...new Set(classes.flatMap(c => c.members || []))].sort()} teacher={filterTeacher} student={filterStudent} onTeacher={value => { setFilterTeacher(value); setSelectedId(""); }} onStudent={value => { setFilterStudent(value); setSelectedId(""); }}/>}<label className="check-row"><input type="checkbox" checked={archived} onChange={e => { setArchived(e.target.checked); setSelectedId(""); }}/>{t("查看已封存班级")}</label>
+      <div className="learning-card-actions"><Button variant="outline" size="sm" onClick={()=>{setFilterTeacher("");setFilterStudent("");setArchived(false);setFilterTerm("current");setSelectedId("");}}>{t("重置筛选")}</Button>{canManage&&<BulkDeleteTool kind="classroom" records={visibleClasses.map(c=>({id:c.id,label:c.title+" · "+c.teacherName}))} mutate={async body=>(await mutate(body)).ok} busy={busy}/>}</div>
       {role === "admin" ? [...new Set(visibleClasses.map(c => c.teacherName))].sort().map(name => <details className="directory-group" key={name} open={Boolean(filterTeacher || filterStudent)}><summary>{name} <span>{visibleClasses.filter(c => c.teacherName === name).length}</span></summary>{classButtons(visibleClasses.filter(c => c.teacherName === name))}</details>) : classButtons(visibleClasses)}
       {!visibleClasses.length && <p className="muted">{t("没有符合条件的记录")}</p>}
     </section>
@@ -84,6 +94,7 @@ export function ClassroomsPage({ role, classes, learning, teacherName, teachers,
     {creating && canManage && <section className="panel classroom-form-panel"><p className="eyebrow">{t("班级设置")}</p><h2>{editingId ? t("编辑班级") : t("新建班级")}</h2>
       <form className="learning-form" onSubmit={saveClassroom}>
         <label>{t("班级名称")}<input required maxLength={100} value={title} onChange={event => setTitle(event.target.value)} placeholder={t("例如：Form 4 Science 小班")}/></label>
+        <label>{t("学期")}<select value={termId} onChange={e=>setTermId(e.target.value)}><option value="">{t("未分类")}</option>{terms.map(term=><option value={term.id} key={term.id}>{term.name}</option>)}</select></label>
         <label>{t("班级说明（可选）")}<textarea maxLength={1000} value={description} onChange={event => setDescription(event.target.value)}/></label>
         <label>{t("负责老师")}<select required disabled={role === "teacher" || Boolean(editingId)} value={teacher} onChange={event => { setTeacher(event.target.value); setSubject(""); setMembers([]); }}><option value="">{t("请选择")}</option>{teachers.map(name => <option key={name}>{name}</option>)}</select></label>
         <label>{t("科目")}<select required disabled={Boolean(editingId)} value={subject} onChange={event => { setSubject(event.target.value); setMembers([]); }}><option value="">{t("请选择")}</option>{subjects.map(name => <option key={name}>{name}</option>)}</select></label>
