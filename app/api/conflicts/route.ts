@@ -4,7 +4,7 @@ import { currentAccount } from "@/lib/auth";
 import { getDb } from "@/db";
 import { lessons } from "@/db/schema";
 import { readRoster } from "@/lib/roster";
-import { teacherMaySeeLesson } from "@/lib/access";
+import { teacherMaySeeLesson, mayRequestReschedule } from "@/lib/access";
 import { findLessonConflict, generateWeekly, hoursBetween, lessonConflictReason, type LessonSlot } from "@/lib/lesson-rules";
 
 type Body = Record<string, unknown>;
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   try { body = await request.json(); } catch { return bad("Invalid request"); }
   const action = str(body.action);
   if (!["create", "edit", "proposeReschedule"].includes(action)) return bad("Invalid conflict check");
-  if (actor.role !== "admin" && !(actor.role === "teacher" && ["create", "proposeReschedule"].includes(action))) return bad("No permission to check this schedule", 403);
+  if (actor.role !== "admin" && !(actor.role === "teacher" && ["create", "proposeReschedule"].includes(action)) && !(actor.role === "student" && action === "proposeReschedule")) return bad("No permission to check this schedule", 403);
   const db = getDb();
   try {
     const start = malaysiaIso(body.start), end = malaysiaIso(body.end);
@@ -50,8 +50,7 @@ export async function POST(request: Request) {
       if (!lesson) return bad("Lesson not found", 404);
       if (action === "proposeReschedule") {
         const roster = await readRoster();
-        const active = new Set(roster.plans.filter(p => p.teacher === actor.teacherName).map(p => p.key));
-        if (!teacherMaySeeLesson(actor, lesson, active)) return bad("No permission to check this lesson", 403);
+        if (!mayRequestReschedule(actor, lesson, roster.plans)) return bad("No permission to check this lesson", 403);
         slots = [{ ...lesson, plannedStart: start, plannedEnd: end }];
         others = existing.filter(row => row.id !== id);
       } else {

@@ -47,8 +47,8 @@ function dpapi(mode, value) {
 }
 
 function validateExport(data) {
-  const expectedTables = data?.format === 'timelyo-d1-v4' ? [...baseTables, ...classroomTables, 'google_identities', 'academic_terms'] : data?.format === 'timelyo-d1-v3' ? [...baseTables, ...classroomTables, 'google_identities'] : data?.format === 'timelyo-d1-v2' ? [...baseTables, ...classroomTables] : baseTables;
-  if (!data || !['timelyo-d1-v1', 'timelyo-d1-v2', 'timelyo-d1-v3', 'timelyo-d1-v4'].includes(data.format) || !data.tables ||
+  const expectedTables = ['timelyo-d1-v4','timelyo-d1-v5'].includes(data?.format) ? [...baseTables, ...classroomTables, 'google_identities', 'academic_terms'] : data?.format === 'timelyo-d1-v3' ? [...baseTables, ...classroomTables, 'google_identities'] : data?.format === 'timelyo-d1-v2' ? [...baseTables, ...classroomTables] : baseTables;
+  if (!data || !['timelyo-d1-v1', 'timelyo-d1-v2', 'timelyo-d1-v3', 'timelyo-d1-v4', 'timelyo-d1-v5'].includes(data.format) || !data.tables ||
       Object.keys(data.tables).sort().join('|') !== expectedTables.slice().sort().join('|')) {
     throw new Error('Incomplete database export');
   }
@@ -68,7 +68,7 @@ function restoreInMemory(data) {
   const expectedTables = validateExport(data);
   const db = new DatabaseSync(':memory:');
   try {
-    for (const prefix of [...baseMigrations, ...(data.format !== 'timelyo-d1-v1' ? ['0010'] : []), ...(['timelyo-d1-v3','timelyo-d1-v4'].includes(data.format) ? ['0011'] : []), ...(data.format === 'timelyo-d1-v4' ? ['0012'] : [])]) {
+    for (const prefix of [...baseMigrations, ...(data.format !== 'timelyo-d1-v1' ? ['0010'] : []), ...(['timelyo-d1-v3','timelyo-d1-v4','timelyo-d1-v5'].includes(data.format) ? ['0011'] : []), ...(['timelyo-d1-v4','timelyo-d1-v5'].includes(data.format) ? ['0012'] : []), ...(data.format === 'timelyo-d1-v5' ? ['0013'] : [])]) {
       const file = readdirSync(resolve(projectRoot, 'drizzle')).find((name) => name.startsWith(prefix + '_') && name.endsWith('.sql'));
       if (!file) throw new Error(`Missing migration ${prefix}`);
       db.exec(readFileSync(resolve(projectRoot, 'drizzle', file), 'utf8'));

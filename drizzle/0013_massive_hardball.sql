@@ -1,0 +1,1 @@
+ALTER TABLE `reschedule_requests` ADD `requested_role` text DEFAULT 'teacher' NOT NULL;

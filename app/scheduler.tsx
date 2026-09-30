@@ -89,6 +89,8 @@ type State = {
         id: string;
         lessonId: string;
         originalStart: string;
+        originalEnd: string;
+        requestedRole: string;
         proposedStart: string;
         proposedEnd: string;
         status: string;
@@ -467,6 +469,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "schedule", label: "安排课程", Icon: Clock3 },
         { id: "lessons", label: "课程与打卡", Icon: CalendarDays },
         { id: "attendance", label: "出席记录", Icon: ClipboardCheck },
+        { id: "reschedule", label: "改期申请", Icon: ClipboardCheck },
         { id: "hours", label: "上课记录", Icon: Clock3 },
         { id: "students", label: "负责的学生与科目", Icon: Users },
         { id: "materials", label: "PDF 教学资料", Icon: FileText },
@@ -480,7 +483,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "list", label: "课程列表", Icon: List },
         { id: "homework", label: "我的功课", Icon: BookOpen },
         { id: "materials", label: "我的教学资料", Icon: FileText },
-        { id: "reschedule", label: "待确认的改期申请", Icon: ClipboardCheck },
+        { id: "reschedule", label: "改期申请", Icon: ClipboardCheck },
     ],
 };
 
@@ -601,8 +604,8 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
             const ownedPlans = (state?.plans || []).filter(plan => plan.teacher === account.teacherName);
             const schedulingState = state ? { ...state, plans: ownedPlans, students: [...new Set(ownedPlans.map(plan => plan.student))].sort(), teachers: account.teacherName ? [account.teacherName] : [] } : null;
             pageContent = <Schedule state={schedulingState} lessons={lessons} mutate={mutate} open={setModal} busy={busy} view="create"/>;
-        } else if (["lessons", "attendance", "students"].includes(activeView)) {
-            pageContent = <TeacherPortal lessons={lessons} plans={state?.plans || []} proposals={state?.proposals || []} mutate={mutate} busy={busy} view={activeView as "lessons" | "attendance" | "students"}/>;
+        } else if (["lessons", "attendance", "students", "reschedule"].includes(activeView)) {
+            pageContent = <TeacherPortal lessons={lessons} plans={state?.plans || []} proposals={state?.proposals || []} mutate={mutate} busy={busy} view={activeView as "lessons" | "attendance" | "students" | "reschedule"}/>;
         } else if (activeView === "hours") {
             pageContent = <StatsPanel state={state}/>;
         } else {

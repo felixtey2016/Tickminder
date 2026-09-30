@@ -102,6 +102,7 @@ export const rescheduleRequests = sqliteTable("reschedule_requests", {
   status: text("status").notNull().default("pending"),
   note: text("note"),
   requestedBy: text("requested_by").notNull(),
+  requestedRole: text("requested_role").notNull().default("teacher"),
   requestedAt: text("requested_at").notNull(),
   respondedBy: text("responded_by"),
   respondedAt: text("responded_at"),

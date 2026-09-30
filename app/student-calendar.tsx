@@ -21,7 +21,7 @@ type Lesson = {
   attendanceKind?: string | null;
   onlineLink?: string | null;
 };
-type Proposal = { lessonId: string; status: string; proposedStart: string; proposedEnd: string };
+type Proposal = { lessonId: string; status: string; proposedStart: string; proposedEnd: string; requestedRole?: string };
 
 const statusText: Record<string, string> = {
   scheduled: "已安排", completed: "已上课", student_absent: "学生缺席", teacher_absent: "老师缺席",
@@ -30,7 +30,7 @@ const weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "�
 const time = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
 const dateLabel = (day: string, options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { ...options, timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`));
 
-export function StudentCalendar({ lessons, proposals, studyBlocks = [], onAddStudy, onEditStudy }: { lessons: Lesson[]; proposals: Proposal[]; studyBlocks?: StudyBlock[]; onAddStudy?: (day: string) => void; onEditStudy?: (block: StudyBlock) => void }) {
+export function StudentCalendar({ lessons, proposals, studyBlocks = [], onAddStudy, onEditStudy, onRequestReschedule, busy }: { lessons: Lesson[]; proposals: Proposal[]; studyBlocks?: StudyBlock[]; onAddStudy?: (day: string) => void; onEditStudy?: (block: StudyBlock) => void; onRequestReschedule?: (id: string) => void; busy?: boolean }) {
   const today = malaysiaDay(new Date().toISOString());
   const [selectedDay, setSelectedDay] = useState(today);
   const [visibleMonth, setVisibleMonth] = useState(today.slice(0, 7));
@@ -92,8 +92,9 @@ export function StudentCalendar({ lessons, proposals, studyBlocks = [], onAddStu
           <p><span className="student-teacher-avatar" aria-hidden="true">{lesson.teacherName.charAt(0).toUpperCase()}</span>{lesson.teacherName}</p>
           <OnlineLessonLink href={lesson.onlineLink}/>
           {lesson.actualStart && lesson.actualEnd && <small>{t("实际时间")}：{time(lesson.actualStart)}–{time(lesson.actualEnd)}</small>}
+          {lesson.status === "scheduled" && !pending.has(lesson.id) && <Button size="sm" variant="outline" disabled={busy} onClick={() => onRequestReschedule?.(lesson.id)}>{t("申请改期")}</Button>}
           <LessonHistory lessonId={lesson.id}/>
-          {pending.has(lesson.id) && <a className="student-lesson-pending" href="#student-reschedule">{t("待你确认改期")} · {dateLabel(malaysiaDay(pending.get(lesson.id)!.proposedStart), { month: "short", day: "numeric" })} {time(pending.get(lesson.id)!.proposedStart)} →</a>}
+          {pending.has(lesson.id) && <a className="student-lesson-pending" href="#student-reschedule">{t(pending.get(lesson.id)!.requestedRole === "student" ? "等待老师确认" : "待你确认改期")} · {dateLabel(malaysiaDay(pending.get(lesson.id)!.proposedStart), { month: "short", day: "numeric" })} {time(pending.get(lesson.id)!.proposedStart)} →</a>}
         </article>)}
         {selectedStudy.map(block => <article className="student-day-lesson lesson-study" key={block.id}><div className="student-day-lesson-top"><strong>{block.title}</strong><span>{t("个人学习")}</span></div><p><Clock3 size={16} aria-hidden="true"/>{time(block.startsAt)}–{time(block.endsAt)}</p>{block.subject && <p>{block.subject}</p>}{block.note && <small>{block.note}</small>}<Button size="sm" variant="outline" onClick={() => onEditStudy?.(block)}>{t("编辑学习安排")}</Button></article>)}
         {!selectedLessons.length && !selectedStudy.length && <div className="student-day-empty"><CalendarDays size={26} aria-hidden="true"/><p>{t("当日暂无课程或学习安排。")}</p></div>}

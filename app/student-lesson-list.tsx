@@ -2,6 +2,8 @@
 import { getLanguage, t } from "@/lib/i18n";
 import { malaysiaDay } from "@/lib/student-calendar";
 import { OnlineLessonLink } from "./online-lesson-link";
+import { Button } from "@/components/ui/button";
+import type { RescheduleProposal } from "./reschedule-panel";
 import { LessonHistory } from "./lesson-history";
 
 type Lesson = {
@@ -12,7 +14,7 @@ type Lesson = {
 const statusText: Record<string, string> = { scheduled: "已安排", completed: "已上课", student_absent: "学生缺席", teacher_absent: "老师缺席" };
 const time = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
 
-export function StudentLessonList({ lessons }: { lessons: Lesson[] }) {
+export function StudentLessonList({ lessons, proposals = [], onRequestReschedule, busy }: { lessons: Lesson[]; proposals?: RescheduleProposal[]; onRequestReschedule?: (id: string) => void; busy?: boolean }) {
   const today = malaysiaDay(new Date().toISOString());
   const sorted = lessons.filter(lesson => lesson.status !== "cancelled").slice().sort((a, b) => a.plannedStart.localeCompare(b.plannedStart));
   const sections = [
@@ -29,6 +31,7 @@ export function StudentLessonList({ lessons }: { lessons: Lesson[] }) {
         {lesson.actualStart && lesson.actualEnd && <small>{t("实际时间")}：{time(lesson.actualStart)}–{time(lesson.actualEnd)}</small>}
         <OnlineLessonLink href={lesson.onlineLink}/>
       </div>
+      {lesson.status === "scheduled" && (proposals.some(p => p.lessonId === lesson.id && p.status === "pending") ? <small>{t(proposals.find(p => p.lessonId === lesson.id && p.status === "pending")?.requestedRole === "student" ? "等待老师确认" : "待你确认改期")}</small> : <Button size="sm" variant="outline" disabled={busy} onClick={() => onRequestReschedule?.(lesson.id)}>{t("申请改期")}</Button>)}
       <LessonHistory lessonId={lesson.id}/>
     </article>) : <p className="muted">{t("没有课程。")}</p>}
   </section>)}</div>;

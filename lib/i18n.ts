@@ -10,6 +10,16 @@ export function setLanguage(language: Language) {
 export function getLanguage() { return currentLanguage; }
 
 const en: Record<string, string> = {
+  "待我确认": "Awaiting my response",
+  "等待对方确认": "Awaiting the other participant",
+  "等待老师确认": "Awaiting teacher approval",
+  "等待学生确认": "Awaiting student approval",
+  "发送给老师确认": "Send to teacher for approval",
+  "对方同意后才会更新上课时间。": "The lesson time changes only after the other participant accepts.",
+  "同意后，这堂课会改到对方建议的新时间。": "Accepting changes this lesson to the proposed time.",
+  "Only the other participant can respond to this request": "Only the other participant can respond to this request.",
+  "Original schedule changed; submit a new reschedule request": "The original schedule has changed. Please submit a new request.",
+  "Proposed time has passed; submit a new reschedule request": "The proposed time has passed. Please submit a new request.",
   "重置筛选": "Reset filters",
   "未分类": "Unassigned",
   "学期": "Term",
@@ -548,7 +558,7 @@ const en: Record<string, string> = {
 };
 
 export function t(value: string) {
-  if (currentLanguage === "zh") return value;
+  if (currentLanguage === "zh") return {"This lesson is not assigned to you":"你没有权限处理这堂课","Only the other participant can respond to this request":"只有对方可以确认或拒绝这项改期申请","Original schedule changed; submit a new reschedule request":"原上课时间已改变，请重新申请改期","Proposed time has passed; submit a new reschedule request":"建议时间已过，请重新申请改期","Only scheduled lessons may be rescheduled":"只有尚未打卡的已安排课程可以申请改期","This lesson already has a pending reschedule request":"这堂课已有待确认的改期申请，请等待对方回应","Request is no longer pending":"这项改期申请已处理，请刷新后查看","Choose a future date and time":"请选择未来的日期和时间"}[value] || value;
   const trimmed = value.trim();
   if (!trimmed) return value;
   const translated = en[trimmed];

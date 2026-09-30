@@ -6,7 +6,7 @@ import { accounts, assignments, audit, lessons, localCredentials, loginAttempts,
 import { hashPassword, normalizeUsername, validPassword, validUsername } from "@/lib/password";
 import { findLessonConflict, generateWeekly, hoursBetween, lessonConflictReason, malaysiaDate, mayCheckIn, type LessonSlot } from "@/lib/lesson-rules";
 import { readRoster } from "@/lib/roster";
-import { teacherMaySeeLesson } from "@/lib/access";
+import { teacherMaySeeLesson, mayRequestReschedule, mayRespondReschedule } from "@/lib/access";
 import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 import { studentNameKey } from "@/lib/student-names";
 import { first } from "@/lib/learning-server";
@@ -35,8 +35,8 @@ export async function POST(request: Request) {
   let data: Body;
   try { data = await request.json(); } catch { return bad("Invalid request"); }
   const action = str(data.action);
-  if (actor.role === "teacher" && !["create", "attendance", "proposeReschedule", "updateOnlineLink"].includes(action)) return bad("Administrator access required", 403);
-  if (actor.role === "student" && action !== "respondReschedule") return bad("Student access only", 403);
+  if (actor.role === "teacher" && !["create", "attendance", "proposeReschedule", "respondReschedule", "updateOnlineLink"].includes(action)) return bad("Administrator access required", 403);
+  if (actor.role === "student" && !["respondReschedule", "proposeReschedule"].includes(action)) return bad("Student access only", 403);
   const db = getDb();
   const now = new Date().toISOString();
   try {
@@ -218,7 +218,7 @@ export async function POST(request: Request) {
     if (!existing) return bad("Lesson not found", 404);
     if (action === "proposeReschedule") {
       const roster = await readRoster();
-      if (!teacherMaySeeLesson(actor, existing, new Set(roster.plans.filter(p => p.teacher === actor.teacherName).map(p => p.key)))) return bad("Student is no longer active or assigned", 403);
+      if (!mayRequestReschedule(actor, existing, roster.plans)) return bad("This lesson is not assigned to you", 403);
       if (existing.status !== "scheduled") return bad("Only scheduled lessons may be rescheduled");
       const proposedStart = malaysiaIso(data.start), proposedEnd = malaysiaIso(data.end);
       hoursBetween(proposedStart, proposedEnd);
@@ -229,21 +229,22 @@ export async function POST(request: Request) {
       if (proposedConflict) return conflictReply(proposedSlot, proposedConflict, actor.role);
       const pending = await db.select().from(rescheduleRequests).where(and(eq(rescheduleRequests.lessonId, id), eq(rescheduleRequests.status, "pending"))).all();
       if (pending.length) return bad("This lesson already has a pending reschedule request");
-      const row = { id: crypto.randomUUID(), lessonId: id, originalStart: existing.plannedStart, originalEnd: existing.plannedEnd, proposedStart, proposedEnd, status: "pending", note: str(data.note).slice(0, 500) || null, requestedBy: actor.id, requestedAt: now };
+      const row = { id: crypto.randomUUID(), lessonId: id, originalStart: existing.plannedStart, originalEnd: existing.plannedEnd, proposedStart, proposedEnd, status: "pending", note: str(data.note).slice(0, 500) || null, requestedBy: actor.id, requestedRole: actor.role, requestedAt: now };
       await db.insert(rescheduleRequests).values(row);
       await db.insert(audit).values({ id: crypto.randomUUID(), lessonId: id, actorId: actor.id, action: "proposeReschedule", before: JSON.stringify({ start: existing.plannedStart, end: existing.plannedEnd }), after: JSON.stringify(row), at: now });
       return NextResponse.json({ ok: true });
     }
     if (action === "respondReschedule") {
-      if (actor.role !== "student" || actor.studentName !== existing.student) return bad("This lesson is not assigned to you", 403);
       const requestId = str(data.requestId);
       const proposal = await db.select().from(rescheduleRequests).where(eq(rescheduleRequests.id, requestId)).get();
       if (!proposal || proposal.lessonId !== id || proposal.status !== "pending") return bad("Request is no longer pending");
+      const roster = await readRoster();
+      if (!mayRespondReschedule(actor, existing, proposal, roster.plans)) return bad("Only the other participant can respond to this request", 403);
       const decision = str(data.decision);
       if (!["accept", "reject"].includes(decision)) return bad("Choose accept or reject");
-      if (existing.status !== "scheduled" || existing.plannedStart !== proposal.originalStart || existing.plannedEnd !== proposal.originalEnd) return bad("Original schedule changed; ask the teacher to propose again");
+      if (existing.status !== "scheduled" || existing.plannedStart !== proposal.originalStart || existing.plannedEnd !== proposal.originalEnd) return bad("Original schedule changed; submit a new reschedule request");
       if (decision === "accept") {
-        if (proposal.proposedStart <= now) return bad("Proposed time has passed; ask the teacher to propose again");
+        if (proposal.proposedStart <= now) return bad("Proposed time has passed; submit a new reschedule request");
         const other = (await db.select().from(lessons).all()).filter(l => l.id !== id);
         const acceptedSlot = { ...existing, plannedStart: proposal.proposedStart, plannedEnd: proposal.proposedEnd };
         const acceptedConflict = findLessonConflict(acceptedSlot, other);
