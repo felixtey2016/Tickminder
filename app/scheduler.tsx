@@ -477,6 +477,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "myAccount", label: "我的账号", Icon: ShieldCheck },
         { id: "classrooms", label: "我的班级", Icon: Users },
         { id: "calendar", label: "学习日历", Icon: CalendarDays },
+        { id: "list", label: "课程列表", Icon: List },
         { id: "homework", label: "我的功课", Icon: BookOpen },
         { id: "materials", label: "我的教学资料", Icon: FileText },
         { id: "reschedule", label: "待确认的改期申请", Icon: ClipboardCheck },
@@ -594,7 +595,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
             pageContent = <SheetSyncPanel/>;
         }
     } else if (role === "student") {
-        pageContent = <StudentPortal lessons={lessons} proposals={state?.proposals || []} mutate={mutate} learningMutate={learningMutate} learning={learning} busy={busy} view={activeView as "calendar" | "homework" | "materials" | "reschedule"}/>;
+        pageContent = <StudentPortal lessons={lessons} proposals={state?.proposals || []} mutate={mutate} learningMutate={learningMutate} learning={learning} busy={busy} view={activeView as "calendar" | "list" | "homework" | "materials" | "reschedule"}/>;
     } else if (role === "teacher") {
         if (activeView === "schedule") {
             const ownedPlans = (state?.plans || []).filter(plan => plan.teacher === account.teacherName);

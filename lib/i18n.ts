@@ -489,6 +489,7 @@ const en: Record<string, string> = {
   "课程": "Lesson",
   "课程 ID：": "Lesson ID: ",
   "课程列表": "Lesson list",
+  "过往课程": "Past lessons",
   "课程安排查询": "Schedule lookup",
   "课程总览": "Lesson overview",
   "课程打卡": "Mark attendance",

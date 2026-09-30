@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { StudentLearningDashboard } from "./student-learning-dashboard";
+import { StudentLessonList } from "./student-lesson-list";
 import type { LearningMutate, LearningState } from "./learning-portal";
 import { mayCheckIn } from "@/lib/lesson-rules";
 import { OnlineLessonLink } from "./online-lesson-link";
@@ -108,12 +109,12 @@ export function StudentPortal({ lessons, proposals, mutate, learningMutate, lear
     learningMutate: LearningMutate;
     learning: LearningState;
     busy: boolean;
-    view: "calendar" | "homework" | "materials" | "reschedule";
+    view: "calendar" | "list" | "homework" | "materials" | "reschedule";
 }) {
     const sorted = [...lessons].sort((a, b) => a.plannedStart.localeCompare(b.plannedStart));
     const pending = proposals.filter(p => p.status === "pending");
     const [selected, setSelected] = useDialogState<string | null>("student-reschedule", null);
-    return <div className="student-portal">{view !== "reschedule" && <StudentLearningDashboard lessons={sorted} proposals={proposals} learning={learning} mutate={learningMutate} busy={busy} view={view}/>}<section className="panel" id="student-reschedule" hidden={view !== "reschedule"}><p className="eyebrow">{t("待确认的改期申请")}</p><h2>{t("\u5F85\u786E\u8BA4\u7684\u6539\u671F\u7533\u8BF7")}</h2>{pending.length ? pending.map(p => { const l = lessons.find(row => row.id === p.lessonId); return l && <article className="portal-card" key={p.id}><div><strong>{l.subject} · {l.teacherName}</strong><span>{t("\u539F\u65F6\u95F4\uFF1A")}{label(p.originalStart)}</span><span>{t("\u5EFA\u8BAE\u65F6\u95F4\uFF1A")}{label(p.proposedStart)}–{local(p.proposedEnd).slice(11)}</span>{p.note && <small>{p.note}</small>}</div><div className="portal-actions"><Button disabled={busy} size="sm" onClick={() => setSelected(p.id)}>{t("\u540C\u610F\u6539\u671F")}</Button><Button disabled={busy} size="sm" variant="outline" onClick={() => mutate({ action: "respondReschedule", id: l.id, requestId: p.id, decision: "reject" })}>{t("\u4E0D\u540C\u610F")}</Button></div></article>; }) : <p className="muted">{t("\u76EE\u524D\u6CA1\u6709\u5F85\u786E\u8BA4\u7684\u6539\u671F\u3002")}</p>}</section><Dialog open={Boolean(selected)} onOpenChange={open => { if (!open)
+    return <div className="student-portal">{view === "list" && <StudentLessonList lessons={sorted}/>} {view !== "reschedule" && view !== "list" && <StudentLearningDashboard lessons={sorted} proposals={proposals} learning={learning} mutate={learningMutate} busy={busy} view={view}/>}<section className="panel" id="student-reschedule" hidden={view !== "reschedule"}><p className="eyebrow">{t("待确认的改期申请")}</p><h2>{t("\u5F85\u786E\u8BA4\u7684\u6539\u671F\u7533\u8BF7")}</h2>{pending.length ? pending.map(p => { const l = lessons.find(row => row.id === p.lessonId); return l && <article className="portal-card" key={p.id}><div><strong>{l.subject} · {l.teacherName}</strong><span>{t("\u539F\u65F6\u95F4\uFF1A")}{label(p.originalStart)}</span><span>{t("\u5EFA\u8BAE\u65F6\u95F4\uFF1A")}{label(p.proposedStart)}–{local(p.proposedEnd).slice(11)}</span>{p.note && <small>{p.note}</small>}</div><div className="portal-actions"><Button disabled={busy} size="sm" onClick={() => setSelected(p.id)}>{t("\u540C\u610F\u6539\u671F")}</Button><Button disabled={busy} size="sm" variant="outline" onClick={() => mutate({ action: "respondReschedule", id: l.id, requestId: p.id, decision: "reject" })}>{t("\u4E0D\u540C\u610F")}</Button></div></article>; }) : <p className="muted">{t("\u76EE\u524D\u6CA1\u6709\u5F85\u786E\u8BA4\u7684\u6539\u671F\u3002")}</p>}</section><Dialog open={Boolean(selected)} onOpenChange={open => { if (!open)
         setSelected(null); }}><DialogContent><DialogHeader><DialogTitle>{t("\u786E\u8BA4\u6539\u671F")}</DialogTitle></DialogHeader><p>{t("\u540C\u610F\u540E\uFF0C\u8FD9\u5802\u8BFE\u4F1A\u6539\u5230\u8001\u5E08\u5EFA\u8BAE\u7684\u65B0\u65F6\u95F4\u3002")}</p><Button disabled={busy} onClick={async () => { const p = pending.find(row => row.id === selected); if (p && await mutate({ action: "respondReschedule", id: p.lessonId, requestId: p.id, decision: "accept" }))
         setSelected(null); }}>{t("\u786E\u8BA4\u6539\u671F")}</Button></DialogContent></Dialog></div>;
 }
