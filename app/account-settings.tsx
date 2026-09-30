@@ -9,7 +9,7 @@ export function AccountSettings() {
   const [auth, setAuth] = useState<Auth | null>(null), [password, setPassword] = useState(""), [busy, setBusy] = useState(false);
   const button = useRef<HTMLDivElement>(null), passwordRef = useRef(""), inFlight = useRef(false);
   passwordRef.current = password;
-  async function refresh() { const response = await fetch("/api/auth", { cache: "no-store" }); const data = await readApiJson<Auth>(response); if (!response.ok) throw new Error("登录已过期，请重新登录"); setAuth(data); }
+  async function refresh() { const response = await fetch("/api/auth", { cache: "no-store" }); const data = await readApiJson<Auth>(response); if (!response.ok || !data.account) throw new Error("登录已过期，请重新登录"); setAuth(data); }
   useEffect(() => { void refresh().catch(alertActionFailure); }, []);
   const language = getLanguage();
   useEffect(() => {
