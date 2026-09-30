@@ -27,3 +27,5 @@ Dependency checks precede deletion batches; concurrent changes to dependencies a
 ## Published version
 
 Private staging v24 and public production v28 succeeded on 2026-09-30. Production source is 933af96f61faa4b61288615073b7b555934a72fc; GitHub source recovery point is feb8071618816198a2e3b777bff7583022c3b162. Post-release comparison confirmed that all pre-existing 22 tables retain identical values in their original columns, including 10 accounts and 43 lessons. All seven PDFs retain matching hashes. The expanded 23-table v3 export also passed encrypted restore verification. The pre-release cloud snapshot contains nine ciphertext/manifest files, downloaded and verified from the authorized Drive folder.
+
+Final publication is production v29 (source 03f69b53de0ffe905154a7fa74a4478819fed794), with private staging v25. It adds an expired-session guard to My account after phone-size browser verification; no further schema or backend change. GitHub source recovery is 0d46ffd3958f30b0023079559042946507313002. Stable release tags retain both v28 and v29 recovery records.
