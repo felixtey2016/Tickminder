@@ -23,3 +23,7 @@ TypeScript and production build pass. All 12 rule tests pass, including in-memor
 Compiled isolated Worker checks pass for disabling/login blocking/restoring/deleting accounts, roster dependencies, duplicate account prevention, plan-link updates, cancelled/permanently deleted lessons and original classroom/PDF/homework authorization. Browser checks cover 128 desktop/mobile role/language/page combinations, plus phone-size editing and new dialog Back/Forward. Mobile tests are Chromium emulation rather than physical Android hardware.
 
 Dependency checks precede deletion batches; concurrent changes to dependencies are not protected by a global application transaction. Existing scheduling concurrency limitations are unchanged. Follow-up ideas are reserved for user review and not implemented.
+
+## Published version
+
+Private staging v24 and public production v28 succeeded on 2026-09-30. Production source is 933af96f61faa4b61288615073b7b555934a72fc; GitHub source recovery point is feb8071618816198a2e3b777bff7583022c3b162. Post-release comparison confirmed that all pre-existing 22 tables retain identical values in their original columns, including 10 accounts and 43 lessons. All seven PDFs retain matching hashes. The expanded 23-table v3 export also passed encrypted restore verification. The pre-release cloud snapshot contains nine ciphertext/manifest files, downloaded and verified from the authorized Drive folder.
