@@ -47,8 +47,8 @@ button, input, select, textarea { font: inherit; }
 .status-completed { background: #e5f7ef; color: #13724d; }
 .status-student_absent, .status-teacher_absent { background: #fff0db; color: #9a5b15; }
 .status-cancelled { background: #f3f3f4; color: #737681; }
-.lesson-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
-.lesson-actions button { min-height: 35px; }
+.lesson-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+.lesson-actions button { min-height: 35px; flex: 0 0 auto; max-width: 100%; }
 .upcoming-item { display: block; width: 100%; text-align: left; padding: 13px 0; border: 0; border-bottom: 1px solid #e8edf4; background: transparent; color: inherit; }
 .upcoming-item:last-child { border-bottom: 0; }
 .upcoming-item span, .upcoming-item strong, .upcoming-item small { display: block; }
@@ -800,6 +800,10 @@ input[type=file]::file-selector-button { border: 0; border-radius: 6px; padding:
 /* Directory management */
 .directory-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:22px 0}
 .directory-filters label{display:flex;flex-direction:column;gap:8px;min-width:0}
+.directory-filters input,.directory-filters select{display:block;width:100%;min-width:0;max-width:100%;min-height:46px;box-sizing:border-box;padding:10px 12px;border:1px solid var(--timelyo-line,#ded9ee);border-radius:10px;background:#fff;color:var(--timelyo-ink,#252247);font:inherit;line-height:1.5}
+.directory-filters select{padding-right:32px}
+.directory-filters input:focus-visible,.directory-filters select:focus-visible{outline:2px solid var(--timelyo-purple,#6546ce);outline-offset:2px}
+@media(max-width:650px){.directory-filters input,.directory-filters select{min-height:48px;font-size:16px}}
 .directory-group{border:1px solid var(--line,#e4e2ef);border-radius:14px;margin:14px 0;overflow:hidden;background:white}
 .directory-group>summary{cursor:pointer;padding:18px 20px;font-weight:650;background:#faf9fe;min-height:56px}
 .directory-group>summary span{display:inline-flex;align-items:center;justify-content:center;min-width:28px;margin-left:10px;padding:2px 8px;border-radius:8px;background:#ece8ff;color:#5137af;font-size:14px}
