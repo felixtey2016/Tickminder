@@ -5,6 +5,22 @@ import { Dialog,DialogContent,DialogHeader,DialogTitle } from "@/components/ui/d
 import { useDialogState } from "@/lib/use-dialog-state";
 import { t } from "@/lib/i18n";
 export type Term = {id:string;name:string;isCurrent:number|boolean};
+export function TermSelect({terms,value,onChange,mutate,busy}:{terms:Term[];value:string;onChange:(id:string)=>void;mutate:(body:Record<string,unknown>)=>Promise<{ok:boolean;id?:string}>;busy:boolean}) {
+ const [adding,setAdding]=useState(false),[name,setName]=useState("");
+ const [saved,setSaved]=useState<Term|null>(null),[saving,setSaving]=useState(false);
+ const options=saved&&!terms.some(term=>term.id===saved.id)?[...terms,saved]:terms;
+ async function create(){
+  if(busy||saving||!name.trim())return;
+  setSaving(true);
+  try{const result=await mutate({action:"createTerm",name:name.trim()});if(result.ok&&result.id){setSaved({id:result.id,name:name.trim(),isCurrent:false});onChange(result.id);setName("");setAdding(false);}}
+  finally{setSaving(false);}
+ }
+ return <div className="term-select">
+  <label>{t("学期")}<select aria-label={t("学期")} value={value} disabled={busy||saving} onChange={e=>{if(e.target.value==="__new_term__"){setAdding(true);setName("");}else{onChange(e.target.value);setAdding(false);}}}><option value="">{t("未分类")}</option>{options.map(term=><option value={term.id} key={term.id}>{term.name}</option>)}<option value="__new_term__">＋ {t("新增学期")}</option></select></label>
+  {!adding&&<Button type="button" size="sm" variant="outline" disabled={busy||saving} onClick={()=>{setAdding(true);setName("");}}>{t("新增学期")}</Button>}
+  {adding&&<div className="learning-card term-create" role="group" aria-label={t("新增学期")}><label>{t("学期名称")}<input autoFocus maxLength={80} value={name} disabled={busy||saving} placeholder={t("例如：2026 第 1 学期")} onChange={e=>setName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();void create();}}}/></label><div className="learning-card-actions"><Button type="button" size="sm" disabled={busy||saving||!name.trim()} onClick={()=>void create()}>{t("新增并选用")}</Button><Button type="button" size="sm" variant="outline" disabled={busy||saving} onClick={()=>{setAdding(false);setName("");}}>{t("取消")}</Button></div></div>}
+ </div>;
+}
 export function TermManager({terms,mutate,busy}:{terms:Term[];mutate:(body:Record<string,unknown>)=>Promise<{ok:boolean}>;busy:boolean}){
  const [open,setOpen]=useDialogState<boolean|null>("term-manager",null);
  const [id,setId]=useState(""),[name,setName]=useState(""),[isCurrent,setCurrent]=useState(false);

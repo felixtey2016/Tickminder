@@ -17,6 +17,8 @@ const en: Record<string, string> = {
   "所有学期": "All terms",
   "管理学期": "Manage terms",
   "新增学期": "Add term",
+  "例如：2026 第 1 学期": "For example: 2026 Term 1",
+  "新增并选用": "Add and select",
   "学期名称": "Term name",
   "例如：2026 下半年": "e.g. 2026 Semester 2",
   "设为当前学期": "Set as current term",

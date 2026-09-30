@@ -2,7 +2,7 @@
 
 import { useFilterPreference } from "@/lib/filter-preferences";
 import { BulkDeleteTool } from "./bulk-delete";
-import { TermManager, type Term } from "./term-manager";
+import { TermManager, TermSelect, type Term } from "./term-manager";
 import { useMemo, useState } from "react";
 import { BookOpen, FileText, Megaphone, Plus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -70,7 +70,7 @@ export function ClassroomsPage({ role, classes, terms, learning, teacherName, te
   async function saveClassroom(event: React.FormEvent) {
     event.preventDefault();
     const result = await mutate({ action: "saveClassroom", id: editingId, title, description, termId, teacherName: teacher, subject, students: members });
-    if (result.ok) { setCreating(false); if (result.id) setSelectedId(result.id); setTab("announcements"); }
+    if (result.ok) { setFilterTerm(termId || "unassigned"); setCreating(false); if (result.id) setSelectedId(result.id); setTab("announcements"); }
   }
   async function saveAnnouncement(event: React.FormEvent) {
     event.preventDefault(); if (!selected) return;
@@ -94,7 +94,7 @@ export function ClassroomsPage({ role, classes, terms, learning, teacherName, te
     {creating && canManage && <section className="panel classroom-form-panel"><p className="eyebrow">{t("班级设置")}</p><h2>{editingId ? t("编辑班级") : t("新建班级")}</h2>
       <form className="learning-form" onSubmit={saveClassroom}>
         <label>{t("班级名称")}<input required maxLength={100} value={title} onChange={event => setTitle(event.target.value)} placeholder={t("例如：Form 4 Science 小班")}/></label>
-        <label>{t("学期")}<select value={termId} onChange={e=>setTermId(e.target.value)}><option value="">{t("未分类")}</option>{terms.map(term=><option value={term.id} key={term.id}>{term.name}</option>)}</select></label>
+        <TermSelect terms={terms} value={termId} onChange={setTermId} mutate={mutate} busy={busy}/>
         <label>{t("班级说明（可选）")}<textarea maxLength={1000} value={description} onChange={event => setDescription(event.target.value)}/></label>
         <label>{t("负责老师")}<select required disabled={role === "teacher" || Boolean(editingId)} value={teacher} onChange={event => { setTeacher(event.target.value); setSubject(""); setMembers([]); }}><option value="">{t("请选择")}</option>{teachers.map(name => <option key={name}>{name}</option>)}</select></label>
         <label>{t("科目")}<select required disabled={Boolean(editingId)} value={subject} onChange={event => { setSubject(event.target.value); setMembers([]); }}><option value="">{t("请选择")}</option>{subjects.map(name => <option key={name}>{name}</option>)}</select></label>

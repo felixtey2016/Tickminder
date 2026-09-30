@@ -118,5 +118,17 @@ assert.equal(db.prepare('SELECT count(*) AS n FROM academic_terms WHERE is_curre
 assert.equal(db.prepare('SELECT id FROM academic_terms WHERE is_current=1').get().id,term2.id);
 assert.equal((await classes.POST(request({action:'saveTerm',name:'2027 Semester 1'}))).status,409);
 assert.equal((await classes.POST(request({action:'saveTerm',name:'Updated',id:'missing'}))).status,404);
+// Inline classroom term creation can add labels, never edit or change the current term.
+db.prepare('INSERT INTO teachers (name,active,created_at) VALUES (?,1,?)').run('Other',now);
+actor={id:'other',role:'teacher',teacherName:'Other'};
+const inlineResponse=await classes.POST(request({action:'createTerm',name:'2027 Term 2'}));assert.equal(inlineResponse.status,200,JSON.stringify(await inlineResponse.clone().json()));
+const inline=await inlineResponse.json();assert.equal(db.prepare('SELECT is_current FROM academic_terms WHERE id=?').get(inline.id).is_current,0);
+assert.equal(db.prepare('SELECT id FROM academic_terms WHERE is_current=1').get().id,term2.id);
+assert.equal((await classes.POST(request({action:'createTerm',name:'2027 term 2'}))).status,409);
+assert.equal((await classes.POST(request({action:'createTerm',name:'No',isCurrent:true}))).status,403);
+assert.equal((await classes.POST(request({action:'createTerm',name:'Rename',id:inline.id}))).status,403);
+actor={id:'unbound',role:'teacher',teacherName:null};assert.equal((await classes.POST(request({action:'createTerm',name:'No'}))).status,403);
+actor={id:'student',role:'student'};assert.equal((await classes.POST(request({action:'createTerm',name:'No'}))).status,403);
+actor={id:'admin',role:'admin'};assert.equal((await classes.POST(request({action:'createTerm',name:'2027 Term 3'}))).status,200);
 delete globalThis.__accountTest; db.close();
 console.log('Account proof, explicit merge, rollback, deletion permissions and shared PDF preservation passed');

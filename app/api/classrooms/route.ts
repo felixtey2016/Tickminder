@@ -32,8 +32,10 @@ export async function POST(request: Request) {
   try {
     if (await first("SELECT 1 AS mustChange FROM local_credentials WHERE account_id = ? AND must_change_password = 1", actor.id)) throw new RequestError("请先修改初始密码", 403);
     const db = learningDb();
-    if (action === "saveTerm") {
-      if (actor.role !== "admin") throw new RequestError("只有管理员可以管理学期", 403);
+    if (action === "saveTerm" || action === "createTerm") {
+      if (action === "saveTerm" && actor.role !== "admin") throw new RequestError("只有管理员可以管理学期", 403);
+      if (action === "createTerm" && (id || data.isCurrent === true)) throw new RequestError("只有管理员可以管理学期", 403);
+      if (actor.role === "teacher" && (!actor.teacherName || !await first("SELECT name FROM teachers WHERE name = ? AND active = 1", actor.teacherName))) throw new RequestError("没有班级管理权限", 403);
       const name = str(data.name);
       if (!name || name.length > 80) throw new RequestError("请输入学期名称（最多 80 字）");
       if (id && !await first("SELECT id FROM academic_terms WHERE id = ?", id)) throw new RequestError("学期不存在", 404);

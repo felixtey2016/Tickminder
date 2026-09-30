@@ -574,6 +574,9 @@ input[type="date"], input[type="datetime-local"], input[type="month"], input[typ
 .learning-form label { display: grid; gap: 6px; min-width: 0; color: #29254e; font-size: 14px; font-weight: 650; }
 .learning-form input, .learning-form select, .learning-form textarea, .learning-filter select { width: 100%; min-height: 48px; padding: 10px 12px; border: 1px solid #d9d4eb; border-radius: 11px; color: #252247; background: #fff; font: inherit; }
 .learning-form textarea { min-height: 94px; resize: vertical; }
+.term-select { display: grid; gap: 10px; min-width: 0; }
+.term-select > button { justify-self: start; }
+.term-create { display: grid; gap: 12px; padding: 14px; }
 .learning-form input[type=file], .learning-submit input[type=file] { padding: 10px; min-width: 0; }
 .learning-form .learning-score-toggle { display: flex; flex-direction: row; align-items: center; gap: 10px; }
 .learning-form .learning-score-toggle input { width: 18px; height: 18px; min-height: 0; margin: 0; }
