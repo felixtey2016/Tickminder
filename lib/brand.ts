@@ -1,1 +1,1 @@
-export const BRAND_NAME = "Timelyo";
+export const BRAND_NAME = "Tickminder";
