@@ -407,9 +407,9 @@ function LoginForm({ googleButton, clientId, login, busy, message, language, cha
 }) {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
-    return <main className="auth-shell"><div className="auth-layout"><section className="auth-story"><BrandLogo/><strong>{BRAND_NAME}</strong><h2>{t("\u6392\u8BFE\u4E0E\u6253\u5361")}</h2><p>{t("管理课程安排、记录出席，集中查看功课与教学资料。")}</p></section><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><div className="auth-mobile-brand"><BrandLogo small/><strong>{BRAND_NAME}</strong></div><p className="eyebrow">{language === "zh" ? `欢迎使用 ${BRAND_NAME}` : `WELCOME TO ${BRAND_NAME.toUpperCase()}`}</p><h1>{t("登录")}</h1><p>{t("登录以继续")}</p>
+    return <main className="auth-shell"><div className="auth-layout"><section className="auth-story"><BrandLogo/><strong>{BRAND_NAME}</strong><h2>{t("学习与协作")}</h2><p>{t("集中管理学习安排、作业与共享资料。")}</p></section><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><div className="auth-mobile-brand"><BrandLogo small/><strong>{BRAND_NAME}</strong></div><p className="eyebrow">{language === "zh" ? `欢迎使用 ${BRAND_NAME}` : `Welcome to ${BRAND_NAME}`}</p><h1>{t("登录")}</h1><p>{t("登录你的学习空间")}</p>
     <form onSubmit={e => { e.preventDefault(); login(username, password); }}><label>{t("\u767B\u5F55\u8D26\u53F7")}<input required autoComplete="username" value={username} onChange={e => setUsername(e.target.value)}/></label><label>{t("\u5BC6\u7801")}<input required type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("\u8D26\u53F7\u5BC6\u7801\u767B\u5F55")}</Button></form>
-    <p className="auth-divider">{t("\u6216\u4F7F\u7528 Google \u767B\u5F55")}</p>{clientId ? <div ref={googleButton} className="google-signin"/> : <div className="notice">{t("Google \u767B\u5F55\u5C1A\u672A\u914D\u7F6E\uFF1B\u53EF\u4EE5\u4F7F\u7528\u7BA1\u7406\u5458\u521B\u5EFA\u7684\u8D26\u53F7\u5BC6\u7801\u3002")}</div>}{busy && <small>{t("\u6B63\u5728\u9A8C\u8BC1\u8D26\u53F7\u2026")}</small>}{message && <div className="error" role="alert">{message}</div>}<span className="auth-foot">{t("\u5FD8\u8BB0\u5BC6\u7801\u8BF7\u8054\u7CFB\u7BA1\u7406\u5458\u91CD\u7F6E \u00B7 \u9A6C\u6765\u897F\u4E9A\u65F6\u95F4")}</span></div></div></main>;
+    <p className="auth-divider">{t("\u6216\u4F7F\u7528 Google \u767B\u5F55")}</p>{clientId ? <div ref={googleButton} className="google-signin"/> : <div className="notice">{t("Google \u767B\u5F55\u5C1A\u672A\u914D\u7F6E\uFF1B\u53EF\u4EE5\u4F7F\u7528\u7BA1\u7406\u5458\u521B\u5EFA\u7684\u8D26\u53F7\u5BC6\u7801\u3002")}</div>}{busy && <small>{t("\u6B63\u5728\u9A8C\u8BC1\u8D26\u53F7\u2026")}</small>}{message && <div className="error" role="alert">{message}</div>}<span className="auth-foot">{t("忘记密码？请联系管理员。")}</span></div></div></main>;
 }
 function PasswordChange({ name, change, logout, busy, message, language, changeLanguage }: {
     name: string;
@@ -614,7 +614,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
     }
     return <div className="app-shell">
         <header className="topbar">
-            <div className="brand"><BrandLogo small/><div><strong>{BRAND_NAME}</strong><span>{t("教学管理平台")} · GMT+8</span></div></div>
+            <div className="brand"><BrandLogo small/><div><strong>{BRAND_NAME}</strong><span>{t("学习与协作平台")} · GMT+8</span></div></div>
             <div className="top-actions">
                 <LanguageSwitcher language={language} change={changeLanguage}/>
                 <Button size="sm" variant="outline" className="menu-toggle" onClick={toggleMenu} aria-label={t(menuOpen ? "关闭功能菜单" : "打开功能菜单")} aria-expanded={menuOpen} aria-controls="workspace-menu"><Menu size={20}/></Button>

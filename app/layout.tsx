@@ -4,8 +4,8 @@ import "./globals.css";
 import { ActionToastHost } from "@/components/action-toast";
 
 export const metadata: Metadata = {
-  title: `${BRAND_NAME} · 排课与打卡`,
-  description: `${BRAND_NAME} lesson scheduling, attendance, and monthly teaching hours.`,
+  title: `${BRAND_NAME} · Learning & Collaboration`,
+  description: `${BRAND_NAME} brings learning plans, assignments and shared resources together in one workspace.`,
   other: {
     "codex-preview": "development",
   },
