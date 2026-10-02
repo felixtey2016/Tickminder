@@ -47,3 +47,11 @@ The private GitHub repository backs up source code only. Live records are in the
 - TypeScript, both source builds, boundary tests and isolated compiled Worker URL tests passed. Production legacy root and query redirects, both new homepage responses and retained legacy auth API independently verified.
 - Pre-release backup tickminder-before-legacy-redirect-2026-10-02: 24 tables and 5 PDFs, restore memory-and-files-ok. Backup remains outside Git.
 - Sites source opening helper succeeded. Bundled archive helper requires unavailable bash on this Windows host; existing verified Windows tar packager used instead.
+## 2026-10-02 - Learning brand copy (production v38 / staging v34)
+
+- GitHub runtime source: 3f5e8864a61d4069719debaf5c7864469080f018; feature/learning-brand-copy; stable tag site-v38-learning-brand-2026-10-02.
+- Production source: bded01397efd7d9f1c6fca29fa9f61c1ab16b0a9; v38; saved version appgprj_6ab4dc0a0aa081919046a0b6f11499e5~appgver_08a9ef15a9108191a060612bc80bc62c; deployment appgdep_6abf552f78148191a3be4e9852f375f0 succeeded 2026-10-02T06:55:02.865988Z.
+- Isolated staging source: a1699a60e0b615435a4b725507dd15747920c46e; v34; saved version appgprj_6ab7b82dbcc481919554233118c87f5e~appgver_1eb6854b43308191b3689094ff772a2c; deployment appgdep_6abf54cc7b508191a0cacf2a0edec065 succeeded.
+- Replaced scheduling/attendance brand copy with Learning & Collaboration in browser metadata, login hero and platform subtitle. Chinese and English strings updated; functional menu labels and business behavior unchanged.
+- TypeScript and both committed-source builds passed; reviewed diff contains copy changes in three files only. No database migrations packaged.
+- Pre-release encrypted backup tickminder-before-learning-brand-copy-2026-10-02: 24 tables, 5 PDFs, 3482442 PDF bytes; restore memory-and-files-ok. Backup remains outside Git.
