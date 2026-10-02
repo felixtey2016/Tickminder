@@ -37,3 +37,13 @@ The private GitHub repository backs up source code only. Live records are in the
 - TypeScript check and both committed-source builds passed. Production homepage HTTP 200 and visible Tickminder verified.
 - Pre-release encrypted backup: timelyo-before-tickminder-2026-10-02, 24 tables and 5 PDFs; restore verified memory-and-files-ok. Backup files remain outside Git.
 - www.tickminder.com registered on existing production project; DNS ownership and TLS remain pending external registrar setup. Google OAuth must authorize https://www.tickminder.com. New origin requires a fresh login; existing data stays on the same project.
+## 2026-10-02 - Legacy domain redirect (production v37 / staging v33)
+
+- GitHub runtime source: 20400ac1bd9b9a3a045f273e0affd8182ab2a3ec; feature/legacy-domain-redirect.
+- Production source: 38d58b5ddfe0b1903c3bf5945c46df2824530582; v37; deployment appgdep_6abf4b61120c8191bfbe9a14f5e50302 succeeded.
+- Isolated staging source: 950ee8ab7504dea517294a6348c7f782a6d4f10c; v33; deployment appgdep_6abf4b1b53a881918d1d96ae9e1ba996 succeeded.
+- Legacy website GET/HEAD navigations receive 308 redirects to https://www.tickminder.com, preserving paths and query parameters. API and non-GET requests stay unchanged for existing API clients and encrypted backup automation.
+- Both tickminder.com and www.tickminder.com custom domains and TLS are active. No domain redirect loop. Existing business data and database schema unchanged; no migrations packaged.
+- TypeScript, both source builds, boundary tests and isolated compiled Worker URL tests passed. Production legacy root and query redirects, both new homepage responses and retained legacy auth API independently verified.
+- Pre-release backup tickminder-before-legacy-redirect-2026-10-02: 24 tables and 5 PDFs, restore memory-and-files-ok. Backup remains outside Git.
+- Sites source opening helper succeeded. Bundled archive helper requires unavailable bash on this Windows host; existing verified Windows tar packager used instead.
