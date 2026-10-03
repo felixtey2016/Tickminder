@@ -1,4 +1,4 @@
-import { integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const teachers = sqliteTable("teachers", {
   name: text("name").primaryKey(),
@@ -237,4 +237,27 @@ export const studyBlocks = sqliteTable("study_blocks", {
   homeworkId: text("homework_id"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
+});
+
+export const pushSubscriptions = sqliteTable("push_subscriptions", {
+  id: text("id").primaryKey(), accountId: text("account_id").notNull(),
+  endpoint: text("endpoint").notNull().unique(), p256dh: text("p256dh").notNull(), auth: text("auth").notNull(),
+  language: text("language").notNull().default("zh"), createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(), lastTestAt: text("last_test_at"),
+}, t => [index("push_account_idx").on(t.accountId)]);
+
+export const notificationItems = sqliteTable("notification_items", {
+  id: text("id").primaryKey(), accountId: text("account_id").notNull(), lessonId: text("lesson_id").notNull(),
+  plannedStart: text("planned_start").notNull(), offsetMinutes: integer("offset_minutes").notNull(),
+  dueAt: text("due_at").notNull(), createdAt: text("created_at").notNull(), readAt: text("read_at"),
+}, t => [uniqueIndex("notification_item_unique").on(t.accountId,t.lessonId,t.plannedStart,t.offsetMinutes), index("notification_account_idx").on(t.accountId,t.createdAt)]);
+
+export const notificationDeliveries = sqliteTable("notification_deliveries", {
+  id: text("id").primaryKey(), itemId: text("item_id").notNull(), subscriptionId: text("subscription_id").notNull(),
+  status: text("status").notNull().default("pending"), attempts: integer("attempts").notNull().default(0),
+  lockUntil: text("lock_until"), nextAttemptAt: text("next_attempt_at").notNull(), sentAt: text("sent_at"),
+}, t => [uniqueIndex("notification_delivery_unique").on(t.itemId,t.subscriptionId), index("notification_delivery_due_idx").on(t.status,t.nextAttemptAt)]);
+
+export const notificationRuntime = sqliteTable("notification_runtime", {
+  id: integer("id").primaryKey(), lastDispatchAt: text("last_dispatch_at").notNull(),
 });

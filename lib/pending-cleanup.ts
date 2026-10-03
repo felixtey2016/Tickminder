@@ -21,7 +21,8 @@ export async function cleanupPendingAccounts(db: D1Database, now = new Date().to
     const batch = [
       statement(`INSERT INTO audit (id,lesson_id,actor_id,action,at) SELECT lower(hex(randomblob(16))),'account:' || a.id,'system','expirePendingAccount',?2 FROM accounts a WHERE a.id = ?1 AND ${expiryPredicate.replace('<= ?', '<= ?2')}`),
       statement(`DELETE FROM login_attempts WHERE username IN (SELECT username FROM local_credentials WHERE account_id = ?1) AND ${eligible.replace('a.id = ?', 'a.id = ?1').replace('<= ?', '<= ?2')}`),
-      ...["sessions","study_blocks","local_credentials","google_identities","assignments"].map(table=>statement(`DELETE FROM ${table} WHERE account_id = ?1 AND ${eligible.replace('a.id = ?', 'a.id = ?1').replace('<= ?', '<= ?2')}`)),
+      statement(`DELETE FROM notification_deliveries WHERE (item_id IN (SELECT id FROM notification_items WHERE account_id=?1) OR subscription_id IN (SELECT id FROM push_subscriptions WHERE account_id=?1)) AND ${eligible.replace('a.id = ?', 'a.id = ?1').replace('<= ?', '<= ?2')}`),
+      ...["notification_items","push_subscriptions","sessions","study_blocks","local_credentials","google_identities","assignments"].map(table=>statement(`DELETE FROM ${table} WHERE account_id = ?1 AND ${eligible.replace('a.id = ?', 'a.id = ?1').replace('<= ?', '<= ?2')}`)),
       statement(`DELETE FROM accounts AS a WHERE a.id = ?1 AND ${expiryPredicate.replace('<= ?', '<= ?2')}`),
     ];
     const results = await db.batch(batch);

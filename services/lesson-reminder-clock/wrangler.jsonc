@@ -1,0 +1,8 @@
+{
+  "name": "tickminder-lesson-reminder-clock",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-03",
+  "workers_dev": false,
+  "vars": { "TICKMINDER_ORIGIN": "https://www.tickminder.com" },
+  "triggers": { "crons": ["* * * * *"] }
+}

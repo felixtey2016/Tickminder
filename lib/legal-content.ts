@@ -1,6 +1,6 @@
 import { BRAND_NAME } from "./brand";
 
-export const LEGAL_VERSION = "2026-10-03.1";
+export const LEGAL_VERSION = "2026-10-03.2";
 export const SERVICE_OPERATOR = "Tey Ze Zhou";
 export const LEGAL_CONTACT = "felixtey2016@gmail.com";
 export type LegalLanguage = "zh" | "en" | "ms";
@@ -80,6 +80,12 @@ export const privacyContent: Record<LegalLanguage, LegalCopy> = {
     ],
   },
 };
+
+// Technical disclosure for optional notifications; lesson access and attendance
+// rules are unchanged. No location or meeting-presence tracking is introduced.
+privacyContent.zh.sections.push({title:"9. 可选上课提醒",paragraphs:["开启通知后，我们保存此设备的推送地址、加密公钥、通知语言、提醒及已读记录，用于发送上课提醒。浏览器或设备的通知服务会处理推送；独立 Cloudflare 定时服务仅调用受保护的发送入口，不接收学生名单或文件。系统通知使用简短内容，不展示登录邮箱或其他学生资料。通知中心记录保留 90 天，加密备份的保留规则仍适用。", "每个设备可单独关闭通知；退出登录会移除该设备的推送注册。拒绝后，下次进入网站可能再次显示网站提醒，但浏览器已禁止通知时需要你自行在设置中允许。iPhone／iPad 可能需要先添加到主屏幕。通知不是课堂出席证明，也不保证准时送达。"]});
+privacyContent.en.sections.push({title:"9. Optional lesson reminders",paragraphs:["When you enable notifications, we store this device's push endpoint, encryption public keys, notification language, reminder and read records to deliver lesson reminders. Your browser or device's push service processes delivery. A separate Cloudflare clock calls a protected dispatch endpoint without receiving student lists or files. System notifications use brief content without sign-in emails or other students' information. Notification Centre records are retained for 90 days; the existing encrypted-backup retention policy also applies.", "You can disable notifications on each device. Signing out removes that device's registration. After declining, a new visit may show the website reminder again; if your browser has blocked permission, you must change its settings yourself. iPhone/iPad may require adding the site to the Home Screen first. Notifications are not attendance evidence and delivery time is not guaranteed."]});
+privacyContent.ms.sections.push({title:"9. Peringatan pelajaran pilihan",paragraphs:["Apabila pemberitahuan diaktifkan, kami menyimpan alamat push peranti, kunci penyulitan awam, bahasa, rekod peringatan dan status dibaca. Perkhidmatan push pelayar atau peranti memproses penghantaran. Pemasa Cloudflare yang berasingan hanya memanggil titik penghantaran terlindung tanpa menerima senarai pelajar atau fail. Pemberitahuan sistem tidak memaparkan e-mel log masuk atau maklumat pelajar lain. Rekod pusat pemberitahuan disimpan selama 90 hari; dasar sandaran disulitkan sedia ada turut terpakai.", "Pemberitahuan boleh dimatikan bagi setiap peranti. Log keluar membuang pendaftaran peranti itu. Selepas ditolak, lawatan baharu boleh memaparkan peringatan laman lagi; kebenaran yang disekat mesti diubah sendiri dalam tetapan pelayar. iPhone/iPad mungkin perlu menambah laman ke Skrin Utama. Pemberitahuan bukan bukti kehadiran dan masa penghantaran tidak dijamin."]});
 
 export function legalLanguage(value: unknown, privacy = false): LegalLanguage {
   return value === "en" ? "en" : privacy && value === "ms" ? "ms" : "zh";

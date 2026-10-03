@@ -7,7 +7,7 @@ import { clearDialogHistory, useDialogState } from "@/lib/use-dialog-state";
 import { BRAND_NAME } from "@/lib/brand";
 import { LegalLinks } from "@/components/legal-links";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, BookOpen, CalendarDays, ClipboardCheck, Clock3, FileSpreadsheet, FileText, GraduationCap, History, LayoutDashboard, List, LogOut, Menu, RefreshCw, ShieldCheck, UserRoundPlus, Users, type LucideIcon } from "lucide-react";
+import { AlertCircle, Bell, BookOpen, CalendarDays, ClipboardCheck, Clock3, FileSpreadsheet, FileText, GraduationCap, History, LayoutDashboard, List, LogOut, Menu, RefreshCw, ShieldCheck, UserRoundPlus, Users, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LessonCalendar } from "./week-calendar";
@@ -25,6 +25,7 @@ import { SubjectAdmin } from "./roster-forms";
 import { SheetSyncPanel } from "./sheet-sync-panel";
 import { AccountDirectory } from "./account-directory";
 import { AccountSettings } from "./account-settings";
+import { NotificationsProvider, NotificationCentre, detachPushOnLogout } from "./notifications";
 import { AccountSetup } from "./account-setup";
 import { DeleteButton, DirectoryFilters, PeopleDirectory } from "./directory-tools";
 
@@ -341,7 +342,7 @@ export function Scheduler() {
         } catch (error) { alertActionFailure(error); return { ok: false }; }
         finally { mutationInFlight.current = false; setBusy(false); }
     }
-    async function logout() { try { await request("/api/auth", { method: "DELETE" }); clearDialogHistory(); setModal(null); showActionToast("success", "已退出登录"); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); } catch (error) { setMessage(alertActionFailure(error)); } }
+    async function logout() { try { await detachPushOnLogout(); await request("/api/auth", { method: "DELETE" }); clearDialogHistory(); setModal(null); showActionToast("success", "已退出登录"); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); } catch (error) { setMessage(alertActionFailure(error)); } }
     async function localLogin(username: string, password: string) { if (busy) return; try {
         setBusy(true);
         setMessage("");
@@ -514,15 +515,20 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
     changeLanguage: (next: Language) => void;
 }) {
     const role = account.role as NavigationRole;
-    const items = NAV_ITEMS[role];
+    const items = [...NAV_ITEMS[role], { id: "notifications", label: "通知中心", Icon: Bell }];
     const [selectedView, setSelectedView] = useState(items[0].id);
     const [menuOpen, setMenuOpen] = useState(false);
     const [desktop, setDesktop] = useState(false);
     useEffect(() => {
         const home = NAV_ITEMS[role][0].id;
-        const valid = (view: unknown) => typeof view === "string" && NAV_ITEMS[role].some(item => item.id === view);
+        const valid = (view: unknown) => view === "notifications" || (typeof view === "string" && NAV_ITEMS[role].some(item => item.id === view));
         const state = window.history.state || {};
-        if (state.timelyoRole === role && valid(state.timelyoView)) setSelectedView(state.timelyoView);
+        const url = new URL(window.location.href);
+        if (url.searchParams.get("view") === "notifications") {
+            url.searchParams.delete("view");
+            setSelectedView("notifications");
+            window.history.replaceState({ ...state, timelyoRole: role, timelyoView: "notifications", timelyoMenu: false }, "", url);
+        } else if (state.timelyoRole === role && valid(state.timelyoView)) setSelectedView(state.timelyoView);
         else {
             setSelectedView(home);
             window.history.replaceState({ ...state, timelyoRole: role, timelyoView: home, timelyoMenu: false }, "");
@@ -584,6 +590,8 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
         pageContent = <section className="panel pending-home"><h2>{t(account.assignmentStatus === "ACTIVE" ? "账号已启用" : "等待分配")}</h2><p>{t("管理员分配身份后，课程、功课及班级会显示在这里。")}</p>{account.pendingExpiresAt && <p className="notice">{t("待分配期限")} · {new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-GB",{timeZone:"Asia/Kuala_Lumpur",dateStyle:"medium",timeStyle:"short"}).format(new Date(account.pendingExpiresAt))}<br/>{t("新注册账号在 7 天内未启用或绑定，会到期清理。请联系管理员。")}</p>}<Button variant="outline" onClick={()=>choose("myAccount")}>{t("我的账号")}</Button></section>;
     } else if (activeView === "home" && role !== "pending") {
         pageContent = <HomeDashboard role={role} name={account.name} lessons={lessons} learning={learning} onNavigate={choose}/>;
+    } else if (activeView === "notifications") {
+        pageContent = <NotificationCentre language={language} onLesson={() => choose(role === "teacher" ? "lessons" : role === "pending" ? "home" : "calendar")}/>;
     } else if (activeView === "myAccount") {
         pageContent = <AccountSettings/>;
     } else if (activeView === "classrooms" && role !== "pending") {
@@ -621,7 +629,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
             pageContent = <TeacherLearning learning={learning} mutate={learningMutate} busy={busy} view={activeView as "materials" | "homework"}/>;
         }
     }
-    return <div className="app-shell">
+    return <NotificationsProvider accountId={account.id || ""} language={language}><div className="app-shell">
         <header className="topbar">
             <div className="brand"><BrandLogo small/><div><strong>{BRAND_NAME}</strong><span>{t("学习与协作平台")} · GMT+8</span></div></div>
             <div className="top-actions">
@@ -653,7 +661,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
             </main>
         </div>
         {modal && <LessonDialog modal={modal} close={() => setModal(null)} mutate={mutate} busy={busy}/>}
-    </div>;
+    </div></NotificationsProvider>;
 }
 function StatsPanel({ state }: { state: State | null }) {
     const { records, submittedHours, approvedHours, approvedLessons } = monthlyAttendanceForPair(state?.checkins || [], state?.month || "");
