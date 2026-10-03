@@ -103,7 +103,9 @@ export async function sendPush(subscription:Subscription, data:Record<string,unk
     {endpoint:subscription.endpoint,expirationTime:null,keys:{p256dh:subscription.p256dh,auth:subscription.auth}},
     {subject:env.VAPID_SUBJECT!,publicKey:env.VAPID_PUBLIC_KEY!,privateKey:env.VAPID_PRIVATE_KEY!});
   // Explicit provider allow-list, no redirects, and bounded timeout prevent SSRF.
-  return fetch(subscription.endpoint,{...payload,redirect:"error",signal:AbortSignal.timeout(8000)});
+  // Workers supports manual/follow only. Manual never follows a provider's
+  // redirect; non-2xx responses are handled as failures by the caller.
+  return fetch(subscription.endpoint,{...payload,redirect:"manual",signal:AbortSignal.timeout(8000)});
 }
 export function reminderPayload(id:string,minutes:number,language:string) {
   const en=language==="en";
@@ -113,7 +115,11 @@ export async function sendTest(account:Account,id:string) {
   const db=learningDb(), now=new Date().toISOString();
   const claimed=await db.prepare(`UPDATE push_subscriptions SET last_test_at=? WHERE id=? AND account_id=?
     AND (last_test_at IS NULL OR last_test_at<?) RETURNING *`).bind(now,id,account.id,new Date(Date.now()-60_000).toISOString()).first<Subscription>();
-  if(!claimed) throw new NotificationError("请等待一分钟后再发送测试提醒，或重新开启此设备通知",429);
+  if(!claimed) {
+    const exists=await first<{id:string}>("SELECT id FROM push_subscriptions WHERE id=? AND account_id=?",id,account.id);
+    if(!exists) throw new NotificationError("此设备通知已失效，请重新开启通知",409);
+    throw new NotificationError("请等待一分钟后再发送测试提醒",429);
+  }
   let response:Response;
   try { response=await sendPush(claimed,{id:crypto.randomUUID(),title:"Tickminder",body:claimed.language==="en"?"Test reminder. Notifications are enabled on this device.":"测试提醒：此设备已开启通知。",url:"/?view=notifications"}); }
   catch { throw new NotificationError("暂时无法发送通知，请检查网络后重试",503); }

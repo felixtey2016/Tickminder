@@ -41,6 +41,7 @@ const en: Record<string, string> = {
   "此浏览器的通知服务暂不支持，请使用 Chrome、Safari、Edge 或 Firefox": "This notification service is not supported. Please use Chrome, Safari, Edge or Firefox.",
   "此设备仍连接其他账号，请退出登录后重新开启通知": "This device is connected to another account. Sign out, then enable notifications again.",
   "请等待一分钟后再发送测试提醒，或重新开启此设备通知": "Wait one minute before sending another test, or enable notifications again on this device.",
+  "请等待一分钟后再发送测试提醒": "Wait one minute before sending another test reminder.",
   "暂时无法发送通知，请检查网络后重试": "Unable to send notifications. Check your connection and try again.",
   "此设备通知已失效，请重新开启通知": "This device's notifications have expired. Please enable them again.",
   "通知服务暂时不可用，请稍后重试": "The notification service is temporarily unavailable. Please try again shortly.",

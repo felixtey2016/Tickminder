@@ -46,7 +46,7 @@ account={id:'teacher-b',role:'teacher',teacherName:'Teacher B'};assert.equal((aw
 account={id:'student-a',role:'student',studentName:'Student A'};assert.equal((await (await route.GET()).json()).items.length,3);
 assert.equal((await dispatch.POST(new Request('https://test.invalid/api/notifications/dispatch',{method:'POST',headers:{Authorization:'Bearer wrong'}}))).status,404);
 const originalFetch=globalThis.fetch;let sent=[];
-globalThis.fetch=async(endpoint,payload)=>{assert.ok(engine.allowedPushEndpoint(String(endpoint)));assert.equal(payload.redirect,'error');assert.ok(payload.signal);assert.equal(payload.headers['Content-Encoding']||payload.headers['content-encoding'],'aes128gcm');assert.ok(payload.body);sent.push({endpoint,payload});return new Response(null,{status:201});};
+globalThis.fetch=async(endpoint,payload)=>{assert.ok(engine.allowedPushEndpoint(String(endpoint)));assert.equal(payload.redirect,'manual');assert.ok(payload.signal);assert.equal(payload.headers['Content-Encoding']||payload.headers['content-encoding'],'aes128gcm');assert.ok(payload.body);sent.push({endpoint,payload});return new Response(null,{status:201});};
 await Promise.all([engine.dispatchReminders(now),engine.dispatchReminders(now)]);assert.equal(sent.length,3);assert.equal(sqlite.prepare("SELECT count(*) n FROM notification_deliveries WHERE status='sent'").get().n,3);
 // Decrypt an actual Web Push envelope using the device private key (RFC 8291).
 const bytes=new Uint8Array(sent[0].payload.body),salt=bytes.slice(0,16),sender=bytes.slice(21,21+bytes[20]);
@@ -58,6 +58,10 @@ const cek=await hkdf(ikm,salt,enc.encode('Content-Encoding: aes128gcm\0'),16),no
 const plain=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:nonce},await crypto.subtle.importKey('raw',cek,'AES-GCM',false,['decrypt']),bytes.slice(21+bytes[20])));
 let end=plain.length-1;while(plain[end]===0)end--;assert.equal(plain[end],2);const message=JSON.parse(new TextDecoder().decode(plain.slice(0,end)));assert.ok(message.body);assert.equal(message.url,'/?view=notifications');assert.ok(!JSON.stringify(message).includes('Student A'));
 await call({action:'test',id:subId});assert.equal((await call({action:'test',id:subId})).status,429);
+assert.equal((await call({action:'test',id:'missing-device'})).status,409);
+sqlite.prepare('UPDATE push_subscriptions SET last_test_at=NULL WHERE id=?').run(subId);
+let redirects=0;globalThis.fetch=async(endpoint,payload)=>{redirects++;assert.equal(payload.redirect,'manual');return new Response(null,{status:302,headers:{location:'https://attacker.test/push'}});};
+assert.equal((await call({action:'test',id:subId})).status,503);assert.equal(redirects,1);
 sqlite.prepare("UPDATE lessons SET planned_start=? WHERE id='thirty'").run(new Date(now+60*60000).toISOString());
 sqlite.prepare("UPDATE lessons SET status='cancelled' WHERE id='five'").run();assert.equal((await (await route.GET()).json()).items.length,1);
 // Transient failure retries; a provider-expired endpoint is permanently removed.

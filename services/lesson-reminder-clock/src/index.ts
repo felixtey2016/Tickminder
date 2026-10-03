@@ -6,7 +6,7 @@ export default {
       const origin=new URL(env.TICKMINDER_ORIGIN);
       if(origin.origin!=="https://www.tickminder.com" || origin.pathname!=="/" || origin.search || origin.hash || env.NOTIFICATIONS_CRON_TOKEN.length<32) throw new Error("Invalid scheduler configuration");
       const response=await fetch(new URL("/api/notifications/dispatch",origin),{
-        method:"POST",headers:{Authorization:`Bearer ${env.NOTIFICATIONS_CRON_TOKEN}`},redirect:"error",signal:AbortSignal.timeout(45_000),
+        method:"POST",headers:{Authorization:`Bearer ${env.NOTIFICATIONS_CRON_TOKEN}`},redirect:"manual",signal:AbortSignal.timeout(45_000),
       });
       // Log only status, never credentials, request headers or lesson details.
       if(!response.ok) throw new Error(`Tickminder reminder dispatch failed (${response.status})`);
