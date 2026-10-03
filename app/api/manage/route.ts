@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentAccount } from "@/lib/auth";
+import { currentBusinessAccount as currentAccount } from "@/lib/auth";
 import { first, learningDb, rows } from "@/lib/learning-server";
 import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 import { classroomMayManage } from "@/lib/classrooms-server";

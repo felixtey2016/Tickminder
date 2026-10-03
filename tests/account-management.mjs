@@ -22,7 +22,7 @@ const harness = {
   change: async (action, actorId, id, after) => db.prepare('INSERT INTO audit (id,lesson_id,actor_id,action,after_json,at) VALUES (?,?,?,?,?,?)').run(crypto.randomUUID(),id,actorId,action,JSON.stringify(after),new Date().toISOString()),
   teacherMayAssign: async () => false,
   classroomMemberNames: async id => db.prepare('SELECT student_name FROM classroom_members WHERE classroom_id=?').all(id).map(r=>r.student_name),
-  currentAccount: async () => actor,
+  currentAccount: async () => actor, currentBusinessAccount: async () => actor,
   verifyPassword: async (password, stored) => password === stored,
   verifyGoogleCredential: async token => { if (token !== 'verified-google-proof') throw new Error('Bad proof'); return { id: 'duplicate', email: 'teacher@example.test' }; },
   OWNER_EMAIL: 'owner@example.test',
@@ -35,7 +35,7 @@ const harness = {
   NextResponse: { json: (data, options) => Response.json(data, options) },
 };
 globalThis.__accountTest = harness;
-const stub = `data:text/javascript;base64,${Buffer.from('export const {learningDb,first,rows,change,teacherMayAssign,classroomMemberNames,currentAccount,verifyPassword,verifyGoogleCredential,OWNER_EMAIL,isOwnerAccount,classroomMayManage,deleteUnreferencedFile,NextResponse}=globalThis.__accountTest;').toString('base64')}`;
+const stub = `data:text/javascript;base64,${Buffer.from('export const {learningDb,first,rows,change,teacherMayAssign,classroomMemberNames,currentAccount,currentBusinessAccount,verifyPassword,verifyGoogleCredential,OWNER_EMAIL,isOwnerAccount,classroomMayManage,deleteUnreferencedFile,NextResponse}=globalThis.__accountTest;').toString('base64')}`;
 async function load(file, mergeUrl) {
   let source = readFileSync(new URL('../' + file, import.meta.url), 'utf8');
   source = source.replace(/from "(@\/[^\"]+|next\/server)"/g, (_, path) => `from "${path === '@/lib/account-merge' ? mergeUrl : stub}"`);

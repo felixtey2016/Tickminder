@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { lessons, plans } from "@/db/schema";
-import { currentAccount } from "@/lib/auth";
+import { currentBusinessAccount as currentAccount } from "@/lib/auth";
 import { monthlySheetPairs, type SyncMode } from "@/lib/sheet-sync";
 
 type BridgeResponse = {

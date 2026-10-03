@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentAccount } from "@/lib/auth";
+import { currentBusinessAccount as currentAccount } from "@/lib/auth";
 import { first, learningDb, studentHasHomework } from "@/lib/learning-server";
 import { pdfSignatureValid } from "@/lib/learning";
 import { cleanOldStagedFiles, pdfBucket, pdfLimits } from "@/lib/pdf-storage";

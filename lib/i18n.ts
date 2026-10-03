@@ -555,6 +555,23 @@ const en: Record<string, string> = {
   "服务器未能确认结果，请刷新列表检查后再重试": "The server could not confirm the result. Refresh the list before retrying.",
   "Google Sheet 导入结果未确认，请先检查表格，再重新预览。": "The Sheet import result is uncertain. Check the sheet, then preview again.",
   "已取消课程不占时段；待确认改期仍按当前已排时间计算。": "Cancelled lessons do not occupy a slot. Pending reschedules use the current confirmed lesson time.",
+  "邮箱或用户名":"Email or username", "用户名":"Username", "设置登录账号":"Set up your login",
+  "为当前账号设置用户名和密码。原有课程、功课与权限会保留。":"Set a username and password for your current account. Your lessons, homework and permissions are retained.",
+  "3–40 个字符，可使用英文字母、数字、点、横线或底线。":"3–40 characters: English letters, numbers, dots, hyphens or underscores.",
+  "已有密码账号？请先退出，用原账号登录，再在「我的账号」连接 Google。":"Already have a password account? Sign out, sign in to it, then connect Google in My account.",
+  "账号设置已完成":"Login setup complete", "账号设置未完成，请重新登录后重试":"Login setup did not complete. Sign in again and retry.",
+  "请先使用已验证的 Google 账号登录":"Sign in with your verified Google account first.",
+  "此账号已设置密码，请使用修改密码功能":"This account already has a password. Use Change password.",
+  "待分配账号已到期，请联系管理员":"This unassigned account has expired. Contact an administrator.",
+  "账号暂时不可用，请联系管理员":"This account is unavailable. Contact an administrator.",
+  "账号暂时不可用，请重新登录":"This account is unavailable. Please sign in again.",
+  "此账号名已被使用，请选择其他用户名":"This username is taken. Choose another.",
+  "确认启用":"Confirm activation", "账号已启用":"Account activated", "未分配身份":"Unassigned users", "待分配":"Pending assignment", "已启用":"Active",
+  "剩余天数":"Days remaining", "已到期":"Expired", "既有账号，不自动删除":"Existing account; excluded from automatic deletion",
+  "等待分配":"Awaiting assignment", "我的学习空间":"My learning workspace", "待分配期限":"Assignment deadline",
+  "管理员分配身份后，课程、功课及班级会显示在这里。":"Your lessons, homework and classrooms will appear once an administrator assigns your identity.",
+  "新注册账号在 7 天内未启用或绑定，会到期清理。请联系管理员。":"New accounts that are not activated or assigned within 7 days expire and are cleaned up. Contact an administrator.",
+  "可用登录方式":"Sign-in methods", "用户名与密码":"Username and password", "邮箱与密码":"Email and password", "修改密码":"Change password",
 };
 
 export function t(value: string) {

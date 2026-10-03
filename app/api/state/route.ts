@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
-import { currentAccount } from "@/lib/auth";
+import { currentBusinessAccount as currentAccount } from "@/lib/auth";
+import { lifecycleView } from "@/lib/account-lifecycle";
 import { readRoster } from "@/lib/roster";
 import { getDb } from "@/db";
 import { accounts, audit, lessons, localCredentials, rescheduleRequests } from "@/db/schema";
@@ -33,7 +34,7 @@ export async function GET(request: Request) {
   if (!account) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
   const credential = await getDb().select({ mustChangePassword: localCredentials.mustChangePassword }).from(localCredentials).where(eq(localCredentials.accountId, account.id)).get();
   if (credential?.mustChangePassword) return NextResponse.json({ error: "请先修改初始密码" }, { status: 403 });
-  if (account.role === "pending") return NextResponse.json({ account: { name: account.name, email: account.email, role: "pending" } });
+  if (account.role === "pending") return NextResponse.json({ account: { id:account.id, name: account.name, email: account.email, role: "pending", ...lifecycleView(account) }, lessons:[],classrooms:[],proposals:[] });
   const selected = new URL(request.url).searchParams.get("month") || currentMalaysiaMonth();
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(selected)) return NextResponse.json({ error: "Invalid month" }, { status: 400 });
   try {
@@ -70,7 +71,7 @@ export async function GET(request: Request) {
     const credentials = await db.select({ accountId: localCredentials.accountId, username: localCredentials.username, mustChangePassword: localCredentials.mustChangePassword }).from(localCredentials).all();
     const mergedNames = await mergedAccountNames();
     const changes = await db.select().from(audit).orderBy(desc(audit.at)).limit(30).all();
-    return NextResponse.json({ revision, terms, account: { id: account.id, name: account.name, email: account.email, role: account.role }, plans: roster.plans, allPlans: roster.allPlans, students: roster.students, allStudents: roster.allStudents, teachers: roster.teachers, allTeachers: roster.allTeachers, lessons: allLessons.map(withOnlineLink), proposals: allRequests, month: selected, summary: monthlySummary(summaryPlans, allLessons, selected), records, checkins, classrooms: await classroomsState(account), users: users.map(u => ({ ...u, username: credentials.find(c => c.accountId === u.id)?.username || null, mustChangePassword: credentials.find(c => c.accountId === u.id)?.mustChangePassword || false })), activity: changes.map(c => ({ ...c, actorName: users.find(u => u.id === c.actorId)?.name || mergedNames.get(c.actorId) || c.actorId, lessonName: (() => { const lesson = allLessons.find(l => l.id === c.lessonId); return lesson ? `${lesson.student} · ${lesson.subject}` : c.lessonId; })() })) });
+    return NextResponse.json({ revision, terms, account: { id: account.id, name: account.name, email: account.email, role: account.role }, plans: roster.plans, allPlans: roster.allPlans, students: roster.students, allStudents: roster.allStudents, teachers: roster.teachers, allTeachers: roster.allTeachers, lessons: allLessons.map(withOnlineLink), proposals: allRequests, month: selected, summary: monthlySummary(summaryPlans, allLessons, selected), records, checkins, classrooms: await classroomsState(account), users: users.map(u => ({ ...u, ...lifecycleView(u), username: credentials.find(c => c.accountId === u.id)?.username || null, mustChangePassword: credentials.find(c => c.accountId === u.id)?.mustChangePassword || false })), activity: changes.map(c => ({ ...c, actorName: users.find(u => u.id === c.actorId)?.name || mergedNames.get(c.actorId) || c.actorId, lessonName: (() => { const lesson = allLessons.find(l => l.id === c.lessonId); return lesson ? `${lesson.student} · ${lesson.subject}` : c.lessonId; })() })) });
   } catch (error) {
     return NextResponse.json({ account: { name: account.name, email: account.email, role: account.role }, error: "资料暂时无法载入，请稍后刷新" }, { status: 503 });
   }

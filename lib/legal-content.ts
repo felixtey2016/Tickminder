@@ -1,6 +1,6 @@
 import { BRAND_NAME } from "./brand";
 
-export const LEGAL_VERSION = "2026-10-03";
+export const LEGAL_VERSION = "2026-10-03.1";
 export const SERVICE_OPERATOR = "Tey Ze Zhou";
 export const LEGAL_CONTACT = "felixtey2016@gmail.com";
 export type LegalLanguage = "zh" | "en" | "ms";
@@ -84,3 +84,9 @@ export const privacyContent: Record<LegalLanguage, LegalCopy> = {
 export function legalLanguage(value: unknown, privacy = false): LegalLanguage {
   return value === "en" ? "en" : privacy && value === "ms" ? "ms" : "zh";
 }
+
+termsContent.zh.sections[1].paragraphs.push("Google 登录用户需要为同一平台账号设置用户名及密码。新注册且尚未获管理员确认启用或分配身份的账号，待分配期限为注册后 7 天；到期后限制访问并安排清理。已有账号及曾启用的账号不进入该自动删除范围。");
+termsContent.en.sections[1].paragraphs.push("Google users set a username and password for the same platform account. New accounts awaiting administrator activation or identity assignment have a 7-day assignment period from registration. Access is restricted at expiry and cleanup is scheduled. Existing accounts and previously activated accounts are excluded from automatic deletion.");
+privacyContent.zh.sections[5].paragraphs.push("新注册且未启用或绑定身份的账号在 7 天后到期。定时清理会删除该账号的 Google 登录关联、密码登录凭证、会话、个人资料及用户名占用；共享业务记录、必要安全事件和此前的加密备份不会因此被删除。现有自动清理任务依赖运营者的电脑运行，关机时会在恢复运行后处理；到期访问限制由服务器执行。管理员确认启用或完成身份绑定后，即使日后结束配对，也不会重新进入待分配删除机制。既有账号不自动删除。");
+privacyContent.en.sections[5].paragraphs.push("New accounts that have not been activated or assigned an identity expire after 7 days. Scheduled cleanup removes their Google identity link, password credential, sessions, profile and username claim. Shared business records, necessary security events and earlier encrypted backups are retained. The current cleanup task depends on the operator's computer and catches up after it resumes; expiry restrictions are enforced by the server. Administrator activation or identity assignment permanently excludes an account from this expiry pool, even after an assignment ends. Existing accounts are excluded.");
+privacyContent.ms.sections[5].paragraphs.push("Akaun baharu yang belum diaktifkan atau diberikan identiti tamat selepas 7 hari. Pembersihan berjadual memadam pautan identiti Google, kelayakan kata laluan, sesi, profil dan tuntutan nama pengguna. Rekod bersama, peristiwa keselamatan yang perlu dan sandaran disulitkan terdahulu dikekalkan. Tugas semasa bergantung pada komputer pengendali dan diteruskan selepas komputer beroperasi semula; sekatan tamat tempoh dikuatkuasakan oleh pelayan. Pengaktifan pentadbir atau penugasan identiti mengecualikan akaun secara kekal daripada pemadaman ini, termasuk selepas penugasan berakhir. Akaun sedia ada dikecualikan.");

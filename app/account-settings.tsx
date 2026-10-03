@@ -2,10 +2,24 @@
 import { useEffect, useRef, useState } from "react";
 import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
 import { getLanguage, t } from "@/lib/i18n";
+import { Button } from "@/components/ui/button";
 
-type Auth = { account: { name: string; email?: string; username?: string }; clientId: string | null };
+type Auth = { account: { name: string; email?: string; username?: string; googleLinked?: boolean; emailLoginAvailable?: boolean }; clientId: string | null };
 type Google = { accounts: { id: { initialize: (args: object) => void; renderButton: (element: HTMLElement, args: object) => void } } };
 export function AccountSettings() {
+  const [current,setCurrent]=useState(""),[next,setNext]=useState(""),[confirm,setConfirm]=useState("");
+  const passwordInFlight=useRef(false);
+  async function changePassword(event:React.FormEvent) {
+    event.preventDefault();if(passwordInFlight.current)return;
+    if(next!==confirm){alertActionFailure(new Error(t("两次输入的新密码不一致")));return;}
+    passwordInFlight.current=true;setBusy(true);
+    try{
+      const response=await fetch("/api/password",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({currentPassword:current,newPassword:next})});
+      const result=await readApiJson<{error?:string}>(response);
+      if(!response.ok)throw new Error(t(result.error||"保存失败，请重试"));
+      setCurrent("");setNext("");setConfirm("");showActionToast("success","密码已更新");window.dispatchEvent(new Event("timelyo:auth-refresh"));
+    }catch(error){alertActionFailure(error);}finally{passwordInFlight.current=false;setBusy(false);}
+  }
   const [auth, setAuth] = useState<Auth | null>(null), [password, setPassword] = useState(""), [busy, setBusy] = useState(false);
   const button = useRef<HTMLDivElement>(null), passwordRef = useRef(""), inFlight = useRef(false);
   passwordRef.current = password;
@@ -45,5 +59,5 @@ export function AccountSettings() {
     script.addEventListener("load", setup); setup();
     return () => { active = false; script?.removeEventListener("load", setup); };
   }, [auth, language]);
-  return <section className="panel"><h2>{t("我的账号")}</h2>{auth ? <><p><strong>{auth.account.name}</strong></p><p>{t("登录账号")} · {auth.account.username || "—"}</p><p>Google · {auth.account.email || t("未连接 Google")}</p>{auth.account.username && !auth.account.email && <div className="account-connect"><h3>{t("连接 Google 账号")}</h3><p className="muted">{t("连接后可用密码或 Google 登录同一个账号。")}</p><label>{t("当前密码")}<input type="password" autoComplete="current-password" maxLength={128} value={password} onChange={e => setPassword(e.target.value)} disabled={busy}/></label>{auth.clientId ? <div ref={button} className={busy ? "google-link-busy" : ""}/> : <p>{t("Google 登录尚未配置")}</p>}{busy && <p role="status">{t("正在连接…")}</p>}</div>}</> : <p>{t("正在载入…")}</p>}</section>;
+  return <section className="panel"><h2>{t("我的账号")}</h2>{auth?.account ? <><p><strong>{auth.account.name}</strong></p><p>{t("用户名")} · {auth.account.username || "—"}</p><p>Google · {auth.account.email || t("未连接 Google")}</p><p className="muted">{t("可用登录方式")} · {t("用户名与密码")}{auth.account.emailLoginAvailable ? ` / ${t("邮箱与密码")}` : ""}{auth.account.googleLinked ? " / Google" : ""}</p>{auth.account.username && !auth.account.email && <div className="account-connect"><h3>{t("连接 Google 账号")}</h3><p className="muted">{t("连接后可用密码或 Google 登录同一个账号。")}</p><label>{t("当前密码")}<input type="password" autoComplete="current-password" maxLength={128} value={password} onChange={e => setPassword(e.target.value)} disabled={busy}/></label>{auth.clientId ? <div ref={button} className={busy ? "google-link-busy" : ""}/> : <p>{t("Google 登录尚未配置")}</p>}{busy && <p role="status">{t("正在连接…")}</p>}</div>}{auth.account.username && <form className="account-password-form" onSubmit={changePassword}><h3>{t("修改密码")}</h3><label>{t("当前密码")}<input required type="password" autoComplete="current-password" maxLength={128} value={current} onChange={e=>setCurrent(e.target.value)}/></label><label>{t("新密码（至少 8 个字符）")}<input required type="password" autoComplete="new-password" minLength={8} maxLength={128} value={next} onChange={e=>setNext(e.target.value)}/></label><label>{t("确认新密码")}<input required type="password" autoComplete="new-password" minLength={8} maxLength={128} value={confirm} onChange={e=>setConfirm(e.target.value)}/></label><Button disabled={busy}>{t("保存新密码")}</Button></form>}</> : <p>{t("正在载入…")}</p>}</section>;
 }

@@ -863,3 +863,7 @@ input[type=file]::file-selector-button { border: 0; border-radius: 6px; padding:
 .delete-impact li{margin:4px 0;}
 .delete-selection .check-row{padding:10px;border-bottom:1px solid var(--border);}
 .deletion-dialog{max-height:90dvh;overflow-y:auto;}
+/* Account setup and account settings use the same form scale as the workspace. */
+.account-password-form { max-width: 34rem; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
+.account-setup small { font-weight: 400; line-height: 1.6; }
+.pending-home .notice { display: block; line-height: 1.8; }

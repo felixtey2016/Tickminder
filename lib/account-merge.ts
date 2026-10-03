@@ -12,6 +12,8 @@ export async function prepareAccountMerge(actor: Account, duplicateId: string, c
   if (await first("SELECT 1 AS found FROM local_credentials WHERE account_id = ?", duplicate.id)) return { error: "Google 已连接另一个密码账号，请联系管理员", statements: [] };
   if (!confirmed) return { mergeName: duplicate.name, error: "发现已有 Google 账号，确认后会合并登录方式并保留资料", statements: [] };
   const statements = [];
+  // A previously activated account can never return to the expiry pool.
+  statements.push(db.prepare("UPDATE accounts SET activated_at = coalesce(activated_at,(SELECT activated_at FROM accounts WHERE id = ?)), activation_reason = coalesce(activation_reason,(SELECT activation_reason FROM accounts WHERE id = ?)), pending_expires_at = CASE WHEN activated_at IS NOT NULL OR (SELECT activated_at FROM accounts WHERE id = ?) IS NOT NULL THEN NULL ELSE pending_expires_at END WHERE id = ?").bind(duplicate.id,duplicate.id,duplicate.id,actor.id));
   // Immutable audit events retain their original actor IDs; the merge event records the mapping.
   for (const [table, column] of [["pdf_files", "owner_id"], ["teaching_materials", "owner_id"], ["homework", "owner_id"], ["study_blocks", "account_id"], ["classrooms", "created_by"], ["classroom_announcements", "author_id"], ["homework_recipients", "scored_by"], ["lessons", "created_by"], ["lessons", "reviewed_by"], ["reschedule_requests", "requested_by"], ["reschedule_requests", "responded_by"]]) {
     statements.push(db.prepare(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`).bind(actor.id, duplicate.id));

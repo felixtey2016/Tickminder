@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentAccount } from "@/lib/auth";
+import { currentBusinessAccount as currentAccount } from "@/lib/auth";
 import { classroomMayManage, classroomMemberNames } from "@/lib/classrooms-server";
 import { change, first, learningDb, teacherMayAssign } from "@/lib/learning-server";
 

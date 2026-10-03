@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { currentAccount } from "@/lib/auth";
+import { currentBusinessAccount as currentAccount } from "@/lib/auth";
 import { getDb } from "@/db";
 import { accounts, audit, lessons, rescheduleRequests } from "@/db/schema";
 import { readRoster } from "@/lib/roster";

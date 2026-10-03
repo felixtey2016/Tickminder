@@ -34,6 +34,10 @@ export const accounts = sqliteTable("accounts", {
   studentName: text("student_name"),
   createdAt: text("created_at").notNull(),
   disabledAt: text("disabled_at"),
+  // NULL deadlines protect all accounts created before this feature.
+  pendingExpiresAt: text("pending_expires_at"),
+  activatedAt: text("activated_at"),
+  activationReason: text("activation_reason"),
 });
 
 export const googleIdentities = sqliteTable("google_identities", {

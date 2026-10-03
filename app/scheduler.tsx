@@ -25,6 +25,7 @@ import { SubjectAdmin } from "./roster-forms";
 import { SheetSyncPanel } from "./sheet-sync-panel";
 import { AccountDirectory } from "./account-directory";
 import { AccountSettings } from "./account-settings";
+import { AccountSetup } from "./account-setup";
 import { DeleteButton, DirectoryFilters, PeopleDirectory } from "./directory-tools";
 
 type Account = {
@@ -35,6 +36,10 @@ type Account = {
     disabledAt?: string | null;
     username?: string | null;
     mustChangePassword?: boolean;
+    requiresAccountSetup?: boolean;
+    assignmentStatus?: string;
+    pendingExpiresAt?: string | null;
+    activatedAt?: string | null;
     role: "admin" | "teacher" | "student" | "pending";
     isOwner?: boolean;
     teacherName?: string | null;
@@ -138,7 +143,7 @@ const day = (iso: string) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "z
 const time = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
 const local = (iso: string) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso)).replace(" ", "T");
 function actionSuccessText(action: string) {
-    const labels: Record<string, string> = { createTerm: "学期已保存", saveTerm: "学期已保存", permanentDelete: "记录已永久删除", restoreAccount: "账号已恢复", attendance: "上课打卡已保存", proposeReschedule: "改期申请已发送", respondReschedule: "改期处理结果已保存", edit: "课程时间已更新", cancel: "课程已取消", create: "课程已安排", saveMaterial: "教学资料已保存", deleteMaterial: "教学资料已删除", publishHomework: "功课已发布", submitHomework: "功课已提交", setHomeworkScore: "分数已保存", saveStudyBlock: "学习安排已保存", deleteStudyBlock: "学习安排已删除", saveClassroom: "班级已保存", archiveClassroom: "班级状态已更新", saveAnnouncement: "公告已发布", deleteAnnouncement: "公告已删除", savePlan: "学生科目已保存", saveStudent: "学生已保存", setStudentActive: "学生名单已更新", saveTeacher: "老师已保存", bind: "账号绑定已保存", deleteAccount: "账号已停用", updateOnlineLink: "网课链接已保存", review: "课时核对已保存", createLocalAccount: "账号已创建", resetLocalPassword: "密码已重置" };
+    const labels: Record<string, string> = { activateAccount: "账号已启用", createTerm: "学期已保存", saveTerm: "学期已保存", permanentDelete: "记录已永久删除", restoreAccount: "账号已恢复", attendance: "上课打卡已保存", proposeReschedule: "改期申请已发送", respondReschedule: "改期处理结果已保存", edit: "课程时间已更新", cancel: "课程已取消", create: "课程已安排", saveMaterial: "教学资料已保存", deleteMaterial: "教学资料已删除", publishHomework: "功课已发布", submitHomework: "功课已提交", setHomeworkScore: "分数已保存", saveStudyBlock: "学习安排已保存", deleteStudyBlock: "学习安排已删除", saveClassroom: "班级已保存", archiveClassroom: "班级状态已更新", saveAnnouncement: "公告已发布", deleteAnnouncement: "公告已删除", savePlan: "学生科目已保存", saveStudent: "学生已保存", setStudentActive: "学生名单已更新", saveTeacher: "老师已保存", bind: "账号绑定已保存", deleteAccount: "账号已停用", updateOnlineLink: "网课链接已保存", review: "课时核对已保存", createLocalAccount: "账号已创建", resetLocalPassword: "密码已重置" };
     return t(labels[action] || "操作已完成");
 }
 async function request(url: string, options?: RequestInit): Promise<any> { const r = await fetch(url, { ...options, cache: "no-store" }); const v = await readApiJson<{ error?: string; [key: string]: any }>(r); if (!r.ok)
@@ -197,10 +202,10 @@ export function Scheduler() {
     useEffect(() => { const refreshAuth = () => { void request("/api/auth").then(setAuth).catch(alertActionFailure); }; window.addEventListener("timelyo:auth-refresh", refreshAuth); return () => window.removeEventListener("timelyo:auth-refresh", refreshAuth); }, []);
     const reload = useCallback(() => refreshState(false), [refreshState]);
     useEffect(() => { let active = true; request("/api/auth").then(a => { if (active) setAuth(a); }).catch(e => { if (active) setMessage(e.message); }); return () => { active = false; }; }, []);
-    useEffect(() => { if (auth?.account && auth.account.role !== "pending" && !auth.account.mustChangePassword && auth.account.nameConfirmedAt) void reload(); }, [auth?.account?.id, auth?.account?.role, auth?.account?.mustChangePassword, auth?.account?.nameConfirmedAt, reload]);
+    useEffect(() => { if (auth?.account && !auth.account.requiresAccountSetup && !auth.account.mustChangePassword && auth.account.nameConfirmedAt) void reload(); }, [auth?.account?.id, auth?.account?.role, auth?.account?.requiresAccountSetup, auth?.account?.mustChangePassword, auth?.account?.nameConfirmedAt, reload]);
     useEffect(() => {
         const account = auth?.account;
-        if (!account || account.mustChangePassword || !account.nameConfirmedAt) return;
+        if (!account || account.mustChangePassword || account.requiresAccountSetup || !account.nameConfirmedAt) return;
         let active = true;
         let checking = false;
         let lastForegroundCheck = 0;
@@ -235,7 +240,7 @@ export function Scheduler() {
         document.addEventListener("visibilitychange", foregroundCheck);
         window.addEventListener("focus", foregroundCheck);
         return () => { active = false; window.clearInterval(timer); channel?.close(); if (channelRef.current === channel) channelRef.current = null; document.removeEventListener("visibilitychange", foregroundCheck); window.removeEventListener("focus", foregroundCheck); };
-    }, [auth?.account?.id, auth?.account?.role, auth?.account?.mustChangePassword, auth?.account?.nameConfirmedAt, busy, refreshState]);
+    }, [auth?.account?.id, auth?.account?.role, auth?.account?.requiresAccountSetup, auth?.account?.mustChangePassword, auth?.account?.nameConfirmedAt, busy, refreshState]);
     useEffect(() => {
         if (!auth || auth.account || !auth.clientId || !googleButton.current)
             return;
@@ -387,8 +392,8 @@ export function Scheduler() {
         return <PasswordChange name={account.name} change={changePassword} logout={logout} busy={busy} message={message} language={language} changeLanguage={changeLanguage}/>;
     if (!account.nameConfirmedAt)
         return <NameSetup initialName={account.name} save={confirmName} logout={logout} busy={busy} message={message} language={language} changeLanguage={changeLanguage}/>;
-    if (account.role === "pending")
-        return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("\u7B49\u5F85\u7BA1\u7406\u5458\u7ED1\u5B9A")}</h1><p>{t("\u5DF2\u9A8C\u8BC1 ")}{account.email}{t("\u3002\u7BA1\u7406\u5458\u9700\u8981\u6838\u5BF9\u8D26\u53F7\u5E76\u9009\u62E9\u8001\u5E08\u3001\u5B66\u751F\u6216\u7BA1\u7406\u5458\u89D2\u8272\u3002")}</p><Button variant="outline" onClick={logout}>{t("\u9000\u51FA\u767B\u5F55")}</Button><LegalLinks language={language} className="auth-legal"/></div></main>;
+    if (account.requiresAccountSetup)
+        return <AccountSetup email={account.email} onSaved={async()=>setAuth(await request("/api/auth"))} logout={logout} language={language} changeLanguage={changeLanguage}/>;
     const admin = account.role === "admin";
     return <Workspace account={account} state={state} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/>;
 }
@@ -409,7 +414,7 @@ function LoginForm({ googleButton, clientId, login, busy, message, language, cha
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     return <main className="auth-shell"><div className="auth-layout"><section className="auth-story"><BrandLogo/><strong>{BRAND_NAME}</strong><h2>{t("学习与协作")}</h2><p>{t("集中管理学习安排、作业与共享资料。")}</p></section><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><div className="auth-mobile-brand"><BrandLogo small/><strong>{BRAND_NAME}</strong></div><p className="eyebrow">{language === "zh" ? `欢迎使用 ${BRAND_NAME}` : `Welcome to ${BRAND_NAME}`}</p><h1>{t("登录")}</h1><p>{t("登录你的学习空间")}</p>
-    <form onSubmit={e => { e.preventDefault(); login(username, password); }}><label>{t("\u767B\u5F55\u8D26\u53F7")}<input required autoComplete="username" value={username} onChange={e => setUsername(e.target.value)}/></label><label>{t("\u5BC6\u7801")}<input required type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("\u8D26\u53F7\u5BC6\u7801\u767B\u5F55")}</Button></form>
+    <form onSubmit={e => { e.preventDefault(); login(username, password); }}><label>{t("邮箱或用户名")}<input required autoComplete="username" autoCapitalize="none" maxLength={254} value={username} onChange={e => setUsername(e.target.value)}/></label><label>{t("\u5BC6\u7801")}<input required type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("登录")}</Button></form>
     <p className="auth-divider">{t("\u6216\u4F7F\u7528 Google \u767B\u5F55")}</p>{clientId ? <div ref={googleButton} className="google-signin"/> : <div className="notice">{t("Google \u767B\u5F55\u5C1A\u672A\u914D\u7F6E\uFF1B\u53EF\u4EE5\u4F7F\u7528\u7BA1\u7406\u5458\u521B\u5EFA\u7684\u8D26\u53F7\u5BC6\u7801\u3002")}</div>}{busy && <small>{t("\u6B63\u5728\u9A8C\u8BC1\u8D26\u53F7\u2026")}</small>}{message && <div className="error" role="alert">{message}</div>}<span className="auth-foot">{t("忘记密码？请联系管理员。")}</span><p className="auth-legal-note">{language === "en" ? "Please read our terms and privacy policy before signing in." : "登录前，请阅读服务条款与隐私政策。"}</p><LegalLinks language={language} className="auth-legal"/></div></div></main>;
 }
 function PasswordChange({ name, change, logout, busy, message, language, changeLanguage }: {
@@ -442,9 +447,10 @@ function NameSetup({ initialName, save, logout, busy, message, language, changeL
     const [name, setName] = useState(initialName);
     return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("请确认你的姓名")}</h1><p>{t("姓名将显示在账号菜单中。课程访问权限由管理员核实并分配。")}</p><form onSubmit={event => { event.preventDefault(); void save(name); }}><label>{t("显示姓名")}<input required autoComplete="name" maxLength={80} value={name} onChange={event => setName(event.target.value)}/></label><Button className="primary-full" disabled={busy || !name.trim()}>{t("保存并继续")}</Button></form>{message && <div className="error" role="alert">{message}</div>}<Button variant="outline" onClick={logout}>{t("退出登录")}</Button><LegalLinks language={language} className="auth-legal"/></div></main>;
 }
-type NavigationRole = "admin" | "teacher" | "student";
+type NavigationRole = "admin" | "teacher" | "student" | "pending";
 type NavigationItem = { id: string; label: string; Icon: LucideIcon };
 const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
+    pending: [{id:"home",label:"主页",Icon:LayoutDashboard},{id:"myAccount",label:"我的账号",Icon:ShieldCheck}],
     admin: [
         { id: "home", label: "主页", Icon: LayoutDashboard },
         { id: "myAccount", label: "我的账号", Icon: ShieldCheck },
@@ -574,11 +580,13 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
         window.scrollTo(0, 0);
     };
     let pageContent: React.ReactNode = null;
-    if (activeView === "home") {
+    if (activeView === "home" && role === "pending") {
+        pageContent = <section className="panel pending-home"><h2>{t(account.assignmentStatus === "ACTIVE" ? "账号已启用" : "等待分配")}</h2><p>{t("管理员分配身份后，课程、功课及班级会显示在这里。")}</p>{account.pendingExpiresAt && <p className="notice">{t("待分配期限")} · {new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-GB",{timeZone:"Asia/Kuala_Lumpur",dateStyle:"medium",timeStyle:"short"}).format(new Date(account.pendingExpiresAt))}<br/>{t("新注册账号在 7 天内未启用或绑定，会到期清理。请联系管理员。")}</p>}<Button variant="outline" onClick={()=>choose("myAccount")}>{t("我的账号")}</Button></section>;
+    } else if (activeView === "home" && role !== "pending") {
         pageContent = <HomeDashboard role={role} name={account.name} lessons={lessons} learning={learning} onNavigate={choose}/>;
     } else if (activeView === "myAccount") {
         pageContent = <AccountSettings/>;
-    } else if (activeView === "classrooms") {
+    } else if (activeView === "classrooms" && role !== "pending") {
         const classPlans = role === "teacher" ? (state?.plans || []).map(plan => ({ student: plan.student, subject: plan.subject, teacherName: account.teacherName || "", active: true })) : (state?.allPlans || []).map(plan => ({ student: plan.student, subject: plan.subject, teacherName: plan.teacherName, active: plan.active }));
         pageContent = <ClassroomsPage role={role} classes={state?.classrooms || []} terms={state?.terms || []} learning={learning} teacherName={account.teacherName} teachers={role === "teacher" && account.teacherName ? [account.teacherName] : state?.teachers || []} plans={classPlans} mutate={classroomMutate} learningMutate={learningMutate} busy={busy} onCalendar={() => choose("calendar")}/>;
     } else if (role === "admin") {
@@ -635,7 +643,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
                 <LegalLinks language={language} className="menu-legal"/>
             </aside>}
             <main className="workspace">
-                <div className="page-head"><div><p className="eyebrow">{t(role === "admin" ? "管理员工作台" : role === "student" ? "学生工作台" : "老师工作台")}</p><h1>{t(title)}</h1></div>
+                <div className="page-head"><div><p className="eyebrow">{t(role === "admin" ? "管理员工作台" : role === "student" ? "学生工作台" : role === "pending" ? "我的学习空间" : "老师工作台")}</p><h1>{t(title)}</h1></div>
                     {showMonth && <label className="month-select">{t("统计月份")}<input type="month" value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)}/></label>}
                 </div>
                 {message && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("关闭")}>×</button></div>}

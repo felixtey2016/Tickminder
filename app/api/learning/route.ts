@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentAccount } from "@/lib/auth";
+import { currentBusinessAccount as currentAccount } from "@/lib/auth";
 import { change, first, learningDb, rows, studentHasHomework, teacherMayAssign } from "@/lib/learning-server";
 import { intervalsOverlap, malaysiaInputToIso, STAGED_FILE_TTL_MS, submissionRule } from "@/lib/learning";
 import { deleteUnreferencedFile } from "@/lib/pdf-storage";

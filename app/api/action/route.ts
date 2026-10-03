@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
-import { currentAccount } from "@/lib/auth";
+import { currentBusinessAccount as currentAccount } from "@/lib/auth";
 import { getDb } from "@/db";
 import { accounts, assignments, audit, lessons, localCredentials, loginAttempts, plans, rescheduleRequests, sessions, students, teachers } from "@/db/schema";
 import { hashPassword, normalizeUsername, validPassword, validUsername } from "@/lib/password";
@@ -9,7 +9,7 @@ import { readRoster } from "@/lib/roster";
 import { teacherMaySeeLesson, mayRequestReschedule, mayRespondReschedule } from "@/lib/access";
 import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 import { studentNameKey } from "@/lib/student-names";
-import { first } from "@/lib/learning-server";
+import { first, learningDb } from "@/lib/learning-server";
 import { normalizeOnlineLink } from "@/lib/online-link";
 
 type Body = Record<string, unknown>;
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
       if (role !== "admin" && await first("SELECT 1 AS found FROM accounts WHERE role = ? AND " + (role === "teacher" ? "teacher_name" : "student_name") + " = ? AND disabled_at IS NULL", role, role === "teacher" ? teacherName : studentName)) return bad("此身份已有账号，请使用现有账号连接 Google，避免重复创建", 409);
       const id = `local:${crypto.randomUUID()}`;
       const passwordHash = await hashPassword(password);
-      await db.batch([db.insert(accounts).values({ id, email: "", name, role, teacherName: role === "teacher" ? teacherName : null, studentName: role === "student" ? studentName : null, createdAt: now }),
+      await db.batch([db.insert(accounts).values({ id, email: "", name, role, teacherName: role === "teacher" ? teacherName : null, studentName: role === "student" ? studentName : null, createdAt: now, activatedAt: now, activationReason: "admin-created" }),
         db.insert(localCredentials).values({ accountId: id, username, passwordHash, mustChangePassword: true, updatedAt: now })]);
       await db.insert(audit).values({ id: crypto.randomUUID(), lessonId: `account:${id}`, actorId: actor.id, action: "createLocalAccount", before: null, after: JSON.stringify({ username, name, role, teacherName: role === "teacher" ? teacherName : null, studentName: role === "student" ? studentName : null }), at: now });
       return NextResponse.json({ ok: true });
@@ -76,6 +76,18 @@ export async function POST(request: Request) {
       await db.delete(loginAttempts).where(eq(loginAttempts.username, credential.username));
       await db.insert(audit).values({ id: crypto.randomUUID(), lessonId: `account:${userId}`, actorId: actor.id, action: "resetLocalPassword", before: null, after: JSON.stringify({ username: credential.username }), at: now });
       return NextResponse.json({ ok: true });
+    }
+    if (action === "activateAccount") {
+      if (actor.role !== "admin") return bad("Administrator access required",403);
+      const userId = str(data.userId);
+      const target = await db.select().from(accounts).where(eq(accounts.id,userId)).get();
+      if (!target || target.disabledAt) return bad("Account not found",404);
+      await learningDb().batch([
+        learningDb().prepare("UPDATE accounts SET activated_at = coalesce(activated_at,?), activation_reason = coalesce(activation_reason,'admin-confirmed'), pending_expires_at = NULL WHERE id = ? AND disabled_at IS NULL").bind(now,userId),
+        learningDb().prepare("INSERT INTO audit (id,lesson_id,actor_id,action,at) SELECT ?,?,?,'activateAccount',? WHERE EXISTS (SELECT 1 FROM accounts WHERE id = ? AND activated_at IS NOT NULL AND disabled_at IS NULL)").bind(crypto.randomUUID(),`account:${userId}`,actor.id,now,userId),
+      ]);
+      if (!await first("SELECT 1 AS found FROM accounts WHERE id = ? AND activated_at IS NOT NULL",userId)) return bad("Account not found",404);
+      return NextResponse.json({ok:true});
     }
     if (action === "deleteAccount" || action === "restoreAccount") {
       const userId = str(data.userId);
@@ -177,8 +189,9 @@ export async function POST(request: Request) {
       }
       if (target.disabledAt) return bad("请先恢复账号", 409);
       if (role !== "admin" && await first("SELECT 1 AS found FROM accounts WHERE role = ? AND " + (role === "teacher" ? "teacher_name" : "student_name") + " = ? AND id <> ? AND disabled_at IS NULL", role, role === "teacher" ? teacherName : studentName, userId)) return bad("此身份已有账号，请使用现有账号连接 Google，避免重复创建", 409);
-      const update = { role, teacherName: role === "teacher" ? teacherName : null, studentName: role === "student" ? studentName : null };
+      const update = { role, teacherName: role === "teacher" ? teacherName : null, studentName: role === "student" ? studentName : null, activatedAt: target.activatedAt || now, activationReason: target.activationReason || "identity-bound", pendingExpiresAt: null };
       await db.update(accounts).set(update).where(eq(accounts.id, userId));
+      if (!await first("SELECT 1 AS found FROM accounts WHERE id = ?",userId)) return bad("Account not found",404);
       await db.insert(audit).values({ id: crypto.randomUUID(), lessonId: `account:${userId}`, actorId: actor.id, action: "bind", before: JSON.stringify({ role: target.role, teacherName: target.teacherName, studentName: target.studentName }), after: JSON.stringify(update), at: now });
       return NextResponse.json({ ok: true });
     }

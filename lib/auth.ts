@@ -2,7 +2,8 @@ import { env } from "cloudflare:workers";
 import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { accounts, sessions } from "@/db/schema";
+import { accounts, googleIdentities, localCredentials, sessions } from "@/db/schema";
+import { pendingExpired } from "@/lib/account-lifecycle";
 
 export type Account = typeof accounts.$inferSelect;
 const encoder = new TextEncoder();
@@ -59,7 +60,19 @@ export async function currentAccount(): Promise<Account | null> {
   const session = await db.select().from(sessions).where(eq(sessions.tokenHash, hash)).get();
   if (!session || session.expiresAt <= new Date().toISOString()) return null;
   const account = await db.select().from(accounts).where(eq(accounts.id, session.accountId)).get() ?? null;
-  return account?.disabledAt ? null : account;
+  return account && (account.disabledAt || pendingExpired(account)) ? null : account;
+}
+
+// Business routes cannot bypass the initial Google username/password setup.
+// Profile, credential setup and account linking deliberately use currentAccount.
+export async function currentBusinessAccount(): Promise<Account | null> {
+  const account = await currentAccount();
+  if (!account) return null;
+  const db = getDb();
+  const local = await db.select().from(localCredentials).where(eq(localCredentials.accountId, account.id)).get();
+  if (local?.mustChangePassword) return null;
+  if (!local && await db.select({ subject: googleIdentities.subject }).from(googleIdentities).where(eq(googleIdentities.accountId, account.id)).get()) return null;
+  return account;
 }
 
 export async function createSession(accountId: string) {

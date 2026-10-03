@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentAccount } from "@/lib/auth";
+import { currentBusinessAccount as currentAccount } from "@/lib/auth";
 import { first, pdfMayRead } from "@/lib/learning-server";
 import { pdfBucket } from "@/lib/pdf-storage";
 
