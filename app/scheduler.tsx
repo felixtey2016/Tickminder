@@ -5,6 +5,7 @@ import { getLanguage, LANGUAGE_KEY, setLanguage, t, type Language } from "@/lib/
 import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
 import { clearDialogHistory, useDialogState } from "@/lib/use-dialog-state";
 import { BRAND_NAME } from "@/lib/brand";
+import { LegalLinks } from "@/components/legal-links";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, BookOpen, CalendarDays, ClipboardCheck, Clock3, FileSpreadsheet, FileText, GraduationCap, History, LayoutDashboard, List, LogOut, Menu, RefreshCw, ShieldCheck, UserRoundPlus, Users, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -387,7 +388,7 @@ export function Scheduler() {
     if (!account.nameConfirmedAt)
         return <NameSetup initialName={account.name} save={confirmName} logout={logout} busy={busy} message={message} language={language} changeLanguage={changeLanguage}/>;
     if (account.role === "pending")
-        return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("\u7B49\u5F85\u7BA1\u7406\u5458\u7ED1\u5B9A")}</h1><p>{t("\u5DF2\u9A8C\u8BC1 ")}{account.email}{t("\u3002\u7BA1\u7406\u5458\u9700\u8981\u6838\u5BF9\u8D26\u53F7\u5E76\u9009\u62E9\u8001\u5E08\u3001\u5B66\u751F\u6216\u7BA1\u7406\u5458\u89D2\u8272\u3002")}</p><Button variant="outline" onClick={logout}>{t("\u9000\u51FA\u767B\u5F55")}</Button></div></main>;
+        return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("\u7B49\u5F85\u7BA1\u7406\u5458\u7ED1\u5B9A")}</h1><p>{t("\u5DF2\u9A8C\u8BC1 ")}{account.email}{t("\u3002\u7BA1\u7406\u5458\u9700\u8981\u6838\u5BF9\u8D26\u53F7\u5E76\u9009\u62E9\u8001\u5E08\u3001\u5B66\u751F\u6216\u7BA1\u7406\u5458\u89D2\u8272\u3002")}</p><Button variant="outline" onClick={logout}>{t("\u9000\u51FA\u767B\u5F55")}</Button><LegalLinks language={language} className="auth-legal"/></div></main>;
     const admin = account.role === "admin";
     return <Workspace account={account} state={state} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/>;
 }
@@ -409,7 +410,7 @@ function LoginForm({ googleButton, clientId, login, busy, message, language, cha
     const [password, setPassword] = useState("");
     return <main className="auth-shell"><div className="auth-layout"><section className="auth-story"><BrandLogo/><strong>{BRAND_NAME}</strong><h2>{t("学习与协作")}</h2><p>{t("集中管理学习安排、作业与共享资料。")}</p></section><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><div className="auth-mobile-brand"><BrandLogo small/><strong>{BRAND_NAME}</strong></div><p className="eyebrow">{language === "zh" ? `欢迎使用 ${BRAND_NAME}` : `Welcome to ${BRAND_NAME}`}</p><h1>{t("登录")}</h1><p>{t("登录你的学习空间")}</p>
     <form onSubmit={e => { e.preventDefault(); login(username, password); }}><label>{t("\u767B\u5F55\u8D26\u53F7")}<input required autoComplete="username" value={username} onChange={e => setUsername(e.target.value)}/></label><label>{t("\u5BC6\u7801")}<input required type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("\u8D26\u53F7\u5BC6\u7801\u767B\u5F55")}</Button></form>
-    <p className="auth-divider">{t("\u6216\u4F7F\u7528 Google \u767B\u5F55")}</p>{clientId ? <div ref={googleButton} className="google-signin"/> : <div className="notice">{t("Google \u767B\u5F55\u5C1A\u672A\u914D\u7F6E\uFF1B\u53EF\u4EE5\u4F7F\u7528\u7BA1\u7406\u5458\u521B\u5EFA\u7684\u8D26\u53F7\u5BC6\u7801\u3002")}</div>}{busy && <small>{t("\u6B63\u5728\u9A8C\u8BC1\u8D26\u53F7\u2026")}</small>}{message && <div className="error" role="alert">{message}</div>}<span className="auth-foot">{t("忘记密码？请联系管理员。")}</span></div></div></main>;
+    <p className="auth-divider">{t("\u6216\u4F7F\u7528 Google \u767B\u5F55")}</p>{clientId ? <div ref={googleButton} className="google-signin"/> : <div className="notice">{t("Google \u767B\u5F55\u5C1A\u672A\u914D\u7F6E\uFF1B\u53EF\u4EE5\u4F7F\u7528\u7BA1\u7406\u5458\u521B\u5EFA\u7684\u8D26\u53F7\u5BC6\u7801\u3002")}</div>}{busy && <small>{t("\u6B63\u5728\u9A8C\u8BC1\u8D26\u53F7\u2026")}</small>}{message && <div className="error" role="alert">{message}</div>}<span className="auth-foot">{t("忘记密码？请联系管理员。")}</span><p className="auth-legal-note">{language === "en" ? "Please read our terms and privacy policy before signing in." : "登录前，请阅读服务条款与隐私政策。"}</p><LegalLinks language={language} className="auth-legal"/></div></div></main>;
 }
 function PasswordChange({ name, change, logout, busy, message, language, changeLanguage }: {
     name: string;
@@ -427,7 +428,7 @@ function PasswordChange({ name, change, logout, busy, message, language, changeL
     return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("\u5148\u4FEE\u6539\u5BC6\u7801")}</h1><p>{name}{t("\uFF0C\u8FD9\u662F\u7BA1\u7406\u5458\u8BBE\u7F6E\u7684\u521D\u59CB\u5BC6\u7801\u3002\u4FEE\u6539\u540E\u5373\u53EF\u8FDB\u5165\u7F51\u7AD9\uFF1B\u4E0B\u6B21\u767B\u5F55\u65E0\u9700\u518D\u6B21\u4FEE\u6539\u3002")}</p><form onSubmit={e => { e.preventDefault(); if (next !== confirm) {
         setError(alertActionFailure(new Error("两次输入的新密码不一致")));
         return;
-    } setError(""); change(current, next); }}><label>{t("\u5F53\u524D\u521D\u59CB\u5BC6\u7801")}<input required type="password" autoComplete="current-password" value={current} onChange={e => setCurrent(e.target.value)}/></label><label>{t("\u65B0\u5BC6\u7801\uFF08\u81F3\u5C11 8 \u4E2A\u5B57\u7B26\uFF09")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={next} onChange={e => setNext(e.target.value)}/></label><label>{t("\u786E\u8BA4\u65B0\u5BC6\u7801")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("\u4FDD\u5B58\u65B0\u5BC6\u7801")}</Button></form>{(error || message) && <div className="error" role="alert">{t(error || message)}</div>}<Button variant="outline" onClick={logout}>{t("\u9000\u51FA\u767B\u5F55")}</Button></div></main>;
+    } setError(""); change(current, next); }}><label>{t("\u5F53\u524D\u521D\u59CB\u5BC6\u7801")}<input required type="password" autoComplete="current-password" value={current} onChange={e => setCurrent(e.target.value)}/></label><label>{t("\u65B0\u5BC6\u7801\uFF08\u81F3\u5C11 8 \u4E2A\u5B57\u7B26\uFF09")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={next} onChange={e => setNext(e.target.value)}/></label><label>{t("\u786E\u8BA4\u65B0\u5BC6\u7801")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("\u4FDD\u5B58\u65B0\u5BC6\u7801")}</Button></form>{(error || message) && <div className="error" role="alert">{t(error || message)}</div>}<Button variant="outline" onClick={logout}>{t("\u9000\u51FA\u767B\u5F55")}</Button><LegalLinks language={language} className="auth-legal"/></div></main>;
 }
 function NameSetup({ initialName, save, logout, busy, message, language, changeLanguage }: {
     initialName: string;
@@ -439,7 +440,7 @@ function NameSetup({ initialName, save, logout, busy, message, language, changeL
     changeLanguage: (next: Language) => void;
 }) {
     const [name, setName] = useState(initialName);
-    return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("请确认你的姓名")}</h1><p>{t("姓名将显示在账号菜单中。课程访问权限由管理员核实并分配。")}</p><form onSubmit={event => { event.preventDefault(); void save(name); }}><label>{t("显示姓名")}<input required autoComplete="name" maxLength={80} value={name} onChange={event => setName(event.target.value)}/></label><Button className="primary-full" disabled={busy || !name.trim()}>{t("保存并继续")}</Button></form>{message && <div className="error" role="alert">{message}</div>}<Button variant="outline" onClick={logout}>{t("退出登录")}</Button></div></main>;
+    return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("请确认你的姓名")}</h1><p>{t("姓名将显示在账号菜单中。课程访问权限由管理员核实并分配。")}</p><form onSubmit={event => { event.preventDefault(); void save(name); }}><label>{t("显示姓名")}<input required autoComplete="name" maxLength={80} value={name} onChange={event => setName(event.target.value)}/></label><Button className="primary-full" disabled={busy || !name.trim()}>{t("保存并继续")}</Button></form>{message && <div className="error" role="alert">{message}</div>}<Button variant="outline" onClick={logout}>{t("退出登录")}</Button><LegalLinks language={language} className="auth-legal"/></div></main>;
 }
 type NavigationRole = "admin" | "teacher" | "student";
 type NavigationItem = { id: string; label: string; Icon: LucideIcon };
@@ -631,6 +632,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
                     <button type="button" className="menu-link" onClick={reload}><RefreshCw size={19}/><span>{t("刷新")}</span></button>
                     <button type="button" className="menu-link" onClick={logout}><LogOut size={19}/><span>{t("退出登录")}</span></button>
                 </div>
+                <LegalLinks language={language} className="menu-legal"/>
             </aside>}
             <main className="workspace">
                 <div className="page-head"><div><p className="eyebrow">{t(role === "admin" ? "管理员工作台" : role === "student" ? "学生工作台" : "老师工作台")}</p><h1>{t(title)}</h1></div>
