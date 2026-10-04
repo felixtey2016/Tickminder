@@ -11,7 +11,7 @@ import { actionFailureMessage } from "@/lib/action-feedback";
 import { BarChart3, CalendarClock, ContactRound, LibraryBig, ListChecks, UserRound, UsersRound, SquarePen, ArrowLeftRight } from "lucide-react";
 import { BRAND_NAME } from "@/lib/brand";
 import { LegalLinks } from "@/components/legal-links";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Bell, BookOpen, CalendarDays, ClipboardCheck, Clock3, FileSpreadsheet, FileText, GraduationCap, History, LayoutDashboard, List, LogOut, Menu, RefreshCw, ShieldCheck, UserRoundPlus, Users, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -23,12 +23,14 @@ import { useLessonWebMcp } from "./webmcp";
 import { monthlyAttendanceForPair } from "@/lib/lesson-rules";
 import { StudentPortal, TeacherPortal } from "./portals";
 import { HomeDashboard } from "./home-dashboard";
-import { TeacherLearning, type LearningState } from "./learning-portal";
-import { ClassroomsPage, type Classroom } from "./classrooms-page";
+import type { LearningState } from "./learning-portal";
+const TeacherLearning = lazy(() => import("./learning-portal").then(module => ({default: module.TeacherLearning})));
+import type { Classroom } from "./classrooms-page";
+const ClassroomsPage = lazy(() => import("./classrooms-page").then(module => ({default: module.ClassroomsPage})));
 import { Timetable } from "./timetables";
 import { SubjectAdmin } from "./roster-forms";
-import { SheetSyncPanel } from "./sheet-sync-panel";
-import { AccountDirectory } from "./account-directory";
+const SheetSyncPanel = lazy(() => import("./sheet-sync-panel").then(module => ({default: module.SheetSyncPanel})));
+const AccountDirectory = lazy(() => import("./account-directory").then(module => ({default: module.AccountDirectory})));
 import { AccountSettings } from "./account-settings";
 import { NotificationsProvider, NotificationCentre, detachPushOnLogout } from "./notifications";
 import { AccountSetup } from "./account-setup";
@@ -78,7 +80,10 @@ type Lesson = {
     replacementFor: string | null;
     onlineLink?: string | null;
 };
+type StateScope = "learning" | "classrooms" | "accounts" | "activity";
 type State = {
+    loadedScopes?: string[];
+    scopeErrors?: Partial<Record<StateScope, string>>;
     account: Account;
     learning?: LearningState;
     classrooms?: Classroom[];
@@ -145,9 +150,15 @@ type GoogleWindow = Window & {
     };
 };
 const statusLabel: Record<string, string> = { scheduled: "已安排", completed: "已上课", student_absent: "学生缺席", teacher_absent: "老师缺席", cancelled: "已取消" };
-const day = (iso: string) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur", month: "short", day: "numeric", weekday: "short" }).format(new Date(iso));
-const time = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
-const local = (iso: string) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso)).replace(" ", "T");
+const dayFormatters = {
+    zh: new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Kuala_Lumpur", month: "short", day: "numeric", weekday: "short" }),
+    en: new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", month: "short", day: "numeric", weekday: "short" }),
+};
+const timeFormatter = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
+const localFormatter = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+const day = (iso: string) => dayFormatters[getLanguage()].format(new Date(iso));
+const time = (iso: string) => timeFormatter.format(new Date(iso));
+const local = (iso: string) => localFormatter.format(new Date(iso)).replace(" ", "T");
 function actionSuccessText(action: string) {
     const labels: Record<string, string> = { activateAccount: "账号已启用", createTerm: "学期已保存", saveTerm: "学期已保存", permanentDelete: "记录已永久删除", restoreAccount: "账号已恢复", attendance: "上课打卡已保存", proposeReschedule: "改期申请已发送", respondReschedule: "改期处理结果已保存", edit: "课程时间已更新", cancel: "课程已取消", create: "课程已安排", saveMaterial: "教学资料已保存", deleteMaterial: "教学资料已删除", publishHomework: "功课已发布", submitHomework: "功课已提交", setHomeworkScore: "分数已保存", saveStudyBlock: "学习安排已保存", deleteStudyBlock: "学习安排已删除", saveClassroom: "班级已保存", archiveClassroom: "班级状态已更新", saveAnnouncement: "公告已发布", deleteAnnouncement: "公告已删除", savePlan: "学生科目已保存", saveStudent: "学生已保存", setStudentActive: "学生名单已更新", saveTeacher: "老师已保存", bind: "账号绑定已保存", deleteAccount: "账号已停用", updateOnlineLink: "网课链接已保存", review: "课时核对已保存", createLocalAccount: "账号已创建", resetLocalPassword: "密码已重置" };
     return t(labels[action] || "操作已完成");
@@ -178,10 +189,43 @@ export function Scheduler() {
     const latestStateRequest = useRef(0);
     const revisionRef = useRef<number | null>(null);
     const channelRef = useRef<BroadcastChannel | null>(null);
+    const loadedScopes = useRef(new Set<StateScope>());
+    const wantedScopes = useRef(new Set<StateScope>());
+    const scopeRequests = useRef(new Map<StateScope, Promise<void>>());
+    const activeAccountId = useRef(auth?.account?.id);
+    activeAccountId.current = auth?.account?.id;
+    const ensureScope = useCallback(async (scope: StateScope, force = false) => {
+        const accountId = auth?.account?.id;
+        if (!accountId) return;
+        wantedScopes.current.add(scope);
+        if (!force && loadedScopes.current.has(scope)) return;
+        const pending = scopeRequests.current.get(scope);
+        if (pending) return pending;
+        const epoch = latestStateRequest.current;
+        const promise = (async () => {
+            try {
+                const next = await request(`/api/state?scope=${scope}`) as State;
+                if (epoch !== latestStateRequest.current || accountId !== activeAccountId.current) return;
+                if (next.account.id !== accountId) return;
+                loadedScopes.current.add(scope);
+                setState(previous => {
+                    if (!previous || previous.account.id !== accountId || previous.account.role !== next.account.role || previous.account.teacherName !== next.account.teacherName || previous.account.studentName !== next.account.studentName) return previous;
+                    return {...previous, ...next, account: previous.account, revision: previous.revision,
+                        loadedScopes: [...new Set([...(previous.loadedScopes || []), ...(next.loadedScopes || [scope])])],
+                        scopeErrors: {...previous.scopeErrors, [scope]: undefined}};
+                });
+            } catch (error) {
+                if (epoch === latestStateRequest.current && accountId === activeAccountId.current) setState(previous => previous ? {...previous, scopeErrors: {...previous.scopeErrors, [scope]: actionFailureMessage(error)}} : previous);
+            }
+        })();
+        scopeRequests.current.set(scope, promise);
+        try { await promise; } finally { if (scopeRequests.current.get(scope) === promise) scopeRequests.current.delete(scope); }
+    }, [auth?.account?.id]);
     const refreshState = useCallback(async (silent: boolean) => {
         const requestId = ++latestStateRequest.current;
+        scopeRequests.current.clear();
         try {
-            const next = await request(`/api/state?month=${selectedMonth}`) as State;
+            const next = await request(`/api/state?scope=core&month=${selectedMonth}`) as State;
             if (requestId !== latestStateRequest.current) return;
             if (next.account?.id && next.account.id !== auth?.account?.id) {
                 setAuth(await request("/api/auth"));
@@ -190,12 +234,17 @@ export function Scheduler() {
                 return;
             }
             revisionRef.current = typeof next.revision === "number" ? next.revision : null;
-            setState(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+            setState(previous => {
+                const sameIdentity = previous?.account.id === next.account.id && previous?.account.role === next.account.role && previous?.account.teacherName === next.account.teacherName && previous?.account.studentName === next.account.studentName;
+                if (!sameIdentity) loadedScopes.current.clear();
+                return sameIdentity ? {...previous, ...next, loadedScopes: [...new Set([...(previous.loadedScopes || []), ...(next.loadedScopes || ["core"])])]} : next;
+            });
             setAuth(previous => {
                 if (!previous?.account || !next.account || previous.account.id !== next.account.id) return previous;
                 const updated = { ...previous.account, name: next.account.name, role: next.account.role, teacherName: next.account.teacherName || null, studentName: next.account.studentName || null };
                 return previous.account.name === updated.name && previous.account.role === updated.role && previous.account.teacherName === updated.teacherName && previous.account.studentName === updated.studentName ? previous : { ...previous, account: updated };
             });
+            await Promise.all([...wantedScopes.current].map(scope => ensureScope(scope, true)));
         } catch (error) {
             if (requestId !== latestStateRequest.current) return;
             const status = (error as Error & { status?: number }).status;
@@ -204,9 +253,24 @@ export function Scheduler() {
                 catch { /* Retry on the next foreground check. */ }
             } else if (!silent) setMessage((error as Error).message);
         }
-    }, [selectedMonth, auth?.account?.id]);
+    }, [selectedMonth, auth?.account?.id, ensureScope]);
     useEffect(() => { const refreshAuth = () => { void request("/api/auth").then(setAuth).catch(alertActionFailure); }; window.addEventListener("timelyo:auth-refresh", refreshAuth); return () => window.removeEventListener("timelyo:auth-refresh", refreshAuth); }, []);
     const reload = useCallback(() => refreshState(false), [refreshState]);
+    useEffect(() => {
+        if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
+        let active = true;
+        void navigator.serviceWorker.register("/notifications-sw.js", {scope:"/"}).then(registration => {
+            const warm = () => {
+                if (!active) return;
+                const urls = [...new Set(performance.getEntriesByType("resource").map(entry => entry.name))];
+                (registration.active || registration.waiting)?.postMessage({type:"cache-public-assets", urls});
+            };
+            if (registration.active) warm();
+            else registration.installing?.addEventListener("statechange", warm);
+        }).catch(() => { /* Normal loading works when browser storage is unavailable. */ });
+        return () => { active = false; };
+    }, []);
+    useEffect(() => { loadedScopes.current.clear(); wantedScopes.current.clear(); scopeRequests.current.clear(); }, [auth?.account?.id]);
     useEffect(() => { let active = true; request("/api/auth").then(a => { if (active) setAuth(a); }).catch(e => { if (active) setMessage(e.message); }); return () => { active = false; }; }, []);
     useEffect(() => { if (auth?.account && !auth.account.requiresAccountSetup && !auth.account.mustChangePassword && auth.account.nameConfirmedAt) void reload(); }, [auth?.account?.id, auth?.account?.role, auth?.account?.requiresAccountSetup, auth?.account?.mustChangePassword, auth?.account?.nameConfirmedAt, reload]);
     useEffect(() => {
@@ -258,8 +322,8 @@ export function Scheduler() {
                     credential: string;
                 }) => { try {
                     setBusy(true);
-                    await request("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(x) });
-                    setAuth(await request("/api/auth"));
+                    const signedIn = await request("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(x) });
+                    setAuth(signedIn.account ? signedIn : await request("/api/auth"));
                      showActionToast("success", "登录成功");
                 }
                 catch (e) {
@@ -347,12 +411,12 @@ export function Scheduler() {
         } catch (error) { alertActionFailure(error); return { ok: false }; }
         finally { mutationInFlight.current = false; setBusy(false); }
     }
-    async function logout() { try { await detachPushOnLogout(); await request("/api/auth", { method: "DELETE" }); clearDialogHistory(); setModal(null); showActionToast("success", "已退出登录"); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); } catch (error) { setMessage(alertActionFailure(error)); } }
+    async function logout() { try { await detachPushOnLogout(); await request("/api/auth", { method: "DELETE" }); clearDialogHistory(); setModal(null); showActionToast("success", "已退出登录"); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); loadedScopes.current.clear(); wantedScopes.current.clear(); scopeRequests.current.clear(); } catch (error) { setMessage(alertActionFailure(error)); } }
     async function localLogin(username: string, password: string) { if (busy) return; try {
         setBusy(true);
         setMessage("");
-        await request("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, password }) });
-        const next = await request("/api/auth");
+        const signedIn = await request("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, password }) });
+        const next = signedIn.account ? signedIn : await request("/api/auth");
         setAuth(next);
         showActionToast("success", "登录成功");
     }
@@ -401,7 +465,7 @@ export function Scheduler() {
     if (account.requiresAccountSetup)
         return <AccountSetup email={account.email} onSaved={async()=>setAuth(await request("/api/auth"))} logout={logout} language={language} changeLanguage={changeLanguage}/>;
     const admin = account.role === "admin";
-    return <Workspace account={account} state={state} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/>;
+    return <Workspace account={account} state={state} ensureScope={ensureScope} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/>;
 }
 function BrandLogo({ small = false }: { small?: boolean }) { return <span className={`brand-logo ${small ? "small" : ""}`}><img src="/tickminder-logo.svg" width={small ? 40 : 80} height={small ? 40 : 80} alt={BRAND_NAME} /></span>; }
 function LanguageSwitcher({ language, change }: { language: Language; change: (next: Language) => void }) { return <div className="language-switch" role="group" aria-label="Language / 语言"><button type="button" aria-pressed={language === "zh"} onClick={() => change("zh")}>中文</button><span className="language-separator" aria-hidden="true">|</span><button type="button" aria-pressed={language === "en"} onClick={() => change("en")}>EN</button></div>; }
@@ -480,6 +544,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "myAccount", label: "我的账号", Icon: ShieldCheck },
         { id: "classrooms", label: "班级", Icon: LibraryBig },
         { id: "schedule", label: "安排课程", Icon: SquarePen },
+        { id: "calendar", label: "课程日历", Icon: CalendarClock },
         { id: "lessons", label: "课程与打卡", Icon: CalendarDays },
         { id: "attendance", label: "出席记录", Icon: ListChecks },
         { id: "reschedule", label: "改期申请", Icon: ArrowLeftRight },
@@ -502,14 +567,15 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
 
 const NAV_GROUPS: Record<NavigationRole, Array<{ label: string; ids: string[] }>> = {
  admin: [{label:"",ids:["home"]},{label:"课程管理",ids:["calendar","list","schedule","attention","overview"]},{label:"教学",ids:["classrooms","subjects","students","teachers"]},{label:"人员与账号",ids:["teacherRoster","studentRoster","accounts"]},{label:"系统与账号",ids:["notifications","myAccount","sheet","activity"]}],
- teacher: [{label:"",ids:["home"]},{label:"课程管理",ids:["lessons","schedule","attendance","reschedule","hours"]},{label:"教学",ids:["classrooms","students","homework","materials"]},{label:"我的账号",ids:["notifications","myAccount"]}],
+ teacher: [{label:"",ids:["home"]},{label:"课程管理",ids:["calendar","lessons","schedule","attendance","reschedule","hours"]},{label:"教学",ids:["classrooms","students","homework","materials"]},{label:"我的账号",ids:["notifications","myAccount"]}],
  student: [{label:"",ids:["home"]},{label:"学习",ids:["calendar","list","reschedule"]},{label:"班级与作业",ids:["classrooms","homework","materials"]},{label:"我的账号",ids:["notifications","myAccount"]}],
  pending: [{label:"",ids:["home"]},{label:"我的账号",ids:["notifications","myAccount"]}],
 };
 
-function Workspace({ account, state, lessons, message, setMessage, reload, logout, modal, setModal, mutate, learningMutate, classroomMutate, busy, selectedMonth, setSelectedMonth, language, changeLanguage }: {
+function Workspace({ account, state, ensureScope, lessons, message, setMessage, reload, logout, modal, setModal, mutate, learningMutate, classroomMutate, busy, selectedMonth, setSelectedMonth, language, changeLanguage }: {
     account: Account;
     state: State | null;
+    ensureScope: (scope: StateScope, force?: boolean) => Promise<void>;
     lessons: Lesson[];
     message: string;
     setMessage: (x: string) => void;
@@ -573,6 +639,14 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
     }, [menuOpen, desktop]);
     const activeView = items.some(item => item.id === selectedView) ? selectedView : items[0].id;
     const title = items.find(item => item.id === activeView)?.label || items[0].label;
+    const requiredScope: StateScope | null = activeView === "classrooms" ? "classrooms" : activeView === "accounts" ? "accounts" : activeView === "activity" ? "activity" : role !== "admin" && ["homework","materials", ...(role === "student" ? ["calendar"] : [])].includes(activeView) ? "learning" : null;
+    const scopeLoaded = !requiredScope || state?.loadedScopes?.includes(requiredScope) || (!state?.loadedScopes && Boolean(requiredScope === "learning" ? state?.learning : requiredScope === "classrooms" ? state?.classrooms : requiredScope === "accounts" ? state?.users : state?.activity));
+    const scopeError = requiredScope ? state?.scopeErrors?.[requiredScope] : undefined;
+    useEffect(() => {
+        if (!state?.account.id || role === "pending") return;
+        if (requiredScope && !scopeLoaded && !scopeError) void ensureScope(requiredScope);
+        if (activeView === "home" && role !== "admin" && !state.learning && !state.scopeErrors?.learning) void ensureScope("learning");
+    }, [state?.account.id, state?.learning, state?.scopeErrors?.learning, requiredScope, scopeLoaded, scopeError, activeView, role, ensureScope]);
     const learning = state?.learning || { materials: [], homework: [], submissions: [], studyBlocks: [], eligible: [] };
     const showMonth = (role === "teacher" && activeView === "hours") || (role === "admin" && ["overview", "attention", "schedule", "calendar", "list", "students", "teachers"].includes(activeView));
     const closeMobileMenu = () => {
@@ -601,7 +675,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
     if (activeView === "home" && role === "pending") {
         pageContent = <section className="panel pending-home"><h2>{t(account.assignmentStatus === "ACTIVE" ? "账号已启用" : "等待分配")}</h2><p>{t("管理员分配身份后，课程、功课及班级会显示在这里。")}</p>{account.pendingExpiresAt && <p className="notice">{t("待分配期限")} · {new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-GB",{timeZone:"Asia/Kuala_Lumpur",dateStyle:"medium",timeStyle:"short"}).format(new Date(account.pendingExpiresAt))}<br/>{t("新注册账号在 7 天内未启用或绑定，会到期清理。请联系管理员。")}</p>}<Button variant="outline" onClick={()=>choose("myAccount")}>{t("我的账号")}</Button></section>;
     } else if (activeView === "home" && role !== "pending") {
-        pageContent = <HomeDashboard role={role} name={account.name} lessons={lessons} learning={learning} onNavigate={choose}/>;
+        pageContent = <HomeDashboard role={role} name={account.name} lessons={lessons} learning={learning} learningReady={Boolean(state?.learning) || role === "admin"} learningError={state?.scopeErrors?.learning} onNavigate={choose}/>;
     } else if (activeView === "notifications") {
         pageContent = <NotificationCentre language={language} onLesson={() => choose(role === "teacher" ? "lessons" : role === "pending" ? "home" : "calendar")}/>;
     } else if (activeView === "myAccount") {
@@ -633,8 +707,8 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
             const ownedPlans = (state?.plans || []).filter(plan => plan.teacher === account.teacherName);
             const schedulingState = state ? { ...state, plans: ownedPlans, students: [...new Set(ownedPlans.map(plan => plan.student))].sort(), teachers: account.teacherName ? [account.teacherName] : [] } : null;
             pageContent = <Schedule state={schedulingState} lessons={lessons} mutate={mutate} open={setModal} busy={busy} view="create"/>;
-        } else if (["lessons", "attendance", "students", "reschedule"].includes(activeView)) {
-            pageContent = <TeacherPortal lessons={lessons} plans={state?.plans || []} proposals={state?.proposals || []} mutate={mutate} busy={busy} view={activeView as "lessons" | "attendance" | "students" | "reschedule"}/>;
+        } else if (["calendar", "lessons", "attendance", "students", "reschedule"].includes(activeView)) {
+            pageContent = <TeacherPortal onReschedule={() => choose("reschedule")} lessons={lessons} plans={state?.plans || []} proposals={state?.proposals || []} mutate={mutate} busy={busy} view={activeView as "calendar" | "lessons" | "attendance" | "students" | "reschedule"}/>;
         } else if (activeView === "hours") {
             pageContent = <StatsPanel state={state}/>;
         } else {
@@ -669,7 +743,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
                 {message && state && !state.error && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("关闭")}>×</button></div>}
 
                 {role === "teacher" && state && !state.error && !(state.plans || []).length && <div className="notice">{t("暂无负责的学生科目。请联系管理员完成课程分配。")}</div>}
-                <FilterScope.Provider value={account.id || "anonymous"}>{role !== "pending" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "无法载入页面" : "正在载入…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : pageContent}</FilterScope.Provider>
+                <FilterScope.Provider value={account.id || "anonymous"}>{role !== "pending" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "无法载入页面" : "正在载入…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : !scopeLoaded ? <PageState kind={scopeError ? "error" : "loading"} title={scopeError ? "无法载入页面" : "正在载入…"} description={scopeError} action={scopeError ? "重试" : undefined} onAction={() => { if (requiredScope) void ensureScope(requiredScope, true); }}/> : <Suspense fallback={<PageState kind="loading" title="正在载入…"/>}>{pageContent}</Suspense>}</FilterScope.Provider>
             </main>
         </div>
         {modal && <LessonDialog modal={modal} close={() => setModal(null)} mutate={mutate} busy={busy}/>}
@@ -822,7 +896,7 @@ function Schedule({ state, lessons, mutate, open, busy, view }: {
             <Button disabled={busy || !chosen} className="primary-full">{t("保存排课")}</Button>
         </form></section>
         <section className="panel" hidden={view === "create"}><div className="section-head"><div><p className="eyebrow">{t("排课")}</p><h2>{t(view === "calendar" ? "课程日历" : "课程列表")}</h2></div><span>{visible.length}{t(" 堂")}</span></div>
-            {view === "calendar" && <LessonCalendar lessons={lessons.filter(l => l.status !== "cancelled")} teachers={state?.teachers || []} onSelect={id => { const lesson = lessons.find(l => l.id === id); if (lesson) open({ type: "edit", lesson }); }}/>}
+            {view === "calendar" && <LessonCalendar lessons={lessons.filter(l => l.status !== "cancelled")} teachers={state?.teachers || []} proposals={state?.proposals || []} onSelect={id => { const lesson = lessons.find(l => l.id === id); if (lesson) open({ type: "edit", lesson }); }}/>}
             {view === "list" && <><FilterPanel active={Boolean(filterTeacher || filterStudent || cancelled)}><DirectoryFilters teachers={[...new Set(lessons.map(l => l.teacherName))].sort()} students={[...new Set(lessons.map(l => l.student))].sort()} teacher={filterTeacher} student={filterStudent} onTeacher={setFilterTeacher} onStudent={setFilterStudent}/><Button variant="outline" size="sm" onClick={() => { setFilterTeacher(""); setFilterStudent(""); setCancelled(false); }}>{t("重置筛选")}</Button><label className="check-row"><input type="checkbox" checked={cancelled} onChange={e => setCancelled(e.target.checked)}/>{t("查看已取消课程")}</label></FilterPanel><BulkDeleteTool kind="lesson" records={visible.map(l=>({id:l.id,label:l.student+" · "+l.subject+" · "+day(l.plannedStart)+" "+time(l.plannedStart)}))} mutate={mutate} busy={busy}/>{groups.map(name => <details className="directory-group" key={name} open={Boolean(filterTeacher || filterStudent)}><summary>{name} <span>{visible.filter(l => l.teacherName === name).length}</span></summary><div className="lesson-stack">{visible.filter(l => l.teacherName === name).map(l => <LessonCard key={l.id} lesson={l} admin open={open} mutate={mutate} busy={busy}/>)}</div></details>)}{!visible.length && <p className="empty">{t("没有符合条件的记录")}</p>}</>}
         </section>
     </div>;

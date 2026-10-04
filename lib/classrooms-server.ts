@@ -36,8 +36,10 @@ export async function classroomsState(account: Account) {
   else if (account.role === "teacher" && account.teacherName) classes = await rows<ClassroomRow>(`SELECT c.id,c.title,c.description,c.subject,c.teacher_name AS teacherName,c.term_id AS termId,c.archived,c.created_at AS createdAt,c.updated_at AS updatedAt FROM classrooms c JOIN teachers t ON t.name = c.teacher_name AND t.active = 1 WHERE c.teacher_name = ? ORDER BY c.archived,c.updated_at DESC`, account.teacherName);
   else if (account.role === "student" && account.studentName) classes = await rows<ClassroomRow>(`SELECT c.id,c.title,c.description,c.subject,c.teacher_name AS teacherName,c.term_id AS termId,c.archived,c.created_at AS createdAt,c.updated_at AS updatedAt FROM classrooms c JOIN classroom_members m ON m.classroom_id = c.id JOIN plans p ON p.student = m.student_name AND p.subject = c.subject AND p.teacher_name = c.teacher_name AND p.active = 1 JOIN students s ON s.name = m.student_name AND s.active = 1 JOIN teachers t ON t.name = c.teacher_name AND t.active = 1 WHERE m.student_name = ? ORDER BY c.archived,c.updated_at DESC`, account.studentName);
   return Promise.all(classes.map(async classroom => {
-    const announcements = await rows(`SELECT a.id,a.title,a.body,a.pinned,a.created_at AS createdAt,a.updated_at AS updatedAt,coalesce(u.name,'老师') AS authorName FROM classroom_announcements a LEFT JOIN accounts u ON u.id = a.author_id WHERE a.classroom_id = ? ORDER BY a.pinned DESC,a.created_at DESC`, classroom.id);
-    const members = account.role === "student" ? undefined : account.role === "teacher" ? await activeClassroomMemberNames(classroom.id) : await classroomMemberNames(classroom.id);
+    const [announcements, members] = await Promise.all([
+      rows(`SELECT a.id,a.title,a.body,a.pinned,a.created_at AS createdAt,a.updated_at AS updatedAt,coalesce(u.name,'老师') AS authorName FROM classroom_announcements a LEFT JOIN accounts u ON u.id = a.author_id WHERE a.classroom_id = ? ORDER BY a.pinned DESC,a.created_at DESC`, classroom.id),
+      account.role === "student" ? undefined : account.role === "teacher" ? activeClassroomMemberNames(classroom.id) : classroomMemberNames(classroom.id),
+    ]);
     return { ...classroom, announcements, ...(members ? { members } : {}) };
   }));
 }

@@ -96,10 +96,10 @@ export async function notificationState(account:Account) {
     schedulerReady:Boolean(health && Date.now()-Date.parse(health.last_dispatch_at)<10*60_000),lastDispatchAt:health?.last_dispatch_at || null};
 }
 
-export async function sendPush(subscription:Subscription, data:Record<string,unknown>) {
+export async function sendPush(subscription:Subscription, data:Record<string,unknown>, ttl = 600) {
   if(!allowedPushEndpoint(subscription.endpoint)) throw new NotificationError("通知设备资料无效，请重新开启通知");
   if(!pushConfigured()) throw new NotificationError("通知服务尚未配置，请稍后重试",503);
-  const payload=await buildPushPayload({data:JSON.stringify(data),options:{ttl:120}},
+  const payload=await buildPushPayload({data:JSON.stringify(data),options:{ttl,urgency:"high"}},
     {endpoint:subscription.endpoint,expirationTime:null,keys:{p256dh:subscription.p256dh,auth:subscription.auth}},
     {subject:env.VAPID_SUBJECT!,publicKey:env.VAPID_PUBLIC_KEY!,privateKey:env.VAPID_PRIVATE_KEY!});
   // Explicit provider allow-list, no redirects, and bounded timeout prevent SSRF.
@@ -148,7 +148,7 @@ export async function dispatchReminders(nowMs=Date.now()) {
       locked.subscription_id,locked.item_id);
     if(!item || Date.parse(item.due_at)<nowMs-GRACE_MS) { await db.prepare("UPDATE notification_deliveries SET status='expired',lock_until=NULL WHERE id=?").bind(job.id).run(); expired++;return; }
     try {
-      const response=await sendPush(item,reminderPayload(item.item_id,item.minutes,item.language));
+      const response=await sendPush(item,reminderPayload(item.item_id,item.minutes,item.language),item.minutes === 30 ? 25*60 : item.minutes === 5 ? 5*60 : 10*60);
       if(response.ok) { await db.prepare("UPDATE notification_deliveries SET status='sent',sent_at=?,lock_until=NULL WHERE id=?").bind(now,job.id).run(); sent++; }
       else if([404,410].includes(response.status)) { await removeSubscription(item.id,item.account_id);expired++; }
       else if(response.status===429 || response.status>=500) throw new Error("Provider retry");

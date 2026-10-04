@@ -40,8 +40,6 @@ export async function POST(request: Request) {
   const db = getDb();
   const now = new Date().toISOString();
   try {
-    const ownCredentials = await db.select({ mustChangePassword: localCredentials.mustChangePassword }).from(localCredentials).where(eq(localCredentials.accountId, actor.id)).get();
-    if (ownCredentials?.mustChangePassword) return bad("请先修改初始密码", 403);
     if (action === "createLocalAccount") {
       if (actor.role !== "admin") return bad("Administrator access required", 403);
       const username = normalizeUsername(data.username);

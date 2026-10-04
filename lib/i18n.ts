@@ -10,6 +10,8 @@ export function setLanguage(language: Language) {
 export function getLanguage() { return currentLanguage; }
 
 const en: Record<string, string> = {
+  "待确认改期": "Reschedule pending",
+  "编辑课程": "Edit lesson",
   "通知中心": "Notification Centre",
   "上课提醒": "Lesson reminders",
   "开启上课提醒": "Enable lesson reminders",

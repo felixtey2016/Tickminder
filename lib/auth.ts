@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { cookies } from "next/headers";
-import { eq } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import { getDb } from "@/db";
 import { accounts, googleIdentities, localCredentials, sessions } from "@/db/schema";
 import { pendingExpired } from "@/lib/account-lifecycle";
@@ -29,6 +29,27 @@ export async function hashToken(token: string) {
   return toBase64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(token))));
 }
 
+type GoogleSigningKey = JsonWebKey & { kid?: string };
+let googleKeysCache: {keys: GoogleSigningKey[]; expiresAt: number} | null = null;
+let googleKeysRequest: Promise<GoogleSigningKey[]> | null = null;
+async function googleSigningKeys(force = false): Promise<GoogleSigningKey[]> {
+  if (!force && googleKeysCache && googleKeysCache.expiresAt > Date.now()) return googleKeysCache.keys;
+  if (googleKeysRequest) return googleKeysRequest;
+  googleKeysRequest = (async () => {
+    let response: Response;
+    try { response = await fetch("https://www.googleapis.com/oauth2/v3/certs"); }
+    catch { throw new Error("无法连接 Google 登录验证服务，请检查网络后重试"); }
+    if (!response.ok) throw new Error("Google key lookup failed");
+    const {keys} = await response.json() as {keys: GoogleSigningKey[]};
+    if (!Array.isArray(keys)) throw new Error("Google key lookup failed");
+    const maxAge = Number(response.headers.get("cache-control")?.match(/(?:^|[,\s])max-age=(\d+)/i)?.[1] || 0);
+    // Respect Google's key lifetime and refresh on an unfamiliar key ID.
+    googleKeysCache = {keys, expiresAt: Date.now() + Math.min(maxAge, 3600) * 1000};
+    return keys;
+  })();
+  try { return await googleKeysRequest; } finally { googleKeysRequest = null; }
+}
+
 export async function verifyGoogleCredential(token: string) {
   if (!env.GOOGLE_CLIENT_ID) throw new Error("Google login is not configured");
   const parts = token.split(".");
@@ -39,12 +60,10 @@ export async function verifyGoogleCredential(token: string) {
   if (!["https://accounts.google.com", "accounts.google.com"].includes(payload.iss) ||
       payload.aud !== env.GOOGLE_CLIENT_ID || payload.exp <= Date.now() / 1000 ||
       !payload.email_verified || !payload.sub || !payload.email) throw new Error("Invalid Google credential");
-  let response: Response;
-  try { response = await fetch("https://www.googleapis.com/oauth2/v3/certs"); }
-  catch { throw new Error("无法连接 Google 登录验证服务，请检查网络后重试"); }
-  if (!response.ok) throw new Error("Google key lookup failed");
-  const { keys } = await response.json() as { keys: Array<JsonWebKey & { kid?: string }> };
-  const jwk = keys.find(k => k.kid === header.kid && k.kty === "RSA");
+  const cached = Boolean(googleKeysCache && googleKeysCache.expiresAt > Date.now());
+  let keys = await googleSigningKeys();
+  let jwk = keys.find(k => k.kid === header.kid && k.kty === "RSA");
+  if (!jwk && cached) { keys = await googleSigningKeys(true); jwk = keys.find(k => k.kid === header.kid && k.kty === "RSA"); }
   if (!jwk) throw new Error("Google signing key unavailable");
   const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
   const valid = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, fromBase64Url(parts[2]).buffer as ArrayBuffer, encoder.encode(`${parts[0]}.${parts[1]}`));
@@ -52,27 +71,34 @@ export async function verifyGoogleCredential(token: string) {
   return { id: String(payload.sub), email: String(payload.email).toLowerCase(), name: String(payload.name || payload.email) };
 }
 
-export async function currentAccount(): Promise<Account | null> {
+export async function currentIdentity() {
   const token = (await cookies()).get("tuition_session")?.value;
   if (!token) return null;
-  const hash = await hashToken(token);
-  const db = getDb();
-  const session = await db.select().from(sessions).where(eq(sessions.tokenHash, hash)).get();
-  if (!session || session.expiresAt <= new Date().toISOString()) return null;
-  const account = await db.select().from(accounts).where(eq(accounts.id, session.accountId)).get() ?? null;
-  return account && (account.disabledAt || pendingExpired(account)) ? null : account;
+  const row = await getDb().select({
+    account: accounts,
+    username: localCredentials.username,
+    mustChangePassword: localCredentials.mustChangePassword,
+    googleSubject: googleIdentities.subject,
+    googleEmail: googleIdentities.email,
+  }).from(sessions).innerJoin(accounts, eq(accounts.id, sessions.accountId))
+    .leftJoin(localCredentials, eq(localCredentials.accountId, accounts.id))
+    .leftJoin(googleIdentities, eq(googleIdentities.accountId, accounts.id))
+    .where(and(eq(sessions.tokenHash, await hashToken(token)), gt(sessions.expiresAt, new Date().toISOString()))).get();
+  if (!row || row.account.disabledAt || pendingExpired(row.account)) return null;
+  return { account: row.account,
+    local: row.username ? { username: row.username, mustChangePassword: Boolean(row.mustChangePassword) } : null,
+    google: row.googleSubject ? { subject: row.googleSubject, email: row.googleEmail! } : null };
 }
 
-// Business routes cannot bypass the initial Google username/password setup.
-// Profile, credential setup and account linking deliberately use currentAccount.
+export async function currentAccount(): Promise<Account | null> {
+  return (await currentIdentity())?.account || null;
+}
+
+// Business routes still enforce the initial password and Google account setup.
 export async function currentBusinessAccount(): Promise<Account | null> {
-  const account = await currentAccount();
-  if (!account) return null;
-  const db = getDb();
-  const local = await db.select().from(localCredentials).where(eq(localCredentials.accountId, account.id)).get();
-  if (local?.mustChangePassword) return null;
-  if (!local && await db.select({ subject: googleIdentities.subject }).from(googleIdentities).where(eq(googleIdentities.accountId, account.id)).get()) return null;
-  return account;
+  const identity = await currentIdentity();
+  if (!identity || identity.local?.mustChangePassword || (!identity.local && identity.google)) return null;
+  return identity.account;
 }
 
 export async function createSession(accountId: string) {

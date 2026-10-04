@@ -1,5 +1,8 @@
 export type LessonLike = { student: string; subject: string; plannedStart: string; plannedEnd: string; actualStart: string | null; actualEnd: string | null; status: string; chargeable: boolean | null; reviewedAt: string | null };
 
+const monthFormatter = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit" });
+const dateFormatter = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit" });
+
 export function hoursBetween(start: string, end: string) {
   const hours = (Date.parse(end) - Date.parse(start)) / 3600000;
   if (!Number.isFinite(hours) || hours <= 0 || hours > 12) throw new Error("Lesson time must be between 1 minute and 12 hours");
@@ -23,14 +26,14 @@ export function inMonth(iso: string, month: string) {
 }
 
 export function malaysiaMonth(iso: string) {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit" }).formatToParts(new Date(iso));
+  const parts = monthFormatter.formatToParts(new Date(iso));
   return `${parts.find(p => p.type === "year")?.value}-${parts.find(p => p.type === "month")?.value}`;
 }
 
 export function currentMalaysiaMonth() { return malaysiaMonth(new Date().toISOString()); }
 
 export function malaysiaDate(iso: string) {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(iso));
+  const parts = dateFormatter.formatToParts(new Date(iso));
   const get = (type: string) => parts.find(part => part.type === type)?.value;
   return `${get("year")}-${get("month")}-${get("day")}`;
 }

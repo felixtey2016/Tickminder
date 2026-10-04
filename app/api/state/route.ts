@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { desc, eq } from "drizzle-orm";
-import { currentBusinessAccount as currentAccount } from "@/lib/auth";
+import { desc, eq, inArray } from "drizzle-orm";
+import { currentBusinessAccount as currentAccount, type Account } from "@/lib/auth";
 import { lifecycleView } from "@/lib/account-lifecycle";
 import { readRoster } from "@/lib/roster";
 import { getDb } from "@/db";
@@ -8,7 +8,7 @@ import { accounts, audit, lessons, localCredentials, rescheduleRequests } from "
 import { approvedActualHours, approvedHoursInMonth, checkinInMonth, currentMalaysiaMonth, inMonth } from "@/lib/lesson-rules";
 import { teacherMaySeeLesson } from "@/lib/access";
 import { readRevision } from "@/lib/revision";
-import { learningState } from "@/lib/learning-server";
+import { learningState, rows } from "@/lib/learning-server";
 import { mergedAccountNames } from "@/lib/merged-account-names";
 import { classroomsState } from "@/lib/classrooms-server";
 
@@ -29,50 +29,73 @@ function monthlySummary(plans: Array<{ key: string; student: string; subject: st
   });
 }
 
+type Scope = "core" | "learning" | "classrooms" | "accounts" | "activity";
+const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
+
+async function coreState(account: Account, selected: string) {
+  const db = getDb();
+  const lessonFilter = account.role === "teacher" ? eq(lessons.teacherName, account.teacherName || "") : account.role === "student" ? eq(lessons.student, account.studentName || "") : undefined;
+  const [revision, roster, allLessons, allRequests] = await Promise.all([
+    readRevision(), readRoster(account), db.select().from(lessons).where(lessonFilter).all(),
+    lessonFilter ? db.select({request: rescheduleRequests}).from(rescheduleRequests).innerJoin(lessons, eq(lessons.id, rescheduleRequests.lessonId)).where(lessonFilter).all().then(items => items.map(item => item.request)) : db.select().from(rescheduleRequests).all(),
+  ]);
+  const linkByPlan = new Map(roster.allPlans.map(plan => [plan.key, plan]));
+  const withOnlineLink = (lesson: typeof lessons.$inferSelect) => {
+    const plan = linkByPlan.get(`${lesson.student}|${lesson.subject}`);
+    return { ...lesson, onlineLink: plan?.teacherName === lesson.teacherName ? plan.onlineLink : null };
+  };
+  const base = { revision, month: selected };
+  if (account.role === "student") {
+    const visible = allLessons.filter(l => l.status !== "cancelled");
+    const ids = new Set(visible.map(l => l.id));
+    return {...base, lessons: visible.map(withOnlineLink), proposals: allRequests.filter(r => ids.has(r.lessonId))};
+  }
+  const plans = roster.plans.filter(p => p.teacher === account.teacherName);
+  const keys = new Set(plans.map(p => p.key));
+  const visible = account.role === "teacher" ? allLessons.filter(l => teacherMaySeeLesson(account, l, keys)) : allLessons;
+  const ids = new Set(visible.map(l => l.id));
+  const records = visible.filter(l => l.actualStart && inMonth(l.actualStart, selected) && approvedActualHours(l) > 0).sort((a,b) => a.actualStart!.localeCompare(b.actualStart!));
+  const checkins = visible.filter(l => checkinInMonth(l, selected)).sort((a,b) => (a.actualStart || a.plannedStart).localeCompare(b.actualStart || b.plannedStart));
+  if (account.role === "teacher") return {...base, plans, lessons: visible.map(withOnlineLink), proposals: allRequests.filter(r => ids.has(r.lessonId)), records, checkins, summary: monthlySummary(plans, visible, selected)};
+  return {...base, plans: roster.plans, allPlans: roster.allPlans, students: roster.students, allStudents: roster.allStudents, teachers: roster.teachers, allTeachers: roster.allTeachers,
+    lessons: visible.map(withOnlineLink), proposals: allRequests, records, checkins, summary: monthlySummary(roster.allPlans, visible, selected)};
+}
+
+async function extraState(account: Account, scope: Exclude<Scope, "core">) {
+  if (scope === "learning") return { learning: await learningState(account) };
+  if (scope === "classrooms") {
+    const [classrooms, terms] = await Promise.all([classroomsState(account), rows("SELECT id,name,is_current AS isCurrent FROM academic_terms ORDER BY created_at DESC")]);
+    return {classrooms, terms};
+  }
+  const db = getDb();
+  const users = await db.select().from(accounts).all();
+  if (scope === "accounts") {
+    const credentials = await db.select({ accountId: localCredentials.accountId, username: localCredentials.username, mustChangePassword: localCredentials.mustChangePassword }).from(localCredentials).all();
+    const byId = new Map(credentials.map(c => [c.accountId, c]));
+    return {users: users.map(u => ({...u, ...lifecycleView(u), username: byId.get(u.id)?.username || null, mustChangePassword: byId.get(u.id)?.mustChangePassword || false}))};
+  }
+  const [changes, mergedNames] = await Promise.all([db.select().from(audit).orderBy(desc(audit.at)).limit(30).all(), mergedAccountNames()]);
+  const changedLessons = changes.length ? await db.select({id: lessons.id, student: lessons.student, subject: lessons.subject}).from(lessons).where(inArray(lessons.id, changes.map(c => c.lessonId))).all() : [];
+  const byId = new Map(changedLessons.map(l => [l.id, `${l.student} · ${l.subject}`]));
+  return {activity: changes.map(c => ({...c, actorName: users.find(u => u.id === c.actorId)?.name || mergedNames.get(c.actorId) || c.actorId, lessonName: byId.get(c.lessonId) || c.lessonId}))};
+}
+
 export async function GET(request: Request) {
   const account = await currentAccount();
-  if (!account) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
-  const credential = await getDb().select({ mustChangePassword: localCredentials.mustChangePassword }).from(localCredentials).where(eq(localCredentials.accountId, account.id)).get();
-  if (credential?.mustChangePassword) return NextResponse.json({ error: "请先修改初始密码" }, { status: 403 });
-  if (account.role === "pending") return NextResponse.json({ account: { id:account.id, name: account.name, email: account.email, role: "pending", ...lifecycleView(account) }, lessons:[],classrooms:[],proposals:[] });
-  const selected = new URL(request.url).searchParams.get("month") || currentMalaysiaMonth();
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(selected)) return NextResponse.json({ error: "Invalid month" }, { status: 400 });
+  if (!account) return json({error: "Sign in required"}, 401);
+  const url = new URL(request.url), selected = url.searchParams.get("month") || currentMalaysiaMonth();
+  const scope = url.searchParams.get("scope");
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(selected)) return json({error: "Invalid month"}, 400);
+  if (scope && !["core","learning","classrooms","accounts","activity"].includes(scope)) return json({error: "请求无效，请刷新后重试"}, 400);
+  if ((scope === "accounts" || scope === "activity") && account.role !== "admin") return json({error: "没有权限执行此操作"}, 403);
+  const identity = {id: account.id, name: account.name, email: account.email, role: account.role, teacherName: account.teacherName, studentName: account.studentName};
+  if (account.role === "pending") return json({account: {...identity, ...lifecycleView(account)}, lessons:[], classrooms:[], proposals:[], loadedScopes: ["core"]});
   try {
-    const revision = await readRevision();
-    const terms = await (await import("@/lib/learning-server")).rows("SELECT id,name,is_current AS isCurrent FROM academic_terms ORDER BY created_at DESC");
-    const roster = await readRoster();
-    const db = getDb();
-    const allLessons = await db.select().from(lessons).all();
-    const allRequests = await db.select().from(rescheduleRequests).all();
-    const linkByPlan = new Map(roster.allPlans.map(plan => [plan.key, plan]));
-    const withOnlineLink = (lesson: typeof lessons.$inferSelect) => {
-      const plan = linkByPlan.get(`${lesson.student}|${lesson.subject}`);
-      return { ...lesson, onlineLink: plan?.teacherName === lesson.teacherName ? plan.onlineLink : null };
-    };
-    if (account.role === "student") {
-      const visible = allLessons.filter(l => l.student === account.studentName && l.status !== "cancelled");
-      const lessonIds = new Set(visible.map(l => l.id));
-      const proposals = allRequests.filter(r => lessonIds.has(r.lessonId));
-      return NextResponse.json({ revision, terms, account: { id: account.id, name: account.name, email: account.email, role: "student", studentName: account.studentName }, lessons: visible.map(withOnlineLink), proposals, month: selected, learning: await learningState(account), classrooms: await classroomsState(account) });
-    }
-    if (account.role === "teacher") {
-      const plans = roster.plans.filter(p => p.teacher === account.teacherName);
-      const active = new Set(plans.map(p => p.key));
-      const visible = allLessons.filter(l => teacherMaySeeLesson(account, l, active));
-      const records = visible.filter(l => l.actualStart && inMonth(l.actualStart, selected) && approvedActualHours(l) > 0).sort((a, b) => a.actualStart!.localeCompare(b.actualStart!));
-      const checkins = visible.filter(l => checkinInMonth(l, selected)).sort((a, b) => (a.actualStart || a.plannedStart).localeCompare(b.actualStart || b.plannedStart));
-      const lessonIds = new Set(visible.map(l => l.id));
-      return NextResponse.json({ revision, terms, account: { id: account.id, name: account.name, email: account.email, role: account.role, teacherName: account.teacherName }, plans, lessons: visible.map(withOnlineLink), proposals: allRequests.filter(r => lessonIds.has(r.lessonId)), month: selected, summary: monthlySummary(plans, visible, selected), records, checkins, learning: await learningState(account), classrooms: await classroomsState(account) });
-    }
-    const summaryPlans = roster.allPlans.map(p => ({ key: p.key, student: p.student, subject: p.subject }));
-    const records = allLessons.filter(l => l.actualStart && inMonth(l.actualStart, selected) && approvedActualHours(l) > 0).sort((a, b) => a.actualStart!.localeCompare(b.actualStart!));
-    const checkins = allLessons.filter(l => checkinInMonth(l, selected)).sort((a, b) => (a.actualStart || a.plannedStart).localeCompare(b.actualStart || b.plannedStart));
-    const users = await db.select().from(accounts).all();
-    const credentials = await db.select({ accountId: localCredentials.accountId, username: localCredentials.username, mustChangePassword: localCredentials.mustChangePassword }).from(localCredentials).all();
-    const mergedNames = await mergedAccountNames();
-    const changes = await db.select().from(audit).orderBy(desc(audit.at)).limit(30).all();
-    return NextResponse.json({ revision, terms, account: { id: account.id, name: account.name, email: account.email, role: account.role }, plans: roster.plans, allPlans: roster.allPlans, students: roster.students, allStudents: roster.allStudents, teachers: roster.teachers, allTeachers: roster.allTeachers, lessons: allLessons.map(withOnlineLink), proposals: allRequests, month: selected, summary: monthlySummary(summaryPlans, allLessons, selected), records, checkins, classrooms: await classroomsState(account), users: users.map(u => ({ ...u, ...lifecycleView(u), username: credentials.find(c => c.accountId === u.id)?.username || null, mustChangePassword: credentials.find(c => c.accountId === u.id)?.mustChangePassword || false })), activity: changes.map(c => ({ ...c, actorName: users.find(u => u.id === c.actorId)?.name || mergedNames.get(c.actorId) || c.actorId, lessonName: (() => { const lesson = allLessons.find(l => l.id === c.lessonId); return lesson ? `${lesson.student} · ${lesson.subject}` : c.lessonId; })() })) });
-  } catch (error) {
-    return NextResponse.json({ account: { name: account.name, email: account.email, role: account.role }, error: "资料暂时无法载入，请稍后刷新" }, { status: 503 });
+    // No scope preserves the existing full response for compatible clients.
+    const scopes: Scope[] = scope ? [scope as Scope] : account.role === "admin" ? ["core","classrooms","accounts","activity"] : ["core","learning","classrooms"];
+    const parts = await Promise.all(scopes.map(s => s === "core" ? coreState(account, selected) : extraState(account, s)));
+    return json(Object.assign({account: identity, loadedScopes: scopes}, ...parts));
+  } catch {
+    return json({error: "资料暂时无法载入，请稍后刷新"}, 503);
   }
 }

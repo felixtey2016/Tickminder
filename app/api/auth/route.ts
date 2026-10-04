@@ -4,17 +4,20 @@ import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { accounts, googleIdentities, localCredentials, loginAttempts, sessions } from "@/db/schema";
-import { createSession, currentAccount, hashToken, verifyGoogleCredential } from "@/lib/auth";
+import { createSession, currentIdentity, hashToken, verifyGoogleCredential, type Account } from "@/lib/auth";
 import { normalizeUsername, validUsername, verifyPassword } from "@/lib/password";
 import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 import { lifecycleView, pendingDeadline, pendingExpired } from "@/lib/account-lifecycle";
-import { first, rows } from "@/lib/learning-server";
+import { rows } from "@/lib/learning-server";
+
+function authPayload(account: Account | null | undefined, local: {username: string; mustChangePassword?: boolean | number} | null | undefined, google: {email: string} | null | undefined) {
+  return { account: account ? { id: account.id, email: google?.email || account.email, name: account.name, nameConfirmedAt: account.nameConfirmedAt, role: account.role, isOwner: isOwnerAccount(account), teacherName: account.teacherName, studentName: account.studentName, googleLinked: Boolean(google), emailLoginAvailable: Boolean(google && local), requiresAccountSetup: Boolean(google && !local), username: local?.username || null, mustChangePassword: Boolean(local?.mustChangePassword), ...lifecycleView(account) } : null, clientId: env.GOOGLE_CLIENT_ID || null };
+}
 
 export async function GET() {
-  const account = await currentAccount();
-  const local = account ? await getDb().select({ username: localCredentials.username, mustChangePassword: localCredentials.mustChangePassword }).from(localCredentials).where(eq(localCredentials.accountId, account.id)).get() : null;
-  const google = account ? await first<{email:string}>("SELECT email FROM google_identities WHERE account_id = ?", account.id) : null;
-  return NextResponse.json({ account: account ? { id: account.id, email: google?.email || account.email, name: account.name, nameConfirmedAt: account.nameConfirmedAt, role: account.role, isOwner: isOwnerAccount(account), teacherName: account.teacherName, studentName: account.studentName, googleLinked: Boolean(google), emailLoginAvailable: Boolean(google && local), requiresAccountSetup: Boolean(google && !local), username: local?.username || null, mustChangePassword: local?.mustChangePassword || false, ...lifecycleView(account) } : null, clientId: env.GOOGLE_CLIENT_ID || null });
+  const identity = await currentIdentity();
+  const account = identity?.account, local = identity?.local, google = identity?.google;
+  return NextResponse.json(authPayload(account, local, google), {headers: {"Cache-Control": "no-store"}});
 }
 
 export async function POST(request: Request) {
@@ -29,7 +32,7 @@ export async function POST(request: Request) {
       const now = new Date();
       // Only verified Google identities can be used for email login. Ambiguous
       // legacy emails are refused; names/emails never silently merge accounts.
-      const matches = emailLogin ? await rows<{accountId:string; username:string; passwordHash:string}>("SELECT c.account_id AS accountId,c.username,c.password_hash AS passwordHash FROM local_credentials c JOIN google_identities g ON g.account_id = c.account_id WHERE lower(g.email) = ? LIMIT 2", identifier) : [];
+      const matches = emailLogin ? await rows<{accountId:string; username:string; passwordHash:string; mustChangePassword:number}>("SELECT c.account_id AS accountId,c.username,c.password_hash AS passwordHash,c.must_change_password AS mustChangePassword FROM local_credentials c JOIN google_identities g ON g.account_id = c.account_id WHERE lower(g.email) = ? LIMIT 2", identifier) : [];
       const credential = emailLogin ? (matches.length === 1 ? matches[0] : null) : await db.select().from(localCredentials).where(eq(localCredentials.username, identifier)).get();
       const username = credential?.username || identifier;
       const attempt = await db.select().from(loginAttempts).where(eq(loginAttempts.username, username)).get();
@@ -41,12 +44,13 @@ export async function POST(request: Request) {
         await db.insert(loginAttempts).values({ username, ...next }).onConflictDoUpdate({ target: loginAttempts.username, set: next });
         return NextResponse.json({ error: "账号或密码错误" }, { status: 401 });
       }
-      const loginAccount = await db.select().from(accounts).where(eq(accounts.id, credential.accountId)).get();
+      const loginIdentity = await db.select({account: accounts, googleEmail: googleIdentities.email}).from(accounts).leftJoin(googleIdentities, eq(googleIdentities.accountId, accounts.id)).where(eq(accounts.id, credential.accountId)).get();
+      const loginAccount = loginIdentity?.account;
       if (!loginAccount || loginAccount.disabledAt) return NextResponse.json({ error: "账号已停用，请联系管理员" }, { status: 403 });
       if (pendingExpired(loginAccount)) return NextResponse.json({ error: "待分配账号已到期，请联系管理员" }, { status: 403 });
-      await db.delete(loginAttempts).where(eq(loginAttempts.username, username));
+      if (attempt) await db.delete(loginAttempts).where(eq(loginAttempts.username, username));
       const session = await createSession(credential.accountId);
-      const response = NextResponse.json({ ok: true });
+      const response = NextResponse.json({ ok: true, ...authPayload(loginAccount, credential, loginIdentity?.googleEmail ? {email: loginIdentity.googleEmail} : null) }, {headers: {"Cache-Control": "no-store"}});
       response.cookies.set("tuition_session", session.token, { httpOnly: true, secure: true, sameSite: "lax", path: "/", expires: new Date(session.expiresAt) });
       return response;
     }
@@ -70,10 +74,10 @@ export async function POST(request: Request) {
       db.insert(googleIdentities).values({ subject: profile.id, accountId, email: profile.email, linkedAt: now }).onConflictDoUpdate({target:googleIdentities.subject,set:{email:profile.email}}),
     ]);
     // Resolve identity again after a concurrent link or first registration.
-    const canonical = await first<{id:string;disabledAt:string|null;role:string;pendingExpiresAt:string|null;activatedAt:string|null;teacherName:string|null;studentName:string|null}>("SELECT a.id,a.disabled_at AS disabledAt,a.role,a.pending_expires_at AS pendingExpiresAt,a.activated_at AS activatedAt,a.teacher_name AS teacherName,a.student_name AS studentName FROM accounts a JOIN google_identities g ON g.account_id = a.id WHERE g.subject = ?", profile.id);
-    if (!canonical || canonical.disabledAt || pendingExpired(canonical)) return NextResponse.json({error:"账号暂时不可用，请联系管理员"},{status:403});
-    const session = await createSession(canonical.id);
-    const response = NextResponse.json({ ok: true });
+    const canonical = await db.select({account: accounts, username: localCredentials.username, mustChangePassword: localCredentials.mustChangePassword, email: googleIdentities.email}).from(googleIdentities).innerJoin(accounts, eq(accounts.id, googleIdentities.accountId)).leftJoin(localCredentials, eq(localCredentials.accountId, accounts.id)).where(eq(googleIdentities.subject, profile.id)).get();
+    if (!canonical || canonical.account.disabledAt || pendingExpired(canonical.account)) return NextResponse.json({error:"账号暂时不可用，请联系管理员"},{status:403});
+    const session = await createSession(canonical.account.id);
+    const response = NextResponse.json({ ok: true, ...authPayload(canonical.account, canonical.username ? {username: canonical.username, mustChangePassword: Boolean(canonical.mustChangePassword)} : null, {email: canonical.email}) }, {headers: {"Cache-Control": "no-store"}});
     response.cookies.set("tuition_session", session.token, { httpOnly: true, secure: true, sameSite: "lax", path: "/", expires: new Date(session.expiresAt) });
     return response;
   } catch (error) {

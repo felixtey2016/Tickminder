@@ -5,10 +5,11 @@ export type StudentCalendarLesson = {
   status: string;
 };
 
-export function malaysiaDay(iso: string) {
-  return new Intl.DateTimeFormat("sv-SE", {
+const dayFormatter = new Intl.DateTimeFormat("sv-SE", {
     timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(new Date(iso));
+});
+export function malaysiaDay(iso: string) {
+  return dayFormatter.format(new Date(iso));
 }
 
 export function shiftMonth(month: string, by: number) {

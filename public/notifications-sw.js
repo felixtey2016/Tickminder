@@ -1,4 +1,4 @@
-/* No fetch handler: authenticated pages, API responses and PDFs are never cached. */
+/* Authenticated pages, API responses and PDFs are never cached. */
 self.addEventListener('install',()=>self.skipWaiting());
 self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
 self.addEventListener('push',event=>{
@@ -28,4 +28,34 @@ self.addEventListener('notificationclick',event=>{
     }
     return self.clients.openWindow('/?view=notifications');
   })());
+});
+
+
+// Only public, immutable bundles and brand illustrations are cached.
+// Navigations, API responses and authenticated PDFs always use the network.
+const ASSET_CACHE = 'tickminder-public-assets-v1';
+function publicAsset(url) {
+  return url.origin === self.location.origin && !url.search &&
+    (/^\/_next\/static\/.*\.(?:js|css|woff2?)$/.test(url.pathname) ||
+     /^\/(?:mascots\/[a-z0-9-]+|tickminder-logo(?:-\d+)?|notification-badge)\.(?:svg|png)$/.test(url.pathname));
+}
+async function assetResponse(request) {
+  const cache = await caches.open(ASSET_CACHE);
+  const cached = await cache.match(request);
+  if (cached && request.cache !== 'reload') return cached;
+  const response = await fetch(request);
+  if (response.ok && response.type === 'basic' && !/private|no-store/i.test(response.headers.get('cache-control') || '')) {
+    await cache.put(request, response.clone());
+    const keys = await cache.keys();
+    await Promise.all(keys.slice(0, Math.max(0, keys.length - 100)).map(key => cache.delete(key)));
+  }
+  return response;
+}
+self.addEventListener('fetch', event => {
+  if (event.request.method === 'GET' && publicAsset(new URL(event.request.url))) event.respondWith(assetResponse(event.request));
+});
+self.addEventListener('message', event => {
+  if (event.data?.type !== 'cache-public-assets' || !Array.isArray(event.data.urls)) return;
+  const urls = event.data.urls.filter(url => { try { return typeof url === 'string' && publicAsset(new URL(url, self.location.origin)); } catch { return false; } }).slice(0, 30);
+  event.waitUntil(Promise.allSettled(urls.map(url => assetResponse(new Request(url)))));
 });

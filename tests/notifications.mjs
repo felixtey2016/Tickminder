@@ -47,7 +47,7 @@ account={id:'student-a',role:'student',studentName:'Student A'};assert.equal((aw
 assert.equal((await dispatch.POST(new Request('https://test.invalid/api/notifications/dispatch',{method:'POST',headers:{Authorization:'Bearer wrong'}}))).status,404);
 const originalFetch=globalThis.fetch;let sent=[];
 globalThis.fetch=async(endpoint,payload)=>{assert.ok(engine.allowedPushEndpoint(String(endpoint)));assert.equal(payload.redirect,'manual');assert.ok(payload.signal);assert.equal(payload.headers['Content-Encoding']||payload.headers['content-encoding'],'aes128gcm');assert.ok(payload.body);sent.push({endpoint,payload});return new Response(null,{status:201});};
-await Promise.all([engine.dispatchReminders(now),engine.dispatchReminders(now)]);assert.equal(sent.length,3);assert.equal(sqlite.prepare("SELECT count(*) n FROM notification_deliveries WHERE status='sent'").get().n,3);
+await Promise.all([engine.dispatchReminders(now),engine.dispatchReminders(now)]);assert.equal(sent.length,3);assert.deepEqual(sent.map(s=>Number(s.payload.headers.TTL || s.payload.headers.ttl)).sort((a,b)=>a-b),[300,600,1500]);assert.ok(sent.every(s=>(s.payload.headers.Urgency || s.payload.headers.urgency)==='high'));assert.equal(sqlite.prepare("SELECT count(*) n FROM notification_deliveries WHERE status='sent'").get().n,3);
 // Decrypt an actual Web Push envelope using the device private key (RFC 8291).
 const bytes=new Uint8Array(sent[0].payload.body),salt=bytes.slice(0,16),sender=bytes.slice(21,21+bytes[20]);
 const senderKey=await crypto.subtle.importKey('raw',sender,{name:'ECDH',namedCurve:'P-256'},false,[]),shared=await crypto.subtle.deriveBits({name:'ECDH',public:senderKey},receiver.privateKey,256);
