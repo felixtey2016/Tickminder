@@ -30,3 +30,11 @@ Stable production before this work: v43, source `326bd564ec6924413c3f0e251bd0ece
 Fresh encrypted database and PDF backup was verified before release, outside Git: `backups/tickminder-before-approved-ui-2026-10-04`, 28 tables and 7 PDF files. No schema migrations are included in deployment archives. See RELEASES.md for final source/version mapping and live smoke results.
 
 Research screenshots and third-party reference images remain review artifacts and are not part of the application deployment.
+
+### Final live checks
+
+Staging v40 and production v44 are published. Their application sources were compared and match, with each environment retaining its own project bindings. Real isolated staging teacher publishing with a valid PDF, student attachment download and PDF submission, teacher score saving, and bilingual calendar checks passed without browser errors. Only the newly created test homework and its two PDFs were deleted after verification.
+
+Production read-only checks passed for the canonical homepage, updated metadata, nine byte-matched logo/mascot/notification assets, PWA icons, service worker mapping, anonymous API access denial, and Chinese/English phone login rendering with a visible new logo. The final production backup after v44 restored all 28 tables and seven PDFs (6,860,115 bytes); it is outside Git. No fresh cloud backup verification was performed as part of this UI release.
+
+Source IDs and stable GitHub tag are recorded in RELEASES.md. The GitHub runtime commit is `013fde5fc754503e14858b322b01a4e03b30ccfc`.
