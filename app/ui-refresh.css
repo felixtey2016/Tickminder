@@ -1,0 +1,258 @@
+/* Approved mobile UI 01–07. Shared scale; existing business components remain in place. */
+:root {
+  --ui-canvas: #f7f8fc;
+  --ui-surface: #fff;
+  --ui-ink: #24243c;
+  --ui-secondary: #62627a;
+  --ui-purple: #5636d9;
+  --ui-nav: #242043;
+  --ui-line: #e7e7ef;
+  --ui-radius: 8px;
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-6: 24px;
+  --ui-space-8: 32px;
+  --muted-foreground: var(--ui-secondary);
+}
+body { background: var(--ui-canvas); color: var(--ui-ink); font-size: 16px; }
+.app-shell .workspace { padding: 32px; }
+.page-head { margin-bottom: 24px; }
+.page-head h1 { margin: 0; font-size: 28px; line-height: 1.35; font-weight: 700; }
+.page-head .eyebrow { display: none; }
+.panel, .metric, .lesson-card { border-radius: var(--ui-radius); box-shadow: none; }
+.panel { padding: 24px; }
+.panel h2, .section-head h2 { font-size: 18px; line-height: 1.45; }
+.muted, .home-card-detail, .panel > .muted, .learning-card small { color: var(--ui-secondary); line-height: 1.5; }
+input::placeholder, textarea::placeholder { color: var(--ui-secondary); }
+.app-shell [data-slot="button"], .auth-card [data-slot="button"] { min-height: 44px; border-radius: 6px; box-shadow: none; font-size: 14px; padding: 10px 16px; line-height: 1.5; }
+.app-shell [data-slot="button"][data-size="icon"] { width: 44px; min-width: 44px; padding: 8px; }
+form input:not([type=checkbox]):not([type=radio]), form select, form textarea { border-radius: 6px; padding: 12px; font-size: 16px; min-height: 48px; }
+.topbar { height: 64px; padding: 0 24px; background: var(--ui-nav); }
+.brand-logo, .brand-logo.small { background: transparent; border-radius: 0; }
+.brand-logo img { display: block; transform: none; }
+.brand-logo.small { width: 36px; height: 36px; }
+.brand strong { font-size: 20px; letter-spacing: -.02em; }
+.top-actions { gap: 12px; }
+.language-switch { gap: 0; padding: 0; border: 1px solid #807690; border-radius: 6px; overflow: hidden; background: transparent; }
+.language-switch button { min-width: 44px; min-height: 44px; border-radius: 0; padding: 8px; font-size: 14px; box-shadow: none; }
+.language-switch button[aria-pressed="true"] { box-shadow: none; }
+.topbar .language-switch { background: transparent; }
+.language-separator { padding: 0 4px; color: #d2cde5; }
+.auth-card .language-separator { color: var(--ui-secondary); }
+.top-actions .menu-toggle { width: 44px; min-height: 44px; border: 0; background: transparent; border-radius: 6px; }
+.workspace-menu { top: 64px; height: calc(100dvh - 64px); background: #25243f; padding: 16px 12px; }
+.app-body { min-height: calc(100dvh - 64px); }
+.app-body.menu-open { grid-template-columns: 260px minmax(0, 1fr); }
+.menu-group { display: grid; gap: 4px; }
+.menu-group + .menu-group { margin-top: 20px; }
+.menu-group-title { margin: 0 12px 4px; font-size: 12px; line-height: 1.5; font-weight: 600; color: #d2cde5; letter-spacing: .03em; }
+.menu-link { border-radius: 6px; font-size: 14px; padding: 12px; min-height: 48px; gap: 12px; }
+.menu-link.active { box-shadow: none; background: #6547c6; }
+.menu-utilities { margin-top: 24px; padding-top: 16px; }
+.workspace-menu .signed-in-identity { padding: 8px 12px 20px; font-size: 14px; }
+.workspace-menu .signed-in-method { font-size: 12px; color: #d2cde5; }
+.workspace-menu .menu-legal { line-height: 1.7; }
+.menu-legal a { display: inline-flex; min-height: 44px; align-items: center; }
+
+/* Home: one upcoming lesson, then compact links, without nested large cards. */
+.home-dashboard { max-width: 960px; display: block; }
+.home-intro { display: block; padding: 0; border: 0; border-radius: 0; background: transparent; margin-bottom: 24px; }
+.home-greeting { display: flex; gap: 12px; align-items: center; }
+.home-greeting h2 { font-size: 20px; font-weight: 650; line-height: 1.4; margin: 0; overflow-wrap: anywhere; }
+.home-date { display: block; margin: 8px 0 0; color: var(--ui-secondary); font-size: 14px; }
+.home-next { background: var(--ui-surface); border: 1px solid var(--ui-line); border-left: 3px solid var(--ui-purple); border-radius: 8px; padding: 24px; }
+.home-next-heading { display: flex; align-items: center; justify-content: space-between; color: var(--ui-secondary); font-size: 14px; }
+.home-next h2 { font-size: 24px; margin: 12px 0 4px; font-weight: 700; }
+.home-next p { margin: 8px 0; color: var(--ui-secondary); font-size: 14px; }
+.home-next .home-next-time { color: var(--ui-ink); font-size: 16px; font-weight: 600; }
+.home-next-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+.home-next-actions .online-lesson-link { margin: 0; min-height: 48px; background: var(--ui-purple); color: white; border: 0; border-radius: 6px; padding: 12px 16px; }
+.home-overview-title { font-size: 18px; font-weight: 650; margin: 24px 0 12px; }
+.home-summary-list { border: 1px solid var(--ui-line); border-radius: 8px; background: white; padding: 0 16px; }
+.home-summary-row { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 88px; padding: 16px 0; border: 0; border-bottom: 1px solid var(--ui-line); background: transparent; text-align: left; }
+.home-summary-row:last-child { border-bottom: 0; }
+.home-summary-row > svg:first-child { flex-shrink: 0; color: var(--ui-purple); }
+.home-summary-row > span { display: grid; gap: 4px; flex: 1; min-width: 0; }
+.home-summary-row strong { font-size: 16px; font-weight: 600; }
+.home-summary-row small { font-size: 14px; color: var(--ui-secondary); }
+.home-summary-row b { font-size: 20px; max-width: 30%; overflow-wrap: anywhere; }
+.home-summary-row > svg:last-child { color: var(--ui-secondary); flex-shrink: 0; }
+
+/* Calendar: compact month and nearby day agenda; formal lessons remain distinct. */
+.student-calendar { position: relative; }
+.calendar-add-row { position: absolute; right: 0; top: -62px; display: flex; justify-content: flex-end; margin: 0; }
+.workspace:has(.student-calendar) .page-head { padding-right: 100px; }
+.student-calendar-month, .student-day-panel { border-radius: 8px; box-shadow: none; }
+.student-calendar-toolbar { padding: 16px; gap: 12px; flex-direction: row; }
+.student-calendar-toolbar h3 { font-size: 20px; margin: 0; }
+.student-calendar-toolbar > div > span { font-size: 14px; color: var(--ui-secondary); }
+.student-calendar-controls { gap: 8px; }
+.student-calendar-weekdays { padding: 12px 0; color: var(--ui-secondary); font-size: 14px; }
+.student-calendar-day.is-outside { color: var(--ui-secondary); opacity: 1; background: #fafaff; }
+.student-calendar-day.is-outside .student-calendar-day-number { color: var(--ui-secondary); }
+.student-calendar-day.is-selected { background: #f0edff; box-shadow: inset 0 0 0 2px var(--ui-purple); }
+.student-calendar-day-number { font-size: 16px; }
+.student-calendar-legend { padding: 12px 16px; color: var(--ui-secondary); gap: 16px; font-size: 12px; }
+.student-day-panel { padding: 20px; }
+.student-day-heading > span, .student-day-heading > p { color: var(--ui-secondary); font-size: 14px; }
+.student-day-heading h3 { font-size: 20px; line-height: 1.4; }
+.student-day-lesson { margin-top: 16px; border-radius: 8px; padding: 16px; box-shadow: none; }
+.student-day-lesson p { font-size: 14px; }
+.student-day-lesson-top strong { font-size: 18px; }
+.student-day-lesson-top span { color: #4a339d; }
+.student-day-lesson.lesson-study { border-left-color: #117461; background: #f2faf7; }
+.student-day-lesson.lesson-study .student-day-lesson-top span { color: #07675b; background: #dff3eb; }
+.student-day-empty { background: transparent; border: 0; font-size: 14px; color: var(--ui-secondary); }
+
+/* Lists and existing action menus. Destructive confirmation remains unchanged. */
+.lesson-card { display: grid; grid-template-columns: 148px minmax(0,1fr); padding: 20px; gap: 16px; }
+.date-tile { background: #f6f4ff; border-radius: 6px; padding: 12px; }
+.date-tile strong { font-size: 14px; }
+.date-tile span { font-size: 16px; font-weight: 650; }
+.lesson-title { gap: 12px; align-items: flex-start; }
+.lesson-title > strong { font-size: 18px; }
+.lesson-body > p { color: var(--ui-secondary); font-size: 14px; margin: 8px 0 16px; }
+.status { font-size: 12px; font-weight: 600; padding: 4px 8px; border-radius: 4px; white-space: nowrap; }
+.lesson-actions, .portal-actions { gap: 12px; margin: 12px 0 0; }
+.lesson-more { z-index: 90; display: grid; gap: 8px; padding: 12px; width: min(300px,calc(100vw - 32px)); background: white; border-color: var(--ui-line); border-radius: 8px; }
+.lesson-more [data-slot="button"] { justify-content: flex-start; min-height: 44px; white-space: normal; }
+.portal-card { padding: 20px; border-radius: 8px; margin-top: 16px; gap: 12px; }
+.portal-card > div:first-child strong { font-size: 18px; color: var(--ui-ink); }
+.portal-card .course-time { font-weight: 600; color: var(--ui-ink); }
+.portal-actions button { flex: 0 1 auto; }
+.portal-record { padding: 16px 0; gap: 8px; }
+.lesson-history { padding-top: 8px; margin-top: 16px; border-color: var(--ui-line); font-size: 14px; }
+.lesson-history > summary, .learning-card details > summary { min-height: 44px; display: flex; align-items: center; width: auto; gap: 8px; }
+.lesson-history > summary::before { content: '›'; font-size: 22px; }
+.lesson-history[open] > summary::before { transform: rotate(90deg); }
+
+/* Filtering stays close to lists; term management and bulk deletion stay visible. */
+.filter-panel { border: 1px solid var(--ui-line); border-radius: 8px; margin: 16px 0; background: white; }
+.filter-panel > summary { display: flex; gap: 12px; align-items: center; min-height: 48px; padding: 12px 16px; color: var(--ui-purple); list-style: none; cursor: pointer; font-size: 14px; font-weight: 600; }
+.filter-panel > summary::-webkit-details-marker { display: none; }
+.filter-panel > summary > span { flex: 1; }
+.filter-panel summary small { margin-left: 12px; color: var(--ui-secondary); font-size: 12px; }
+.filter-panel[open] > summary > svg:last-child { transform: rotate(180deg); }
+.filter-panel-fields { display: grid; gap: 16px; padding: 4px 16px 16px; }
+.filter-panel-fields .directory-filters { margin: 0; }
+.filter-panel-fields > button { justify-self: start; }
+.filter-panel-fields .check-row { margin: 0; }
+.directory-filters { gap: 16px; }
+.directory-filters label { font-size: 14px; font-weight: 600; }
+.directory-filters input, .directory-filters select { min-height: 48px; border-radius: 6px; font-size: 16px; border-color: #d9d6ea; }
+.classroom-term-tools { display: flex; align-items: flex-end; gap: 12px; margin-top: 20px; }
+.classroom-term-tools .directory-filters { flex: 1; display: block; margin: 0; min-width: 0; }
+.classroom-term-tools > button { flex-shrink: 0; margin: 0; }
+.list-tools { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 16px 0; color: var(--ui-secondary); font-size: 14px; }
+.directory-group { border-radius: 8px; margin: 16px 0; border-color: var(--ui-line); }
+.directory-group > summary { background: #fafaff; padding: 16px; min-height: 56px; font-size: 16px; }
+.directory-group > summary > span { border-radius: 4px; }
+.directory-group > .lesson-stack { margin: 0; padding: 0; gap: 0; }
+.directory-group .lesson-card { border: 0; border-top: 1px solid var(--ui-line); border-radius: 0; margin: 0; }
+.classroom-chips { padding: 16px; gap: 12px; }
+.classroom-chips button { border-radius: 6px; box-shadow: none; padding: 16px; }
+.classroom-chips button span { font-size: 14px; color: var(--ui-secondary); }
+.classroom-tabs { border-radius: 8px; gap: 4px; }
+.classroom-tabs button { min-height: 48px; font-size: 14px; border-radius: 6px; }
+
+/* Forms: meaningful sections and native year-bearing dates. */
+.learning-form { display: grid; gap: 24px; }
+.learning-single-view > .panel:not(#teacher-material-form) > h2, .student-learning > .panel > h2, .learning-section-head .eyebrow { display: none; }
+.learning-form-section { display: grid; gap: 16px; padding: 20px 0 0; margin: 0; min-width: 0; border: 0; border-top: 1px solid var(--ui-line); }
+.learning-form-section:first-child { border-top: 0; }
+.learning-form-section > legend { font-size: 18px; font-weight: 650; color: var(--ui-ink); padding: 0 12px 0 0; }
+.learning-form-section .learning-checks { margin: 0; background: transparent; border-radius: 6px; }
+.learning-form-section .learning-checks label { min-height: 44px; padding: 8px 0; font-size: 16px; }
+.learning-form-section > .muted { margin: 0; font-size: 14px; }
+.learning-form-section .date-value { font-size: 14px; font-weight: 400; color: var(--ui-secondary); font-variant-numeric: tabular-nums; }
+.learning-form-section input[type="checkbox"] { width: 20px; height: 20px; }
+.learning-score-toggle { display: flex; gap: 12px; align-items: center; min-height: 44px; }
+.learning-list { margin-top: 24px; gap: 16px; }
+.learning-card { border-radius: 8px; box-shadow: none; padding: 20px; }
+.learning-card > strong, .learning-card > div > strong { font-size: 18px; }
+.student-homework-card > summary { min-height: 56px; padding: 0 24px 0 0; }
+.student-homework-card > summary strong { font-size: 18px; }
+.student-homework-card > summary small { font-size: 14px; }
+.learning-dropzone { border-radius: 6px; background: #fafaff; }
+.learning-file-actions a, .online-lesson-link { min-height: 44px; display: inline-flex; align-items: center; border-radius: 6px; font-size: 14px; }
+.learning-card-actions { gap: 12px; }
+
+/* Transparent artwork occupies page whitespace, never a white image tile. */
+.mascot { display: block; object-fit: contain; flex-shrink: 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
+.page-state { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 40px 16px; gap: 16px; background: transparent; border: 0; box-shadow: none; border-radius: 0; }
+.page-state h2 { margin: 0; font-size: 18px; line-height: 1.5; font-weight: 600; }
+.page-state p { margin: 0; color: var(--ui-secondary); max-width: 34rem; font-size: 14px; overflow-wrap: anywhere; }
+.student-learning > .panel:has(.page-state-empty), .panel:has(> .page-state-success) { background: transparent; border: 0; padding: 0; }
+.page-skeleton { width: min(480px,100%); display: grid; gap: 16px; margin-top: 8px; }
+.page-skeleton span { display: block; background: #e9e7f1; border-radius: 6px; height: 64px; }
+.page-skeleton span:nth-child(2) { width: 84%; }
+.page-skeleton span:nth-child(3) { width: 64%; }
+.auth-loading { min-height: 100dvh; background: var(--ui-canvas); display: grid; align-content: center; justify-items: center; padding: 24px; }
+.auth-loading > .language-switch { position: absolute; right: 16px; top: 16px; }
+.homework-submit-confirmation { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 24px 0; text-align: center; background: transparent; }
+.homework-submit-confirmation p { font-size: 14px; color: var(--ui-secondary); overflow-wrap: anywhere; }
+.homework-submit-confirmation strong { color: #07675b; }
+.auth-shell { background: var(--ui-nav); }
+.auth-story .brand-logo { background: transparent; border-radius: 0; }
+.auth-card { border-radius: 12px; box-shadow: none; border: 1px solid var(--ui-line); }
+.auth-story h2 { font-size: 44px; line-height: 1.2; letter-spacing: -.02em; }
+.action-toast { box-shadow: 0 4px 20px #24204318; border-radius: 8px; font-weight: 500; }
+.action-toast button { display: grid; place-items: center; min-width: 44px; min-height: 44px; margin-top: -8px; margin-right: -8px; }
+.lesson-dialog { border-radius: 12px; box-shadow: 0 8px 32px #24204318; }
+@media (max-width: 900px) {
+  .topbar { height: 64px; padding: 0 16px; }
+  .app-body, .app-body.menu-open { display: block; min-height: calc(100dvh - 64px); }
+  .workspace-menu { top: 64px; width: min(320px,86vw); height: auto; }
+  .menu-backdrop { inset: 64px 0 0; }
+  .app-body .workspace { padding: 24px 16px 48px; }
+  .student-calendar-layout { grid-template-columns: 1fr; gap: 16px; }
+}
+@media (max-width: 650px) {
+  .brand > div > span { display: none; }
+  .top-actions { gap: 8px; }
+  .page-head h1 { font-size: 24px; line-height: 32px; }
+  .page-head { margin-bottom: 24px; gap: 16px; }
+  .panel { padding: 16px; }
+  .home-intro { padding: 0; gap: 0; }
+  .home-next { padding: 20px; }
+  .home-summary-row { min-height: 88px; gap: 12px; }
+  .home-summary-row b { font-size: 18px; }
+  .student-calendar-toolbar { padding: 12px; display: flex; align-items: center; flex-wrap: nowrap; }
+  .calendar-add-row { top: -60px; }
+  .student-calendar-controls { margin-left: auto; width: auto; flex-shrink: 0; }
+  .student-calendar-toolbar h3 { font-size: 18px; }
+  .student-calendar-toolbar > div > span { font-size: 12px; }
+  .student-calendar-day { min-height: 52px; padding: 8px 4px; }
+  .student-calendar-day-number { width: 24px; height: 24px; }
+  .student-calendar-day-events { display: none; }
+  .student-calendar-dots { display: flex; justify-content: center; gap: 4px; margin-top: 4px; }
+  .student-calendar-dots i { width: 4px; height: 4px; }
+  .student-calendar-weekdays { font-size: 12px; padding: 8px 0; }
+  .student-calendar-legend { gap: 12px; flex-wrap: wrap; }
+  .student-day-panel { padding: 16px; }
+  .student-day-heading h3 { font-size: 18px; }
+  .lesson-card { display: block; padding: 16px; }
+  .date-tile { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 16px; padding: 12px; width: 100%; }
+  .date-tile span { font-size: 14px; }
+  .lesson-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+  .portal-card { padding: 16px; }
+  .portal-actions button { flex: 0 1 auto; }
+  .directory-filters { grid-template-columns: 1fr; }
+  .classroom-term-tools { align-items: flex-end; }
+  .classroom-term-tools > button { max-width: 120px; }
+  .directory-group .lesson-card { padding: 16px; }
+  .learning-card { padding: 16px; }
+  .learning-form-section .form-pair { grid-template-columns: minmax(0,1fr); }
+  .learning-form { gap: 24px; }
+  .learning-file-actions a { min-height: 44px; }
+  .auth-card { padding: 24px; }
+  .page-state { padding: 32px 12px; }
+}
+@media (max-width: 360px) {
+  .brand strong { font-size: 18px; }
+  .brand { gap: 8px; }
+  .top-actions { gap: 4px; }
+  .home-greeting .mascot { display: none; }
+}

@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { BookOpen, CalendarDays, ChevronRight, ClipboardCheck, Clock3, type LucideIcon } from "lucide-react";
 import { getLanguage, t } from "@/lib/i18n";
 import type { LearningState } from "./learning-portal";
+import { Mascot } from "@/components/page-state";
+import { Button } from "@/components/ui/button";
 import { OnlineLessonLink } from "./online-lesson-link";
 
 type Role = "admin" | "teacher" | "student";
@@ -79,14 +81,10 @@ export function HomeDashboard({ role, name, lessons, learning, onNavigate }: {
     ];
   }
 
+  const overview = cards.slice(1);
   return <section className="home-dashboard" aria-label={t("主页")}>
-    <div className="home-intro"><div><p className="eyebrow">{t("今日概览")}</p><h2>{t("欢迎回来")}{name ? `${getLanguage() === "zh" ? "，" : ", "}${name}` : ""}</h2></div><p className="home-date"><CalendarDays size={17} aria-hidden="true"/><time dateTime={today}>{new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur", weekday: "long", year: "numeric", month: "long", day: "numeric" }).format(new Date(now))}</time></p></div>
-    <div className="home-cards">{cards.map(card => <article key={card.label} className="home-card"><button type="button" className="home-card-main" onClick={() => onNavigate(card.destination)} aria-label={`${t(card.label)}：${card.value}。${t(card.action)}`}>
-      <span className="home-card-icon"><card.Icon size={21} aria-hidden="true"/></span>
-      <span className="home-card-label">{t(card.label)}</span>
-      <strong>{card.value}</strong>
-      <span className="home-card-detail">{card.detail}</span>
-      <span className="home-card-action">{t(card.action)} <ChevronRight size={17} aria-hidden="true"/></span>
-    </button>{card.label === "下一堂课" && <OnlineLessonLink href={next?.onlineLink}/>}</article>)}</div>
+    <div className="home-intro"><div className="home-greeting"><Mascot pose="hello" size={60}/><h2>{t("你好")}{name ? (getLanguage() === "zh" ? "，" : ", ") + name : ""}</h2></div><time className="home-date" dateTime={today}>{new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone:"Asia/Kuala_Lumpur", year:"numeric",month:"long",day:"numeric",weekday:"long" }).format(new Date(now))}</time></div>
+    <article className="home-next"><div className="home-next-heading"><span>{t("下一堂课")}</span><CalendarDays size={20} aria-hidden="true"/></div><h2>{next ? next.subject : t("暂无课程")}</h2><p className="home-next-time">{next ? lessonTime(next.plannedStart) + "–" + new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Kuala_Lumpur",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(next.plannedEnd)) : nextDetail}</p>{next && <p>{role === "student" ? next.teacherName : next.student + " · " + next.teacherName}</p>}<div className="home-next-actions"><OnlineLessonLink href={next?.onlineLink}/><Button variant="outline" onClick={() => onNavigate(cards[0].destination)}>{t(cards[0].action)}<ChevronRight size={17} aria-hidden="true"/></Button></div></article>
+    <h2 className="home-overview-title">{t(role === "admin" ? "今日概览" : "学习安排")}</h2><div className="home-summary-list">{overview.map(card => <button type="button" className="home-summary-row" key={card.label} onClick={() => onNavigate(card.destination)}><card.Icon size={22} aria-hidden="true"/><span><strong>{t(card.label)}</strong><small>{card.detail}</small></span><b>{card.value}</b><ChevronRight size={18} aria-hidden="true"/></button>)}</div>
   </section>;
 }

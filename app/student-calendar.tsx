@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, Clock3 } from "lucide-react";
+import { CalendarDays, Plus, ChevronLeft, ChevronRight, Clock3 } from "lucide-react";
 import { getLanguage, t } from "@/lib/i18n";
-import { activeLessonsOnDay, malaysiaDay, monthDays, nextScheduledLesson, shiftMonth } from "@/lib/student-calendar";
+import { activeLessonsOnDay, malaysiaDay, monthDays, shiftMonth } from "@/lib/student-calendar";
 import { Button } from "@/components/ui/button";
 import type { StudyBlock } from "./learning-portal";
 import { OnlineLessonLink } from "./online-lesson-link";
@@ -38,7 +38,6 @@ export function StudentCalendar({ lessons, proposals, studyBlocks = [], onAddStu
   const byDay = useMemo(() => new Map(days.map(day => [day, activeLessonsOnDay(lessons, day)])), [days, lessons]);
   const selectedLessons = byDay.get(selectedDay) || activeLessonsOnDay(lessons, selectedDay);
   const pending = new Map(proposals.filter(proposal => proposal.status === "pending").map(proposal => [proposal.lessonId, proposal]));
-  const nextLesson = nextScheduledLesson(lessons, new Date().toISOString());
   const monthLessonCount = lessons.filter(lesson => lesson.status !== "cancelled" && malaysiaDay(lesson.plannedStart).slice(0, 7) === visibleMonth).length;
   const studyOnDay = (day: string) => studyBlocks.filter(block => malaysiaDay(block.startsAt) === day);
   const selectedStudy = studyOnDay(selectedDay);
@@ -54,12 +53,7 @@ export function StudentCalendar({ lessons, proposals, studyBlocks = [], onAddStu
   }
 
   return <section className="student-calendar" aria-label={t("课程日历")}>
-    <div className="student-calendar-intro">
-      <div><p className="eyebrow">{t("我的日历")}</p><h2>{t("学习日历")}</h2><p>{t("点击日期查看补习课和个人学习安排。时间按马来西亚时间显示。")}</p><Button size="sm" variant="outline" onClick={() => onAddStudy?.(selectedDay)}>{t("新增学习安排")}</Button></div>
-      {nextLesson && <button type="button" className="student-next-lesson" onClick={() => chooseDay(malaysiaDay(nextLesson.plannedStart))}>
-        <CalendarDays size={20} aria-hidden="true"/><span><small>{t("下一堂课")}</small><strong>{nextLesson.subject} · {dateLabel(malaysiaDay(nextLesson.plannedStart), { month: "short", day: "numeric" })} {time(nextLesson.plannedStart)}</strong></span><ChevronRight size={18} aria-hidden="true"/>
-      </button>}
-    </div>
+    <div className="calendar-add-row"><Button size="sm" variant="outline" onClick={() => onAddStudy?.(selectedDay)}><Plus size={18} aria-hidden="true"/>{t("新增")}</Button></div>
     <div className="student-calendar-layout">
       <div className="student-calendar-month">
         <div className="student-calendar-toolbar">
@@ -85,7 +79,7 @@ export function StudentCalendar({ lessons, proposals, studyBlocks = [], onAddStu
         <div className="student-calendar-legend"><span><i className="legend-scheduled"/>{t("补习课")}</span><span><i className="legend-completed"/>{t("已上课")}</span><span><i className="legend-study"/>{t("个人学习")}</span><span><i className="legend-absent"/>{t("缺席")}</span></div>
       </div>
       <aside className="student-day-panel" aria-live="polite">
-        <div className="student-day-heading"><span>{dateLabel(selectedDay, { weekday: "long" })}</span><h3>{dateLabel(selectedDay, { month: "long", day: "numeric" })}</h3><p>{selectedLessons.length} {t("堂课")} · {selectedStudy.length} {t("项学习安排")}</p><Button size="sm" variant="outline" onClick={() => onAddStudy?.(selectedDay)}>{t("为这一天新增学习安排")}</Button></div>
+        <div className="student-day-heading"><span>{dateLabel(selectedDay, { weekday: "long" })}</span><h3>{dateLabel(selectedDay, { year: "numeric", month: "long", day: "numeric" })}</h3><p>{selectedLessons.length} {t("堂课")} · {selectedStudy.length} {t("项学习安排")}</p><Button size="sm" variant="outline" onClick={() => onAddStudy?.(selectedDay)}>{t("为这一天新增学习安排")}</Button></div>
         {selectedLessons.map(lesson => <article className={`student-day-lesson lesson-${lesson.status}`} key={lesson.id}>
           <div className="student-day-lesson-top"><strong>{lesson.subject}</strong><span>{t(lesson.attendanceKind === "early_dismissal" ? "提前结束课程" : statusText[lesson.status] || lesson.status)}</span></div>
           <p><Clock3 size={16} aria-hidden="true"/>{time(lesson.plannedStart)}–{time(lesson.plannedEnd)}</p>

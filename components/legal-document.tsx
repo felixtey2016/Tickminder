@@ -12,7 +12,7 @@ export function LegalDocument({ document, language }: { document: "terms" | "pri
   const copy = document === "terms" ? termsContent[lang as "zh" | "en"] : privacyContent[lang];
   const text = labels[lang];
   return <main className="legal-shell" lang={lang === "zh" ? "zh-CN" : lang}>
-    <header className="legal-topbar"><a href="/" className="legal-brand"><img src="/timelyo-logo.png" width="36" height="36" alt=""/><strong>{BRAND_NAME}</strong></a><a className="legal-back" href="/">← {text.back}</a></header>
+    <header className="legal-topbar"><a href="/" className="legal-brand"><img src="/tickminder-logo.svg" width="36" height="36" alt=""/><strong>{BRAND_NAME}</strong></a><a className="legal-back" href="/">← {text.back}</a></header>
     <article className="legal-paper">
       <div className="legal-document-head"><p className="eyebrow">{BRAND_NAME}</p><h1>{copy.title}</h1><p className="legal-summary">{copy.summary}</p>
         <div className="legal-meta"><span>{text.updated}: {LEGAL_VERSION}</span><span>{text.operator}: {SERVICE_OPERATOR}</span></div>

@@ -6,7 +6,10 @@ self.addEventListener('push',event=>{
   try{data=event.data.json();}catch{return;}
   if(!data || typeof data.title!=='string' || typeof data.body!=='string')return;
   event.waitUntil(self.registration.showNotification(data.title.slice(0,100),{
-    body:data.body.slice(0,250),icon:'/timelyo-logo.png',badge:'/timelyo-logo.png',
+    body:data.body.slice(0,250),
+    icon:data.visual==='class-start'?'/mascots/notify-class-start-192.png':data.visual==='class-reminder'?'/mascots/notify-class-reminder-192.png':'/tickminder-logo-192.png',
+    image:data.visual==='class-start'?'/mascots/notify-class-start-512.png':data.visual==='class-reminder'?'/mascots/notify-class-reminder-512.png':undefined,
+    badge:'/notification-badge.png',
     tag:typeof data.id==='string'?'tickminder:'+data.id.slice(0,100):'tickminder',
     data:{url:'/?view=notifications'},renotify:false,
   }));

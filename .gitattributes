@@ -1,0 +1,4 @@
+# Preserve the supplied vector artwork exactly across Windows and cloud checkouts.
+public/mascots/*.svg -text
+public/tickminder-logo.svg -text
+public/favicon.svg -text

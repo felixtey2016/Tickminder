@@ -4,6 +4,11 @@ import { FilterScope, useFilterPreference } from "@/lib/filter-preferences";
 import { getLanguage, LANGUAGE_KEY, setLanguage, t, type Language } from "@/lib/i18n";
 import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
 import { clearDialogHistory, useDialogState } from "@/lib/use-dialog-state";
+import { FilterPanel } from "@/components/filter-panel";
+import { LessonMore } from "@/components/lesson-more";
+import { PageState } from "@/components/page-state";
+import { actionFailureMessage } from "@/lib/action-feedback";
+import { BarChart3, CalendarClock, ContactRound, LibraryBig, ListChecks, UserRound, UsersRound, SquarePen, ArrowLeftRight } from "lucide-react";
 import { BRAND_NAME } from "@/lib/brand";
 import { LegalLinks } from "@/components/legal-links";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -385,7 +390,7 @@ export function Scheduler() {
     const lessons = useMemo(() => [...(state?.lessons || [])].sort((a, b) => a.plannedStart.localeCompare(b.plannedStart)), [state]);
     useLessonWebMcp(auth?.account?.role, lessons, reload);
     if (!auth)
-        return <main className="auth-shell"><div className="auth-card">{t("\u6B63\u5728\u8F7D\u5165\u2026")}</div></main>;
+        return <main className="auth-loading"><LanguageSwitcher language={language} change={changeLanguage}/><PageState kind={message ? "error" : "loading"} title={message ? "无法载入页面" : "正在载入…"} description={message ? actionFailureMessage(new Error(message)) : undefined} action={message ? "重试" : undefined} onAction={() => { setMessage(""); void request("/api/auth").then(setAuth).catch(error => setMessage(actionFailureMessage(error))); }}/></main>;
     if (!auth.account)
         return <LoginForm googleButton={googleButton} clientId={auth.clientId} login={localLogin} busy={busy} message={message} language={language} changeLanguage={changeLanguage}/>;
     const account = auth.account;
@@ -398,8 +403,8 @@ export function Scheduler() {
     const admin = account.role === "admin";
     return <Workspace account={account} state={state} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/>;
 }
-function BrandLogo({ small = false }: { small?: boolean }) { return <span className={`brand-logo ${small ? "small" : ""}`}><img src="/timelyo-logo.png" alt={BRAND_NAME} /></span>; }
-function LanguageSwitcher({ language, change }: { language: Language; change: (next: Language) => void }) { return <div className="language-switch" role="group" aria-label="Language / 语言"><button type="button" aria-pressed={language === "zh"} onClick={() => change("zh")}>中文</button><button type="button" aria-pressed={language === "en"} onClick={() => change("en")}>EN</button></div>; }
+function BrandLogo({ small = false }: { small?: boolean }) { return <span className={`brand-logo ${small ? "small" : ""}`}><img src="/tickminder-logo.svg" width={small ? 40 : 80} height={small ? 40 : 80} alt={BRAND_NAME} /></span>; }
+function LanguageSwitcher({ language, change }: { language: Language; change: (next: Language) => void }) { return <div className="language-switch" role="group" aria-label="Language / 语言"><button type="button" aria-pressed={language === "zh"} onClick={() => change("zh")}>中文</button><span className="language-separator" aria-hidden="true">|</span><button type="button" aria-pressed={language === "en"} onClick={() => change("en")}>EN</button></div>; }
 function SignedInIdentity({ account }: { account: Account }) {
     return <div className="signed-in-identity"><span>{t("当前登录账号")}</span><strong>{account.name}</strong><span className="signed-in-method">{account.username ? `${t("登录账号")} · ${account.username}${account.email ? ` · Google: ${account.email}` : ""}` : `Google · ${account.email || "—"}`}</span></div>;
 }
@@ -455,44 +460,51 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
     admin: [
         { id: "home", label: "主页", Icon: LayoutDashboard },
         { id: "myAccount", label: "我的账号", Icon: ShieldCheck },
-        { id: "classrooms", label: "班级", Icon: Users },
-        { id: "overview", label: "课程总览", Icon: LayoutDashboard },
+        { id: "classrooms", label: "班级", Icon: LibraryBig },
+        { id: "overview", label: "课程总览", Icon: BarChart3 },
         { id: "attention", label: "出席待处理", Icon: AlertCircle },
-        { id: "schedule", label: "安排课程", Icon: Clock3 },
+        { id: "schedule", label: "安排课程", Icon: SquarePen },
         { id: "calendar", label: "课程日历", Icon: CalendarDays },
         { id: "list", label: "课程列表", Icon: List },
-        { id: "students", label: "学生时间表", Icon: GraduationCap },
-        { id: "teachers", label: "老师时间表", Icon: CalendarDays },
+        { id: "students", label: "学生时间表", Icon: ContactRound },
+        { id: "teachers", label: "老师时间表", Icon: CalendarClock },
         { id: "subjects", label: "学生科目", Icon: BookOpen },
-        { id: "teacherRoster", label: "老师名单", Icon: Users },
-        { id: "studentRoster", label: "学生名单", Icon: GraduationCap },
-        { id: "accounts", label: "账号管理", Icon: ShieldCheck },
+        { id: "teacherRoster", label: "老师名单", Icon: UserRound },
+        { id: "studentRoster", label: "学生名单", Icon: UsersRound },
+        { id: "accounts", label: "账号管理", Icon: Users },
         { id: "sheet", label: "课时导入", Icon: FileSpreadsheet },
         { id: "activity", label: "修改记录", Icon: History },
     ],
     teacher: [
         { id: "home", label: "主页", Icon: LayoutDashboard },
         { id: "myAccount", label: "我的账号", Icon: ShieldCheck },
-        { id: "classrooms", label: "班级", Icon: Users },
-        { id: "schedule", label: "安排课程", Icon: Clock3 },
+        { id: "classrooms", label: "班级", Icon: LibraryBig },
+        { id: "schedule", label: "安排课程", Icon: SquarePen },
         { id: "lessons", label: "课程与打卡", Icon: CalendarDays },
-        { id: "attendance", label: "出席记录", Icon: ClipboardCheck },
-        { id: "reschedule", label: "改期申请", Icon: ClipboardCheck },
+        { id: "attendance", label: "出席记录", Icon: ListChecks },
+        { id: "reschedule", label: "改期申请", Icon: ArrowLeftRight },
         { id: "hours", label: "上课记录", Icon: Clock3 },
-        { id: "students", label: "负责的学生与科目", Icon: Users },
+        { id: "students", label: "负责的学生与科目", Icon: ContactRound },
         { id: "materials", label: "PDF 教学资料", Icon: FileText },
         { id: "homework", label: "布置功课", Icon: BookOpen },
     ],
     student: [
         { id: "home", label: "主页", Icon: LayoutDashboard },
         { id: "myAccount", label: "我的账号", Icon: ShieldCheck },
-        { id: "classrooms", label: "我的班级", Icon: Users },
+        { id: "classrooms", label: "我的班级", Icon: LibraryBig },
         { id: "calendar", label: "学习日历", Icon: CalendarDays },
         { id: "list", label: "课程列表", Icon: List },
         { id: "homework", label: "我的功课", Icon: BookOpen },
         { id: "materials", label: "我的教学资料", Icon: FileText },
-        { id: "reschedule", label: "改期申请", Icon: ClipboardCheck },
+        { id: "reschedule", label: "改期申请", Icon: ArrowLeftRight },
     ],
+};
+
+const NAV_GROUPS: Record<NavigationRole, Array<{ label: string; ids: string[] }>> = {
+ admin: [{label:"",ids:["home"]},{label:"课程管理",ids:["calendar","list","schedule","attention","overview"]},{label:"教学",ids:["classrooms","subjects","students","teachers"]},{label:"人员与账号",ids:["teacherRoster","studentRoster","accounts"]},{label:"系统与账号",ids:["notifications","myAccount","sheet","activity"]}],
+ teacher: [{label:"",ids:["home"]},{label:"课程管理",ids:["lessons","schedule","attendance","reschedule","hours"]},{label:"教学",ids:["classrooms","students","homework","materials"]},{label:"我的账号",ids:["notifications","myAccount"]}],
+ student: [{label:"",ids:["home"]},{label:"学习",ids:["calendar","list","reschedule"]},{label:"班级与作业",ids:["classrooms","homework","materials"]},{label:"我的账号",ids:["notifications","myAccount"]}],
+ pending: [{label:"",ids:["home"]},{label:"我的账号",ids:["notifications","myAccount"]}],
 };
 
 function Workspace({ account, state, lessons, message, setMessage, reload, logout, modal, setModal, mutate, learningMutate, classroomMutate, busy, selectedMonth, setSelectedMonth, language, changeLanguage }: {
@@ -615,7 +627,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
             pageContent = <SheetSyncPanel/>;
         }
     } else if (role === "student") {
-        pageContent = <StudentPortal lessons={lessons} proposals={state?.proposals || []} mutate={mutate} learningMutate={learningMutate} learning={learning} busy={busy} view={activeView as "calendar" | "list" | "homework" | "materials" | "reschedule"}/>;
+        pageContent = <StudentPortal onCalendar={() => choose("calendar")} lessons={lessons} proposals={state?.proposals || []} mutate={mutate} learningMutate={learningMutate} learning={learning} busy={busy} view={activeView as "calendar" | "list" | "homework" | "materials" | "reschedule"}/>;
     } else if (role === "teacher") {
         if (activeView === "schedule") {
             const ownedPlans = (state?.plans || []).filter(plan => plan.teacher === account.teacherName);
@@ -642,7 +654,7 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
             {menuOpen && <aside id="workspace-menu" className="workspace-menu" aria-label={t("功能菜单")}>
                 <SignedInIdentity account={account}/>
                 <nav className="menu-links" aria-label={t("功能菜单")}>
-                    {items.map(item => <button key={item.id} type="button" className={"menu-link" + (activeView === item.id ? " active" : "")} aria-current={activeView === item.id ? "page" : undefined} onClick={() => choose(item.id)}><item.Icon size={19} aria-hidden="true"/><span>{t(item.label)}</span></button>)}
+                    {NAV_GROUPS[role].map(group => <div className="menu-group" key={group.label}>{group.label && <h2 className="menu-group-title">{t(group.label)}</h2>}{group.ids.map(id => items.find(item => item.id === id)!).filter(Boolean).map(item => <button key={item.id} type="button" className={"menu-link" + (activeView === item.id ? " active" : "")} aria-current={activeView === item.id ? "page" : undefined} onClick={() => choose(item.id)}><item.Icon size={19} aria-hidden="true"/><span>{t(item.label)}</span></button>)}</div>)}
                 </nav>
                 <div className="menu-utilities">
                     <button type="button" className="menu-link" onClick={reload}><RefreshCw size={19}/><span>{t("刷新")}</span></button>
@@ -654,10 +666,10 @@ function Workspace({ account, state, lessons, message, setMessage, reload, logou
                 <div className="page-head"><div><p className="eyebrow">{t(role === "admin" ? "管理员工作台" : role === "student" ? "学生工作台" : role === "pending" ? "我的学习空间" : "老师工作台")}</p><h1>{t(title)}</h1></div>
                     {showMonth && <label className="month-select">{t("统计月份")}<input type="month" value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)}/></label>}
                 </div>
-                {message && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("关闭")}>×</button></div>}
-                {state?.error && <div className="error">{state.error}</div>}
+                {message && state && !state.error && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("关闭")}>×</button></div>}
+
                 {role === "teacher" && state && !state.error && !(state.plans || []).length && <div className="notice">{t("暂无负责的学生科目。请联系管理员完成课程分配。")}</div>}
-                <FilterScope.Provider value={account.id || "anonymous"}>{pageContent}</FilterScope.Provider>
+                <FilterScope.Provider value={account.id || "anonymous"}>{role !== "pending" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "无法载入页面" : "正在载入…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : pageContent}</FilterScope.Provider>
             </main>
         </div>
         {modal && <LessonDialog modal={modal} close={() => setModal(null)} mutate={mutate} busy={busy}/>}
@@ -687,10 +699,10 @@ function AttentionPanel({ lessons, open }: {
         !lessons.some(makeup => makeup.replacementFor === l.id && makeup.status !== "cancelled"));
     return <section className="panel">
     <div className="section-head"><div><p className="eyebrow">{t("出席待处理")}</p><h2>{t("出席待处理")}</h2></div><span>{missed.length + absence.length}{t(" \u6761")}</span></div>
-    <div className="attention-groups">
+    {!missed.length && !absence.length ? <PageState kind="success" title="出席记录已全部处理"/> : <div className="attention-groups">
       <div><h3>{t("\u8D85\u8FC7\u65F6\u95F4\u672A\u6253\u5361 \u00B7 ")}{missed.length}</h3><div className="lesson-stack">{missed.length ? missed.map(l => <LessonCard key={l.id} lesson={l} admin open={open}/>) : <div className="empty">{t("\u6CA1\u6709\u6F0F\u6253\u5361\u8BFE\u7A0B\u3002")}</div>}</div></div>
       <div><h3>{t("\u7F3A\u5E2D\u5F85\u5904\u7406 \u00B7 ")}{absence.length}</h3><p className="muted">{t("\u5C1A\u672A\u5B89\u6392\u6709\u6548\u8865\u8BFE\uFF0C\u4E14\u672A\u6807\u8BB0\u4E3A\u6536\u8D39\uFF1B\u662F\u5426\u9700\u8981\u8865\u8BFE\u7531\u7BA1\u7406\u5458\u51B3\u5B9A\u3002")}</p><div className="lesson-stack">{absence.length ? absence.map(l => <LessonCard key={l.id} lesson={l} admin open={open}/>) : <div className="empty">{t("\u6CA1\u6709\u5F85\u5904\u7406\u7F3A\u5E2D\u3002")}</div>}</div></div>
-    </div>
+    </div>}
   </section>;
 }
 function AdminDashboard({ state, lessons, open, view }: {
@@ -758,7 +770,7 @@ function LessonCard({ lesson: l, admin, open, mutate, busy = false }: {
     open: Open;
     mutate?: (x: Record<string, unknown>) => Promise<boolean>;
     busy?: boolean;
-}) { return <article className="lesson-card"><div className="date-tile"><strong>{day(l.plannedStart)}</strong><span>{time(l.plannedStart)}–{time(l.plannedEnd)}</span></div><div className="lesson-body"><div className="lesson-title"><strong>{l.student} · {l.subject}</strong><span className={`status status-${l.status}`}>{t(l.attendanceKind === "early_dismissal" ? "提前结束课程" : statusLabel[l.status] || l.status)}</span></div><p>{l.teacherName}{l.kind === "makeup" ? t(" \u00B7 \u8865\u8BFE") : l.kind === "extra" ? t(" \u00B7 \u52A0\u8BFE") : ""}</p>{l.note && <p className="lesson-note">{l.note}</p>}<div className="lesson-actions">{l.status !== "cancelled" && (admin || !l.reviewedAt) && <Button size="sm" onClick={() => open({ type: "attendance", lesson: l })}>{admin ? t("\u66F4\u6B63\u6253\u5361") : t("\u6253\u5F00\u6253\u5361")}</Button>}{admin && l.status !== "cancelled" && <><Button size="sm" variant="outline" onClick={() => open({ type: "edit", lesson: l })}>{t("\u6539\u671F")}</Button><Button size="sm" variant="outline" onClick={() => open({ type: "cancel", lesson: l })}>{t("\u53D6\u6D88")}</Button>{["completed", "student_absent", "teacher_absent"].includes(l.status) && <Button size="sm" variant="secondary" onClick={() => open({ type: "review", lesson: l })}>{l.reviewedAt ? t("\u91CD\u65B0\u6838\u5BF9") : t("\u6838\u5BF9")}</Button>}</>}{admin && mutate && <DeleteButton kind="lesson" id={l.id} mutate={mutate} busy={busy} message="永久删除这堂课程及改期申请？已记录课时也会移除，无法恢复。"/>}</div><LessonHistory lessonId={l.id}/></div></article>; }
+}) { return <article className="lesson-card"><div className="date-tile"><strong>{day(l.plannedStart)}</strong><span>{time(l.plannedStart)}–{time(l.plannedEnd)}</span></div><div className="lesson-body"><div className="lesson-title"><strong>{l.student} · {l.subject}</strong><span className={`status status-${l.status}`}>{t(l.attendanceKind === "early_dismissal" ? "提前结束课程" : statusLabel[l.status] || l.status)}</span></div><p>{l.teacherName}{l.kind === "makeup" ? t(" \u00B7 \u8865\u8BFE") : l.kind === "extra" ? t(" \u00B7 \u52A0\u8BFE") : ""}</p>{l.note && <p className="lesson-note">{l.note}</p>}<div className="lesson-actions">{l.status !== "cancelled" && (admin || !l.reviewedAt) && <Button size="sm" onClick={() => open({ type: "attendance", lesson: l })}>{admin ? t("\u66F4\u6B63\u6253\u5361") : t("\u6253\u5F00\u6253\u5361")}</Button>}<LessonMore>{admin && l.status !== "cancelled" && <><Button size="sm" variant="outline" onClick={() => open({ type: "edit", lesson: l })}>{t("\u6539\u671F")}</Button><Button size="sm" variant="outline" onClick={() => open({ type: "cancel", lesson: l })}>{t("\u53D6\u6D88")}</Button>{["completed", "student_absent", "teacher_absent"].includes(l.status) && <Button size="sm" variant="secondary" onClick={() => open({ type: "review", lesson: l })}>{l.reviewedAt ? t("\u91CD\u65B0\u6838\u5BF9") : t("\u6838\u5BF9")}</Button>}</>}{admin && mutate && <DeleteButton kind="lesson" id={l.id} mutate={mutate} busy={busy} message="永久删除这堂课程及改期申请？已记录课时也会移除，无法恢复。"/>}</LessonMore></div><LessonHistory lessonId={l.id}/></div></article>; }
 function TeacherHome({ lessons, plans, open }: {
     lessons: Lesson[];
     plans: Plan[];
@@ -811,7 +823,7 @@ function Schedule({ state, lessons, mutate, open, busy, view }: {
         </form></section>
         <section className="panel" hidden={view === "create"}><div className="section-head"><div><p className="eyebrow">{t("排课")}</p><h2>{t(view === "calendar" ? "课程日历" : "课程列表")}</h2></div><span>{visible.length}{t(" 堂")}</span></div>
             {view === "calendar" && <LessonCalendar lessons={lessons.filter(l => l.status !== "cancelled")} teachers={state?.teachers || []} onSelect={id => { const lesson = lessons.find(l => l.id === id); if (lesson) open({ type: "edit", lesson }); }}/>}
-            {view === "list" && <><DirectoryFilters teachers={[...new Set(lessons.map(l => l.teacherName))].sort()} students={[...new Set(lessons.map(l => l.student))].sort()} teacher={filterTeacher} student={filterStudent} onTeacher={setFilterTeacher} onStudent={setFilterStudent}/><Button variant="outline" size="sm" onClick={() => { setFilterTeacher(""); setFilterStudent(""); setCancelled(false); }}>{t("重置筛选")}</Button><label className="check-row"><input type="checkbox" checked={cancelled} onChange={e => setCancelled(e.target.checked)}/>{t("查看已取消课程")}</label><BulkDeleteTool kind="lesson" records={visible.map(l=>({id:l.id,label:l.student+" · "+l.subject+" · "+day(l.plannedStart)+" "+time(l.plannedStart)}))} mutate={mutate} busy={busy}/>{groups.map(name => <details className="directory-group" key={name} open={Boolean(filterTeacher || filterStudent)}><summary>{name} <span>{visible.filter(l => l.teacherName === name).length}</span></summary><div className="lesson-stack">{visible.filter(l => l.teacherName === name).map(l => <LessonCard key={l.id} lesson={l} admin open={open} mutate={mutate} busy={busy}/>)}</div></details>)}{!visible.length && <p className="empty">{t("没有符合条件的记录")}</p>}</>}
+            {view === "list" && <><FilterPanel active={Boolean(filterTeacher || filterStudent || cancelled)}><DirectoryFilters teachers={[...new Set(lessons.map(l => l.teacherName))].sort()} students={[...new Set(lessons.map(l => l.student))].sort()} teacher={filterTeacher} student={filterStudent} onTeacher={setFilterTeacher} onStudent={setFilterStudent}/><Button variant="outline" size="sm" onClick={() => { setFilterTeacher(""); setFilterStudent(""); setCancelled(false); }}>{t("重置筛选")}</Button><label className="check-row"><input type="checkbox" checked={cancelled} onChange={e => setCancelled(e.target.checked)}/>{t("查看已取消课程")}</label></FilterPanel><BulkDeleteTool kind="lesson" records={visible.map(l=>({id:l.id,label:l.student+" · "+l.subject+" · "+day(l.plannedStart)+" "+time(l.plannedStart)}))} mutate={mutate} busy={busy}/>{groups.map(name => <details className="directory-group" key={name} open={Boolean(filterTeacher || filterStudent)}><summary>{name} <span>{visible.filter(l => l.teacherName === name).length}</span></summary><div className="lesson-stack">{visible.filter(l => l.teacherName === name).map(l => <LessonCard key={l.id} lesson={l} admin open={open} mutate={mutate} busy={busy}/>)}</div></details>)}{!visible.length && <p className="empty">{t("没有符合条件的记录")}</p>}</>}
         </section>
     </div>;
 }

@@ -1,5 +1,8 @@
 "use client";
 
+import { FilterPanel } from "@/components/filter-panel";
+import { PageState } from "@/components/page-state";
+import { getLanguage } from "@/lib/i18n";
 import { useFilterPreference } from "@/lib/filter-preferences";
 import { BulkDeleteTool } from "./bulk-delete";
 import { TermManager, TermSelect, type Term } from "./term-manager";
@@ -20,7 +23,7 @@ type ClassMutate = (body: Record<string, unknown>) => Promise<{ ok: boolean; id?
 type Role = "admin" | "teacher" | "student";
 type Plan = { student: string; subject: string; teacherName: string; active: boolean };
 
-const dateLabel = (iso: string) => new Intl.DateTimeFormat("zh-MY", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+const dateLabel = (iso: string) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
 export function ClassroomsPage({ role, classes, terms, learning, teacherName, teachers, plans, mutate, learningMutate, busy, onCalendar }: {
   role: Role; classes: Classroom[]; terms: Term[]; learning: LearningState; teacherName?: string | null;
@@ -83,12 +86,12 @@ export function ClassroomsPage({ role, classes, terms, learning, teacherName, te
   return <div className="classrooms-page">
     <section className="panel classroom-picker">
       <div className="learning-section-head"><div><p className="eyebrow">{t("班级")}</p><h2>{t("我的班级")}</h2></div>{canManage && <Button size="sm" onClick={startCreate}><Plus size={16}/>{t("新建班级")}</Button>}</div>
-      <div className="directory-filters"><label>{t("学期")}<select value={filterTerm} onChange={e=>{setFilterTerm(e.target.value);setSelectedId("");}}><option value="current">{t("当前学期")}{currentTerm?` · ${currentTerm.name}`:""}</option><option value="all">{t("所有学期")}</option><option value="unassigned">{t("未分类")}</option>{terms.map(term=><option key={term.id} value={term.id}>{term.name}</option>)}</select></label></div>
-      {role === "admin" && <TermManager terms={terms} mutate={mutate} busy={busy}/>}
-      {role === "admin" && <DirectoryFilters teachers={[...new Set(classes.map(c => c.teacherName))].sort()} students={[...new Set(classes.flatMap(c => c.members || []))].sort()} teacher={filterTeacher} student={filterStudent} onTeacher={value => { setFilterTeacher(value); setSelectedId(""); }} onStudent={value => { setFilterStudent(value); setSelectedId(""); }}/>}<label className="check-row"><input type="checkbox" checked={archived} onChange={e => { setArchived(e.target.checked); setSelectedId(""); }}/>{t("查看已封存班级")}</label>
-      <div className="learning-card-actions"><Button variant="outline" size="sm" onClick={()=>{setFilterTeacher("");setFilterStudent("");setArchived(false);setFilterTerm("current");setSelectedId("");}}>{t("重置筛选")}</Button>{canManage&&<BulkDeleteTool kind="classroom" records={visibleClasses.map(c=>({id:c.id,label:c.title+" · "+c.teacherName}))} mutate={async body=>(await mutate(body)).ok} busy={busy}/>}</div>
+      <div className="classroom-term-tools"><div className="directory-filters"><label>{t("学期")}<select value={filterTerm} onChange={e=>{setFilterTerm(e.target.value);setSelectedId("");}}><option value="current">{t("当前学期")}{currentTerm?` · ${currentTerm.name}`:""}</option><option value="all">{t("所有学期")}</option><option value="unassigned">{t("未分类")}</option>{terms.map(term=><option key={term.id} value={term.id}>{term.name}</option>)}</select></label></div>
+      {role === "admin" && <TermManager terms={terms} mutate={mutate} busy={busy}/>}</div>
+      <FilterPanel active={Boolean(filterTeacher || filterStudent || archived)}>{role === "admin" && <DirectoryFilters teachers={[...new Set(classes.map(c => c.teacherName))].sort()} students={[...new Set(classes.flatMap(c => c.members || []))].sort()} teacher={filterTeacher} student={filterStudent} onTeacher={value => { setFilterTeacher(value); setSelectedId(""); }} onStudent={value => { setFilterStudent(value); setSelectedId(""); }}/>}<label className="check-row"><input type="checkbox" checked={archived} onChange={e => { setArchived(e.target.checked); setSelectedId(""); }}/>{t("查看已封存班级")}</label>
+      <div className="learning-card-actions"><Button variant="outline" size="sm" onClick={()=>{setFilterTeacher("");setFilterStudent("");setArchived(false);setFilterTerm("current");setSelectedId("");}}>{t("重置筛选")}</Button></div></FilterPanel><div className="list-tools"><span>{visibleClasses.length} {t("个班级")}</span>{canManage&&<BulkDeleteTool kind="classroom" records={visibleClasses.map(c=>({id:c.id,label:c.title+" · "+c.teacherName}))} mutate={async body=>(await mutate(body)).ok} busy={busy}/>}</div>
       {role === "admin" ? [...new Set(visibleClasses.map(c => c.teacherName))].sort().map(name => <details className="directory-group" key={name} open={Boolean(filterTeacher || filterStudent)}><summary>{name} <span>{visibleClasses.filter(c => c.teacherName === name).length}</span></summary>{classButtons(visibleClasses.filter(c => c.teacherName === name))}</details>) : classButtons(visibleClasses)}
-      {!visibleClasses.length && <p className="muted">{t("没有符合条件的记录")}</p>}
+      {!visibleClasses.length && <PageState kind="empty" title="没有符合条件的记录" action={canManage ? "新建班级" : undefined} onAction={canManage ? startCreate : undefined}/>}
     </section>
 
     {creating && canManage && <section className="panel classroom-form-panel"><p className="eyebrow">{t("班级设置")}</p><h2>{editingId ? t("编辑班级") : t("新建班级")}</h2>
@@ -113,7 +116,7 @@ export function ClassroomsPage({ role, classes, terms, learning, teacherName, te
         <div className="learning-list">{selected.announcements.map(item => <article key={item.id} className="learning-card classroom-announcement">{item.pinned && <span className="classroom-pinned">{t("置顶")}</span>}<strong>{item.title}</strong><small>{item.authorName} · {dateLabel(item.createdAt)}</small><p>{item.body}</p>{canManage && !selected.archived && <div className="learning-card-actions"><Button size="sm" variant="outline" onClick={() => { setAnnouncementId(item.id); setAnnouncementTitle(item.title); setAnnouncementBody(item.body); setPinned(Boolean(item.pinned)); }}>{t("编辑")}</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => { if (window.confirm(t("确定删除这则公告？"))) void mutate({ action: "deleteAnnouncement", classroomId: selected.id, id: item.id }); }}>{t("删除")}</Button></div>}</article>)}{!selected.announcements.length && <p className="muted">{t("尚无公告")}</p>}</div>
       </section>}
       {tab === "members" && canManage && <section className="panel"><p className="eyebrow">{t("学生名单")}</p><h2>{t("班级学生")} · {selected.members?.length || 0}</h2><div className="classroom-member-list">{selected.members?.map(name => <span key={name}>{name}</span>)}</div><p className="muted">{t("移出班级后，该学生不能再查看班级内容；已有提交记录会保留。")}</p></section>}
-      {tab === "materials" || tab === "homework" ? role === "teacher" ? selected.archived ? <section className="panel"><p>{t("班级已封存。已发布资料和功课仍可在原菜单查看。")}</p></section> : <TeacherLearning key={selected.id} learning={classLearning} mutate={learningMutate} busy={busy} view={tab} classroom={{ id: selected.id, subject: selected.subject, members: selected.members || [] }}/> : role === "student" ? <StudentLearning learning={classLearning} mutate={learningMutate} busy={busy} onPlan={onCalendar} view={tab}/> : <section className="panel"><p className="muted">{t("请由负责老师在班级中发布资料和功课。")}</p></section> : null}
+      {tab === "materials" || tab === "homework" ? role === "teacher" ? selected.archived ? <section className="panel"><p>{t("班级已封存。已发布资料和功课仍可在原菜单查看。")}</p></section> : <TeacherLearning key={selected.id} learning={classLearning} mutate={learningMutate} busy={busy} view={tab} classroom={{ id: selected.id, subject: selected.subject, members: selected.members || [] }}/> : role === "student" ? <StudentLearning learning={classLearning} mutate={learningMutate} busy={busy} onPlan={onCalendar} onCalendar={onCalendar} view={tab}/> : <section className="panel"><p className="muted">{t("请由负责老师在班级中发布资料和功课。")}</p></section> : null}
     </>}
   </div>;
 }

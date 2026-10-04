@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { BRAND_NAME } from "@/lib/brand";
 import "./globals.css";
+import "./ui-refresh.css";
 import { ActionToastHost } from "@/components/action-toast";
 
 export const metadata: Metadata = {
@@ -12,9 +13,9 @@ export const metadata: Metadata = {
     "codex-preview": "development",
   },
   icons: {
-    icon: "/timelyo-logo.png",
-    shortcut: "/timelyo-logo.png",
-    apple: "/timelyo-logo.png",
+    icon: "/tickminder-logo-192.png",
+    shortcut: "/tickminder-logo-192.png",
+    apple: "/tickminder-logo-192.png",
   },
 };
 

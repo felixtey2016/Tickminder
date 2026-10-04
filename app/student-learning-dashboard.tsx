@@ -13,7 +13,7 @@ type Proposal = { lessonId: string; status: string; proposedStart: string; propo
 const local = (iso: string) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso)).replace(" ", "T");
 type Form = { id: string; title: string; date: string; start: string; end: string; subject: string; note: string; homeworkId: string };
 
-export function StudentLearningDashboard({ lessons, proposals, learning, mutate, busy, view, onRequestReschedule }: { lessons: Lesson[]; proposals: Proposal[]; learning: LearningState; mutate: LearningMutate; busy: boolean; view: "calendar" | "homework" | "materials"; onRequestReschedule?: (id: string) => void }) {
+export function StudentLearningDashboard({ lessons, proposals, learning, mutate, busy, view, onRequestReschedule, onCalendar }: { lessons: Lesson[]; proposals: Proposal[]; learning: LearningState; mutate: LearningMutate; busy: boolean; view: "calendar" | "homework" | "materials"; onRequestReschedule?: (id: string) => void; onCalendar?: () => void }) {
   const [form, setForm] = useDialogState<Form | null>("student-study", null);
   const [saving, setSaving] = useState(false);
   function add(day: string) { setForm({ id: "", title: "", date: day, start: "18:00", end: "19:00", subject: "", note: "", homeworkId: "" }); }
@@ -33,7 +33,7 @@ export function StudentLearningDashboard({ lessons, proposals, learning, mutate,
   }
   return <div className="student-learning-dashboard">
     {view === "calendar" && <StudentCalendar busy={busy} onRequestReschedule={onRequestReschedule} lessons={lessons} proposals={proposals} studyBlocks={learning.studyBlocks} onAddStudy={add} onEditStudy={edit}/>}
-    {(view === "homework" || view === "materials") && <StudentLearning learning={learning} mutate={mutate} busy={busy} onPlan={plan} view={view}/>}
+    {(view === "homework" || view === "materials") && <StudentLearning learning={learning} mutate={mutate} busy={busy} onPlan={plan} view={view} onCalendar={onCalendar}/>}
     <Dialog open={Boolean(form)} onOpenChange={open => { if (!open) setForm(null); }}><DialogContent className="lesson-dialog"><DialogHeader><DialogTitle>{form?.id ? t("编辑学习安排") : t("新增学习安排")}</DialogTitle></DialogHeader>{form && <form className="learning-form" onSubmit={save}>
       {form.homeworkId && <p className="muted">{t("已关联功课。安排学习时间不会自动提交功课。")}</p>}
       <label>{t("标题")}<input required maxLength={120} value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}/></label>

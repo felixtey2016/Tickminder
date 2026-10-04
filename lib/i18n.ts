@@ -609,10 +609,11 @@ const en: Record<string, string> = {
   "管理员分配身份后，课程、功课及班级会显示在这里。":"Your lessons, homework and classrooms will appear once an administrator assigns your identity.",
   "新注册账号在 7 天内未启用或绑定，会到期清理。请联系管理员。":"New accounts that are not activated or assigned within 7 days expire and are cleaned up. Contact an administrator.",
   "可用登录方式":"Sign-in methods", "用户名与密码":"Username and password", "邮箱与密码":"Email and password", "修改密码":"Change password",
+  "课程管理":"Courses", "教学":"Teaching", "人员与账号":"People & accounts", "系统与账号":"System & account", "学习":"Learning", "班级与作业":"Classes & coursework",  "学习安排":"Learning plans", "暂无课程":"No upcoming lessons", "筛选":"Filters", "已应用":"Active", "更多":"More", "新增":"Add", "个班级":"classes", "资料内容":"Material details", "功课内容":"Homework details", "分配对象":"Recipients", "开始与截止时间":"Availability & deadline", "附件与分数（可选）":"Attachments & scores (optional)", "马来西亚时间（GMT+8）":"Malaysia time (GMT+8)", "无法载入页面":"Unable to load this page", "出席记录已全部处理":"Attendance records are up to date",
 };
 
 export function t(value: string) {
-  if (currentLanguage === "zh") return {"This lesson is not assigned to you":"你没有权限处理这堂课","Only the other participant can respond to this request":"只有对方可以确认或拒绝这项改期申请","Original schedule changed; submit a new reschedule request":"原上课时间已改变，请重新申请改期","Proposed time has passed; submit a new reschedule request":"建议时间已过，请重新申请改期","Only scheduled lessons may be rescheduled":"只有尚未打卡的已安排课程可以申请改期","This lesson already has a pending reschedule request":"这堂课已有待确认的改期申请，请等待对方回应","Request is no longer pending":"这项改期申请已处理，请刷新后查看","Choose a future date and time":"请选择未来的日期和时间"}[value] || value;
+  if (currentLanguage === "zh") return {"This lesson is not assigned to you":"你没有权限处理这堂课","Only scheduled lessons may be rescheduled":"只有尚未打卡的已安排课程可以申请改期","This lesson already has a pending reschedule request":"这堂课已有待确认的改期申请，请等待对方回应","Request is no longer pending":"这项改期申请已处理，请刷新后查看","Choose a future date and time":"请选择未来的日期和时间"}[value] || value;
   const trimmed = value.trim();
   if (!trimmed) return value;
   const translated = en[trimmed];

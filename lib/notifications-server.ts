@@ -109,7 +109,7 @@ export async function sendPush(subscription:Subscription, data:Record<string,unk
 }
 export function reminderPayload(id:string,minutes:number,language:string) {
   const en=language==="en";
-  return {id,title:en?"Tickminder · Lesson reminder":"Tickminder · 上课提醒",body:minutes===0?(en?"Your lesson is starting. Open Tickminder to view it.":"课程开始了，打开 Tickminder 查看课程。"):(en?`Your lesson starts in ${minutes} minutes.`:`你的课程将在 ${minutes} 分钟后开始。`),url:"/?view=notifications"};
+  return {id,visual:minutes===0?"class-start":"class-reminder",title:en?"Tickminder · Lesson reminder":"Tickminder · 上课提醒",body:minutes===0?(en?"Your lesson is starting. Open Tickminder to view it.":"课程开始了，打开 Tickminder 查看课程。"):(en?`Your lesson starts in ${minutes} minutes.`:`你的课程将在 ${minutes} 分钟后开始。`),url:"/?view=notifications"};
 }
 export async function sendTest(account:Account,id:string) {
   const db=learningDb(), now=new Date().toISOString();
