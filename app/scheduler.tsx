@@ -12,11 +12,13 @@ import { BarChart3, CalendarClock, ContactRound, LibraryBig, ListChecks, UserRou
 import { BRAND_NAME } from "@/lib/brand";
 import { LegalLinks } from "@/components/legal-links";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Bell, BookOpen, CalendarDays, ClipboardCheck, Clock3, FileSpreadsheet, FileText, GraduationCap, History, LayoutDashboard, List, LogOut, Menu, RefreshCw, ShieldCheck, UserRoundPlus, Users, type LucideIcon } from "lucide-react";
+import { AlertCircle, Video, Bell, BookOpen, CalendarDays, ClipboardCheck, Clock3, FileSpreadsheet, FileText, GraduationCap, History, LayoutDashboard, List, LogOut, Menu, RefreshCw, ShieldCheck, UserRoundPlus, Users, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LessonCalendar } from "./week-calendar";
 import { LessonHistory } from "./lesson-history";
+import { LessonMeet } from "./meet-monitor";
+const MeetMonitor = lazy(() => import("./meet-monitor").then(module => ({default:module.MeetMonitor})));
 import { ConflictPreview, conflictDescription, type ConflictDetail } from "./conflict-preview";
 import { ActivityLog } from "./activity-log";
 import { useLessonWebMcp } from "./webmcp";
@@ -524,6 +526,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
     admin: [
         { id: "home", label: "主页", Icon: LayoutDashboard },
         { id: "myAccount", label: "我的账号", Icon: ShieldCheck },
+        {id:"meet",label:"Meet 上课记录",Icon:Video},
         { id: "classrooms", label: "班级", Icon: LibraryBig },
         { id: "overview", label: "课程总览", Icon: BarChart3 },
         { id: "attention", label: "出席待处理", Icon: AlertCircle },
@@ -542,6 +545,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
     teacher: [
         { id: "home", label: "主页", Icon: LayoutDashboard },
         { id: "myAccount", label: "我的账号", Icon: ShieldCheck },
+        {id:"meet",label:"Meet 上课记录",Icon:Video},
         { id: "classrooms", label: "班级", Icon: LibraryBig },
         { id: "schedule", label: "安排课程", Icon: SquarePen },
         { id: "calendar", label: "课程日历", Icon: CalendarClock },
@@ -556,6 +560,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
     student: [
         { id: "home", label: "主页", Icon: LayoutDashboard },
         { id: "myAccount", label: "我的账号", Icon: ShieldCheck },
+        {id:"meet",label:"Meet 上课记录",Icon:Video},
         { id: "classrooms", label: "我的班级", Icon: LibraryBig },
         { id: "calendar", label: "学习日历", Icon: CalendarDays },
         { id: "list", label: "课程列表", Icon: List },
@@ -566,9 +571,9 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
 };
 
 const NAV_GROUPS: Record<NavigationRole, Array<{ label: string; ids: string[] }>> = {
- admin: [{label:"",ids:["home"]},{label:"课程管理",ids:["calendar","list","schedule","attention","overview"]},{label:"教学",ids:["classrooms","subjects","students","teachers"]},{label:"人员与账号",ids:["teacherRoster","studentRoster","accounts"]},{label:"系统与账号",ids:["notifications","myAccount","sheet","activity"]}],
- teacher: [{label:"",ids:["home"]},{label:"课程管理",ids:["calendar","lessons","schedule","attendance","reschedule","hours"]},{label:"教学",ids:["classrooms","students","homework","materials"]},{label:"我的账号",ids:["notifications","myAccount"]}],
- student: [{label:"",ids:["home"]},{label:"学习",ids:["calendar","list","reschedule"]},{label:"班级与作业",ids:["classrooms","homework","materials"]},{label:"我的账号",ids:["notifications","myAccount"]}],
+ admin: [{label:"",ids:["home"]},{label:"课程管理",ids:["calendar","list","schedule","attention","overview","meet"]},{label:"教学",ids:["classrooms","subjects","students","teachers"]},{label:"人员与账号",ids:["teacherRoster","studentRoster","accounts"]},{label:"系统与账号",ids:["notifications","myAccount","sheet","activity"]}],
+ teacher: [{label:"",ids:["home"]},{label:"课程管理",ids:["calendar","lessons","schedule","attendance","reschedule","hours","meet"]},{label:"教学",ids:["classrooms","students","homework","materials"]},{label:"我的账号",ids:["notifications","myAccount"]}],
+ student: [{label:"",ids:["home"]},{label:"学习",ids:["calendar","list","reschedule","meet"]},{label:"班级与作业",ids:["classrooms","homework","materials"]},{label:"我的账号",ids:["notifications","myAccount"]}],
  pending: [{label:"",ids:["home"]},{label:"我的账号",ids:["notifications","myAccount"]}],
 };
 
@@ -602,10 +607,11 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
         const valid = (view: unknown) => view === "notifications" || (typeof view === "string" && NAV_ITEMS[role].some(item => item.id === view));
         const state = window.history.state || {};
         const url = new URL(window.location.href);
-        if (url.searchParams.get("view") === "notifications") {
+        const requestedView=url.searchParams.get("view");
+        if (valid(requestedView)) {
             url.searchParams.delete("view");
-            setSelectedView("notifications");
-            window.history.replaceState({ ...state, timelyoRole: role, timelyoView: "notifications", timelyoMenu: false }, "", url);
+            setSelectedView(requestedView!);
+            window.history.replaceState({ ...state, timelyoRole: role, timelyoView: requestedView, timelyoMenu: false }, "", url);
         } else if (state.timelyoRole === role && valid(state.timelyoView)) setSelectedView(state.timelyoView);
         else {
             setSelectedView(home);
@@ -648,7 +654,7 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
         if (activeView === "home" && role !== "admin" && !state.learning && !state.scopeErrors?.learning) void ensureScope("learning");
     }, [state?.account.id, state?.learning, state?.scopeErrors?.learning, requiredScope, scopeLoaded, scopeError, activeView, role, ensureScope]);
     const learning = state?.learning || { materials: [], homework: [], submissions: [], studyBlocks: [], eligible: [] };
-    const showMonth = (role === "teacher" && activeView === "hours") || (role === "admin" && ["overview", "attention", "schedule", "calendar", "list", "students", "teachers"].includes(activeView));
+    const showMonth = (role === "teacher" && activeView === "hours") || (role === "admin" && ["overview", "attention", "schedule", "calendar", "list", "meet", "students", "teachers"].includes(activeView));
     const closeMobileMenu = () => {
         if (desktop) return;
         if (window.history.state?.timelyoMenu) window.history.back();
@@ -678,6 +684,8 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
         pageContent = <HomeDashboard role={role} name={account.name} lessons={lessons} learning={learning} learningReady={Boolean(state?.learning) || role === "admin"} learningError={state?.scopeErrors?.learning} onNavigate={choose}/>;
     } else if (activeView === "notifications") {
         pageContent = <NotificationCentre language={language} onLesson={() => choose(role === "teacher" ? "lessons" : role === "pending" ? "home" : "calendar")}/>;
+    } else if (activeView === "meet" && role !== "pending") {
+        pageContent=<MeetMonitor role={role} lessons={lessons}/>;
     } else if (activeView === "myAccount") {
         pageContent = <AccountSettings/>;
     } else if (activeView === "classrooms" && role !== "pending") {
@@ -844,7 +852,7 @@ function LessonCard({ lesson: l, admin, open, mutate, busy = false }: {
     open: Open;
     mutate?: (x: Record<string, unknown>) => Promise<boolean>;
     busy?: boolean;
-}) { return <article className="lesson-card"><div className="date-tile"><strong>{day(l.plannedStart)}</strong><span>{time(l.plannedStart)}–{time(l.plannedEnd)}</span></div><div className="lesson-body"><div className="lesson-title"><strong>{l.student} · {l.subject}</strong><span className={`status status-${l.status}`}>{t(l.attendanceKind === "early_dismissal" ? "提前结束课程" : statusLabel[l.status] || l.status)}</span></div><p>{l.teacherName}{l.kind === "makeup" ? t(" \u00B7 \u8865\u8BFE") : l.kind === "extra" ? t(" \u00B7 \u52A0\u8BFE") : ""}</p>{l.note && <p className="lesson-note">{l.note}</p>}<div className="lesson-actions">{l.status !== "cancelled" && (admin || !l.reviewedAt) && <Button size="sm" onClick={() => open({ type: "attendance", lesson: l })}>{admin ? t("\u66F4\u6B63\u6253\u5361") : t("\u6253\u5F00\u6253\u5361")}</Button>}<LessonMore>{admin && l.status !== "cancelled" && <><Button size="sm" variant="outline" onClick={() => open({ type: "edit", lesson: l })}>{t("\u6539\u671F")}</Button><Button size="sm" variant="outline" onClick={() => open({ type: "cancel", lesson: l })}>{t("\u53D6\u6D88")}</Button>{["completed", "student_absent", "teacher_absent"].includes(l.status) && <Button size="sm" variant="secondary" onClick={() => open({ type: "review", lesson: l })}>{l.reviewedAt ? t("\u91CD\u65B0\u6838\u5BF9") : t("\u6838\u5BF9")}</Button>}</>}{admin && mutate && <DeleteButton kind="lesson" id={l.id} mutate={mutate} busy={busy} message="永久删除这堂课程及改期申请？已记录课时也会移除，无法恢复。"/>}</LessonMore></div><LessonHistory lessonId={l.id}/></div></article>; }
+}) { return <article className="lesson-card"><div className="date-tile"><strong>{day(l.plannedStart)}</strong><span>{time(l.plannedStart)}–{time(l.plannedEnd)}</span></div><div className="lesson-body"><div className="lesson-title"><strong>{l.student} · {l.subject}</strong><span className={`status status-${l.status}`}>{t(l.attendanceKind === "early_dismissal" ? "提前结束课程" : statusLabel[l.status] || l.status)}</span></div><p>{l.teacherName}{l.kind === "makeup" ? t(" \u00B7 \u8865\u8BFE") : l.kind === "extra" ? t(" \u00B7 \u52A0\u8BFE") : ""}</p>{l.note && <p className="lesson-note">{l.note}</p>}<div className="lesson-actions">{l.status !== "cancelled" && (admin || !l.reviewedAt) && <Button size="sm" onClick={() => open({ type: "attendance", lesson: l })}>{admin ? t("\u66F4\u6B63\u6253\u5361") : t("\u6253\u5F00\u6253\u5361")}</Button>}<LessonMore>{admin && l.status !== "cancelled" && <><Button size="sm" variant="outline" onClick={() => open({ type: "edit", lesson: l })}>{t("\u6539\u671F")}</Button><Button size="sm" variant="outline" onClick={() => open({ type: "cancel", lesson: l })}>{t("\u53D6\u6D88")}</Button>{["completed", "student_absent", "teacher_absent"].includes(l.status) && <Button size="sm" variant="secondary" onClick={() => open({ type: "review", lesson: l })}>{l.reviewedAt ? t("\u91CD\u65B0\u6838\u5BF9") : t("\u6838\u5BF9")}</Button>}</>}{admin && mutate && <DeleteButton kind="lesson" id={l.id} mutate={mutate} busy={busy} message="永久删除这堂课程及改期申请？已记录课时也会移除，无法恢复。"/>}</LessonMore></div><LessonHistory lessonId={l.id}/><LessonMeet lessonId={l.id} onlineLink={l.onlineLink}/></div></article>; }
 function TeacherHome({ lessons, plans, open }: {
     lessons: Lesson[];
     plans: Plan[];

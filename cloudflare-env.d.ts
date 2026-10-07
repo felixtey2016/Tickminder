@@ -3,6 +3,11 @@ declare namespace Cloudflare {
     DB?: D1Database;
     BUCKET?: R2Bucket;
     GOOGLE_CLIENT_ID?: string;
+    MEET_OAUTH_CLIENT_ID?: string;
+    MEET_OAUTH_CLIENT_SECRET?: string;
+    MEET_OAUTH_REDIRECT_URI?: string;
+    MEET_TOKEN_KEY?: string;
+    MEET_CRON_TOKEN?: string;
     ADMIN_EMAIL?: string;
     SHEET_SYNC_URL?: string;
     SHEET_SYNC_SECRET?: string;

@@ -261,3 +261,19 @@ export const notificationDeliveries = sqliteTable("notification_deliveries", {
 export const notificationRuntime = sqliteTable("notification_runtime", {
   id: integer("id").primaryKey(), lastDispatchAt: text("last_dispatch_at").notNull(),
 });
+
+export const meetConnections = sqliteTable("meet_connections", {
+  accountId: text("account_id").primaryKey().references(()=>accounts.id,{onDelete:"cascade"}),
+  googleSubject: text("google_subject").notNull().unique(), googleEmail:text("google_email").notNull(),
+  refreshCipher:text("refresh_cipher").notNull(),connectedAt:text("connected_at").notNull(),lastError:text("last_error"),version:text("version").notNull(),
+});
+export const meetOAuthStates = sqliteTable("meet_oauth_states", {
+  stateHash:text("state_hash").primaryKey(),accountId:text("account_id").notNull().references(()=>accounts.id,{onDelete:"cascade"}),
+  verifierCipher:text("verifier_cipher").notNull(),expiresAt:text("expires_at").notNull(),
+});
+export const meetObservations = sqliteTable("meet_observations", {
+  id:text("id").primaryKey(),lessonId:text("lesson_id").notNull().references(()=>lessons.id,{onDelete:"cascade"}),meetingCode:text("meeting_code").notNull(),
+  plannedStart:text("planned_start").notNull(),plannedEnd:text("planned_end").notNull(),evidenceJson:text("evidence_json"),syncedAt:text("synced_at"),
+  lastError:text("last_error"),nextSyncAt:text("next_sync_at").notNull(),attemptedAt:text("attempted_at"),lockUntil:text("lock_until"),lockId:text("lock_id"),
+},t=>[index("meet_observation_due_idx").on(t.nextSyncAt),index("meet_observation_lesson_idx").on(t.lessonId)]);
+export const meetRuntime = sqliteTable("meet_runtime", {id:integer("id").primaryKey(),lastDispatchAt:text("last_dispatch_at").notNull()});

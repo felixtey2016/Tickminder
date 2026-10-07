@@ -29,5 +29,20 @@ a queue and separate capacity verification.
 
 Stop the clock before rolling the website back to a version without this route.
 Browser push data and notification records are included in encrypted database
-backup format `timelyo-d1-v7`. Inbox records are retained for 90 days; backup
+backup formats `timelyo-d1-v7` and `timelyo-d1-v8`. Inbox records are retained for 90 days; backup
 retention follows the existing encrypted-backup policy.
+
+## Optional Google Meet detection
+
+Only after the Meet site migration, Google configuration and live acceptance pass,
+install the independent `MEET_CRON_TOKEN` secret matching that site's Meet secret.
+The minute invocation then also calls `/api/meet/dispatch`. Without this secret the
+existing reminder behavior is unchanged. Meeting detection is bounded to two due
+lessons per invocation and has a separate heartbeat in `meet_runtime`.
+
+For isolation testing, deploy a separate Worker with its own name and secrets,
+setting `TICKMINDER_ORIGIN` to the existing private staging site's origin. The
+code permits only the current production and staging origins; don't reuse the
+production clock name, secrets or business data. Cron and Google API latency
+mean detection is not a guarantee of real-time presence. See
+`../../docs/meet-monitoring.md` for configuration and limitations.
