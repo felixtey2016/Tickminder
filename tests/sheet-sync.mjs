@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import vm from "node:vm";
-import { monthlySheetPairs } from "../lib/sheet-sync.ts";
+import { monthlySheetPairs, serializeSheetPayload } from "../lib/sheet-sync.ts";
 
 const plans = [{ student: "Sample Student", subject: "Math" }, { student: "Sample Student", subject: "Science" }];
 const lesson = (subject, start, end, chargeable = true) => ({
@@ -48,6 +48,26 @@ const context = vm.createContext({
   Utilities: { DigestAlgorithm: { SHA_256: "sha256" }, computeDigest: (_, data) => [...createHash("sha256").update(data).digest()] },
 });
 vm.runInContext(readFileSync(new URL("../integrations/GoogleSheetLessonSync.gs", import.meta.url), "utf8"), context);
+
+// Exercise the actual Apps Script verifier with multilingual data and legacy byte encoding.
+const secret = "synthetic-sheet-secret-at-least-32-characters";
+const multilingual = { action: "preview", month: "2026-09", pairs: [
+  { student: '王伟 "Wei"', subject: "数学 🧪 café", hours: 1.5 },
+  { student: "Literal \\u4e2d", subject: "Science\n科学", hours: 0 },
+] };
+const signedBody = serializeSheetPayload(multilingual);
+assert.ok(!/[^\x00-\x7f]/.test(signedBody));
+assert.deepEqual(JSON.parse(signedBody), multilingual, "transport preserves exact names, escapes and hours");
+const timestamp = String(Date.now()), nonce = randomUUID();
+const message = `${timestamp}.${nonce}.${signedBody}`;
+const signature = createHmac("sha256", secret).update(message, "utf8").digest("hex");
+assert.equal(signature, createHmac("sha256", secret).update(message, "latin1").digest("hex"));
+context.PropertiesService = { getScriptProperties: () => ({ getProperty: () => secret }) };
+context.CacheService = { getScriptCache: () => ({ get: () => null, put: () => {} }) };
+context.Utilities.computeHmacSha256Signature = (value, key) => [...createHmac("sha256", key).update(value, "latin1").digest()];
+assert.deepEqual(JSON.parse(JSON.stringify(context.sheetSyncVerify({ timestamp, nonce, body: signedBody, signature }))), multilingual);
+assert.throws(() => context.sheetSyncVerify({ timestamp, nonce, body: signedBody.replace('"hours":1.5', '"hours":2'), signature }), /Invalid request signature/);
+
 const month = { month: "2026-09", displayMonth: "9月 2026" };
 const pair = [{ student: "Sample Student", subject: "Math", hours: 1.5 }];
 const preview = context.sheetSyncPreview(sheet, storage, month, pair);

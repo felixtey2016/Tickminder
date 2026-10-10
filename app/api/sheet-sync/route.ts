@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { lessons, plans } from "@/db/schema";
 import { currentBusinessAccount as currentAccount } from "@/lib/auth";
-import { monthlySheetPairs, type SyncMode } from "@/lib/sheet-sync";
+import { monthlySheetPairs, serializeSheetPayload, type SyncMode } from "@/lib/sheet-sync";
 
 type BridgeResponse = {
   ok: boolean;
@@ -23,7 +23,7 @@ async function bridge(payload: Record<string, unknown>): Promise<BridgeResponse>
   if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(url)) throw new Error("Google Sheet 接口网址无效。");
   const timestamp = String(Date.now());
   const nonce = crypto.randomUUID();
-  const body = JSON.stringify(payload);
+  const body = serializeSheetPayload(payload);
   const bytes = new TextEncoder();
   const key = await crypto.subtle.importKey("raw", bytes.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const signed = await crypto.subtle.sign("HMAC", key, bytes.encode(`${timestamp}.${nonce}.${body}`));

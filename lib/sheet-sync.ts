@@ -15,6 +15,12 @@ type Lesson = {
 
 const pairKey = (student: string, subject: string) => JSON.stringify([student, subject]);
 
+/** ASCII JSON gives existing Apps Script deployments identical signed bytes; parsing preserves names. */
+export function serializeSheetPayload(payload: Record<string, unknown>): string {
+  return JSON.stringify(payload).replace(/[^\x00-\x7f]/g, character =>
+    `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
+
 /** Use the website's registered student-subject pairs, including pairs with zero hours this month. */
 export function monthlySheetPairs(plans: readonly Plan[], lessons: readonly Lesson[], month: string, mode: SyncMode): SyncPair[] {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("Invalid lesson month");
