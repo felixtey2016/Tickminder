@@ -93,3 +93,21 @@ In the original operational spreadsheet, open Extensions → Apps Script. Copy t
 The current signed-request integration is `integrations/GoogleSheetLessonSync.gs`; it reads `SHEET_SYNC_SECRET`. The old prototype in the parent `work/apps-script-sync.js` reads `SYNC_SECRET` and uses a different protocol. If only that older property is present, identify the actual deployed script before changing anything. Do not rotate the secret, overwrite the original script, initialize months or create a replacement deployment just to reconnect the host.
 
 After configuration, verify a month read and a preview only. Preserve exact student/subject matching, the existing mode, and the spreadsheet's current selected month. Commit import is an operational write and is not part of the connectivity check.
+
+## Sheet reconnection verified (2026-10-10)
+
+- The owner supplied the existing deployment configuration and added both runtime secrets. Because the credential appeared in chat, rotate it in both Apps Script and the new host during the coordinated cutover; rotating only the script now would break the original production host, whose settings cannot be updated.
+- The existing deployment accepted a signed month read and an empty preview. A preview containing the recovery database's actual multilingual names failed signature validation. An otherwise identical preview with ASCII JSON escapes succeeded. This establishes a transport/signature encoding incompatibility; the exact Google-side default encoding was not assumed.
+- Recovery application source `1edec1e236fef0a261c3f48451586caa0a398fce` serializes the signed payload as ASCII JSON text. `JSON.parse` restores exact names and subject text. HMAC, timestamp/nonce checking, permissions, matching, lesson calculations and import confirmation are retained.
+- Regression tests exercise the actual Apps Script verifier with Chinese, accented text, supplementary Unicode, quotes, newlines and literal escape sequences, and reject a tampered hours value. Existing Sheet matching tests, TypeScript checking and the guarded recovery build passed.
+- Deployed recovery Worker version: `37288605-22c7-436a-bf0b-1cc6849ad064`.
+- Deployed administrator API previews passed for both `billable` and `all_completed`: HTTP 200, selected month `2026-09`, 5 matching rows and 2 `not_found` rows safely skipped. Confirmation tokens were returned. No spreadsheet commit was sent.
+- The temporary verification administrator and its login/session records were removed; cleanup verification passed. Existing operational accounts and records were not edited. Evidence is outside Git in `outputs/recovery-verification/sheet-preview-report.json`.
+- Both connection settings have a DPAPI-protected local copy outside source control. No plaintext credentials or spreadsheet contents are in these verification reports.
+- The proposed extra temporary cloud diagnostic Worker was rejected by automatic approval review and was not created. Existing recovery resources and local checks were sufficient to resolve the issue.
+
+## Domain readiness (2026-10-10)
+
+- Read-only Cloudflare API check for the owner account returned no `tickminder.com` zone.
+- Public authoritative nameservers still point to Exabytes: `ns184.mschosting.com`, `ns185.mschosting.com`, `ns186.mschosting.com`.
+- No DNS, registrar setting or custom domain was modified. Onboarding the existing domain into the owner Cloudflare account and retaining all existing DNS records is required before a Worker custom domain can be attached. Nameserver activation and final routing/data cutover must be coordinated separately.
