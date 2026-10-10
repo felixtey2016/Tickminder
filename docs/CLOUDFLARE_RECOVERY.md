@@ -60,3 +60,14 @@ Code backup is not a backup of live database/PDF data. A functioning recovery te
 The restored resources contain the 22:31:56 Malaysia-time test snapshot. The scheduled backup status file and offsite backup copy were not updated by this manual recovery. Later production writes still require reconciliation before cutover.
 
 Live application checks and domain cutover must be recorded separately after deployment; they have not been claimed by the checks above.
+
+## Initial recovery deployment (2026-10-10)
+
+- Uploaded directly with the authorized Wrangler connection because the dashboard creation form did not expose a Git branch selector.
+- Source commit: `2fcc253d98f33f5b7c27aeae51977c09ecf710b4`.
+- Test origin: `https://tickminder-recovery.felixtey2016.workers.dev`.
+- Initial Worker version: `305fb852-e054-471e-be0d-105b44bf3d96`.
+- After configuring the original Google client ID as a runtime secret: `4e1bfbe4-8b90-4164-ba55-eee6b1432d59`.
+- Live anonymous checks: home and Chinese terms returned HTML 200; manifest and service worker returned 200; `/api/auth` returned 200 with no account; `/api/state` returned 401. Google client configuration was confirmed present after propagation.
+- Google login itself still requires the new test origin to be authorized in the existing Google OAuth client and a real sign-in check. No authenticated teacher/student/admin workflow is claimed here.
+- No automatic reminders, Sheet sync secrets, backup export token, Git build connection or domain cutover was configured in this deployment step.
