@@ -38,11 +38,11 @@ If restoration is interrupted after cloud writes, inspect and verify the recover
 
 ## Remaining configuration and cutover
 
-1. Configure runtime `GOOGLE_CLIENT_ID`. Add the exact new test origin to the existing OAuth client's Authorized JavaScript origins before testing Google login.
-2. Recover `SHEET_SYNC_URL` and `SHEET_SYNC_SECRET` without putting them in Git or chat. Confirm exact-match import in the test environment.
-3. Configure the existing VAPID keys and notification dispatcher token. Keep automatic dispatch disabled during recovery testing to avoid duplicate reminders. Reconcile delivery state at cutover.
-4. Configure `BACKUP_EXPORT_TOKEN` and verify a complete encrypted backup from the new deployment. Keep backup tokens and recovery keys separate from database snapshots.
-5. Test teacher/student/admin account access, PDF upload/download and homework submission on the recovery deployment.
+1. Google client configuration and the owner's real Google sign-in are verified below. Preserve the existing OAuth client and authorized production origin at cutover.
+2. Recover `SHEET_SYNC_URL` and `SHEET_SYNC_SECRET` without putting them in Git or chat. The owner confirms that Sheet import is still in use. Verify the selected month and a read-only preview before cutover; do not commit a test preview to the operational sheet.
+3. The existing VAPID keys are configured. Keep `NOTIFICATIONS_CRON_TOKEN` and `PENDING_CLEANUP_TOKEN` absent during recovery testing to avoid duplicate reminders or deleting copied accounts. Preserve the original scheduled service credentials and reconcile delivery state at cutover.
+4. A new recovery-only `BACKUP_EXPORT_TOKEN` and complete encrypted recovery backup are verified below. The original scheduled backup still uses its original protected token: align this at cutover and verify the scheduled job separately. Keep backup tokens and recovery keys separate from database snapshots.
+5. Role isolation and private PDF reads/rejected uploads are verified below. A successful browser upload and homework submission remain to be checked using isolated test records.
 6. Take a final snapshot during a controlled cutover window, reconcile changes since the test snapshot, then switch the existing domain. Restore the latest data only through a separately reviewed refresh procedure; the empty-target script is intentionally not an overwrite tool.
 7. Record the exact recovery Git commit and Cloudflare Worker version ID. Original Sites version numbers do not apply to this independent Worker.
 
@@ -59,7 +59,7 @@ Code backup is not a backup of live database/PDF data. A functioning recovery te
 
 The restored resources contain the 22:31:56 Malaysia-time test snapshot. The scheduled backup status file and offsite backup copy were not updated by this manual recovery. Later production writes still require reconciliation before cutover.
 
-Live application checks and domain cutover must be recorded separately after deployment; they have not been claimed by the checks above.
+Live application checks are recorded separately below. Domain cutover has not occurred.
 
 ## Initial recovery deployment (2026-10-10)
 
@@ -71,3 +71,25 @@ Live application checks and domain cutover must be recorded separately after dep
 - Live anonymous checks: home and Chinese terms returned HTML 200; manifest and service worker returned 200; `/api/auth` returned 200 with no account; `/api/state` returned 401. Google client configuration was confirmed present after propagation.
 - Google login itself still requires the new test origin to be authorized in the existing Google OAuth client and a real sign-in check. No authenticated teacher/student/admin workflow is claimed here.
 - No automatic reminders, Sheet sync secrets, backup export token, Git build connection or domain cutover was configured in this deployment step.
+
+## Subsequent recovery verification (2026-10-10)
+
+- The owner added the recovery origin to the original Google OAuth client and confirmed Google sign-in to the administrator account, with original courses, classrooms and accounts visible.
+- Latest recorded Worker version after runtime secret configuration: `9bf87f37-d82f-4ba5-a169-23aeaf427bf6`. Application source remains `2fcc253d98f33f5b7c27aeae51977c09ecf710b4`; later commits record deployment evidence only.
+- Runtime secrets present: `GOOGLE_CLIENT_ID`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `BACKUP_EXPORT_TOKEN`. Values remain outside source control. Automatic notification dispatch remains disabled.
+- A fresh-profile Chrome check at 390 × 844 confirmed Chinese and English login rendering, no horizontal overflow or page errors, and successful Google button resource loading without an origin rejection.
+- Thirteen deployed API checks passed using temporary synthetic teacher/student/admin accounts: password login with secure session cookies; lesson isolation; administrator scopes; blocked teacher/student account administration and Sheet imports; learning/classroom scopes; notification configuration without automatic dispatch; invalid/cross-origin/oversized upload rejection; private PDF access and SHA-256; and logout session invalidation.
+- The private PDF fixture was placed through the storage CLI. This verifies storage/read permissions, not a successful browser upload or homework submission. Rejected upload requests failed before staged-file cleanup.
+- The test harness initially used the wrong delivery-table cleanup column. D1 rolled back that cleanup; the harness was corrected, exact fixtures were removed, and a protected export then confirmed zero fixture rows across all tables. This was a harness issue, not an application schema change. All test storage objects were removed.
+- A complete encrypted backup from the deployed recovery Worker was written outside Git to `backups/tickminder-recovery-2026-10-10-deployed` and verified with DPAPI and the portable recovery key: 28 tables, 7 PDFs, 9,308,490 PDF bytes.
+- Final resource check at `2026-10-10T15:19:03.007Z` confirmed 28 tables, 7 PDFs, no fixture rows, anonymous backup export 404 and automatic dispatch 404.
+- Evidence and mobile screenshots are outside Git in `outputs/recovery-verification/`. The local scheduled backup status and an offsite Drive copy have not been repaired or verified by these checks.
+- Sheet runtime configuration, final source-data reconciliation, background service cutover, Git Builds connection and domain switch remain outstanding. The original production site is still authoritative for subsequent business writes.
+
+## Reconnect the existing Google Sheet integration
+
+In the original operational spreadsheet, open Extensions → Apps Script. Copy the existing `/exec` Web App URL from Deploy → Manage deployments. In Project Settings → Script Properties, find the existing `SHEET_SYNC_SECRET` value. Add the URL and secret directly to the recovery Worker's Settings → Variables and Secrets as runtime secrets named `SHEET_SYNC_URL` and `SHEET_SYNC_SECRET`, then deploy the settings. Do not send either credential in chat or store it in source/build environment files.
+
+The current signed-request integration is `integrations/GoogleSheetLessonSync.gs`; it reads `SHEET_SYNC_SECRET`. The old prototype in the parent `work/apps-script-sync.js` reads `SYNC_SECRET` and uses a different protocol. If only that older property is present, identify the actual deployed script before changing anything. Do not rotate the secret, overwrite the original script, initialize months or create a replacement deployment just to reconnect the host.
+
+After configuration, verify a month read and a preview only. Preserve exact student/subject matching, the existing mode, and the spreadsheet's current selected month. Commit import is an operational write and is not part of the connectivity check.
