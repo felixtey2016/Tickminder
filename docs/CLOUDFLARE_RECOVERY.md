@@ -1,11 +1,17 @@
 # Tickminder independent Cloudflare recovery
 
+## Current production status
+
+Production cutover completed on **2026-10-11 at 14:56 Malaysia time**. Both `https://www.tickminder.com` and `https://tickminder.com` now serve the owner's `tickminder-recovery` Worker. The application source is recovery commit `3f445c2`; the application Worker version is `5055f5c3-ed5f-43b7-ac94-7d2a1bc6d095`. The original OpenAI Sites management permission was not restored. Registration and renewal remain with Exabytes.
+
+The verification and historical preparation notes below distinguish pre-cutover checks from the completed cutover. The Google Meet feature remains on its separate development branch.
+
 ## Source and scope
 
 - Branch: `recovery/cloudflare-2026-10-10`.
 - Base: production Sites v45, Git commit `4e0caad7805710471058259f9ad55a4193d1cf93`.
 - The Google Meet feature remains on `feat/google-meet-detection`; it is not part of this recovery release.
-- The original Sites manifest and deployment connection are retained. No domain switch is performed by these scripts.
+- The original Sites manifest is retained. The independent recovery configuration now contains the two production custom domains; restoration scripts do not switch domains.
 - Application pages, business rules, account IDs, password hashes, roles, calendars, attendance and Sheet matching are unchanged.
 
 ## Owner-controlled resources
@@ -36,7 +42,9 @@ The first command decrypts only in memory and checks SQLite schema, all rows, in
 
 If restoration is interrupted after cloud writes, inspect and verify the recovery resources before proceeding. Do not remove the empty-resource guard or retry by overwriting an existing database. The original site remains the source of current operational data until cutover.
 
-## Remaining configuration and cutover
+## Pre-cutover configuration checklist (historical)
+
+This checklist records the initial recovery prerequisites. Their completed checks and remaining follow-ups are recorded in the final cutover section.
 
 1. Google client configuration and the owner's real Google sign-in are verified below. Preserve the existing OAuth client and authorized production origin at cutover.
 2. Recover `SHEET_SYNC_URL` and `SHEET_SYNC_SECRET` without putting them in Git or chat. The owner confirms that Sheet import is still in use. Verify the selected month and a read-only preview before cutover; do not commit a test preview to the operational sheet.
@@ -112,7 +120,7 @@ After configuration, verify a month read and a preview only. Preserve exact stud
 - Public authoritative nameservers still point to Exabytes: `ns184.mschosting.com`, `ns185.mschosting.com`, `ns186.mschosting.com`.
 - No DNS, registrar setting or custom domain was modified. Onboarding the existing domain into the owner Cloudflare account and retaining all existing DNS records is required before a Worker custom domain can be attached. Nameserver activation and final routing/data cutover must be coordinated separately.
 
-## Cutover preparation and remaining DNS step (2026-10-11)
+## Cutover preparation and initial DNS obstacle (2026-10-11)
 
 - The owner authorized a maintenance window and paused operational writes. At `2026-10-11T06:21:24.640Z`, the owner zone was active and public NS resolution returned `dee.ns.cloudflare.com` and `matias.ns.cloudflare.com`. Registration and renewal remain with Exabytes.
 - Fresh encrypted source and target snapshots were verified at 06:15 UTC: 28 tables and all 7 PDFs (9,308,490 bytes). Three-way comparison found no conflicting rows or business-record changes. Overnight additions were notification state only; the recovery sign-in added one session.
@@ -121,7 +129,19 @@ After configuration, verify a month read and a preview only. Preserve exact stud
 - Existing dedicated reminder, pending-cleanup and backup credentials were copied from DPAPI-protected local files through memory/stdin. VAPID, Google and Sheet settings were preserved. The original backup token now applies to the recovery Worker; the earlier recovery-only token is historical.
 - The existing daily 02:30 Malaysia-time `Timelyo Encrypted Backup` task now targets `https://www.tickminder.com/`. Its other settings were retained. A successful post-cutover scheduled backup and cloud/offsite synchronization are still unverified.
 - Recovery source commit `3f445c2` adds only the two existing production custom domains and a build guard for those targets. The guarded build passed. Worker version `5055f5c3-ed5f-43b7-ac94-7d2a1bc6d095` was uploaded and deployed, preserving runtime settings.
-- **Domain attachment failed** with Cloudflare code `100117`: externally managed legacy DNS records cannot be replaced by the Worker domain API. The Worker currently has no production custom domains. Original Sites still serves the canonical website; production cutover is not complete.
+- Initial domain attachment failed with Cloudflare code `100117`: externally managed legacy DNS records could not be replaced by the Worker domain API. At that preparation checkpoint, the Worker had no production custom domains and original Sites still served the canonical website. The completed attachment is recorded below.
 - The owner must remove exactly the two legacy apex A records (`162.159.143.30`, `172.66.3.26`) and the `www` CNAME (`custom-domains.chatgpt.site`) in the new Cloudflare zone. Preserve all TXT, MX, `mail` and `ftp` records. Then attach both authorized hostnames to `tickminder-recovery`, verify canonical HTTPS/routing/data and the next real reminder-clock invocation, and run the repaired backup job. Do not treat a changeset with zero conflicts as evidence that these legacy records are absent; public authoritative DNS still returned them.
 - The Sheet shared credential was exposed in chat earlier. Coordinated rotation in Apps Script and the owner Worker remains necessary; a Sheet preview does not perform that rotation.
 - Cutover evidence, encrypted snapshots and protected credentials remain outside Git. User `docs/ui-research/` is not part of this release.
+
+## Production cutover completed and verified (2026-10-11)
+
+- The owner confirmed removing only the two legacy apex A records and the `www` CNAME from Cloudflare. Both custom domains were successfully attached to `tickminder-recovery`, production, at `2026-10-11T06:56:04.026Z`. All unrelated TXT, MX, `mail` and `ftp` records were preserved. This was a domain attachment to the already deployed application, not another application code release.
+- Canonical HTTPS checks passed for the root and `www` domains. `/api/auth` returned an anonymous account and the configured original Google client; `/api/state` correctly rejected an anonymous request. The manifest, service worker, Chinese/English terms and privacy pages returned 200, and an anonymous backup export returned 404.
+- A protected canonical export matched the reconciled snapshot for all 25 tables outside notification generation/delivery/runtime state. All 7 private PDF objects matched SHA-256 (9,308,490 bytes). The additional recovery sign-in session, 22 sessions in total, and all 6 device push subscriptions were retained. Notification tables were allowed to advance as background dispatch resumed.
+- Fresh-profile Chrome at 390 × 844 passed Chinese and English login rendering, with no horizontal overflow or page errors and the original Google sign-in iframe present. The owner had already verified real Google sign-in and original records on the recovery host before cutover. A new real sign-in on the canonical host and actual phone notification delivery after migration were not exercised by these automated checks.
+- The existing `tickminder-lesson-reminder-clock` still targeted `https://www.tickminder.com` with `* * * * *`. Its protected dispatch credential was aligned with the preserved production credential. An authenticated dispatch returned 200 with no sends or failures. Wrangler tail then captured actual automatic scheduled invocations at 15:05, 15:06 and 15:07 Malaysia time, each `Ok`; the canonical dispatch timestamp advanced to `2026-10-11T07:07:26.642Z` without another manual dispatch. This verifies automatic server scheduling, not Android background notification presentation.
+- The existing `Tickminder Pending Cleanup` Windows task remains ready and the canonical Worker's cleanup credential is configured. No account deletion was invoked as a connectivity test.
+- The existing daily 02:30 Malaysia-time encrypted-backup task was blocked by its battery start/stop conditions while the computer was on battery. Only those two task conditions were changed to allow running on battery; its canonical URL and other settings were retained. A run through the task scheduler completed with result 0 at 15:04 Malaysia time. Backup status at `2026-10-11T07:04:07.124Z` records success, 28 tables and all 7 PDFs. The encrypted copy in the local OneDrive folder matched all file hashes and passed decryption/restore verification. Upload to OneDrive's cloud service remains unverified (`cloudSync: not-verified`); Windows-based jobs still require the host computer and their configured user session to be available.
+- Encrypted post-reconciliation and scheduled snapshots, private credentials, verification JSON and the two mobile screenshots remain outside Git. Primary evidence: `production-domains.json`, `production-verification.json`, `production-services-check.json`, `reminder-clock-health.json` and `backups/backup-status.json`.
+- Operational writes can resume. Remaining follow-up: rotate the Sheet shared credential in both Apps Script and the owner Worker because it appeared in chat, and verify actual cloud backup upload. The existing Sheet connection and both read-only preview modes passed before cutover; no operational Sheet commit or credential rotation is claimed.
