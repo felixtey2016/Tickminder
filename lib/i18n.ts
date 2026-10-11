@@ -211,6 +211,8 @@ const en: Record<string, string> = {
   "请选择 PDF 文件": "Select a PDF file", "PDF 教学资料": "PDF teaching materials", "编辑教学资料": "Edit material", "上传教学资料": "Upload teaching material",
   "资料标题": "Material title", "说明（可选）": "Description (optional)", "PDF 文件": "PDF file", "最多": "Up to",
   "PDF 已上传，保存资料后才会分配给学生": "PDF uploaded. Save the material to share it with students.",
+  "功课总览": "Homework overview",
+  "没有符合筛选条件的内容": "No content matches these filters",
   "保存资料": "Save material", "上传并分配": "Upload and assign", "取消编辑": "Cancel editing", "确定删除这份教学资料？": "Delete this teaching material?",
   "删除": "Delete", "尚未上传教学资料": "No teaching materials yet", "功课": "Homework", "布置功课": "Assign homework", "功课标题": "Homework title",
   "完成要求": "Instructions", "例如：教材页码、题号或完成要求": "For example: textbook pages, question numbers, or instructions",

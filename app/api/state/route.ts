@@ -92,7 +92,7 @@ export async function GET(request: Request) {
   if (account.role === "pending") return json({account: {...identity, ...lifecycleView(account)}, lessons:[], classrooms:[], proposals:[], loadedScopes: ["core"]});
   try {
     // No scope preserves the existing full response for compatible clients.
-    const scopes: Scope[] = scope ? [scope as Scope] : account.role === "admin" ? ["core","classrooms","accounts","activity"] : ["core","learning","classrooms"];
+    const scopes: Scope[] = scope ? [scope as Scope] : account.role === "admin" ? ["core","learning","classrooms","accounts","activity"] : ["core","learning","classrooms"];
     const parts = await Promise.all(scopes.map(s => s === "core" ? coreState(account, selected) : extraState(account, s)));
     return json(Object.assign({account: identity, loadedScopes: scopes}, ...parts));
   } catch {

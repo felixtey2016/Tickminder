@@ -639,6 +639,7 @@ input[type="date"], input[type="datetime-local"], input[type="month"], input[typ
 .learning-recipient-status > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .learning-recipient-status strong { min-width: 100px; }
 .learning-recipient-status details { width: 100%; }
+.learning-admin-submission { display: grid; gap: 8px; padding: 8px 0; }
 .learning-filter { display: grid; max-width: 260px; gap: 6px; font-size: 14px; }
 .student-homework-card summary { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 13px; cursor: pointer; list-style: none; }
 .student-homework-card summary::-webkit-details-marker { display: none; }

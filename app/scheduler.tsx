@@ -25,6 +25,7 @@ import { StudentPortal, TeacherPortal } from "./portals";
 import { HomeDashboard } from "./home-dashboard";
 import type { LearningState } from "./learning-portal";
 const TeacherLearning = lazy(() => import("./learning-portal").then(module => ({default: module.TeacherLearning})));
+const AdminLearning = lazy(() => import("./admin-learning").then(module => ({default: module.AdminLearning})));
 import type { Classroom } from "./classrooms-page";
 const ClassroomsPage = lazy(() => import("./classrooms-page").then(module => ({default: module.ClassroomsPage})));
 import { Timetable } from "./timetables";
@@ -525,6 +526,8 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "home", label: "主页", Icon: LayoutDashboard },
         { id: "myAccount", label: "我的账号", Icon: ShieldCheck },
         { id: "classrooms", label: "班级", Icon: LibraryBig },
+        { id: "homework", label: "功课总览", Icon: BookOpen },
+        { id: "materials", label: "PDF 教学资料", Icon: FileText },
         { id: "overview", label: "课程总览", Icon: BarChart3 },
         { id: "attention", label: "出席待处理", Icon: AlertCircle },
         { id: "schedule", label: "安排课程", Icon: SquarePen },
@@ -566,7 +569,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
 };
 
 const NAV_GROUPS: Record<NavigationRole, Array<{ label: string; ids: string[] }>> = {
- admin: [{label:"",ids:["home"]},{label:"课程管理",ids:["calendar","list","schedule","attention","overview"]},{label:"教学",ids:["classrooms","subjects","students","teachers"]},{label:"人员与账号",ids:["teacherRoster","studentRoster","accounts"]},{label:"系统与账号",ids:["notifications","myAccount","sheet","activity"]}],
+ admin: [{label:"",ids:["home"]},{label:"课程管理",ids:["calendar","list","schedule","attention","overview"]},{label:"教学",ids:["classrooms","homework","materials","subjects","students","teachers"]},{label:"人员与账号",ids:["teacherRoster","studentRoster","accounts"]},{label:"系统与账号",ids:["notifications","myAccount","sheet","activity"]}],
  teacher: [{label:"",ids:["home"]},{label:"课程管理",ids:["calendar","lessons","schedule","attendance","reschedule","hours"]},{label:"教学",ids:["classrooms","students","homework","materials"]},{label:"我的账号",ids:["notifications","myAccount"]}],
  student: [{label:"",ids:["home"]},{label:"学习",ids:["calendar","list","reschedule"]},{label:"班级与作业",ids:["classrooms","homework","materials"]},{label:"我的账号",ids:["notifications","myAccount"]}],
  pending: [{label:"",ids:["home"]},{label:"我的账号",ids:["notifications","myAccount"]}],
@@ -639,7 +642,7 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
     }, [menuOpen, desktop]);
     const activeView = items.some(item => item.id === selectedView) ? selectedView : items[0].id;
     const title = items.find(item => item.id === activeView)?.label || items[0].label;
-    const requiredScope: StateScope | null = activeView === "classrooms" ? "classrooms" : activeView === "accounts" ? "accounts" : activeView === "activity" ? "activity" : role !== "admin" && ["homework","materials", ...(role === "student" ? ["calendar"] : [])].includes(activeView) ? "learning" : null;
+    const requiredScope: StateScope | null = activeView === "classrooms" ? "classrooms" : activeView === "accounts" ? "accounts" : activeView === "activity" ? "activity" : ["homework","materials", ...(role === "student" ? ["calendar"] : [])].includes(activeView) ? "learning" : null;
     const scopeLoaded = !requiredScope || state?.loadedScopes?.includes(requiredScope) || (!state?.loadedScopes && Boolean(requiredScope === "learning" ? state?.learning : requiredScope === "classrooms" ? state?.classrooms : requiredScope === "accounts" ? state?.users : state?.activity));
     const scopeError = requiredScope ? state?.scopeErrors?.[requiredScope] : undefined;
     useEffect(() => {
@@ -682,9 +685,11 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
         pageContent = <AccountSettings/>;
     } else if (activeView === "classrooms" && role !== "pending") {
         const classPlans = role === "teacher" ? (state?.plans || []).map(plan => ({ student: plan.student, subject: plan.subject, teacherName: account.teacherName || "", active: true })) : (state?.allPlans || []).map(plan => ({ student: plan.student, subject: plan.subject, teacherName: plan.teacherName, active: plan.active }));
-        pageContent = <ClassroomsPage role={role} classes={state?.classrooms || []} terms={state?.terms || []} learning={learning} teacherName={account.teacherName} teachers={role === "teacher" && account.teacherName ? [account.teacherName] : state?.teachers || []} plans={classPlans} mutate={classroomMutate} learningMutate={learningMutate} busy={busy} onCalendar={() => choose("calendar")}/>;
+        pageContent = <ClassroomsPage role={role} classes={state?.classrooms || []} terms={state?.terms || []} learning={learning} learningReady={Boolean(state?.learning)} learningError={state?.scopeErrors?.learning} loadLearning={force => ensureScope("learning", force)} teacherName={account.teacherName} teachers={role === "teacher" && account.teacherName ? [account.teacherName] : state?.teachers || []} plans={classPlans} mutate={classroomMutate} learningMutate={learningMutate} busy={busy} onCalendar={() => choose("calendar")}/>;
     } else if (role === "admin") {
-        if (["overview", "attention", "activity"].includes(activeView)) {
+        if (activeView === "homework" || activeView === "materials") {
+            pageContent = <AdminLearning key={activeView} learning={learning} view={activeView}/>;
+        } else if (["overview", "attention", "activity"].includes(activeView)) {
             pageContent = <AdminDashboard state={state} lessons={lessons} open={setModal} view={activeView as "overview" | "attention" | "activity"}/>;
         } else if (["schedule", "calendar", "list"].includes(activeView)) {
             pageContent = <Schedule state={state} lessons={lessons} mutate={mutate} open={setModal} busy={busy} view={activeView === "schedule" ? "create" : activeView as "calendar" | "list"}/>;

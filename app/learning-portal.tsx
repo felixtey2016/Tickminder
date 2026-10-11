@@ -7,8 +7,9 @@ import { t } from "@/lib/i18n";
 import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
 import { Button } from "@/components/ui/button";
 
-export type Material = { id: string; title: string; description: string | null; fileId: string; filename: string; subject?: string; classroomId?: string | null; recipients?: Array<{ studentName: string; subject: string }> };
-export type Homework = { id: string; title: string; subject: string; description: string; startsAt: string; dueAt: string; maxScore?: number | null; score?: number | null; scoredAt?: string | null; attachmentFileId: string | null; classroomId?: string | null; recipients?: string[]; scores?: Array<{ studentName: string; score: number | null; scoredAt: string | null }> };
+type TeachingOwner = { ownerId?: string; teacherName?: string; classroomTitle?: string | null };
+export type Material = TeachingOwner & { id: string; title: string; description: string | null; fileId: string; filename: string; subject?: string; classroomId?: string | null; recipients?: Array<{ studentName: string; subject: string }> };
+export type Homework = TeachingOwner & { id: string; title: string; subject: string; description: string; startsAt: string; dueAt: string; maxScore?: number | null; score?: number | null; scoredAt?: string | null; attachmentFileId: string | null; classroomId?: string | null; recipients?: string[]; scores?: Array<{ studentName: string; score: number | null; scoredAt: string | null }> };
 export type Submission = { id: string; homeworkId: string; studentName?: string; fileId: string; filename: string; submittedAt: string; late: number | boolean };
 export type StudyBlock = { id: string; title: string; subject: string | null; note: string | null; startsAt: string; endsAt: string; homeworkId: string | null };
 export type LearningState = { materials: Material[]; homework: Homework[]; submissions: Submission[]; studyBlocks: StudyBlock[]; eligible: Array<{ student: string; subject: string }>; limits?: { pdfMaxBytes: number } };
@@ -33,7 +34,7 @@ export async function uploadPdf(file: File, kind: "material" | "homework" | "sub
   return result.id;
 }
 
-function FileLinks({ fileId }: { fileId: string }) {
+export function FileLinks({ fileId }: { fileId: string }) {
   return <span className="learning-file-actions"><a href={`/api/files/${encodeURIComponent(fileId)}`} target="_blank" rel="noopener noreferrer"><FileText size={16}/>{t("打开 PDF")}</a><a href={`/api/files/${encodeURIComponent(fileId)}?download=1`}><Download size={16}/>{t("下载")}</a></span>;
 }
 

@@ -58,6 +58,12 @@ export async function pdfMayRead(account: Account, fileId: string) {
   const file = await first<{ id: string; objectKey: string; filename: string; bytes: number; status: string; ownerId: string }>(`SELECT id, object_key AS objectKey, filename, bytes, status, owner_id AS ownerId FROM pdf_files WHERE id = ?`, fileId);
   if (!file || !["staged", "attached"].includes(file.status)) return null;
   if (file.ownerId === account.id) return file;
+  if (account.role === "admin" && file.status === "attached") {
+    const published = await first(`SELECT 1 AS allowed FROM teaching_materials WHERE file_id = ?
+      UNION ALL SELECT 1 FROM homework WHERE attachment_file_id = ?
+      UNION ALL SELECT 1 FROM homework_submissions WHERE file_id = ? LIMIT 1`, fileId, fileId, fileId);
+    if (published) return file;
+  }
   if (account.role === "student" && account.studentName) {
     const material = await first(`SELECT 1 AS allowed FROM teaching_materials m JOIN material_recipients r ON r.material_id = m.id WHERE m.file_id = ? AND r.student_name = ? AND ${activeClassroomAccess("m")}`, fileId, account.studentName, account.studentName);
     const homework = await first(`SELECT 1 AS allowed FROM homework h JOIN homework_recipients r ON r.homework_id = h.id WHERE h.attachment_file_id = ? AND r.student_name = ? AND ${activeClassroomAccess("h")}`, fileId, account.studentName, account.studentName);
@@ -73,13 +79,15 @@ export async function pdfMayRead(account: Account, fileId: string) {
 
 export async function learningState(account: Account) {
   const limits = { pdfMaxBytes: configuredBytes(env.PDF_MAX_BYTES, DEFAULT_PDF_MAX_BYTES) };
-  if (account.role === "teacher") {
+  if (account.role === "teacher" || account.role === "admin") {
+    const ownerWhere = (alias: string) => account.role === "admin" ? "" : ` WHERE ${alias}.owner_id = ?`;
+    const ownerValues = account.role === "admin" ? [] : [account.id];
     const [materials, materialRecipients, homework, homeworkRecipients, submissions, eligible] = await Promise.all([
-      rows(`SELECT m.id, m.title, m.description, m.file_id AS fileId, m.created_at AS createdAt, m.classroom_id AS classroomId, f.filename FROM teaching_materials m JOIN pdf_files f ON f.id = m.file_id WHERE m.owner_id = ? ORDER BY m.created_at DESC`, account.id),
-      rows<{ materialId: string; studentName: string; subject: string }>(`SELECT r.material_id AS materialId, r.student_name AS studentName, r.subject FROM material_recipients r JOIN teaching_materials m ON m.id = r.material_id WHERE m.owner_id = ?`, account.id),
-      rows(`SELECT h.id, h.title, h.subject, h.description, h.starts_at AS startsAt, h.due_at AS dueAt, h.max_score AS maxScore, h.attachment_file_id AS attachmentFileId, h.classroom_id AS classroomId, h.created_at AS createdAt FROM homework h WHERE h.owner_id = ? ORDER BY h.created_at DESC`, account.id),
-      rows<{ homeworkId: string; studentName: string; score: number | null; scoredAt: string | null }>(`SELECT r.homework_id AS homeworkId, r.student_name AS studentName, r.score, r.scored_at AS scoredAt FROM homework_recipients r JOIN homework h ON h.id = r.homework_id WHERE h.owner_id = ?`, account.id),
-      rows(`SELECT s.id, s.homework_id AS homeworkId, s.student_name AS studentName, s.file_id AS fileId, s.submitted_at AS submittedAt, s.late, f.filename FROM homework_submissions s JOIN homework h ON h.id = s.homework_id JOIN pdf_files f ON f.id = s.file_id WHERE h.owner_id = ? ORDER BY s.submitted_at DESC`, account.id),
+      rows(`SELECT m.id, m.title, m.description, m.file_id AS fileId, m.created_at AS createdAt, m.classroom_id AS classroomId, m.owner_id AS ownerId, coalesce(u.teacher_name,u.name,'老师') AS teacherName, c.title AS classroomTitle, f.filename FROM teaching_materials m JOIN pdf_files f ON f.id = m.file_id LEFT JOIN accounts u ON u.id = m.owner_id LEFT JOIN classrooms c ON c.id = m.classroom_id${ownerWhere("m")} ORDER BY m.created_at DESC`, ...ownerValues),
+      rows<{ materialId: string; studentName: string; subject: string }>(`SELECT r.material_id AS materialId, r.student_name AS studentName, r.subject FROM material_recipients r JOIN teaching_materials m ON m.id = r.material_id${ownerWhere("m")}`, ...ownerValues),
+      rows(`SELECT h.id, h.title, h.subject, h.description, h.starts_at AS startsAt, h.due_at AS dueAt, h.max_score AS maxScore, h.attachment_file_id AS attachmentFileId, h.classroom_id AS classroomId, h.created_at AS createdAt, h.owner_id AS ownerId, coalesce(u.teacher_name,u.name,'老师') AS teacherName, c.title AS classroomTitle FROM homework h LEFT JOIN accounts u ON u.id = h.owner_id LEFT JOIN classrooms c ON c.id = h.classroom_id${ownerWhere("h")} ORDER BY h.created_at DESC`, ...ownerValues),
+      rows<{ homeworkId: string; studentName: string; score: number | null; scoredAt: string | null }>(`SELECT r.homework_id AS homeworkId, r.student_name AS studentName, r.score, r.scored_at AS scoredAt FROM homework_recipients r JOIN homework h ON h.id = r.homework_id${ownerWhere("h")}`, ...ownerValues),
+      rows(`SELECT s.id, s.homework_id AS homeworkId, s.student_name AS studentName, s.file_id AS fileId, s.submitted_at AS submittedAt, s.late, f.filename FROM homework_submissions s JOIN homework h ON h.id = s.homework_id JOIN pdf_files f ON f.id = s.file_id${ownerWhere("h")} ORDER BY s.submitted_at DESC`, ...ownerValues),
       teacherSubjects(account),
     ]);
     return {
