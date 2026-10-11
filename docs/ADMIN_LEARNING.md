@@ -29,4 +29,10 @@ The implementation reuses current deep-purple styling, Lucide icons, file links,
 - Real Chromium navigation at 390×844 passed Chinese/English global views, teacher filters, read-only controls, classroom learning fetched on demand and no horizontal overflow or page JavaScript errors. Mobile checks use viewport emulation, not physical Android hardware.
 - Local QA uses the installed Workerd-supported compatibility date `2026-05-22`; production retains `2026-10-10`. Two denied administrator score checks each required one retry after the development proxy returned its explicit restart message. Accepted writes and application errors were not retried.
 
-Production deployment evidence is recorded separately after publication.
+## Production publication
+
+- Published 2026-10-12 Malaysia time to the owner-controlled `tickminder-recovery` Worker, serving both `www.tickminder.com` and `tickminder.com`.
+- Tested application source: `3934c3c`; Worker version: `789278d7-81cd-4d42-82de-108d878a63ff`.
+- Both canonical homepages returned 200. Deployed administrator, classroom and scheduler client assets matched the tested local build by SHA-256. Anonymous learning/PDF access returned 401; login configuration, manifest and notification service worker remained available.
+- Authenticated administrator and PDF checks were performed in isolated local storage. Production verification used read-only public requests; creating a temporary production administrator was rejected by automatic approval review, so no production verification account was created.
+- Dashboard secrets were retained with `--keep-vars`. No database migration, business-record update or PDF upload occurred during publication.
