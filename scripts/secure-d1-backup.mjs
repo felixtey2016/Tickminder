@@ -47,8 +47,9 @@ function dpapi(mode, value) {
 }
 
 function validateExport(data) {
-  const expectedTables = data?.format === 'timelyo-d1-v7' ? [...baseTables,...classroomTables,'google_identities','academic_terms','notification_items','notification_deliveries','push_subscriptions','notification_runtime'] : ['timelyo-d1-v4','timelyo-d1-v5','timelyo-d1-v6','timelyo-d1-v7'].includes(data?.format) ? [...baseTables, ...classroomTables, 'google_identities', 'academic_terms'] : data?.format === 'timelyo-d1-v3' ? [...baseTables, ...classroomTables, 'google_identities'] : data?.format === 'timelyo-d1-v2' ? [...baseTables, ...classroomTables] : baseTables;
-  if (!data || !['timelyo-d1-v1', 'timelyo-d1-v2', 'timelyo-d1-v3', 'timelyo-d1-v4', 'timelyo-d1-v5','timelyo-d1-v6','timelyo-d1-v7'].includes(data.format) || !data.tables ||
+  const version=Number(data?.format?.match(/^timelyo-d1-v([1-8])$/)?.[1] || 0);
+  const expectedTables=[...baseTables,...(version>=2?classroomTables:[]),...(version>=3?['google_identities']:[]),...(version>=4?['academic_terms']:[]),...(version>=7?['notification_items','notification_deliveries','push_subscriptions','notification_runtime']:[]),...(version>=8?['site_notifications']:[])];
+  if (!data || !version || !data.tables ||
       Object.keys(data.tables).sort().join('|') !== expectedTables.slice().sort().join('|')) {
     throw new Error('Incomplete database export');
   }
@@ -66,9 +67,10 @@ function sha256(bytes) { return createHash('sha256').update(bytes).digest('hex')
 
 function restoreInMemory(data) {
   const expectedTables = validateExport(data);
+  const version=Number(data.format.slice('timelyo-d1-v'.length));
   const db = new DatabaseSync(':memory:');
   try {
-    for (const prefix of [...baseMigrations, ...(data.format !== 'timelyo-d1-v1' ? ['0010'] : []), ...(['timelyo-d1-v3','timelyo-d1-v4','timelyo-d1-v5','timelyo-d1-v6','timelyo-d1-v7'].includes(data.format) ? ['0011'] : []), ...(['timelyo-d1-v4','timelyo-d1-v5','timelyo-d1-v6','timelyo-d1-v7'].includes(data.format) ? ['0012'] : []), ...(['timelyo-d1-v5','timelyo-d1-v6','timelyo-d1-v7'].includes(data.format) ? ['0013'] : []), ...(['timelyo-d1-v6','timelyo-d1-v7'].includes(data.format) ? ['0014'] : []), ...(data.format === 'timelyo-d1-v7' ? ['0015'] : [])]) {
+    for (const prefix of [...baseMigrations,...Array.from({length:Math.max(0,version-1)},(_,index)=>String(10+index).padStart(4,'0'))]) {
       const file = readdirSync(resolve(projectRoot, 'drizzle')).find((name) => name.startsWith(prefix + '_') && name.endsWith('.sql'));
       if (!file) throw new Error(`Missing migration ${prefix}`);
       db.exec(readFileSync(resolve(projectRoot, 'drizzle', file), 'utf8'));

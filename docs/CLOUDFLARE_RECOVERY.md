@@ -2,7 +2,7 @@
 
 ## Current production status
 
-Production cutover completed on **2026-10-11 at 14:56 Malaysia time**. Both `https://www.tickminder.com` and `https://tickminder.com` now serve the owner's `tickminder-recovery` Worker. The latest application update adds administrator homework/PDF review (2026-10-12 Malaysia): source `3934c3c`, Worker version `789278d7-81cd-4d42-82de-108d878a63ff`; see [ADMIN_LEARNING.md](ADMIN_LEARNING.md). The initial cutover used source `3f445c2` and Worker version `5055f5c3-ed5f-43b7-ac94-7d2a1bc6d095`. The original OpenAI Sites management permission was not restored. Registration and renewal remain with Exabytes.
+Production cutover completed on **2026-10-11 at 14:56 Malaysia time**. Both `https://www.tickminder.com` and `https://tickminder.com` now serve the owner's `tickminder-recovery` Worker. The latest application update adds unread/task menu badges, durable lesson-change messages and bordered filters (2026-10-12 Malaysia): source `66ef058`, Worker version `d3da0015-0e72-4726-ae65-d0c0b53ae195`; see [MENU_BADGES.md](MENU_BADGES.md). Administrator homework/PDF review remains included; see [ADMIN_LEARNING.md](ADMIN_LEARNING.md). The initial cutover used source `3f445c2` and Worker version `5055f5c3-ed5f-43b7-ac94-7d2a1bc6d095`. The original OpenAI Sites management permission was not restored. Registration and renewal remain with Exabytes.
 
 The verification and historical preparation notes below distinguish pre-cutover checks from the completed cutover. The Google Meet feature remains on its separate development branch.
 

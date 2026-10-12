@@ -1,5 +1,13 @@
 # Timelyo versions and recovery
 
+## 2026-10-12 - Menu badges, lesson-change inbox and bordered filters (Cloudflare)
+
+- Application source `66ef058` on `recovery/cloudflare-2026-10-10`; owner-controlled Worker version `d3da0015-0e72-4726-ae65-d0c0b53ae195` serves both canonical domains, retaining dashboard secrets.
+- Red counts on the menu button and notification/pending-reschedule/missed-attendance entries; per-account persistent read state; new time-change/reschedule-result/cancellation inbox messages; mobile/desktop native filters have visible independent borders. Menu-overlay history on re-entry was corrected.
+- Migration 0016 adds one metadata table. Authenticated generation/reading remains scoped to active participants and administrators; unrelated/pending/disabled accounts and the action's actor are excluded. Audit/inbox inserts share a transaction. Existing reminder push timing/payloads are retained.
+- TypeScript/build, notification/security/count lifecycle, account/cleanup/revision/startup checks and five real built-Worker Chinese/English phone/desktop scenarios passed. Four public production checks passed. No production fixture accounts were created.
+- Before/after encrypted snapshots restored 28/29 tables respectively and seven PDFs (9,308,490 bytes). Portable v7 and v8 recovery dry-runs passed; the nested D1 verifier was updated for v8 after a failed initial post-release snapshot, then the new snapshot completed. See `docs/MENU_BADGES.md`.
+
 ## 2026-10-12 - Administrator homework and PDF review (Cloudflare)
 
 - Application source `3934c3c` on `recovery/cloudflare-2026-10-10`; owner-controlled Worker version `789278d7-81cd-4d42-82de-108d878a63ff` published to `www.tickminder.com` and `tickminder.com` with existing secrets retained.

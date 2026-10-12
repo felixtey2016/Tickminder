@@ -33,4 +33,10 @@ A fresh entry clears only the persisted menu-overlay flag while retaining the se
 - Five built-Worker browser scenarios passed: real administrator time edits; teacher read controls and re-entry; actual attendance/reschedule actions; student English navigation; administrator badges and native bordered/resettable filters. Chinese/English phone 390×844 and desktop 1280×900 were checked, with no horizontal overflow or page JavaScript errors. Mobile checks are emulated Chromium, not physical-device push tests.
 - Pre-release encrypted snapshot `tickminder-before-menu-badges-2026-10-12` verified 28 business tables and seven PDFs (9,308,490 bytes), including recovery dry-run against the current schema. Migration was applied once to the owner-controlled recovery D1, creating table 29 without altering existing business rows.
 
-Deployment and post-release backup evidence are recorded after publication.
+## Publication
+
+- Published 2026-10-12 Malaysia time: application source `66ef058`, owner-controlled Worker `tickminder-recovery`, version `d3da0015-0e72-4726-ae65-d0c0b53ae195`, both `https://www.tickminder.com` and `https://tickminder.com`.
+- `--keep-vars` retained existing dashboard variables/secrets. The reminder clock was not reconfigured.
+- Four read-only public production checks passed: both canonical pages; tested scheduler/CSS SHA-256 matches; anonymous notification/learning/PDF 401s; existing Google login, manifest and service-worker resources. No production test account was created.
+- Post-release `tickminder-after-menu-badges-2026-10-12` verified all 29 tables and seven PDFs (9,308,490 bytes), including portable recovery and a dry-run restoration. The initial post-release attempt exposed a remaining v7-only guard in the nested D1 backup verifier; the verifier now accepts/restores v1–v8, the unusable partial ciphertext was removed, and a fresh complete snapshot passed. The pre-release v7 snapshot was reverified with the updated reader.
+- Backup scripts, encrypted snapshots and local phone/desktop verification do not establish physical Android push delivery or a new cloud backup upload.
