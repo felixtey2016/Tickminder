@@ -2,13 +2,13 @@
 
 ## Current production status
 
-Production cutover completed on **2026-10-11 at 14:56 Malaysia time**. Both `https://www.tickminder.com` and `https://tickminder.com` now serve the owner's `tickminder-recovery` Worker. The latest application update adds unread/task menu badges, durable lesson-change messages and bordered filters (2026-10-12 Malaysia): source `66ef058`, Worker version `d3da0015-0e72-4726-ae65-d0c0b53ae195`; see [MENU_BADGES.md](MENU_BADGES.md). Administrator homework/PDF review remains included; see [ADMIN_LEARNING.md](ADMIN_LEARNING.md). The initial cutover used source `3f445c2` and Worker version `5055f5c3-ed5f-43b7-ac94-7d2a1bc6d095`. The original OpenAI Sites management permission was not restored. Registration and renewal remain with Exabytes.
+Production cutover completed on **2026-10-11 at 14:56 Malaysia time**. Both `https://www.tickminder.com` and `https://tickminder.com` now serve the owner's `tickminder-recovery` Worker. The latest application update adds isolated tuition groups and the owner's platform console (2026-10-12 at 20:51 Malaysia time): source `e8540a7` on `feat/tuition-groups`, Worker version `83573b14-7860-49fd-9633-4723bc489100`; see [TUITION_GROUPS.md](TUITION_GROUPS.md). Existing records belong to Next Genn Edu and ordinary administrators are now restricted to their group. Unread/task badges and bordered filters remain included; see [MENU_BADGES.md](MENU_BADGES.md). Administrator homework/PDF review also remains included within group boundaries; see [ADMIN_LEARNING.md](ADMIN_LEARNING.md). The initial cutover used source `3f445c2` and Worker version `5055f5c3-ed5f-43b7-ac94-7d2a1bc6d095`. The original OpenAI Sites management permission was not restored. Registration and renewal remain with Exabytes.
 
 The verification and historical preparation notes below distinguish pre-cutover checks from the completed cutover. The Google Meet feature remains on its separate development branch.
 
 ## Source and scope
 
-- Branch: `recovery/cloudflare-2026-10-10`.
+- Initial recovery branch: `recovery/cloudflare-2026-10-10`. Current deployed application branch: `feat/tuition-groups` (see the verified publication record above).
 - Base: production Sites v45, Git commit `4e0caad7805710471058259f9ad55a4193d1cf93`.
 - The Google Meet feature remains on `feat/google-meet-detection`; it is not part of this recovery release.
 - The original Sites manifest is retained. The independent recovery configuration now contains the two production custom domains; restoration scripts do not switch domains.
@@ -20,7 +20,7 @@ The verification and historical preparation notes below distinguish pre-cutover 
 
 ## Build and deploy
 
-For Cloudflare Workers Builds, choose this recovery branch, repository root `/`, and disable preview builds. Use Node.js 22.13 or later.
+For Cloudflare Workers Builds, choose the current deployed application branch recorded above, repository root `/`, and disable preview builds. Use Node.js 22.13 or later. Publishing this release used the authorized Wrangler connection directly; this record does not assert that a Git Builds connection was established or reconfigured. Do not deploy the older unscoped recovery source against the migrated groups database.
 
 - Build command: `npm run build:recovery`
 - Deploy command: `npm run deploy:recovery`

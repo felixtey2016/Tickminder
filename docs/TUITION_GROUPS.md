@@ -35,4 +35,21 @@ This version has no branches, multi-group memberships, account transfers between
 
 Complete local gates, coordinate a short pause in business writes, take a fresh encrypted D1/R2 snapshot, apply only migration 0017 to the owner D1 database, deploy the tested recovery Worker with retained runtime secrets, verify canonical endpoints/assets and ownership counts, and take/verify a v9 snapshot. Compare original business columns against the pre-migration snapshot; background notification timestamps, sessions and unread-state changes may legitimately advance. Resume use after the verified release. Keep all private snapshots and QA fixtures outside Git. Do not apply a restore to the live database as a test.
 
-Production publication is pending until the release procedure completes.
+## Production publication (2026-10-12)
+
+- Published application source: `e8540a7` on `feat/tuition-groups`. The owner-controlled Worker version `83573b14-7860-49fd-9633-4723bc489100` was deployed at **20:51:12 Malaysia time** and receives 100% of traffic. Both canonical domains serve it.
+- The owner explicitly paused business writes. The fresh encrypted snapshot at `2026-10-12T12:45:36.161Z` contained 29 tables and seven PDFs. A final in-memory migration rehearsal preserved every original column and row, then only migration 0017 was applied to the production D1 database (123 statements; 30 business tables afterward).
+- Wrangler uploaded and deployed the Worker, but its final subdomain metadata query returned a Cloudflare 504. A subsequent JSON deployment-list query independently confirmed the active version and 100% traffic; no duplicate deployment was needed. Four published client/CSS assets matched the tested build by SHA-256. Five read-only production checks passed: both domains, source-identical assets, limited invitation lookup, anonymous business/file/inbox/group denial and Google/PWA/push resources.
+- The post-release encrypted v9 snapshot at `2026-10-12T12:55:15.568Z` restored all 30 tables and seven PDFs (9,308,490 bytes). A current-schema recovery dry-run passed. All original columns/rows in 28 of the 29 original tables were identical to the final pre-release snapshot; only the notification-runtime clock timestamp advanced. All PDF SHA-256 hashes matched. Exactly one production group exists, Next Genn Edu; ordinary accounts and business records belong to it, and the verified global owner retains a NULL stored group. No production fixtures were created.
+- The retained minute reminder clock reached the canonical dispatch endpoint after publication: at `2026-10-12T12:57:56.709Z`, its latest dispatch was 36 seconds old. This verifies background service execution, not physical phone notification presentation. Original Google, push, Sheet and backup runtime settings were preserved.
+- The owner refreshed the production site using their real highest-administrator account and confirmed that Platform console and Next Genn Edu were visible. Business use was resumed after migration, backup and public checks passed. Local and encrypted verification artifacts remain outside Git; no new offsite/cloud-copy verification is claimed.
+
+### Operating the new console
+
+1. As the platform owner, open **Platform console / 平台总控制台** and create a group.
+2. Select **Enter management / 进入管理** for that group. The visible group label identifies the current workspace; this reload clears the previous group's view and dialogs.
+3. In **Account management / 账号管理**, create the group's first ordinary administrator using the existing form. That account and any teacher/student accounts created in the workspace belong to this group.
+4. Copy the group's invitation link for new Google users. They still complete account setup and wait for assignment/approval before accessing courses.
+5. Ordinary administrators see their group's information and records only. To manage another group, the platform owner returns to Platform console and enters that group.
+
+Next Genn Edu retains the existing Google Sheet connection. A newly created group has no Sheet connection in this version; configure separate per-group connectors in a later change before offering Sheet import to it.

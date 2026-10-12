@@ -1,5 +1,13 @@
 # Timelyo versions and recovery
 
+## 2026-10-12 - Isolated tuition groups and platform console (Cloudflare)
+
+- Application source `e8540a7` on `feat/tuition-groups`; owner-controlled Worker version `83573b14-7860-49fd-9633-4723bc489100` published at 20:51:12 Malaysia time to both canonical domains, independently confirmed at 100% traffic after a final CLI metadata query timed out.
+- Each ordinary administrator, teacher, student and pending account belongs to one fixed group. The verified owner can create, rename, enable/disable and enter groups from Platform console. All original records belong to Next Genn Edu; new groups are empty, with group-specific invitations. Business APIs, notifications, account operations and private PDFs enforce group ownership, including identical names in different groups.
+- Migration 0017 adds the groups table and ownership indexes, rebuilds four composite-key tables and adds guarded references. Actual pre-release snapshot migration rehearsal, TypeScript/build, six real built-Worker role/mobile/English workflows and group/login/notification/account/startup/revision regression gates passed. Five read-only production checks and the owner's real production console sign-in passed. No live synthetic group or fixture account was created.
+- Pre/post encrypted snapshots restore 29/30 tables and seven PDFs (9,308,490 bytes). All original business columns and PDF SHA-256 hashes are unchanged; only the retained notification clock timestamp advanced. v9 portable backup/current-schema recovery checks passed. Business use resumed after verification. See `docs/TUITION_GROUPS.md`.
+- Next Genn Edu's existing Sheet connector remains active; new groups require a subsequent per-group connector feature. No multi-group memberships, group transfers, branches, billing or group deletion are included. Google Meet work remains on its separate branch.
+
 ## 2026-10-12 - Menu badges, lesson-change inbox and bordered filters (Cloudflare)
 
 - Application source `66ef058` on `recovery/cloudflare-2026-10-10`; owner-controlled Worker version `d3da0015-0e72-4726-ae65-d0c0b53ae195` serves both canonical domains, retaining dashboard secrets.
