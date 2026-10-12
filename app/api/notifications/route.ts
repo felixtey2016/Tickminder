@@ -18,10 +18,11 @@ export async function POST(request:Request) {
     if(body.action==="subscribe") return Response.json({ok:true,...await saveSubscription(account,body.subscription,body.language)},{headers});
     if(body.action==="unsubscribe" && typeof body.id==="string") {await removeSubscription(body.id,account.id);return Response.json({ok:true},{headers});}
     if(body.action==="read" && typeof body.id==="string") {
-      await db.prepare("UPDATE notification_items SET read_at=coalesce(read_at,?) WHERE id=? AND account_id=?").bind(new Date().toISOString(),body.id,account.id).run();
+      const change=body.id.startsWith("change:"),table=change?"site_notifications":"notification_items";
+      await db.prepare(`UPDATE ${table} SET read_at=coalesce(read_at,?) WHERE id=? AND account_id=?`).bind(new Date().toISOString(),change?body.id.slice(7):body.id,account.id).run();
       return Response.json({ok:true},{headers});
     }
-    if(body.action==="readAll") {await db.prepare("UPDATE notification_items SET read_at=? WHERE account_id=? AND read_at IS NULL").bind(new Date().toISOString(),account.id).run();return Response.json({ok:true},{headers});}
+    if(body.action==="readAll") {const now=new Date().toISOString();await db.batch([db.prepare("UPDATE notification_items SET read_at=? WHERE account_id=? AND read_at IS NULL").bind(now,account.id),db.prepare("UPDATE site_notifications SET read_at=? WHERE account_id=? AND read_at IS NULL").bind(now,account.id)]);return Response.json({ok:true},{headers});}
     if(body.action==="test" && typeof body.id==="string") {await sendTest(account,body.id);return Response.json({ok:true},{headers});}
     throw new NotificationError("请求格式无效");
   } catch(error) {

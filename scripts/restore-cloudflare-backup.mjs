@@ -71,7 +71,7 @@ try {
   plain = decrypt(readFileSync(join(snapshot, 'database.json.aes')), manifest.database);
   if (hash(plain) !== manifest.database.sha256) throw new Error('Database checksum mismatch');
   const database = JSON.parse(plain.toString('utf8'));
-  if (database.format !== 'timelyo-d1-v7') throw new Error('Recovery branch supports stable v45/v7 data only');
+  if (!['timelyo-d1-v7','timelyo-d1-v8'].includes(database.format)) throw new Error('Recovery branch requires a v7 or v8 database snapshot');
   const tables = Object.entries(database.tables);
   const schema = readdirSync(join(root, 'drizzle')).filter(name => /^\d{4}_.*\.sql$/.test(name)).sort()
     .map(name => readFileSync(join(root, 'drizzle', name), 'utf8')).join('\n');

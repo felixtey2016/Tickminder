@@ -33,7 +33,8 @@ import { SubjectAdmin } from "./roster-forms";
 const SheetSyncPanel = lazy(() => import("./sheet-sync-panel").then(module => ({default: module.SheetSyncPanel})));
 const AccountDirectory = lazy(() => import("./account-directory").then(module => ({default: module.AccountDirectory})));
 import { AccountSettings } from "./account-settings";
-import { NotificationsProvider, NotificationCentre, detachPushOnLogout } from "./notifications";
+import { NotificationsProvider, NotificationCentre, MenuBadge, detachPushOnLogout } from "./notifications";
+import { navigationBadges } from "@/lib/navigation-badges";
 import { AccountSetup } from "./account-setup";
 import { DeleteButton, DirectoryFilters, PeopleDirectory } from "./directory-tools";
 
@@ -246,6 +247,7 @@ export function Scheduler() {
                 return previous.account.name === updated.name && previous.account.role === updated.role && previous.account.teacherName === updated.teacherName && previous.account.studentName === updated.studentName ? previous : { ...previous, account: updated };
             });
             await Promise.all([...wantedScopes.current].map(scope => ensureScope(scope, true)));
+            window.dispatchEvent(new Event("tickminder:data-changed"));
         } catch (error) {
             if (requestId !== latestStateRequest.current) return;
             const status = (error as Error & { status?: number }).status;
@@ -597,6 +599,10 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
 }) {
     const role = account.role as NavigationRole;
     const items = [...NAV_ITEMS[role], { id: "notifications", label: "通知中心", Icon: Bell }];
+    const [badgeNow,setBadgeNow]=useState(()=>Date.now());
+    useEffect(()=>{const timer=window.setInterval(()=>setBadgeNow(Date.now()),30_000);return()=>window.clearInterval(timer);},[]);
+    const badgeCounts=navigationBadges(role,account.id || "",lessons,state?.proposals || [],badgeNow);
+    const taskCount=badgeCounts.lessons+badgeCounts.reschedule+badgeCounts.attention;
     const [selectedView, setSelectedView] = useState(items[0].id);
     const [menuOpen, setMenuOpen] = useState(false);
     const [desktop, setDesktop] = useState(false);
@@ -609,7 +615,12 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
             url.searchParams.delete("view");
             setSelectedView("notifications");
             window.history.replaceState({ ...state, timelyoRole: role, timelyoView: "notifications", timelyoMenu: false }, "", url);
-        } else if (state.timelyoRole === role && valid(state.timelyoView)) setSelectedView(state.timelyoView);
+        } else if (state.timelyoRole === role && valid(state.timelyoView)) {
+            setSelectedView(state.timelyoView);
+            // A fresh mobile entry starts closed. Do not retain a menu-only
+            // history entry which would reopen the overlay after Back.
+            window.history.replaceState({ ...state, timelyoMenu: false }, "");
+        }
         else {
             setSelectedView(home);
             window.history.replaceState({ ...state, timelyoRole: role, timelyoView: home, timelyoMenu: false }, "");
@@ -720,12 +731,12 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
             pageContent = <TeacherLearning learning={learning} mutate={learningMutate} busy={busy} view={activeView as "materials" | "homework"}/>;
         }
     }
-    return <NotificationsProvider accountId={account.id || ""} language={language}><div className="app-shell">
+    return <NotificationsProvider key={`${account.id}:${role}`} accountId={account.id || ""} language={language}><div className="app-shell">
         <header className="topbar">
             <div className="brand"><BrandLogo small/><div><strong>{BRAND_NAME}</strong><span>{t("学习与协作平台")} · GMT+8</span></div></div>
             <div className="top-actions">
                 <LanguageSwitcher language={language} change={changeLanguage}/>
-                <Button size="sm" variant="outline" className="menu-toggle" onClick={toggleMenu} aria-label={t(menuOpen ? "关闭功能菜单" : "打开功能菜单")} aria-expanded={menuOpen} aria-controls="workspace-menu"><Menu size={20}/></Button>
+                <Button size="sm" variant="outline" className="menu-toggle" onClick={toggleMenu} aria-label={t(menuOpen ? "关闭功能菜单" : "打开功能菜单")} aria-expanded={menuOpen} aria-controls="workspace-menu" aria-describedby="menu-pending-count"><Menu size={20}/><span id="menu-pending-count"><MenuBadge count={taskCount} includeUnread header/></span></Button>
             </div>
         </header>
         {menuOpen && !desktop && <button type="button" className="menu-backdrop" onClick={closeMobileMenu} aria-label={t("关闭功能菜单")}/>}
@@ -733,7 +744,7 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
             {menuOpen && <aside id="workspace-menu" className="workspace-menu" aria-label={t("功能菜单")}>
                 <SignedInIdentity account={account}/>
                 <nav className="menu-links" aria-label={t("功能菜单")}>
-                    {NAV_GROUPS[role].map(group => <div className="menu-group" key={group.label}>{group.label && <h2 className="menu-group-title">{t(group.label)}</h2>}{group.ids.map(id => items.find(item => item.id === id)!).filter(Boolean).map(item => <button key={item.id} type="button" className={"menu-link" + (activeView === item.id ? " active" : "")} aria-current={activeView === item.id ? "page" : undefined} onClick={() => choose(item.id)}><item.Icon size={19} aria-hidden="true"/><span>{t(item.label)}</span></button>)}</div>)}
+                    {NAV_GROUPS[role].map(group => <div className="menu-group" key={group.label}>{group.label && <h2 className="menu-group-title">{t(group.label)}</h2>}{group.ids.map(id => items.find(item => item.id === id)!).filter(Boolean).map(item => <button key={item.id} type="button" className={"menu-link" + (activeView === item.id ? " active" : "")} aria-current={activeView === item.id ? "page" : undefined} onClick={() => choose(item.id)}><item.Icon size={19} aria-hidden="true"/><span>{t(item.label)}</span><MenuBadge count={badgeCounts[item.id as keyof typeof badgeCounts] || 0} includeUnread={item.id==="notifications"}/></button>)}</div>)}
                 </nav>
                 <div className="menu-utilities">
                     <button type="button" className="menu-link" onClick={reload}><RefreshCw size={19}/><span>{t("刷新")}</span></button>

@@ -23,7 +23,7 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
       if (await first("SELECT 1 AS found FROM teaching_materials WHERE owner_id = ? UNION SELECT 1 FROM homework WHERE owner_id = ? LIMIT 1", id, id)) throw new DeleteError("此账号仍拥有教学资料或功课，请先处理这些资料后再永久删除");
       const local = await first<{ username: string }>("SELECT username FROM local_credentials WHERE account_id = ?", id);
       statements.push(db.prepare("DELETE FROM notification_deliveries WHERE item_id IN (SELECT id FROM notification_items WHERE account_id=?) OR subscription_id IN (SELECT id FROM push_subscriptions WHERE account_id=?)").bind(id,id));
-      for (const table of ["notification_items", "push_subscriptions", "sessions", "assignments", "study_blocks", "local_credentials", "google_identities"]) statements.push(db.prepare(`DELETE FROM ${table} WHERE account_id = ?`).bind(id));
+      for (const table of ["site_notifications", "notification_items", "push_subscriptions", "sessions", "assignments", "study_blocks", "local_credentials", "google_identities"]) statements.push(db.prepare(`DELETE FROM ${table} WHERE account_id = ?`).bind(id));
       if (local) statements.push(db.prepare("DELETE FROM login_attempts WHERE username = ?").bind(local.username));
       statements.push(db.prepare("DELETE FROM accounts WHERE id = ?").bind(id));
     } else if (kind === "teacher" || kind === "student") {
@@ -51,6 +51,7 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
       statements.push(db.prepare("DELETE FROM reschedule_requests WHERE lesson_id = ?").bind(id));
       statements.push(db.prepare("DELETE FROM notification_deliveries WHERE item_id IN (SELECT id FROM notification_items WHERE lesson_id=?)").bind(id));
       statements.push(db.prepare("DELETE FROM notification_items WHERE lesson_id=?").bind(id));
+      statements.push(db.prepare("DELETE FROM site_notifications WHERE lesson_id=?").bind(id));
       statements.push(db.prepare("DELETE FROM lessons WHERE id = ?").bind(id));
     } else if (kind === "homework") {
       const item = await first<{ owner_id: string; attachment_file_id: string | null }>("SELECT owner_id,attachment_file_id FROM homework WHERE id = ?", id);

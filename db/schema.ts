@@ -261,3 +261,9 @@ export const notificationDeliveries = sqliteTable("notification_deliveries", {
 export const notificationRuntime = sqliteTable("notification_runtime", {
   id: integer("id").primaryKey(), lastDispatchAt: text("last_dispatch_at").notNull(),
 });
+
+export const siteNotifications = sqliteTable("site_notifications", {
+  id: text("id").primaryKey(), accountId: text("account_id").notNull(),
+  eventId: text("event_id").notNull(), lessonId: text("lesson_id").notNull(), kind: text("kind").notNull(),
+  createdAt: text("created_at").notNull(), readAt: text("read_at"),
+}, table => [uniqueIndex("site_notification_event_unique").on(table.accountId,table.eventId),index("site_notification_account_idx").on(table.accountId,table.createdAt)]);

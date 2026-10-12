@@ -12,6 +12,8 @@ export async function prepareAccountMerge(actor: Account, duplicateId: string, c
   if (await first("SELECT 1 AS found FROM local_credentials WHERE account_id = ?", duplicate.id)) return { error: "Google 已连接另一个密码账号，请联系管理员", statements: [] };
   if (!confirmed) return { mergeName: duplicate.name, error: "发现已有 Google 账号，确认后会合并登录方式并保留资料", statements: [] };
   const statements = [];
+  statements.push(db.prepare("INSERT INTO site_notifications (id,account_id,event_id,lesson_id,kind,created_at,read_at) SELECT lower(hex(randomblob(16))),?,event_id,lesson_id,kind,created_at,read_at FROM site_notifications WHERE account_id=? ON CONFLICT(account_id,event_id) DO UPDATE SET read_at=coalesce(site_notifications.read_at,excluded.read_at)").bind(actor.id,duplicate.id));
+  statements.push(db.prepare("DELETE FROM site_notifications WHERE account_id=?").bind(duplicate.id));
   statements.push(db.prepare("DELETE FROM notification_deliveries WHERE item_id IN (SELECT n.id FROM notification_items n JOIN notification_items kept ON kept.account_id=? AND kept.lesson_id=n.lesson_id AND kept.planned_start=n.planned_start AND kept.offset_minutes=n.offset_minutes WHERE n.account_id=?)").bind(actor.id,duplicate.id));
   statements.push(db.prepare("DELETE FROM notification_items WHERE account_id=? AND EXISTS (SELECT 1 FROM notification_items kept WHERE kept.account_id=? AND kept.lesson_id=notification_items.lesson_id AND kept.planned_start=notification_items.planned_start AND kept.offset_minutes=notification_items.offset_minutes)").bind(duplicate.id,actor.id));
   statements.push(db.prepare("UPDATE notification_items SET account_id=? WHERE account_id=?").bind(actor.id,duplicate.id));

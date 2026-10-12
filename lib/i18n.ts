@@ -614,6 +614,7 @@ const en: Record<string, string> = {
   "新注册账号在 7 天内未启用或绑定，会到期清理。请联系管理员。":"New accounts that are not activated or assigned within 7 days expire and are cleaned up. Contact an administrator.",
   "可用登录方式":"Sign-in methods", "用户名与密码":"Username and password", "邮箱与密码":"Email and password", "修改密码":"Change password",
   "课程管理":"Courses", "教学":"Teaching", "人员与账号":"People & accounts", "系统与账号":"System & account", "学习":"Learning", "班级与作业":"Classes & coursework",  "学习安排":"Learning plans", "暂无课程":"No upcoming lessons", "筛选":"Filters", "已应用":"Active", "更多":"More", "新增":"Add", "个班级":"classes", "资料内容":"Material details", "功课内容":"Homework details", "分配对象":"Recipients", "开始与截止时间":"Availability & deadline", "附件与分数（可选）":"Attachments & scores (optional)", "马来西亚时间（GMT+8）":"Malaysia time (GMT+8)", "无法载入页面":"Unable to load this page", "出席记录已全部处理":"Attendance records are up to date",
+  "项待查看或处理":"items to view or handle", "改期申请未获同意":"Reschedule request declined", "课程时间已更改":"Lesson time changed", "新时间：":"New time: ", "暂无新通知。上课提醒和课程变更会显示在这里。":"No notifications yet. Lesson reminders and schedule changes will appear here.",
 };
 
 export function t(value: string) {

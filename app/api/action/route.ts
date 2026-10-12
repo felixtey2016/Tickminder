@@ -6,6 +6,7 @@ import { accounts, assignments, audit, lessons, localCredentials, loginAttempts,
 import { hashPassword, normalizeUsername, validPassword, validUsername } from "@/lib/password";
 import { findLessonConflict, generateWeekly, hoursBetween, lessonConflictReason, malaysiaDate, mayCheckIn, type LessonSlot } from "@/lib/lesson-rules";
 import { readRoster } from "@/lib/roster";
+import { recordLessonChange } from "@/lib/inbox-server";
 import { teacherMaySeeLesson, mayRequestReschedule, mayRespondReschedule } from "@/lib/access";
 import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 import { studentNameKey } from "@/lib/student-names";
@@ -264,7 +265,7 @@ export async function POST(request: Request) {
       }
       const update = { status: decision === "accept" ? "accepted" : "rejected", respondedBy: actor.id, respondedAt: now };
       await db.update(rescheduleRequests).set(update).where(eq(rescheduleRequests.id, requestId));
-      await db.insert(audit).values({ id: crypto.randomUUID(), lessonId: id, actorId: actor.id, action: decision === "accept" ? "acceptReschedule" : "rejectReschedule", before: JSON.stringify(proposal), after: JSON.stringify(update), at: now });
+      await recordLessonChange({ lessonId: id, actorId: actor.id, action: decision === "accept" ? "acceptReschedule" : "rejectReschedule", before: proposal, after: update, at: now });
       return NextResponse.json({ ok: true });
     }
     if (action === "attendance") {
@@ -325,7 +326,7 @@ export async function POST(request: Request) {
         const update = action === "cancel" ? { status: "cancelled", reviewedAt: null, reviewedBy: null, chargeable: null, updatedAt: now } : { plannedStart: new Date(Date.parse(row.plannedStart) + shift).toISOString(), plannedEnd: future ? new Date(Date.parse(row.plannedStart) + shift + Date.parse(newEnd) - Date.parse(newStart)).toISOString() : newEnd, reviewedAt: null, reviewedBy: null, chargeable: null, updatedAt: now };
         await db.update(lessons).set(update).where(eq(lessons.id, row.id));
         await db.update(rescheduleRequests).set({ status: "stale", respondedAt: now }).where(and(eq(rescheduleRequests.lessonId, row.id), eq(rescheduleRequests.status, "pending")));
-        await db.insert(audit).values({ id: crypto.randomUUID(), lessonId: row.id, actorId: actor.id, action: action === "edit" ? "reschedule" : "cancel", before: JSON.stringify(row), after: JSON.stringify(update), at: now });
+        await recordLessonChange({ lessonId: row.id, actorId: actor.id, action: action === "edit" ? "reschedule" : "cancel", before: row, after: update, at: now });
       }
       return NextResponse.json({ ok: true, count: candidates.length });
     }
