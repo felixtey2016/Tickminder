@@ -1,3 +1,4 @@
+import {groupReader,groupStatement} from "@/lib/group-data";
 import { env } from "cloudflare:workers";
 import type { Account } from "@/lib/auth";
 import { configuredBytes, DEFAULT_PDF_MAX_BYTES, displayPdfName } from "@/lib/learning";
@@ -18,12 +19,13 @@ export async function first<T extends Row = Row>(query: string, ...values: unkno
   return await learningDb().prepare(query).bind(...values).first<T>();
 }
 
-export async function change(action: string, actorId: string, recordId: string, after: Record<string, unknown> | null = null) {
-  await learningDb().prepare("INSERT INTO audit (id, lesson_id, actor_id, action, before_json, after_json, at) VALUES (?, ?, ?, ?, NULL, ?, ?)")
-    .bind(crypto.randomUUID(), `learning:${recordId}`, actorId, action, after ? JSON.stringify(after) : null, new Date().toISOString()).run();
+export async function change(groupId:string, action: string, actorId: string, recordId: string, after: Record<string, unknown> | null = null) {
+  await learningDb().prepare("INSERT INTO audit (group_id,id, lesson_id, actor_id, action, before_json, after_json, at) VALUES (?,?, ?, ?, ?, NULL, ?, ?)")
+    .bind(groupId,crypto.randomUUID(), `learning:${recordId}`, actorId, action, after ? JSON.stringify(after) : null, new Date().toISOString()).run();
 }
 
 export async function teacherMayAssign(account: Account, student: string, subject: string) {
+  const {first,rows}=groupReader(account.groupId);
   if (account.role !== "teacher" || !account.teacherName) return false;
   return Boolean(await first(`SELECT 1 AS allowed FROM plans p
     JOIN students s ON s.name = p.student JOIN teachers t ON t.name = p.teacher_name
@@ -31,6 +33,7 @@ export async function teacherMayAssign(account: Account, student: string, subjec
 }
 
 export async function teacherSubjects(account: Account) {
+  const {first,rows}=groupReader(account.groupId);
   if (account.role !== "teacher" || !account.teacherName) return [];
   return rows<{ student: string; subject: string }>(`SELECT p.student, p.subject FROM plans p
     JOIN students s ON s.name = p.student JOIN teachers t ON t.name = p.teacher_name
@@ -49,12 +52,14 @@ function activeClassroomAccess(alias: string) {
 }
 
 export async function studentHasHomework(account: Account, homeworkId: string) {
+  const {first,rows}=groupReader(account.groupId);
   if (account.role !== "student" || !account.studentName) return false;
   return Boolean(await first(`SELECT 1 AS allowed FROM homework_recipients r JOIN homework h ON h.id = r.homework_id
     WHERE r.homework_id = ? AND r.student_name = ? AND ${activeClassroomAccess("h")}`, homeworkId, account.studentName, account.studentName));
 }
 
 export async function pdfMayRead(account: Account, fileId: string) {
+  const {first,rows}=groupReader(account.groupId);
   const file = await first<{ id: string; objectKey: string; filename: string; bytes: number; status: string; ownerId: string }>(`SELECT id, object_key AS objectKey, filename, bytes, status, owner_id AS ownerId FROM pdf_files WHERE id = ?`, fileId);
   if (!file || !["staged", "attached"].includes(file.status)) return null;
   if (file.ownerId === account.id) return file;
@@ -78,6 +83,7 @@ export async function pdfMayRead(account: Account, fileId: string) {
 }
 
 export async function learningState(account: Account) {
+  const {first,rows}=groupReader(account.groupId);
   const limits = { pdfMaxBytes: configuredBytes(env.PDF_MAX_BYTES, DEFAULT_PDF_MAX_BYTES) };
   if (account.role === "teacher" || account.role === "admin") {
     const ownerWhere = (alias: string) => account.role === "admin" ? "" : ` WHERE ${alias}.owner_id = ?`;

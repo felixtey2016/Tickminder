@@ -1,3 +1,4 @@
+import {groupStatement,requireGroup} from "@/lib/group-data";
 import { currentBusinessAccount } from "@/lib/auth";
 import { learningDb } from "@/lib/learning-server";
 import { NotificationError, notificationState, saveSubscription, removeSubscription, sendTest } from "@/lib/notifications-server";
@@ -14,15 +15,15 @@ export async function POST(request:Request) {
   if(request.headers.get("origin")!==new URL(request.url).origin) return Response.json({error:"没有权限执行此操作"},{status:403,headers});
   try {
     const bodyText=await request.text();if(bodyText.length>6000) throw new NotificationError("请求内容过大",413);
-    const body=JSON.parse(bodyText); const db=learningDb();
+    const body=JSON.parse(bodyText); const db=learningDb(); const groupId=requireGroup(account.groupId);
     if(body.action==="subscribe") return Response.json({ok:true,...await saveSubscription(account,body.subscription,body.language)},{headers});
     if(body.action==="unsubscribe" && typeof body.id==="string") {await removeSubscription(body.id,account.id);return Response.json({ok:true},{headers});}
     if(body.action==="read" && typeof body.id==="string") {
       const change=body.id.startsWith("change:"),table=change?"site_notifications":"notification_items";
-      await db.prepare(`UPDATE ${table} SET read_at=coalesce(read_at,?) WHERE id=? AND account_id=?`).bind(new Date().toISOString(),change?body.id.slice(7):body.id,account.id).run();
+      await groupStatement(groupId,`UPDATE ${table} SET read_at=coalesce(read_at,?) WHERE (id=? AND account_id=?) AND group_id = ?`).bind(new Date().toISOString(),change?body.id.slice(7):body.id,account.id,groupId).run();
       return Response.json({ok:true},{headers});
     }
-    if(body.action==="readAll") {const now=new Date().toISOString();await db.batch([db.prepare("UPDATE notification_items SET read_at=? WHERE account_id=? AND read_at IS NULL").bind(now,account.id),db.prepare("UPDATE site_notifications SET read_at=? WHERE account_id=? AND read_at IS NULL").bind(now,account.id)]);return Response.json({ok:true},{headers});}
+    if(body.action==="readAll") {const now=new Date().toISOString();await db.batch([groupStatement(groupId,"UPDATE notification_items SET read_at=? WHERE (account_id=? AND read_at IS NULL) AND group_id = ?").bind(now,account.id,groupId),groupStatement(groupId,"UPDATE site_notifications SET read_at=? WHERE (account_id=? AND read_at IS NULL) AND group_id = ?").bind(now,account.id,groupId)]);return Response.json({ok:true},{headers});}
     if(body.action==="test" && typeof body.id==="string") {await sendTest(account,body.id);return Response.json({ok:true},{headers});}
     throw new NotificationError("请求格式无效");
   } catch(error) {

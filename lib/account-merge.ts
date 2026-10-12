@@ -5,14 +5,15 @@ import { first, learningDb } from "@/lib/learning-server";
 // have both been verified. A second explicit confirmation is required for a merge.
 export async function prepareAccountMerge(actor: Account, duplicateId: string, confirmed: boolean) {
   const db = learningDb();
-  const duplicate = await first<{ id: string; name: string; role: string; teacher_name: string | null; student_name: string | null; disabled_at: string | null }>("SELECT * FROM accounts WHERE id = ?", duplicateId);
+  const duplicate = await first<{ id: string; name: string; role: string; teacher_name: string | null; student_name: string | null; disabled_at: string | null; group_id: string | null }>("SELECT * FROM accounts WHERE id = ?", duplicateId);
   if (!duplicate || duplicate.disabled_at) return { error: "此 Google 账号已停用，请联系管理员", statements: [] };
+  if (duplicate.group_id !== actor.groupId) return {error:"两个账号属于不同补习集团，请联系管理员",statements:[]};
   const same = duplicate.role === actor.role && (actor.role === "teacher" ? Boolean(actor.teacherName) && duplicate.teacher_name === actor.teacherName : actor.role === "student" && Boolean(actor.studentName) && duplicate.student_name === actor.studentName);
   if (duplicate.role !== "pending" && !same) return { error: "两个账号的身份不同，请联系管理员核对后再连接", statements: [] };
   if (await first("SELECT 1 AS found FROM local_credentials WHERE account_id = ?", duplicate.id)) return { error: "Google 已连接另一个密码账号，请联系管理员", statements: [] };
   if (!confirmed) return { mergeName: duplicate.name, error: "发现已有 Google 账号，确认后会合并登录方式并保留资料", statements: [] };
   const statements = [];
-  statements.push(db.prepare("INSERT INTO site_notifications (id,account_id,event_id,lesson_id,kind,created_at,read_at) SELECT lower(hex(randomblob(16))),?,event_id,lesson_id,kind,created_at,read_at FROM site_notifications WHERE account_id=? ON CONFLICT(account_id,event_id) DO UPDATE SET read_at=coalesce(site_notifications.read_at,excluded.read_at)").bind(actor.id,duplicate.id));
+  statements.push(db.prepare("INSERT INTO site_notifications (group_id,id,account_id,event_id,lesson_id,kind,created_at,read_at) SELECT group_id,lower(hex(randomblob(16))),?,event_id,lesson_id,kind,created_at,read_at FROM site_notifications WHERE account_id=? ON CONFLICT(account_id,event_id) DO UPDATE SET read_at=coalesce(site_notifications.read_at,excluded.read_at)").bind(actor.id,duplicate.id));
   statements.push(db.prepare("DELETE FROM site_notifications WHERE account_id=?").bind(duplicate.id));
   statements.push(db.prepare("DELETE FROM notification_deliveries WHERE item_id IN (SELECT n.id FROM notification_items n JOIN notification_items kept ON kept.account_id=? AND kept.lesson_id=n.lesson_id AND kept.planned_start=n.planned_start AND kept.offset_minutes=n.offset_minutes WHERE n.account_id=?)").bind(actor.id,duplicate.id));
   statements.push(db.prepare("DELETE FROM notification_items WHERE account_id=? AND EXISTS (SELECT 1 FROM notification_items kept WHERE kept.account_id=? AND kept.lesson_id=notification_items.lesson_id AND kept.planned_start=notification_items.planned_start AND kept.offset_minutes=notification_items.offset_minutes)").bind(duplicate.id,actor.id));
@@ -24,11 +25,11 @@ export async function prepareAccountMerge(actor: Account, duplicateId: string, c
   for (const [table, column] of [["pdf_files", "owner_id"], ["teaching_materials", "owner_id"], ["homework", "owner_id"], ["study_blocks", "account_id"], ["classrooms", "created_by"], ["classroom_announcements", "author_id"], ["homework_recipients", "scored_by"], ["lessons", "created_by"], ["lessons", "reviewed_by"], ["reschedule_requests", "requested_by"], ["reschedule_requests", "responded_by"]]) {
     statements.push(db.prepare(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`).bind(actor.id, duplicate.id));
   }
-  statements.push(db.prepare("INSERT OR IGNORE INTO assignments (id,account_id,plan_key) SELECT lower(hex(randomblob(16))),?,plan_key FROM assignments WHERE account_id = ?").bind(actor.id, duplicate.id));
+  statements.push(db.prepare("INSERT OR IGNORE INTO assignments (group_id,id,account_id,plan_key) SELECT group_id,lower(hex(randomblob(16))),?,plan_key FROM assignments WHERE account_id = ?").bind(actor.id, duplicate.id));
   statements.push(db.prepare("DELETE FROM assignments WHERE account_id = ?").bind(duplicate.id));
   statements.push(db.prepare("DELETE FROM sessions WHERE account_id = ?").bind(duplicate.id));
   statements.push(db.prepare("DELETE FROM google_identities WHERE account_id = ?").bind(duplicate.id));
   statements.push(db.prepare("DELETE FROM accounts WHERE id = ?").bind(duplicate.id));
-  statements.push(db.prepare("INSERT INTO audit (id,lesson_id,actor_id,action,after_json,at) VALUES (?,?,?,'mergeAccount',?,?)").bind(crypto.randomUUID(), `account:${actor.id}`, actor.id, JSON.stringify({ oldAccountId: duplicate.id, oldName: duplicate.name, accountId: actor.id }), new Date().toISOString()));
+  statements.push(db.prepare("INSERT INTO audit (group_id,id,lesson_id,actor_id,action,after_json,at) VALUES (?,?,?,?,'mergeAccount',?,?)").bind(actor.groupId,crypto.randomUUID(), `account:${actor.id}`, actor.id, JSON.stringify({ oldAccountId: duplicate.id, oldName: duplicate.name, accountId: actor.id }), new Date().toISOString()));
   return { statements };
 }

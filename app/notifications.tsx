@@ -1,4 +1,6 @@
 "use client";
+import {groupFetch} from "@/lib/group-client";
+
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Bell, BellOff, Check, Settings, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,7 +10,7 @@ import { useDialogState } from "@/lib/use-dialog-state";
 import { t, type Language } from "@/lib/i18n";
 
 type Item={id:string;kind?:string;minutes?:number;dueAt:string;readAt:string|null;subject:string;teacherName:string;plannedStart:string;plannedEnd:string;previousStart?:string};
-type State={accountId?:string;unreadCount:number;items:Item[];configured:boolean;publicKey:string|null;schedulerReady:boolean;lastDispatchAt:string|null};
+type State={groupId?:string;accountId?:string;unreadCount:number;items:Item[];configured:boolean;publicKey:string|null;schedulerReady:boolean;lastDispatchAt:string|null};
 type Device={accountId:string;id:string};
 const DEVICE_KEY="tickminder-push-device";
 // A dismissal is intentionally not persisted: a full new entry offers again.
@@ -21,7 +23,7 @@ function withDeviceLock<T>(operation:()=>Promise<T>):Promise<T> {
 function readDevice():Device|null {try {return JSON.parse(localStorage.getItem(DEVICE_KEY)||"null");}catch{return null;}}
 function writeDevice(value:Device|null) {try{if(value)localStorage.setItem(DEVICE_KEY,JSON.stringify(value));else localStorage.removeItem(DEVICE_KEY);}catch{/* browser privacy settings */}}
 async function api(body:Record<string,unknown>) {
-  const response=await fetch("/api/notifications",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const response=await groupFetch("/api/notifications",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   const result=await readApiJson<{ok?:boolean;error?:string;id?:string}>(response);
   if(!response.ok || result.error) throw new Error(result.error||"操作失败，请重试");return result;
 }
@@ -60,17 +62,17 @@ export function MenuBadge({count=0,includeUnread=false,header=false}:{count?:num
   return <span className={"menu-count"+(header?" menu-count-header":"")} aria-label={`${total} ${t("项待查看或处理")}`}>{total>99?"99+":total}</span>;
 }
 
-export function NotificationsProvider({accountId,language,children}:{accountId:string;language:Language;children:ReactNode}) {
+export function NotificationsProvider({accountId,groupId,language,children}:{accountId:string;groupId:string;language:Language;children:ReactNode}) {
   const [state,setState]=useState<State|null>(null),[loadError,setLoadError]=useState(""),[deviceId,setDeviceId]=useState<string|null>(null),[enabled,setEnabled]=useState(false),[busy,setBusy]=useState(false);
   const [prompt,setPrompt]=useDialogState<true|null>("notification-permission",null);
   const inFlight=useRef(false),configured=useRef<State|null>(null),latestRefresh=useRef(0);
   useEffect(()=>{pushPaused=false;},[accountId]);
   const refresh=useCallback(async()=>{
     const requestId=++latestRefresh.current;
-    const response=await fetch("/api/notifications",{cache:"no-store"});
+    const response=await groupFetch("/api/notifications",{cache:"no-store"});
     const result=await readApiJson<State & {error?:string}>(response);
     if(!response.ok || result.error) throw new Error(result.error||"通知中心暂时无法载入，请稍后重试");
-    if(result.accountId && result.accountId!==accountId)throw new Error("登录已过期，请重新登录");
+    if((result.accountId && result.accountId!==accountId)||(result.groupId && result.groupId!==groupId))throw new Error("登录已过期，请重新登录");
     if(requestId!==latestRefresh.current)return;
     configured.current=result;setState(result);setLoadError("");
   },[accountId]);

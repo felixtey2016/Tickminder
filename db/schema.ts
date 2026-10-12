@@ -1,20 +1,23 @@
-import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, real, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const teachers = sqliteTable("teachers", {
-  name: text("name").primaryKey(),
+  groupId: text("group_id").notNull().default("next-genn-edu"),
+  name: text("name").notNull(),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   createdAt: text("created_at").notNull(),
-});
+}, t => [primaryKey({columns:[t.groupId,t.name]})]);
 
 export const students = sqliteTable("students", {
-  name: text("name").primaryKey(),
+  groupId: text("group_id").notNull().default("next-genn-edu"),
+  name: text("name").notNull(),
   nameKey: text("name_key").notNull(),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   createdAt: text("created_at").notNull(),
-}, (t) => [uniqueIndex("students_name_key_unique").on(t.nameKey)]);
+}, (t) => [primaryKey({columns:[t.groupId,t.name]}),uniqueIndex("students_name_key_unique").on(t.groupId,t.nameKey)]);
 
 export const plans = sqliteTable("plans", {
-  key: text("key").primaryKey(),
+  groupId: text("group_id").notNull().default("next-genn-edu"),
+  key: text("key").notNull(),
   student: text("student").notNull(),
   subject: text("subject").notNull(),
   teacherName: text("teacher_name").notNull(),
@@ -22,9 +25,10 @@ export const plans = sqliteTable("plans", {
   onlineLink: text("online_link"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   createdAt: text("created_at").notNull(),
-});
+}, t => [primaryKey({columns:[t.groupId,t.key]})]);
 
 export const accounts = sqliteTable("accounts", {
+  groupId: text("group_id").default("next-genn-edu"),
   id: text("id").primaryKey(),
   email: text("email").notNull(),
   name: text("name").notNull(),
@@ -69,12 +73,14 @@ export const loginAttempts = sqliteTable("login_attempts", {
 });
 
 export const assignments = sqliteTable("assignments", {
+  groupId: text("group_id").notNull().default("next-genn-edu"),
   id: text("id").primaryKey(),
   accountId: text("account_id").notNull(),
   planKey: text("plan_key").notNull(),
 }, (t) => [uniqueIndex("assignment_unique").on(t.accountId, t.planKey)]);
 
 export const lessons = sqliteTable("lessons", {
+  groupId: text("group_id").notNull().default("next-genn-edu"),
   id: text("id").primaryKey(),
   student: text("student").notNull(),
   subject: text("subject").notNull(),
@@ -97,6 +103,7 @@ export const lessons = sqliteTable("lessons", {
 });
 
 export const rescheduleRequests = sqliteTable("reschedule_requests", {
+  groupId: text("group_id").notNull().default("next-genn-edu"),
   id: text("id").primaryKey(),
   lessonId: text("lesson_id").notNull(),
   originalStart: text("original_start").notNull(),
@@ -113,6 +120,7 @@ export const rescheduleRequests = sqliteTable("reschedule_requests", {
 });
 
 export const audit = sqliteTable("audit", {
+  groupId: text("group_id").notNull().default("next-genn-edu"),
   id: text("id").primaryKey(),
   lessonId: text("lesson_id").notNull(),
   actorId: text("actor_id").notNull(),
@@ -123,6 +131,7 @@ export const audit = sqliteTable("audit", {
 });
 
 export const pdfFiles = sqliteTable("pdf_files", {
+  groupId: text("group_id").notNull().default("next-genn-edu"),
   id: text("id").primaryKey(),
   objectKey: text("object_key").notNull().unique(),
   ownerId: text("owner_id").notNull(),
@@ -135,11 +144,13 @@ export const pdfFiles = sqliteTable("pdf_files", {
 });
 
 export const storageQuota = sqliteTable("storage_quota", {
-  id: integer("id").primaryKey(),
+  groupId: text("group_id").notNull().default("next-genn-edu"),
+  id: integer("id").notNull(),
   usedBytes: integer("used_bytes").notNull().default(0),
-});
+}, t => [primaryKey({columns:[t.groupId,t.id]})]);
 
 export const teachingMaterials = sqliteTable("teaching_materials", {
+  groupId: text("group_id").notNull().default("next-genn-edu"),
   id: text("id").primaryKey(),
   ownerId: text("owner_id").notNull(),
   title: text("title").notNull(),
@@ -150,6 +161,7 @@ export const teachingMaterials = sqliteTable("teaching_materials", {
 });
 
 export const materialRecipients = sqliteTable("material_recipients", {
+  groupId: text("group_id").notNull().default("next-genn-edu"),
   id: text("id").primaryKey(),
   materialId: text("material_id").notNull(),
   studentName: text("student_name").notNull(),
@@ -157,6 +169,7 @@ export const materialRecipients = sqliteTable("material_recipients", {
 }, (t) => [uniqueIndex("material_recipient_unique").on(t.materialId, t.studentName, t.subject)]);
 
 export const homework = sqliteTable("homework", {
+  groupId: text("group_id").notNull().default("next-genn-edu"),
   id: text("id").primaryKey(),
   ownerId: text("owner_id").notNull(),
   title: text("title").notNull(),
@@ -171,6 +184,7 @@ export const homework = sqliteTable("homework", {
 });
 
 export const classrooms = sqliteTable("classrooms", {
+  groupId: text("group_id").notNull().default("next-genn-edu"),
   id: text("id").primaryKey(),
   title: text("title").notNull(),
   description: text("description"),
@@ -184,13 +198,15 @@ export const classrooms = sqliteTable("classrooms", {
 });
 
 export const academicTerms = sqliteTable("academic_terms", {
+  groupId: text("group_id").notNull().default("next-genn-edu"),
   id: text("id").primaryKey(),
-  name: text("name").notNull().unique(),
+  name: text("name").notNull(),
   isCurrent: integer("is_current", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull(),
-});
+},t=>[uniqueIndex("academic_terms_name_unique").on(t.groupId,t.name)]);
 
 export const classroomMembers = sqliteTable("classroom_members", {
+  groupId: text("group_id").notNull().default("next-genn-edu"),
   id: text("id").primaryKey(),
   classroomId: text("classroom_id").notNull(),
   studentName: text("student_name").notNull(),
@@ -198,6 +214,7 @@ export const classroomMembers = sqliteTable("classroom_members", {
 }, (t) => [uniqueIndex("classroom_member_unique").on(t.classroomId, t.studentName)]);
 
 export const classroomAnnouncements = sqliteTable("classroom_announcements", {
+  groupId: text("group_id").notNull().default("next-genn-edu"),
   id: text("id").primaryKey(),
   classroomId: text("classroom_id").notNull(),
   authorId: text("author_id").notNull(),
@@ -209,6 +226,7 @@ export const classroomAnnouncements = sqliteTable("classroom_announcements", {
 });
 
 export const homeworkRecipients = sqliteTable("homework_recipients", {
+  groupId: text("group_id").notNull().default("next-genn-edu"),
   id: text("id").primaryKey(),
   homeworkId: text("homework_id").notNull(),
   studentName: text("student_name").notNull(),
@@ -218,6 +236,7 @@ export const homeworkRecipients = sqliteTable("homework_recipients", {
 }, (t) => [uniqueIndex("homework_recipient_unique").on(t.homeworkId, t.studentName)]);
 
 export const homeworkSubmissions = sqliteTable("homework_submissions", {
+  groupId: text("group_id").notNull().default("next-genn-edu"),
   id: text("id").primaryKey(),
   homeworkId: text("homework_id").notNull(),
   studentName: text("student_name").notNull(),
@@ -227,6 +246,7 @@ export const homeworkSubmissions = sqliteTable("homework_submissions", {
 });
 
 export const studyBlocks = sqliteTable("study_blocks", {
+  groupId: text("group_id").notNull().default("next-genn-edu"),
   id: text("id").primaryKey(),
   accountId: text("account_id").notNull(),
   title: text("title").notNull(),
@@ -247,6 +267,7 @@ export const pushSubscriptions = sqliteTable("push_subscriptions", {
 }, t => [index("push_account_idx").on(t.accountId)]);
 
 export const notificationItems = sqliteTable("notification_items", {
+  groupId: text("group_id").notNull().default("next-genn-edu"),
   id: text("id").primaryKey(), accountId: text("account_id").notNull(), lessonId: text("lesson_id").notNull(),
   plannedStart: text("planned_start").notNull(), offsetMinutes: integer("offset_minutes").notNull(),
   dueAt: text("due_at").notNull(), createdAt: text("created_at").notNull(), readAt: text("read_at"),
@@ -263,7 +284,12 @@ export const notificationRuntime = sqliteTable("notification_runtime", {
 });
 
 export const siteNotifications = sqliteTable("site_notifications", {
+  groupId: text("group_id").notNull().default("next-genn-edu"),
   id: text("id").primaryKey(), accountId: text("account_id").notNull(),
   eventId: text("event_id").notNull(), lessonId: text("lesson_id").notNull(), kind: text("kind").notNull(),
   createdAt: text("created_at").notNull(), readAt: text("read_at"),
 }, table => [uniqueIndex("site_notification_event_unique").on(table.accountId,table.eventId),index("site_notification_account_idx").on(table.accountId,table.createdAt)]);
+
+export const tuitionGroups = sqliteTable("tuition_groups", {
+ id:text("id").primaryKey(),name:text("name").notNull(),joinCode:text("join_code").notNull().unique(),active:integer("active",{mode:"boolean"}).notNull().default(true),createdAt:text("created_at").notNull(),updatedAt:text("updated_at").notNull(),
+});

@@ -1,4 +1,6 @@
 "use client";
+import {groupFetch} from "@/lib/group-client";
+
 import { useRef, useState } from "react";
 import { t } from "@/lib/i18n";
 import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
@@ -35,7 +37,7 @@ export function SheetSyncPanel() {
     setMessage("");
     setDone(false);
     try {
-      const response = await fetch("/api/sheet-sync", {
+      const response = await groupFetch("/api/sheet-sync", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action, mode, month: preview?.month, previewToken: preview?.previewToken }),

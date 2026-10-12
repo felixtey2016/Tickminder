@@ -1,14 +1,15 @@
+import {groupWhere} from "@/lib/group-data";
 import { eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { plans, students, teachers } from "@/db/schema";
 
-export async function readRoster(account?: { role: string; teacherName: string | null; studentName: string | null }) {
+export async function readRoster(account: {groupId:string|null; role: string; teacherName: string | null; studentName: string | null }) {
   const db = getDb();
   const planFilter = account?.role === "teacher" ? eq(plans.teacherName, account.teacherName || "") : account?.role === "student" ? eq(plans.student, account.studentName || "") : undefined;
   const [teacherRows, studentRows, planRows] = await Promise.all([
-    db.select().from(teachers).where(planFilter ? inArray(teachers.name, db.select({name: plans.teacherName}).from(plans).where(planFilter)) : undefined).all(),
-    db.select().from(students).where(planFilter ? inArray(students.name, db.select({name: plans.student}).from(plans).where(planFilter)) : undefined).all(),
-    db.select().from(plans).where(planFilter).all(),
+    db.select().from(teachers).where(groupWhere(teachers,account.groupId,planFilter ? inArray(teachers.name, db.select({name: plans.teacherName}).from(plans).where(groupWhere(plans,account.groupId,planFilter))) : undefined)).all(),
+    db.select().from(students).where(groupWhere(students,account.groupId,planFilter ? inArray(students.name, db.select({name: plans.student}).from(plans).where(groupWhere(plans,account.groupId,planFilter))) : undefined)).all(),
+    db.select().from(plans).where(groupWhere(plans,account.groupId,planFilter)).all(),
   ]);
   const activeTeachers = new Set(teacherRows.filter(t => t.active).map(t => t.name));
   const activeStudents = new Set(studentRows.filter(s => s.active).map(s => s.name));

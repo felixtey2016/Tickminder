@@ -39,7 +39,7 @@ export async function POST(request: Request) {
         : db.prepare("INSERT INTO google_identities (subject,account_id,email,linked_at) VALUES (?,?,?,?)").bind(profile.id, actor.id, profile.email, now),
       db.prepare("UPDATE accounts SET email = ? WHERE id = ?").bind(profile.email, actor.id),
       db.prepare("DELETE FROM login_attempts WHERE username = ?").bind(attemptKey),
-      db.prepare("INSERT INTO audit (id,lesson_id,actor_id,action,at) VALUES (?,?,?,'linkGoogle',?)").bind(crypto.randomUUID(), `account:${actor.id}`, actor.id, now),
+      db.prepare("INSERT INTO audit (group_id,id,lesson_id,actor_id,action,at) VALUES (?,?,?,?,'linkGoogle',?)").bind(actor.groupId || "next-genn-edu",crypto.randomUUID(), `account:${actor.id}`, actor.id, now),
     ]);
     return NextResponse.json({ ok: true });
   } catch (error) {

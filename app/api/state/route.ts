@@ -1,3 +1,5 @@
+import {groupRows} from "@/lib/group-data";
+import { groupWhere } from "@/lib/group-data";
 import { NextResponse } from "next/server";
 import { desc, eq, inArray } from "drizzle-orm";
 import { currentBusinessAccount as currentAccount, type Account } from "@/lib/auth";
@@ -36,8 +38,8 @@ async function coreState(account: Account, selected: string) {
   const db = getDb();
   const lessonFilter = account.role === "teacher" ? eq(lessons.teacherName, account.teacherName || "") : account.role === "student" ? eq(lessons.student, account.studentName || "") : undefined;
   const [revision, roster, allLessons, allRequests] = await Promise.all([
-    readRevision(), readRoster(account), db.select().from(lessons).where(lessonFilter).all(),
-    lessonFilter ? db.select({request: rescheduleRequests}).from(rescheduleRequests).innerJoin(lessons, eq(lessons.id, rescheduleRequests.lessonId)).where(lessonFilter).all().then(items => items.map(item => item.request)) : db.select().from(rescheduleRequests).all(),
+    readRevision(account.groupId), readRoster(account), db.select().from(lessons).where(groupWhere(lessons,account.groupId,lessonFilter)).all(),
+    lessonFilter ? db.select({request: rescheduleRequests}).from(rescheduleRequests).innerJoin(lessons, eq(lessons.id, rescheduleRequests.lessonId)).where(groupWhere(rescheduleRequests,account.groupId,lessonFilter)).all().then(items => items.map(item => item.request)) : db.select().from(rescheduleRequests).where(groupWhere(rescheduleRequests,account.groupId)).all(),
   ]);
   const linkByPlan = new Map(roster.allPlans.map(plan => [plan.key, plan]));
   const withOnlineLink = (lesson: typeof lessons.$inferSelect) => {
@@ -64,20 +66,20 @@ async function coreState(account: Account, selected: string) {
 async function extraState(account: Account, scope: Exclude<Scope, "core">) {
   if (scope === "learning") return { learning: await learningState(account) };
   if (scope === "classrooms") {
-    const [classrooms, terms] = await Promise.all([classroomsState(account), rows("SELECT id,name,is_current AS isCurrent FROM academic_terms ORDER BY created_at DESC")]);
+    const [classrooms, terms] = await Promise.all([classroomsState(account), groupRows(account.groupId,"SELECT id,name,is_current AS isCurrent FROM academic_terms ORDER BY created_at DESC")]);
     return {classrooms, terms};
   }
   const db = getDb();
-  const users = await db.select().from(accounts).all();
+  const users = await db.select().from(accounts).where(groupWhere(accounts,account.groupId)).all();
   if (scope === "accounts") {
-    const credentials = await db.select({ accountId: localCredentials.accountId, username: localCredentials.username, mustChangePassword: localCredentials.mustChangePassword }).from(localCredentials).all();
+    const credentials = await db.select({ accountId: localCredentials.accountId, username: localCredentials.username, mustChangePassword: localCredentials.mustChangePassword }).from(localCredentials).where(inArray(localCredentials.accountId,users.map(u=>u.id))).all();
     const byId = new Map(credentials.map(c => [c.accountId, c]));
     return {users: users.map(u => ({...u, ...lifecycleView(u), username: byId.get(u.id)?.username || null, mustChangePassword: byId.get(u.id)?.mustChangePassword || false}))};
   }
-  const [changes, mergedNames] = await Promise.all([db.select().from(audit).orderBy(desc(audit.at)).limit(30).all(), mergedAccountNames()]);
-  const changedLessons = changes.length ? await db.select({id: lessons.id, student: lessons.student, subject: lessons.subject}).from(lessons).where(inArray(lessons.id, changes.map(c => c.lessonId))).all() : [];
+  const [changes, mergedNames] = await Promise.all([db.select().from(audit).where(groupWhere(audit,account.groupId)).orderBy(desc(audit.at)).limit(30).all(), mergedAccountNames(account.groupId)]);
+  const changedLessons = changes.length ? await db.select({id: lessons.id, student: lessons.student, subject: lessons.subject}).from(lessons).where(groupWhere(lessons,account.groupId,inArray(lessons.id, changes.map(c => c.lessonId)))).all() : [];
   const byId = new Map(changedLessons.map(l => [l.id, `${l.student} · ${l.subject}`]));
-  return {activity: changes.map(c => ({...c, actorName: users.find(u => u.id === c.actorId)?.name || mergedNames.get(c.actorId) || c.actorId, lessonName: byId.get(c.lessonId) || c.lessonId}))};
+  return {activity: changes.map(c => ({...c, actorName: (c.actorId===account.id?account.name:users.find(u => u.id === c.actorId)?.name) || mergedNames.get(c.actorId) || c.actorId, lessonName: byId.get(c.lessonId) || c.lessonId}))};
 }
 
 export async function GET(request: Request) {
@@ -88,7 +90,7 @@ export async function GET(request: Request) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(selected)) return json({error: "Invalid month"}, 400);
   if (scope && !["core","learning","classrooms","accounts","activity"].includes(scope)) return json({error: "请求无效，请刷新后重试"}, 400);
   if ((scope === "accounts" || scope === "activity") && account.role !== "admin") return json({error: "没有权限执行此操作"}, 403);
-  const identity = {id: account.id, name: account.name, email: account.email, role: account.role, teacherName: account.teacherName, studentName: account.studentName};
+  const identity = {groupId:account.groupId,id: account.id, name: account.name, email: account.email, role: account.role, teacherName: account.teacherName, studentName: account.studentName};
   if (account.role === "pending") return json({account: {...identity, ...lifecycleView(account)}, lessons:[], classrooms:[], proposals:[], loadedScopes: ["core"]});
   try {
     // No scope preserves the existing full response for compatible clients.

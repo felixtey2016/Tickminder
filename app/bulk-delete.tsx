@@ -1,4 +1,6 @@
 "use client";
+import {groupFetch} from "@/lib/group-client";
+
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -17,7 +19,7 @@ export function BulkDeleteTool({kind,records,mutate,busy,single=false,message}: 
   async function loadPreview(ids:string[]) {
     if(inFlight.current || busy)return; inFlight.current=true;setLoading(true);setPreview(null);
     try {
-      const response=await fetch("/api/manage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"previewDelete",entries:ids.map(id=>({kind,id}))})});
+      const response=await groupFetch("/api/manage",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"previewDelete",entries:ids.map(id=>({kind,id}))})});
       const data=await readApiJson<Preview & {error?:string}>(response);
       if(!response.ok) throw new Error(t(data.error || "请求失败"));
       setPreview(data);

@@ -1,4 +1,5 @@
 "use client";
+import {groupFetch} from "@/lib/group-client";
 
 import { useEffect } from "react";
 
@@ -16,7 +17,7 @@ export function useLessonWebMcp(role: string | undefined, lessons: Lesson[], rel
       const x = input as Record<string, unknown>;
       if (!lessons.some(l => l.id === x.id)) throw new Error("Lesson is not in your assigned list");
       if (!["completed", "student_absent", "teacher_absent"].includes(String(x.status))) throw new Error("Invalid attendance status");
-      const response = await fetch("/api/action", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "attendance", id: x.id, status: x.status, actualStart: x.actualStart, actualEnd: x.actualEnd, note: x.note || "" }) });
+      const response = await groupFetch("/api/action", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "attendance", id: x.id, status: x.status, actualStart: x.actualStart, actualEnd: x.actualEnd, note: x.note || "" }) });
       const body = await response.json() as { error?: string };
       if (!response.ok) throw new Error(body.error || "Attendance failed");
       await reload(); return { id: x.id, saved: true };

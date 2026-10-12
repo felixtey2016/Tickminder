@@ -1,4 +1,6 @@
 "use client";
+import {groupFetch,setClientGroup} from "@/lib/group-client";
+
 import { BulkDeleteTool } from "./bulk-delete";
 import { FilterScope, useFilterPreference } from "@/lib/filter-preferences";
 import { getLanguage, LANGUAGE_KEY, setLanguage, t, type Language } from "@/lib/i18n";
@@ -8,7 +10,7 @@ import { FilterPanel } from "@/components/filter-panel";
 import { LessonMore } from "@/components/lesson-more";
 import { PageState } from "@/components/page-state";
 import { actionFailureMessage } from "@/lib/action-feedback";
-import { BarChart3, CalendarClock, ContactRound, LibraryBig, ListChecks, UserRound, UsersRound, SquarePen, ArrowLeftRight } from "lucide-react";
+import { BarChart3, CalendarClock, ContactRound, LibraryBig, ListChecks, UserRound, UsersRound, SquarePen, ArrowLeftRight,Building2 } from "lucide-react";
 import { BRAND_NAME } from "@/lib/brand";
 import { LegalLinks } from "@/components/legal-links";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -24,6 +26,7 @@ import { monthlyAttendanceForPair } from "@/lib/lesson-rules";
 import { StudentPortal, TeacherPortal } from "./portals";
 import { HomeDashboard } from "./home-dashboard";
 import type { LearningState } from "./learning-portal";
+const GroupConsole=lazy(()=>import("./group-console").then(m=>({default:m.GroupConsole})));
 const TeacherLearning = lazy(() => import("./learning-portal").then(module => ({default: module.TeacherLearning})));
 const AdminLearning = lazy(() => import("./admin-learning").then(module => ({default: module.AdminLearning})));
 import type { Classroom } from "./classrooms-page";
@@ -52,6 +55,7 @@ type Account = {
     activatedAt?: string | null;
     role: "admin" | "teacher" | "student" | "pending";
     isOwner?: boolean;
+    groupId?:string|null;groupName?:string|null;groupUnavailable?:boolean;
     teacherName?: string | null;
     studentName?: string | null;
 };
@@ -165,7 +169,7 @@ function actionSuccessText(action: string) {
     const labels: Record<string, string> = { activateAccount: "账号已启用", createTerm: "学期已保存", saveTerm: "学期已保存", permanentDelete: "记录已永久删除", restoreAccount: "账号已恢复", attendance: "上课打卡已保存", proposeReschedule: "改期申请已发送", respondReschedule: "改期处理结果已保存", edit: "课程时间已更新", cancel: "课程已取消", create: "课程已安排", saveMaterial: "教学资料已保存", deleteMaterial: "教学资料已删除", publishHomework: "功课已发布", submitHomework: "功课已提交", setHomeworkScore: "分数已保存", saveStudyBlock: "学习安排已保存", deleteStudyBlock: "学习安排已删除", saveClassroom: "班级已保存", archiveClassroom: "班级状态已更新", saveAnnouncement: "公告已发布", deleteAnnouncement: "公告已删除", savePlan: "学生科目已保存", saveStudent: "学生已保存", setStudentActive: "学生名单已更新", saveTeacher: "老师已保存", bind: "账号绑定已保存", deleteAccount: "账号已停用", updateOnlineLink: "网课链接已保存", review: "课时核对已保存", createLocalAccount: "账号已创建", resetLocalPassword: "密码已重置" };
     return t(labels[action] || "操作已完成");
 }
-async function request(url: string, options?: RequestInit): Promise<any> { const r = await fetch(url, { ...options, cache: "no-store" }); const v = await readApiJson<{ error?: string; [key: string]: any }>(r); if (!r.ok)
+async function request(url: string, options?: RequestInit): Promise<any> { const r = await groupFetch(url, { ...options, cache: "no-store" }); const v = await readApiJson<{ error?: string; [key: string]: any }>(r); if (!r.ok)
     throw Object.assign(new Error(v.conflict ? conflictDescription(v.conflict as ConflictDetail) : t(r.status === 401 && url !== "/api/auth" ? "登录已过期，请重新登录" : v.error || "请求失败")), { status: r.status }); return v; }
 export function Scheduler() {
     const [language, setLanguageState] = useState<Language>("zh");
@@ -178,8 +182,11 @@ export function Scheduler() {
         account: Account | null;
         clientId: string | null;
     } | null>(null);
+    setClientGroup(auth?.account?.groupId);
+    const [invitedGroup,setInvitedGroup]=useState("");
+    useEffect(()=>{const code=new URLSearchParams(location.search).get("group");if(code)void request(`/api/groups?code=${encodeURIComponent(code)}`).then(r=>setInvitedGroup(r.group.name)).catch(e=>setMessage(e.message));},[]);
     const [state, setState] = useState<State | null>(null);
-    const [selectedMonth, setSelectedMonth] = useFilterPreference<string>("reporting-month", local(new Date().toISOString()).slice(0, 7), auth?.account?.id);
+    const [selectedMonth, setSelectedMonth] = useFilterPreference<string>("reporting-month", local(new Date().toISOString()).slice(0, 7), auth?.account?.id?`${auth.account.id}:${auth.account.groupId}`:undefined);
     const [message, setMessage] = useState("");
     const [busy, setBusy] = useState(false);
     const mutationInFlight = useRef(false);
@@ -211,7 +218,7 @@ export function Scheduler() {
                 if (next.account.id !== accountId) return;
                 loadedScopes.current.add(scope);
                 setState(previous => {
-                    if (!previous || previous.account.id !== accountId || previous.account.role !== next.account.role || previous.account.teacherName !== next.account.teacherName || previous.account.studentName !== next.account.studentName) return previous;
+                    if (!previous || previous.account.id !== accountId || previous.account.groupId !== next.account.groupId || previous.account.role !== next.account.role || previous.account.teacherName !== next.account.teacherName || previous.account.studentName !== next.account.studentName) return previous;
                     return {...previous, ...next, account: previous.account, revision: previous.revision,
                         loadedScopes: [...new Set([...(previous.loadedScopes || []), ...(next.loadedScopes || [scope])])],
                         scopeErrors: {...previous.scopeErrors, [scope]: undefined}};
@@ -237,7 +244,7 @@ export function Scheduler() {
             }
             revisionRef.current = typeof next.revision === "number" ? next.revision : null;
             setState(previous => {
-                const sameIdentity = previous?.account.id === next.account.id && previous?.account.role === next.account.role && previous?.account.teacherName === next.account.teacherName && previous?.account.studentName === next.account.studentName;
+                const sameIdentity = previous?.account.id === next.account.id && previous?.account.groupId === next.account.groupId && previous?.account.role === next.account.role && previous?.account.teacherName === next.account.teacherName && previous?.account.studentName === next.account.studentName;
                 if (!sameIdentity) loadedScopes.current.clear();
                 return sameIdentity ? {...previous, ...next, loadedScopes: [...new Set([...(previous.loadedScopes || []), ...(next.loadedScopes || ["core"])])]} : next;
             });
@@ -325,7 +332,7 @@ export function Scheduler() {
                     credential: string;
                 }) => { try {
                     setBusy(true);
-                    const signedIn = await request("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(x) });
+                    const signedIn = await request("/api/auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({...x,groupCode:new URLSearchParams(location.search).get("group") || undefined}) });
                     setAuth(signedIn.account ? signedIn : await request("/api/auth"));
                      showActionToast("success", "登录成功");
                 }
@@ -379,7 +386,7 @@ export function Scheduler() {
             setBusy(true);
             setMessage("");
             const send = async (payload: Record<string, unknown>) => {
-                const response = await fetch(payload.action === "permanentDelete" ? "/api/manage" : "/api/learning", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), cache: "no-store" });
+                const response = await groupFetch(payload.action === "permanentDelete" ? "/api/manage" : "/api/learning", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload), cache: "no-store" });
                 const result = await readApiJson<{ error?: string; warning?: string; overlaps?: string[] }>(response);
                 return { response, result };
             };
@@ -404,7 +411,7 @@ export function Scheduler() {
         mutationInFlight.current = true;
         try {
             setBusy(true); setMessage("");
-            const response = await fetch(body.action === "permanentDelete" ? "/api/manage" : "/api/classrooms", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
+            const response = await groupFetch(body.action === "permanentDelete" ? "/api/manage" : "/api/classrooms", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
             const result = await readApiJson<{ error?: string; id?: string; warning?: string }>(response);
             if (!response.ok) throw new Error(t(result.error || "保存失败，请重试"));
             channelRef.current?.postMessage({ type: "changed" });
@@ -414,7 +421,7 @@ export function Scheduler() {
         } catch (error) { alertActionFailure(error); return { ok: false }; }
         finally { mutationInFlight.current = false; setBusy(false); }
     }
-    async function logout() { try { await detachPushOnLogout(); await request("/api/auth", { method: "DELETE" }); clearDialogHistory(); setModal(null); showActionToast("success", "已退出登录"); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); loadedScopes.current.clear(); wantedScopes.current.clear(); scopeRequests.current.clear(); } catch (error) { setMessage(alertActionFailure(error)); } }
+    async function logout() { try { if(!auth?.account?.groupUnavailable) await detachPushOnLogout(); await request("/api/auth", { method: "DELETE" }); clearDialogHistory(); setModal(null); showActionToast("success", "已退出登录"); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); loadedScopes.current.clear(); wantedScopes.current.clear(); scopeRequests.current.clear(); } catch (error) { setMessage(alertActionFailure(error)); } }
     async function localLogin(username: string, password: string) { if (busy) return; try {
         setBusy(true);
         setMessage("");
@@ -459,7 +466,7 @@ export function Scheduler() {
     if (!auth)
         return <main className="auth-loading"><LanguageSwitcher language={language} change={changeLanguage}/><PageState kind={message ? "error" : "loading"} title={message ? "无法载入页面" : "正在载入…"} description={message ? actionFailureMessage(new Error(message)) : undefined} action={message ? "重试" : undefined} onAction={() => { setMessage(""); void request("/api/auth").then(setAuth).catch(error => setMessage(actionFailureMessage(error))); }}/></main>;
     if (!auth.account)
-        return <LoginForm googleButton={googleButton} clientId={auth.clientId} login={localLogin} busy={busy} message={message} language={language} changeLanguage={changeLanguage}/>;
+        return <LoginForm invitedGroup={invitedGroup} googleButton={googleButton} clientId={auth.clientId} login={localLogin} busy={busy} message={message} language={language} changeLanguage={changeLanguage}/>;
     const account = auth.account;
     if (account.mustChangePassword)
         return <PasswordChange name={account.name} change={changePassword} logout={logout} busy={busy} message={message} language={language} changeLanguage={changeLanguage}/>;
@@ -467,15 +474,17 @@ export function Scheduler() {
         return <NameSetup initialName={account.name} save={confirmName} logout={logout} busy={busy} message={message} language={language} changeLanguage={changeLanguage}/>;
     if (account.requiresAccountSetup)
         return <AccountSetup email={account.email} onSaved={async()=>setAuth(await request("/api/auth"))} logout={logout} language={language} changeLanguage={changeLanguage}/>;
+    if(account.groupUnavailable)return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><h1>{t("补习集团暂不可用")}</h1><p>{t("请联系所属集团的管理员，或稍后重试。")}</p><Button onClick={()=>window.location.reload()}>{t("刷新")}</Button><Button variant="outline" onClick={logout}>{t("退出登录")}</Button></div></main>;
     const admin = account.role === "admin";
-    return <Workspace account={account} state={state} ensureScope={ensureScope} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/>;
+    return <Workspace key={`${account.id}:${account.groupId}`} account={account} state={state} ensureScope={ensureScope} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/>;
 }
 function BrandLogo({ small = false }: { small?: boolean }) { return <span className={`brand-logo ${small ? "small" : ""}`}><img src="/tickminder-logo.svg" width={small ? 40 : 80} height={small ? 40 : 80} alt={BRAND_NAME} /></span>; }
 function LanguageSwitcher({ language, change }: { language: Language; change: (next: Language) => void }) { return <div className="language-switch" role="group" aria-label="Language / 语言"><button type="button" aria-pressed={language === "zh"} onClick={() => change("zh")}>中文</button><span className="language-separator" aria-hidden="true">|</span><button type="button" aria-pressed={language === "en"} onClick={() => change("en")}>EN</button></div>; }
 function SignedInIdentity({ account }: { account: Account }) {
     return <div className="signed-in-identity"><span>{t("当前登录账号")}</span><strong>{account.name}</strong><span className="signed-in-method">{account.username ? `${t("登录账号")} · ${account.username}${account.email ? ` · Google: ${account.email}` : ""}` : `Google · ${account.email || "—"}`}</span></div>;
 }
-function LoginForm({ googleButton, clientId, login, busy, message, language, changeLanguage }: {
+function LoginForm({ googleButton, clientId, login, busy, message, language, changeLanguage,invitedGroup }: {
+    invitedGroup?:string;
     googleButton: React.RefObject<HTMLDivElement | null>;
     clientId: string | null;
     login: (username: string, password: string) => Promise<void>;
@@ -486,7 +495,7 @@ function LoginForm({ googleButton, clientId, login, busy, message, language, cha
 }) {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
-    return <main className="auth-shell"><div className="auth-layout"><section className="auth-story"><BrandLogo/><strong>{BRAND_NAME}</strong><h2>{t("学习与协作")}</h2><p>{t("集中管理学习安排、作业与共享资料。")}</p></section><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><div className="auth-mobile-brand"><BrandLogo small/><strong>{BRAND_NAME}</strong></div><p className="eyebrow">{language === "zh" ? `欢迎使用 ${BRAND_NAME}` : `Welcome to ${BRAND_NAME}`}</p><h1>{t("登录")}</h1><p>{t("登录你的学习空间")}</p>
+    return <main className="auth-shell"><div className="auth-layout"><section className="auth-story"><BrandLogo/><strong>{BRAND_NAME}</strong><h2>{t("学习与协作")}</h2><p>{t("集中管理学习安排、作业与共享资料。")}</p></section><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><div className="auth-mobile-brand"><BrandLogo small/><strong>{BRAND_NAME}</strong></div><p className="eyebrow">{language === "zh" ? `欢迎使用 ${BRAND_NAME}` : `Welcome to ${BRAND_NAME}`}</p><h1>{t("登录")}</h1>{invitedGroup&&<p className="notice">{t("注册加入")} · {invitedGroup}</p>}<p>{t("登录你的学习空间")}</p>
     <form onSubmit={e => { e.preventDefault(); login(username, password); }}><label>{t("邮箱或用户名")}<input required autoComplete="username" autoCapitalize="none" maxLength={254} value={username} onChange={e => setUsername(e.target.value)}/></label><label>{t("\u5BC6\u7801")}<input required type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("登录")}</Button></form>
     <p className="auth-divider">{t("\u6216\u4F7F\u7528 Google \u767B\u5F55")}</p>{clientId ? <div ref={googleButton} className="google-signin"/> : <div className="notice">{t("Google \u767B\u5F55\u5C1A\u672A\u914D\u7F6E\uFF1B\u53EF\u4EE5\u4F7F\u7528\u7BA1\u7406\u5458\u521B\u5EFA\u7684\u8D26\u53F7\u5BC6\u7801\u3002")}</div>}{busy && <small>{t("\u6B63\u5728\u9A8C\u8BC1\u8D26\u53F7\u2026")}</small>}{message && <div className="error" role="alert">{message}</div>}<span className="auth-foot">{t("忘记密码？请联系管理员。")}</span><p className="auth-legal-note">{language === "en" ? "Please read our terms and privacy policy before signing in." : "登录前，请阅读服务条款与隐私政策。"}</p><LegalLinks language={language} className="auth-legal"/></div></div></main>;
 }
@@ -571,7 +580,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
 };
 
 const NAV_GROUPS: Record<NavigationRole, Array<{ label: string; ids: string[] }>> = {
- admin: [{label:"",ids:["home"]},{label:"课程管理",ids:["calendar","list","schedule","attention","overview"]},{label:"教学",ids:["classrooms","homework","materials","subjects","students","teachers"]},{label:"人员与账号",ids:["teacherRoster","studentRoster","accounts"]},{label:"系统与账号",ids:["notifications","myAccount","sheet","activity"]}],
+ admin: [{label:"",ids:["groups","home","groupInfo"]},{label:"课程管理",ids:["calendar","list","schedule","attention","overview"]},{label:"教学",ids:["classrooms","homework","materials","subjects","students","teachers"]},{label:"人员与账号",ids:["teacherRoster","studentRoster","accounts"]},{label:"系统与账号",ids:["notifications","myAccount","sheet","activity"]}],
  teacher: [{label:"",ids:["home"]},{label:"课程管理",ids:["calendar","lessons","schedule","attendance","reschedule","hours"]},{label:"教学",ids:["classrooms","students","homework","materials"]},{label:"我的账号",ids:["notifications","myAccount"]}],
  student: [{label:"",ids:["home"]},{label:"学习",ids:["calendar","list","reschedule"]},{label:"班级与作业",ids:["classrooms","homework","materials"]},{label:"我的账号",ids:["notifications","myAccount"]}],
  pending: [{label:"",ids:["home"]},{label:"我的账号",ids:["notifications","myAccount"]}],
@@ -598,7 +607,7 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
     changeLanguage: (next: Language) => void;
 }) {
     const role = account.role as NavigationRole;
-    const items = [...NAV_ITEMS[role], { id: "notifications", label: "通知中心", Icon: Bell }];
+    const items = [...(account.isOwner?[{id:"groups",label:"平台总控制台",Icon:Building2}]:[]),...NAV_ITEMS[role],...(role==="admin"?[{id:"groupInfo",label:"集团信息",Icon:Building2}]:[]), { id: "notifications", label: "通知中心", Icon: Bell }];
     const [badgeNow,setBadgeNow]=useState(()=>Date.now());
     useEffect(()=>{const timer=window.setInterval(()=>setBadgeNow(Date.now()),30_000);return()=>window.clearInterval(timer);},[]);
     const badgeCounts=navigationBadges(role,account.id || "",lessons,state?.proposals || [],badgeNow);
@@ -607,15 +616,16 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
     const [menuOpen, setMenuOpen] = useState(false);
     const [desktop, setDesktop] = useState(false);
     useEffect(() => {
-        const home = NAV_ITEMS[role][0].id;
-        const valid = (view: unknown) => view === "notifications" || (typeof view === "string" && NAV_ITEMS[role].some(item => item.id === view));
+        const home = account.isOwner?"groups":NAV_ITEMS[role][0].id;
+        const valid = (view: unknown) => view === "notifications" || (typeof view === "string" && items.some(item => item.id === view));
         const state = window.history.state || {};
         const url = new URL(window.location.href);
-        if (url.searchParams.get("view") === "notifications") {
+        if (sessionStorage.getItem("tickminder-group-view")==="home") {sessionStorage.removeItem("tickminder-group-view");setSelectedView("home");window.history.replaceState({...state,timelyoRole:role,timelyoGroup:account.groupId,timelyoView:"home",timelyoMenu:false},"",url);}
+        else if (url.searchParams.get("view") === "notifications") {
             url.searchParams.delete("view");
             setSelectedView("notifications");
-            window.history.replaceState({ ...state, timelyoRole: role, timelyoView: "notifications", timelyoMenu: false }, "", url);
-        } else if (state.timelyoRole === role && valid(state.timelyoView)) {
+            window.history.replaceState({ ...state, timelyoRole: role,timelyoGroup:account.groupId, timelyoView: "notifications", timelyoMenu: false }, "", url);
+        } else if (state.timelyoGroup === account.groupId && state.timelyoRole === role && valid(state.timelyoView)) {
             setSelectedView(state.timelyoView);
             // A fresh mobile entry starts closed. Do not retain a menu-only
             // history entry which would reopen the overlay after Back.
@@ -632,7 +642,7 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
         };
         window.addEventListener("popstate", onPopState);
         return () => window.removeEventListener("popstate", onPopState);
-    }, [role, account.id]);
+    }, [role, account.id,account.groupId]);
     useEffect(() => {
         const query = window.matchMedia("(min-width: 901px)");
         const sync = () => {
@@ -686,7 +696,8 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
         window.scrollTo(0, 0);
     };
     let pageContent: React.ReactNode = null;
-    if (activeView === "home" && role === "pending") {
+    if((activeView==="groups"&&account.isOwner)||(activeView==="groupInfo"&&role==="admin")){pageContent=<GroupConsole isOwner={activeView==="groups"&&Boolean(account.isOwner)} currentGroupId={account.groupId}/>;}
+    else if (activeView === "home" && role === "pending") {
         pageContent = <section className="panel pending-home"><h2>{t(account.assignmentStatus === "ACTIVE" ? "账号已启用" : "等待分配")}</h2><p>{t("管理员分配身份后，课程、功课及班级会显示在这里。")}</p>{account.pendingExpiresAt && <p className="notice">{t("待分配期限")} · {new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-GB",{timeZone:"Asia/Kuala_Lumpur",dateStyle:"medium",timeStyle:"short"}).format(new Date(account.pendingExpiresAt))}<br/>{t("新注册账号在 7 天内未启用或绑定，会到期清理。请联系管理员。")}</p>}<Button variant="outline" onClick={()=>choose("myAccount")}>{t("我的账号")}</Button></section>;
     } else if (activeView === "home" && role !== "pending") {
         pageContent = <HomeDashboard role={role} name={account.name} lessons={lessons} learning={learning} learningReady={Boolean(state?.learning) || role === "admin"} learningError={state?.scopeErrors?.learning} onNavigate={choose}/>;
@@ -731,9 +742,9 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
             pageContent = <TeacherLearning learning={learning} mutate={learningMutate} busy={busy} view={activeView as "materials" | "homework"}/>;
         }
     }
-    return <NotificationsProvider key={`${account.id}:${role}`} accountId={account.id || ""} language={language}><div className="app-shell">
+    return <NotificationsProvider groupId={account.groupId || ""} key={`${account.id}:${role}:${account.groupId}`} accountId={account.id || ""} language={language}><div className="app-shell">
         <header className="topbar">
-            <div className="brand"><BrandLogo small/><div><strong>{BRAND_NAME}</strong><span>{t("学习与协作平台")} · GMT+8</span></div></div>
+            <div className="brand"><BrandLogo small/><div><strong>{BRAND_NAME}</strong><span>{account.groupName || t("学习与协作平台")} · GMT+8</span></div></div>
             <div className="top-actions">
                 <LanguageSwitcher language={language} change={changeLanguage}/>
                 <Button size="sm" variant="outline" className="menu-toggle" onClick={toggleMenu} aria-label={t(menuOpen ? "关闭功能菜单" : "打开功能菜单")} aria-expanded={menuOpen} aria-controls="workspace-menu" aria-describedby="menu-pending-count"><Menu size={20}/><span id="menu-pending-count"><MenuBadge count={taskCount} includeUnread header/></span></Button>
@@ -752,14 +763,14 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
                 </div>
                 <LegalLinks language={language} className="menu-legal"/>
             </aside>}
-            <main className="workspace">
+            <main className="workspace"><div className="group-context" aria-label={t("当前集团")}><Building2 size={16} aria-hidden="true"/><span>{account.groupName}</span></div>
                 <div className="page-head"><div><p className="eyebrow">{t(role === "admin" ? "管理员工作台" : role === "student" ? "学生工作台" : role === "pending" ? "我的学习空间" : "老师工作台")}</p><h1>{t(title)}</h1></div>
                     {showMonth && <label className="month-select">{t("统计月份")}<input type="month" value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)}/></label>}
                 </div>
                 {message && state && !state.error && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("关闭")}>×</button></div>}
 
                 {role === "teacher" && state && !state.error && !(state.plans || []).length && <div className="notice">{t("暂无负责的学生科目。请联系管理员完成课程分配。")}</div>}
-                <FilterScope.Provider value={account.id || "anonymous"}>{role !== "pending" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "无法载入页面" : "正在载入…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : !scopeLoaded ? <PageState kind={scopeError ? "error" : "loading"} title={scopeError ? "无法载入页面" : "正在载入…"} description={scopeError} action={scopeError ? "重试" : undefined} onAction={() => { if (requiredScope) void ensureScope(requiredScope, true); }}/> : <Suspense fallback={<PageState kind="loading" title="正在载入…"/>}>{pageContent}</Suspense>}</FilterScope.Provider>
+                <FilterScope.Provider value={`${account.id || "anonymous"}:${account.groupId || "none"}`}>{role !== "pending" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "无法载入页面" : "正在载入…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : !scopeLoaded ? <PageState kind={scopeError ? "error" : "loading"} title={scopeError ? "无法载入页面" : "正在载入…"} description={scopeError} action={scopeError ? "重试" : undefined} onAction={() => { if (requiredScope) void ensureScope(requiredScope, true); }}/> : <Suspense fallback={<PageState kind="loading" title="正在载入…"/>}>{pageContent}</Suspense>}</FilterScope.Provider>
             </main>
         </div>
         {modal && <LessonDialog modal={modal} close={() => setModal(null)} mutate={mutate} busy={busy}/>}

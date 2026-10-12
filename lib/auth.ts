@@ -4,6 +4,7 @@ import { and, eq, gt } from "drizzle-orm";
 import { getDb } from "@/db";
 import { accounts, googleIdentities, localCredentials, sessions } from "@/db/schema";
 import { pendingExpired } from "@/lib/account-lifecycle";
+import { selectedGroup } from "@/lib/groups-server";
 
 export type Account = typeof accounts.$inferSelect;
 const encoder = new TextEncoder();
@@ -98,7 +99,9 @@ export async function currentAccount(): Promise<Account | null> {
 export async function currentBusinessAccount(): Promise<Account | null> {
   const identity = await currentIdentity();
   if (!identity || identity.local?.mustChangePassword || (!identity.local && identity.google)) return null;
-  return identity.account;
+  const group = await selectedGroup(identity.account);
+  if (!group) return null;
+  return {...identity.account,groupId:group.id};
 }
 
 export async function createSession(accountId: string) {

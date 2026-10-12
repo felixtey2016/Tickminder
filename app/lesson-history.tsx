@@ -1,4 +1,6 @@
 "use client";
+import {groupFetch} from "@/lib/group-client";
+
 
 import { useState } from "react";
 import { getLanguage, t } from "@/lib/i18n";
@@ -28,7 +30,7 @@ export function LessonHistory({ lessonId }: { lessonId: string }) {
     if (loading) return;
     setLoading(true); setError("");
     try {
-      const response = await fetch(`/api/lesson-history?lessonId=${encodeURIComponent(lessonId)}`, { cache: "no-store" });
+      const response = await groupFetch(`/api/lesson-history?lessonId=${encodeURIComponent(lessonId)}`, { cache: "no-store" });
       const result = await readApiJson<History & { error?: string }>(response);
       if (!response.ok) throw new Error(t(result.error || "改期记录暂时无法载入"));
       setHistory(result);

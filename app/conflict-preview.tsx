@@ -1,4 +1,6 @@
 "use client";
+import {groupFetch} from "@/lib/group-client";
+
 
 import { useEffect, useState } from "react";
 import { getLanguage, t } from "@/lib/i18n";
@@ -29,7 +31,7 @@ export function ConflictPreview({ value, enabled }: { value: Record<string, unkn
     setResult({ checking: true });
     const timer = window.setTimeout(async () => {
       try {
-        const response = await fetch("/api/conflicts", {
+        const response = await groupFetch("/api/conflicts", {
           method: "POST", headers: { "content-type": "application/json" }, body: key,
           signal: controller.signal, cache: "no-store",
         });

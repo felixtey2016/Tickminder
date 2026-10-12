@@ -1,3 +1,4 @@
+import {groupReader,groupStatement,requireGroup} from "@/lib/group-data";
 import { NextResponse } from "next/server";
 import { currentBusinessAccount as currentAccount } from "@/lib/auth";
 import { first, learningDb, studentHasHomework } from "@/lib/learning-server";
@@ -10,6 +11,7 @@ export async function POST(request: Request) {
   if (new URL(request.url).origin !== request.headers.get("origin")) return errorResponse("Origin mismatch", 403);
   const actor = await currentAccount();
   if (!actor || !["teacher", "student"].includes(actor.role)) return errorResponse("没有上传权限", 403);
+  const groupId=requireGroup(actor.groupId); const {first,rows}=groupReader(groupId);
   if (await first("SELECT 1 AS mustChange FROM local_credentials WHERE account_id = ? AND must_change_password = 1", actor.id)) return errorResponse("请先修改初始密码", 403);
   try {
     const bucket = pdfBucket();
@@ -35,16 +37,16 @@ export async function POST(request: Request) {
     if (!pdfSignatureValid(bytes)) return errorResponse("文件内容不是有效的 PDF", 400);
     await cleanOldStagedFiles();
     const db = learningDb();
-    await db.prepare("INSERT OR IGNORE INTO storage_quota (id, used_bytes) VALUES (1, 0)").run();
-    const reserved = await db.prepare("UPDATE storage_quota SET used_bytes = used_bytes + ? WHERE id = 1 AND used_bytes + ? <= ?")
-      .bind(file.size, file.size, limits.total).run();
+    await groupStatement(groupId,"INSERT OR IGNORE INTO storage_quota (group_id,id, used_bytes) VALUES (?,1, 0)").bind(groupId).run();
+    const reserved = await groupStatement(groupId,"UPDATE storage_quota SET used_bytes = used_bytes + ? WHERE (id = 1 AND used_bytes + ? <= ?) AND group_id = ?")
+      .bind(file.size, file.size, limits.total,groupId).run();
     if (!reserved.meta.changes) return errorResponse("PDF 储存总容量已满，请联系管理员", 409);
     const id = crypto.randomUUID();
     const objectKey = `pdf/${crypto.randomUUID()}`;
     let inserted = false;
     try {
-      await db.prepare("INSERT INTO pdf_files (id, object_key, owner_id, kind, context_id, filename, bytes, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'staged', ?)")
-        .bind(id, objectKey, actor.id, kind, kind === "submission" ? contextId : null, file.name.slice(0, 180), file.size, new Date().toISOString()).run();
+      await groupStatement(groupId,"INSERT INTO pdf_files (group_id,id, object_key, owner_id, kind, context_id, filename, bytes, status, created_at) VALUES (?,?, ?, ?, ?, ?, ?, ?, 'staged', ?)")
+        .bind(groupId,id, objectKey, actor.id, kind, kind === "submission" ? contextId : null, file.name.slice(0, 180), file.size, new Date().toISOString()).run();
       inserted = true;
       await bucket.put(objectKey, bytes, { httpMetadata: { contentType: "application/pdf" } });
       return NextResponse.json({ id, filename: file.name, bytes: file.size });
@@ -52,8 +54,8 @@ export async function POST(request: Request) {
       let removed = false;
       try { await bucket.delete(objectKey); removed = true; } catch { /* Keep the staged row for later cleanup. */ }
       if (removed || !inserted) {
-        if (inserted) await db.prepare("DELETE FROM pdf_files WHERE id = ?").bind(id).run();
-        await db.prepare("UPDATE storage_quota SET used_bytes = max(0, used_bytes - ?) WHERE id = 1").bind(file.size).run();
+        if (inserted) await groupStatement(groupId,"DELETE FROM pdf_files WHERE (id = ?) AND group_id = ?").bind(id,groupId).run();
+        await groupStatement(groupId,"UPDATE storage_quota SET used_bytes = max(0, used_bytes - ?) WHERE (id = 1) AND group_id = ?").bind(file.size,groupId).run();
       }
       throw error;
     }

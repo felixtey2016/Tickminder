@@ -1,4 +1,6 @@
 "use client";
+import {groupFetch} from "@/lib/group-client";
+
 import { useEffect, useRef, useState } from "react";
 import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
 import { getLanguage, t } from "@/lib/i18n";
@@ -14,7 +16,7 @@ export function AccountSettings() {
     if(next!==confirm){alertActionFailure(new Error(t("两次输入的新密码不一致")));return;}
     passwordInFlight.current=true;setBusy(true);
     try{
-      const response=await fetch("/api/password",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({currentPassword:current,newPassword:next})});
+      const response=await groupFetch("/api/password",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({currentPassword:current,newPassword:next})});
       const result=await readApiJson<{error?:string}>(response);
       if(!response.ok)throw new Error(t(result.error||"保存失败，请重试"));
       setCurrent("");setNext("");setConfirm("");showActionToast("success","密码已更新");window.dispatchEvent(new Event("timelyo:auth-refresh"));
@@ -23,7 +25,7 @@ export function AccountSettings() {
   const [auth, setAuth] = useState<Auth | null>(null), [password, setPassword] = useState(""), [busy, setBusy] = useState(false);
   const button = useRef<HTMLDivElement>(null), passwordRef = useRef(""), inFlight = useRef(false);
   passwordRef.current = password;
-  async function refresh() { const response = await fetch("/api/auth", { cache: "no-store" }); const data = await readApiJson<Auth>(response); if (!response.ok || !data.account) throw new Error("登录已过期，请重新登录"); setAuth(data); }
+  async function refresh() { const response = await groupFetch("/api/auth", { cache: "no-store" }); const data = await readApiJson<Auth>(response); if (!response.ok || !data.account) throw new Error("登录已过期，请重新登录"); setAuth(data); }
   useEffect(() => { void refresh().catch(alertActionFailure); }, []);
   const language = getLanguage();
   useEffect(() => {
@@ -38,7 +40,7 @@ export function AccountSettings() {
         inFlight.current = true; setBusy(true);
         try {
           const send = async (confirmMerge = false) => {
-            const response = await fetch("/api/account-link", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ credential, password: passwordRef.current, confirmMerge }) });
+            const response = await groupFetch("/api/account-link", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ credential, password: passwordRef.current, confirmMerge }) });
             return { response, data: await readApiJson<{ error?: string; mergeName?: string }>(response) };
           };
           let result = await send();

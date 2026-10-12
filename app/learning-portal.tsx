@@ -1,4 +1,6 @@
 "use client";
+import {groupFetch} from "@/lib/group-client";
+
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Mascot, PageState } from "@/components/page-state";
@@ -26,7 +28,7 @@ export async function uploadPdf(file: File, kind: "material" | "homework" | "sub
   form.set("file", file);
   form.set("kind", kind);
   if (homeworkId) form.set("homeworkId", homeworkId);
-  const response = await fetch("/api/files", { method: "POST", body: form, cache: "no-store" });
+  const response = await groupFetch("/api/files", { method: "POST", body: form, cache: "no-store" });
   if (response.status === 413) throw new Error(t("PDF 超过单份大小限制"));
   const result = await readApiJson<{ id?: string; error?: string }>(response);
   if (!response.ok || !result.id) throw new Error(result.error || (response.status === 413 ? t("PDF 超过单份大小限制") : t("PDF 上传失败，请重试")));

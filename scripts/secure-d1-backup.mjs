@@ -47,8 +47,8 @@ function dpapi(mode, value) {
 }
 
 function validateExport(data) {
-  const version=Number(data?.format?.match(/^timelyo-d1-v([1-8])$/)?.[1] || 0);
-  const expectedTables=[...baseTables,...(version>=2?classroomTables:[]),...(version>=3?['google_identities']:[]),...(version>=4?['academic_terms']:[]),...(version>=7?['notification_items','notification_deliveries','push_subscriptions','notification_runtime']:[]),...(version>=8?['site_notifications']:[])];
+  const version=Number(data?.format?.match(/^timelyo-d1-v([1-9])$/)?.[1] || 0);
+  const expectedTables=[...(version>=9?['tuition_groups']:[]),...baseTables,...(version>=2?classroomTables:[]),...(version>=3?['google_identities']:[]),...(version>=4?['academic_terms']:[]),...(version>=7?['notification_items','notification_deliveries','push_subscriptions','notification_runtime']:[]),...(version>=8?['site_notifications']:[])];
   if (!data || !version || !data.tables ||
       Object.keys(data.tables).sort().join('|') !== expectedTables.slice().sort().join('|')) {
     throw new Error('Incomplete database export');
@@ -75,6 +75,7 @@ function restoreInMemory(data) {
       if (!file) throw new Error(`Missing migration ${prefix}`);
       db.exec(readFileSync(resolve(projectRoot, 'drizzle', file), 'utf8'));
     }
+    if(version>=9)db.exec('DELETE FROM tuition_groups');
     db.exec('BEGIN');
     try {
       for (const name of expectedTables) {

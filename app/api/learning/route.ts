@@ -1,5 +1,7 @@
+import {groupReader,groupStatement,requireGroup} from "@/lib/group-data";
 import { NextResponse } from "next/server";
 import { currentBusinessAccount as currentAccount } from "@/lib/auth";
+import type { Account } from "@/lib/auth";
 import { change, first, learningDb, rows, studentHasHomework, teacherMayAssign } from "@/lib/learning-server";
 import { intervalsOverlap, malaysiaInputToIso, STAGED_FILE_TTL_MS, submissionRule } from "@/lib/learning";
 import { deleteUnreferencedFile } from "@/lib/pdf-storage";
@@ -25,9 +27,10 @@ function recipients(value: unknown) {
   return names;
 }
 
-async function uploadedFile(fileId: string, ownerId: string, kind: string, contextId: string | null = null) {
+async function uploadedFile(actor:Account,fileId: string, kind: string, contextId: string | null = null) {
+  const {first}=groupReader(actor.groupId);
   const file = await first<{ id: string; status: string; kind: string; contextId: string | null; createdAt: string }>(
-    "SELECT id, status, kind, context_id AS contextId, created_at AS createdAt FROM pdf_files WHERE id = ? AND owner_id = ?", fileId, ownerId);
+    "SELECT id, status, kind, context_id AS contextId, created_at AS createdAt FROM pdf_files WHERE id = ? AND owner_id = ?", fileId, actor.id);
   if (!file || file.kind !== kind || file.contextId !== contextId || file.status !== "staged" || Date.parse(file.createdAt) < Date.now() - STAGED_FILE_TTL_MS) throw new ActionError("上传的 PDF 已失效，请重新上传", 409);
   return file;
 }
@@ -36,6 +39,7 @@ export async function POST(request: Request) {
   if (new URL(request.url).origin !== request.headers.get("origin")) return response(new ActionError("Origin mismatch", 403));
   const actor = await currentAccount();
   if (!actor || !["teacher", "student"].includes(actor.role)) return response(new ActionError("没有操作权限", 403));
+  const groupId=requireGroup(actor.groupId); const {first,rows}=groupReader(groupId);
   let data: Record<string, unknown>;
   try { data = await request.json() as Record<string, unknown>; }
   catch { return response(new ActionError("请求格式无效")); }
@@ -54,29 +58,29 @@ export async function POST(request: Request) {
       const classroomId = existing?.classroomId || requestedClassroomId;
       const classroom = classroomId ? await classroomMayManage(actor, classroomId) : null;
       if (classroomId && (!classroom || classroom.archived || classroom.subject !== subject)) throw new ActionError("班级不存在、已封存或科目不符", 403);
-      const students = classroom ? await activeClassroomMemberNames(classroomId) : recipients(data.students);
+      const students = classroom ? await activeClassroomMemberNames(classroomId,groupId) : recipients(data.students);
       if (!students.length) throw new ActionError("班级尚无学生", 409);
       if (!title || title.length > 120 || description.length > 2000 || !subject || subject.length > 100) throw new ActionError("请填写资料标题、科目和有效说明");
       for (const student of students) if (!await teacherMayAssign(actor, student, subject)) throw new ActionError("只能分配给目前由你负责的学生科目", 403);
       if (id) {
         if (fileId && fileId !== existing!.fileId) throw new ActionError("资料文件不能直接替换，请新增资料");
         await db.batch([
-          db.prepare("UPDATE teaching_materials SET title = ?, description = ? WHERE id = ? AND owner_id = ?").bind(title, description || null, id, actor.id),
-          db.prepare("DELETE FROM material_recipients WHERE material_id = ?").bind(id),
-          ...students.map(student => db.prepare("INSERT INTO material_recipients (id, material_id, student_name, subject) VALUES (?, ?, ?, ?)").bind(crypto.randomUUID(), id, student, subject)),
+          groupStatement(groupId,"UPDATE teaching_materials SET title = ?, description = ? WHERE (id = ? AND owner_id = ?) AND group_id = ?").bind(title, description || null, id, actor.id,groupId),
+          groupStatement(groupId,"DELETE FROM material_recipients WHERE (material_id = ?) AND group_id = ?").bind(id,groupId),
+          ...students.map(student => groupStatement(groupId,"INSERT INTO material_recipients (group_id,id, material_id, student_name, subject) VALUES (?,?, ?, ?, ?)").bind(groupId,crypto.randomUUID(), id, student, subject)),
         ]);
-        await change("updateMaterial", actor.id, id, { title, subject, students });
+        await change(groupId,"updateMaterial", actor.id, id, { title, subject, students });
         return NextResponse.json({ ok: true, id });
       }
-      await uploadedFile(fileId, actor.id, "material");
+      await uploadedFile(actor,fileId, "material");
       if (await first("SELECT 1 AS used FROM teaching_materials WHERE file_id = ?", fileId)) throw new ActionError("这份文件已用于另一份资料", 409);
       const newId = crypto.randomUUID();
       await db.batch([
-        db.prepare("INSERT INTO teaching_materials (id, owner_id, title, description, file_id, created_at, classroom_id) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(newId, actor.id, title, description || null, fileId, now, classroomId || null),
-        ...students.map(student => db.prepare("INSERT INTO material_recipients (id, material_id, student_name, subject) VALUES (?, ?, ?, ?)").bind(crypto.randomUUID(), newId, student, subject)),
-        db.prepare("UPDATE pdf_files SET status = 'attached' WHERE id = ? AND owner_id = ? AND status = 'staged'").bind(fileId, actor.id),
+        groupStatement(groupId,"INSERT INTO teaching_materials (group_id,id, owner_id, title, description, file_id, created_at, classroom_id) VALUES (?,?, ?, ?, ?, ?, ?, ?)").bind(groupId,newId, actor.id, title, description || null, fileId, now, classroomId || null),
+        ...students.map(student => groupStatement(groupId,"INSERT INTO material_recipients (group_id,id, material_id, student_name, subject) VALUES (?,?, ?, ?, ?)").bind(groupId,crypto.randomUUID(), newId, student, subject)),
+        groupStatement(groupId,"UPDATE pdf_files SET status = 'attached' WHERE (id = ? AND owner_id = ? AND status = 'staged') AND group_id = ?").bind(fileId, actor.id,groupId),
       ]);
-      await change("saveMaterial", actor.id, newId, { title, subject, students });
+      await change(groupId,"saveMaterial", actor.id, newId, { title, subject, students });
       return NextResponse.json({ ok: true, id: newId });
     }
     if (action === "deleteMaterial") {
@@ -85,10 +89,10 @@ export async function POST(request: Request) {
       const material = await first<{ fileId: string }>("SELECT file_id AS fileId FROM teaching_materials WHERE id = ? AND owner_id = ?", id, actor.id);
       if (!material) throw new ActionError("资料不存在或无权删除", 404);
       await db.batch([
-        db.prepare("DELETE FROM material_recipients WHERE material_id = ?").bind(id),
-        db.prepare("DELETE FROM teaching_materials WHERE id = ? AND owner_id = ?").bind(id, actor.id),
+        groupStatement(groupId,"DELETE FROM material_recipients WHERE (material_id = ?) AND group_id = ?").bind(id,groupId),
+        groupStatement(groupId,"DELETE FROM teaching_materials WHERE (id = ? AND owner_id = ?) AND group_id = ?").bind(id, actor.id,groupId),
       ]);
-      await change("deleteMaterial", actor.id, id);
+      await change(groupId,"deleteMaterial", actor.id, id);
       try { await deleteUnreferencedFile(material.fileId); } catch { /* Retain metadata for a later cleanup attempt. */ }
       return NextResponse.json({ ok: true });
     }
@@ -98,7 +102,7 @@ export async function POST(request: Request) {
       const classroomId = str(data.classroomId);
       const classroom = classroomId ? await classroomMayManage(actor, classroomId) : null;
       if (classroomId && (!classroom || classroom.archived || classroom.subject !== subject)) throw new ActionError("班级不存在、已封存或科目不符", 403);
-      const students = classroom ? await activeClassroomMemberNames(classroomId) : recipients(data.students);
+      const students = classroom ? await activeClassroomMemberNames(classroomId,groupId) : recipients(data.students);
       if (!students.length) throw new ActionError("班级尚无学生", 409);
       if (!title || title.length > 120 || !subject || subject.length > 100 || description.length > 4000) throw new ActionError("请填写有效的功课标题、科目和要求");
       const maxScore = data.scoreEnabled === true ? scoreNumber(data.maxScore, false) : null;
@@ -114,18 +118,18 @@ export async function POST(request: Request) {
         if (!material || material.classroomId !== (classroomId || null)) throw new ActionError("只能选择自己上传且属于当前班级的教学资料", 403);
         attachmentFileId = material.fileId;
       } else if (fileId) {
-        await uploadedFile(fileId, actor.id, "homework");
+        await uploadedFile(actor,fileId, "homework");
         attachmentFileId = fileId;
         staged = true;
       }
       const id = crypto.randomUUID();
       await db.batch([
-        db.prepare("INSERT INTO homework (id, owner_id, title, subject, description, starts_at, due_at, max_score, attachment_file_id, created_at, classroom_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .bind(id, actor.id, title, subject, description, startsAt, dueAt, maxScore, attachmentFileId, now, classroomId || null),
-        ...students.map(student => db.prepare("INSERT INTO homework_recipients (id, homework_id, student_name) VALUES (?, ?, ?)").bind(crypto.randomUUID(), id, student)),
-        ...(staged ? [db.prepare("UPDATE pdf_files SET status = 'attached' WHERE id = ? AND owner_id = ? AND status = 'staged'").bind(attachmentFileId, actor.id)] : []),
+        groupStatement(groupId,"INSERT INTO homework (group_id,id, owner_id, title, subject, description, starts_at, due_at, max_score, attachment_file_id, created_at, classroom_id) VALUES (?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(groupId,id, actor.id, title, subject, description, startsAt, dueAt, maxScore, attachmentFileId, now, classroomId || null),
+        ...students.map(student => groupStatement(groupId,"INSERT INTO homework_recipients (group_id,id, homework_id, student_name) VALUES (?,?, ?, ?)").bind(groupId,crypto.randomUUID(), id, student)),
+        ...(staged ? [groupStatement(groupId,"UPDATE pdf_files SET status = 'attached' WHERE (id = ? AND owner_id = ? AND status = 'staged') AND group_id = ?").bind(attachmentFileId, actor.id,groupId)] : []),
       ]);
-      await change("publishHomework", actor.id, id, { title, subject, students, startsAt, dueAt, maxScore });
+      await change(groupId,"publishHomework", actor.id, id, { title, subject, students, startsAt, dueAt, maxScore });
       return NextResponse.json({ ok: true, id });
     }
     if (action === "setHomeworkScore") {
@@ -137,9 +141,9 @@ export async function POST(request: Request) {
       if (!await first("SELECT 1 AS submitted FROM homework_submissions WHERE homework_id = ? AND student_name = ?", id, student)) throw new ActionError("学生尚未提交功课，暂不能填写分数", 409);
       const score = scoreNumber(data.score, true);
       if (score > task.maxScore) throw new ActionError("得分不能超过满分");
-      await learningDb().prepare("UPDATE homework_recipients SET score = ?, scored_at = ?, scored_by = ? WHERE homework_id = ? AND student_name = ?")
-        .bind(score, now, actor.id, id, student).run();
-      await change("setHomeworkScore", actor.id, id, { student, score });
+      await groupStatement(groupId,"UPDATE homework_recipients SET score = ?, scored_at = ?, scored_by = ? WHERE (homework_id = ? AND student_name = ?) AND group_id = ?")
+        .bind(score, now, actor.id, id, student,groupId).run();
+      await change(groupId,"setHomeworkScore", actor.id, id, { student, score });
       return NextResponse.json({ ok: true, score });
     }
     if (action === "submitHomework") {
@@ -154,18 +158,18 @@ export async function POST(request: Request) {
       const rule = submissionRule(now, homework.startsAt, homework.dueAt, Boolean(previous));
       if (rule === "not_started") throw new ActionError("开始时间尚未到，暂不能提交", 403);
       if (rule === "replacement_closed") throw new ActionError("截止后不能替换已提交的功课", 403);
-      await uploadedFile(fileId, actor.id, "submission", id);
+      await uploadedFile(actor,fileId, "submission", id);
       const submissionId = crypto.randomUUID();
       const results = await db.batch([
-        db.prepare(`INSERT INTO homework_submissions (id, homework_id, student_name, file_id, submitted_at, late)
-          SELECT ?, ?, ?, ?, ?, ? WHERE ? <= (SELECT due_at FROM homework WHERE id = ?)
+        groupStatement(groupId,`INSERT INTO homework_submissions (group_id,id, homework_id, student_name, file_id, submitted_at, late)
+          SELECT ?,?, ?, ?, ?, ?, ? WHERE ? <= (SELECT due_at FROM homework WHERE id = ?)
           OR NOT EXISTS (SELECT 1 FROM homework_submissions WHERE homework_id = ? AND student_name = ?)`)
-          .bind(submissionId, id, actor.studentName, fileId, now, rule === "late" ? 1 : 0, now, id, id, actor.studentName),
-        db.prepare("UPDATE pdf_files SET status = 'attached' WHERE id = ? AND owner_id = ? AND status = 'staged' AND EXISTS (SELECT 1 FROM homework_submissions WHERE file_id = ?)").bind(fileId, actor.id, fileId),
-        db.prepare("UPDATE homework_recipients SET score = NULL, scored_at = NULL, scored_by = NULL WHERE homework_id = ? AND student_name = ? AND EXISTS (SELECT 1 FROM homework_submissions WHERE file_id = ?)").bind(id, actor.studentName, fileId),
+          .bind(groupId,submissionId, id, actor.studentName, fileId, now, rule === "late" ? 1 : 0, now, id, id, actor.studentName),
+        groupStatement(groupId,"UPDATE pdf_files SET status = 'attached' WHERE (id = ? AND owner_id = ? AND status = 'staged' AND EXISTS (SELECT 1 FROM homework_submissions WHERE file_id = ?)) AND group_id = ?").bind(fileId, actor.id, fileId,groupId),
+        groupStatement(groupId,"UPDATE homework_recipients SET score = NULL, scored_at = NULL, scored_by = NULL WHERE (homework_id = ? AND student_name = ? AND EXISTS (SELECT 1 FROM homework_submissions WHERE file_id = ?)) AND group_id = ?").bind(id, actor.studentName, fileId,groupId),
       ]);
       if (!results[0].meta.changes) throw new ActionError("截止后不能替换已提交的功课", 403);
-      await change("submitHomework", actor.id, id, { submissionId, late: rule === "late" });
+      await change(groupId,"submitHomework", actor.id, id, { submissionId, late: rule === "late" });
       return NextResponse.json({ ok: true, submission: { id: submissionId, submittedAt: now, late: rule === "late" } });
     }
     if (action === "saveStudyBlock") {
@@ -184,19 +188,19 @@ export async function POST(request: Request) {
         ...blocks.filter(b => b.id !== id && intervalsOverlap(startsAt, endsAt, b.startsAt, b.endsAt)).map(b => `学习安排：${b.title}`)];
       if (overlaps.length && data.keepOverlap !== true) throw new ActionError("时间与已有安排重叠，仍要保存吗？", 409, overlaps);
       const recordId = id || crypto.randomUUID();
-      if (id) await db.prepare("UPDATE study_blocks SET title = ?, subject = ?, note = ?, starts_at = ?, ends_at = ?, homework_id = ?, updated_at = ? WHERE id = ? AND account_id = ?")
-        .bind(title, subject || null, note || null, startsAt, endsAt, homeworkId || null, now, id, actor.id).run();
-      else await db.prepare("INSERT INTO study_blocks (id, account_id, title, subject, note, starts_at, ends_at, homework_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        .bind(recordId, actor.id, title, subject || null, note || null, startsAt, endsAt, homeworkId || null, now, now).run();
-      await change(id ? "updateStudyBlock" : "saveStudyBlock", actor.id, recordId, { title, startsAt, endsAt });
+      if (id) await groupStatement(groupId,"UPDATE study_blocks SET title = ?, subject = ?, note = ?, starts_at = ?, ends_at = ?, homework_id = ?, updated_at = ? WHERE (id = ? AND account_id = ?) AND group_id = ?")
+        .bind(title, subject || null, note || null, startsAt, endsAt, homeworkId || null, now, id, actor.id,groupId).run();
+      else await groupStatement(groupId,"INSERT INTO study_blocks (group_id,id, account_id, title, subject, note, starts_at, ends_at, homework_id, created_at, updated_at) VALUES (?,?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(groupId,recordId, actor.id, title, subject || null, note || null, startsAt, endsAt, homeworkId || null, now, now).run();
+      await change(groupId,id ? "updateStudyBlock" : "saveStudyBlock", actor.id, recordId, { title, startsAt, endsAt });
       return NextResponse.json({ ok: true, id: recordId });
     }
     if (action === "deleteStudyBlock") {
       if (actor.role !== "student") throw new ActionError("只有学生可以删除个人学习安排", 403);
       const id = str(data.id);
-      const deleted = await db.prepare("DELETE FROM study_blocks WHERE id = ? AND account_id = ?").bind(id, actor.id).run();
+      const deleted = await groupStatement(groupId,"DELETE FROM study_blocks WHERE (id = ? AND account_id = ?) AND group_id = ?").bind(id, actor.id,groupId).run();
       if (!deleted.meta.changes) throw new ActionError("安排不存在或无权删除", 404);
-      await change("deleteStudyBlock", actor.id, id);
+      await change(groupId,"deleteStudyBlock", actor.id, id);
       return NextResponse.json({ ok: true });
     }
     throw new ActionError("未知操作", 400);

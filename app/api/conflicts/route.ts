@@ -1,3 +1,4 @@
+import { groupWhere } from "@/lib/group-data";
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { currentBusinessAccount as currentAccount } from "@/lib/auth";
@@ -32,11 +33,11 @@ export async function POST(request: Request) {
   try {
     const start = malaysiaIso(body.start), end = malaysiaIso(body.end);
     hoursBetween(start, end);
-    const existing = await db.select().from(lessons).all();
+    const existing = await db.select().from(lessons).where(groupWhere(lessons,actor.groupId)).all();
     let slots: LessonSlot[] = [];
     let others = existing;
     if (action === "create") {
-      const roster = await readRoster();
+      const roster = await readRoster(actor);
       const student = str(body.student), subject = str(body.subject), teacherName = str(body.teacherName);
       if (!roster.plans.some(p => p.student === student && p.subject === subject && p.teacher === teacherName)) return bad("Choose an active student subject and assigned teacher");
       const activeKeys = new Set(roster.plans.filter(p => p.teacher === actor.teacherName).map(p => p.key));
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
       const lesson = existing.find(row => row.id === id);
       if (!lesson) return bad("Lesson not found", 404);
       if (action === "proposeReschedule") {
-        const roster = await readRoster();
+        const roster = await readRoster(actor);
         if (!mayRequestReschedule(actor, lesson, roster.plans)) return bad("No permission to check this lesson", 403);
         slots = [{ ...lesson, plannedStart: start, plannedEnd: end }];
         others = existing.filter(row => row.id !== id);

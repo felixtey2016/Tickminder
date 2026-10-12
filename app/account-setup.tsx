@@ -1,4 +1,6 @@
 "use client";
+import {groupFetch} from "@/lib/group-client";
+
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { LegalLinks } from "@/components/legal-links";
@@ -14,7 +16,7 @@ export function AccountSetup({email,onSaved,logout,language,changeLanguage}:{ema
     if(password!==confirm){alertActionFailure(new Error(t("两次输入的新密码不一致")));return;}
     inFlight.current=true;setBusy(true);
     try{
-      const response=await fetch("/api/account-setup",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({username,password})});
+      const response=await groupFetch("/api/account-setup",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({username,password})});
       const result=await readApiJson<{error?:string}>(response);
       if(!response.ok)throw new Error(t(result.error||"账号设置未完成，请重新登录后重试"));
       setPassword("");setConfirm("");showActionToast("success","账号设置已完成");await onSaved();

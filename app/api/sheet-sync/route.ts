@@ -1,3 +1,4 @@
+import { groupWhere } from "@/lib/group-data";
 import { env } from "cloudflare:workers";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
@@ -51,6 +52,7 @@ async function bridge(payload: Record<string, unknown>): Promise<BridgeResponse>
 }
 
 export async function POST(request: Request) {
+  if(request.headers.get("origin")!==new URL(request.url).origin)return NextResponse.json({error:"没有权限执行此操作"},{status:403});
   const actor = await currentAccount();
   if (!actor) return NextResponse.json({ error: "请先登录。" }, { status: 401 });
   if (actor.role !== "admin") return NextResponse.json({ error: "只有管理员可以导入课时。" }, { status: 403 });
@@ -66,7 +68,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "表格月份已变化，请重新预览。" }, { status: 409 });
     }
     const db = getDb();
-    const [planRows, lessonRows] = await Promise.all([db.select().from(plans).all(), db.select().from(lessons).all()]);
+    const [planRows, lessonRows] = await Promise.all([db.select().from(plans).where(groupWhere(plans,actor.groupId)).all(), db.select().from(lessons).where(groupWhere(lessons,actor.groupId)).all()]);
     const pairs = monthlySheetPairs(planRows, lessonRows, selected.month, mode);
     const result = await bridge({ action: input.action, month: selected.month, mode, pairs, previewToken: input.previewToken });
     return NextResponse.json(result, { headers: { "cache-control": "no-store" } });

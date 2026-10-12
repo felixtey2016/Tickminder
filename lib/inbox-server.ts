@@ -2,19 +2,19 @@ import { learningDb, rows } from "@/lib/learning-server";
 import { participantSql } from "@/lib/notification-access";
 import type { Account } from "@/lib/auth";
 
-type LessonChange = { lessonId: string; actorId: string; action: "reschedule" | "acceptReschedule" | "rejectReschedule" | "cancel"; before: unknown; after: unknown; at: string };
-const inboxAccess = `a.disabled_at IS NULL AND (a.role='admin' OR (${participantSql}))`;
+type LessonChange = { groupId:string; lessonId: string; actorId: string; action: "reschedule" | "acceptReschedule" | "rejectReschedule" | "cancel"; before: unknown; after: unknown; at: string };
+const inboxAccess = `a.disabled_at IS NULL AND ((a.role='admin' AND (a.group_id=l.group_id OR (a.group_id IS NULL AND a.id NOT LIKE 'local:%' AND lower(trim(a.email))='felixtey2016@gmail.com'))) OR (${participantSql}))`;
 
 // Commit the audit record and its inbox entries together. Only subsequent
 // changes produce messages; this does not backfill historical audit entries.
 export async function recordLessonChange(event: LessonChange) {
   const db = learningDb(), eventId = crypto.randomUUID();
   await db.batch([
-    db.prepare("INSERT INTO audit (id,lesson_id,actor_id,action,before_json,after_json,at) VALUES (?,?,?,?,?,?,?)")
-      .bind(eventId,event.lessonId,event.actorId,event.action,JSON.stringify(event.before),JSON.stringify(event.after),event.at),
-    db.prepare(`INSERT INTO site_notifications (id,account_id,event_id,lesson_id,kind,created_at)
-      SELECT lower(hex(randomblob(16))),a.id,?,l.id,?,? FROM lessons l JOIN accounts a ON ${inboxAccess}
-      WHERE l.id=? AND a.id<>?`).bind(eventId,event.action,event.at,event.lessonId,event.actorId),
+    db.prepare("INSERT INTO audit (group_id,id,lesson_id,actor_id,action,before_json,after_json,at) VALUES (?,?,?,?,?,?,?,?)")
+      .bind(event.groupId,eventId,event.lessonId,event.actorId,event.action,JSON.stringify(event.before),JSON.stringify(event.after),event.at),
+    db.prepare(`INSERT INTO site_notifications (group_id,id,account_id,event_id,lesson_id,kind,created_at)
+      SELECT l.group_id,lower(hex(randomblob(16))),a.id,?,l.id,?,? FROM lessons l JOIN accounts a ON ${inboxAccess}
+      WHERE l.id=? AND a.id<>? AND l.group_id=?`).bind(eventId,event.action,event.at,event.lessonId,event.actorId,event.groupId),
   ]);
 }
 
@@ -28,8 +28,8 @@ export async function inboxState(account: Account) {
     l.subject,l.teacher_name AS teacherName,l.planned_start AS plannedStart,l.planned_end AS plannedEnd,
     e.before_json AS beforeJson,e.after_json AS afterJson,sum(n.read_at IS NULL) OVER () AS unreadTotal
     FROM site_notifications n JOIN audit e ON e.id=n.event_id JOIN lessons l ON l.id=n.lesson_id JOIN accounts a ON a.id=n.account_id
-    WHERE n.account_id=? AND ${inboxAccess}
-    ORDER BY (n.read_at IS NULL) DESC,n.created_at DESC,n.id DESC LIMIT 100`, account.id);
+    WHERE n.account_id=? AND n.group_id=? AND e.group_id=n.group_id AND l.group_id=n.group_id AND ${inboxAccess}
+    ORDER BY (n.read_at IS NULL) DESC,n.created_at DESC,n.id DESC LIMIT 100`, account.id,account.groupId);
   return { unreadCount: Number(messages[0]?.unreadTotal || 0), items: messages.map(message => {
     const before = snapshot(message.beforeJson), after = snapshot(message.afterJson);
     return { id: "change:" + message.id, kind: message.kind, dueAt: message.createdAt, readAt: message.readAt, subject: message.subject, teacherName: message.teacherName,

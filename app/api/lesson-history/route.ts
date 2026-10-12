@@ -1,3 +1,4 @@
+import { groupWhere } from "@/lib/group-data";
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { currentBusinessAccount as currentAccount } from "@/lib/auth";
@@ -16,25 +17,25 @@ export async function GET(request: Request) {
   const id = new URL(request.url).searchParams.get("lessonId") || "";
   if (!id) return bad("Choose a lesson", 400);
   const db = getDb();
-  const lesson = await db.select().from(lessons).where(eq(lessons.id, id)).get();
+  const lesson = await db.select().from(lessons).where(groupWhere(lessons,actor.groupId,eq(lessons.id, id))).get();
   if (!lesson) return bad("Lesson not found", 404);
   if (actor.role === "student" && actor.studentName !== lesson.student) return bad("You cannot view this lesson", 403);
   if (actor.role === "teacher") {
-    const roster = await readRoster();
+    const roster = await readRoster(actor);
     const active = new Set(roster.plans.filter(p => p.teacher === actor.teacherName).map(p => p.key));
     if (!teacherMaySeeLesson(actor, lesson, active)) return bad("You cannot view this lesson", 403);
   }
   if (!["admin", "student", "teacher"].includes(actor.role)) return bad("You cannot view this lesson", 403);
 
   const [requests, changes] = await Promise.all([
-    db.select().from(rescheduleRequests).where(eq(rescheduleRequests.lessonId, id)).all(),
-    db.select().from(audit).where(eq(audit.lessonId, id)).all(),
+    db.select().from(rescheduleRequests).where(groupWhere(rescheduleRequests,actor.groupId,eq(rescheduleRequests.lessonId, id))).all(),
+    db.select().from(audit).where(groupWhere(audit,actor.groupId,eq(audit.lessonId, id))).all(),
   ]);
   const relevant = changes.filter(change => change.action === "reschedule");
   const actorIds = new Set([...requests.flatMap(row => [row.requestedBy, row.respondedBy]), ...relevant.map(row => row.actorId)].filter(Boolean));
-  const names = new Map((await db.select({ id: accounts.id, name: accounts.name }).from(accounts).all())
+  const names = new Map((await db.select({ id: accounts.id, name: accounts.name }).from(accounts).where(groupWhere(accounts,actor.groupId)).all())
     .filter(row => actorIds.has(row.id)).map(row => [row.id, row.name]));
-  const mergedNames = await mergedAccountNames();
+  const mergedNames = await mergedAccountNames(actor.groupId);
   const nameOf = (accountId: string | null) => accountId ? names.get(accountId) || mergedNames.get(accountId) || "已删除账号" : null;
   const entries = [
     ...requests.map(row => ({

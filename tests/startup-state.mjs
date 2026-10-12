@@ -14,7 +14,7 @@ const db=drizzle(async(sql,values,method)=>{
   if(method==='run') return {rows:statement.run(...values)};
   return {rows:method==='get'?statement.get(...values):statement.all(...values)};
 });
-const runtime={and,eq,gt,desc,inArray,sql,getDb:()=>db,cookies:async()=>({get:()=>token?{value:token}:undefined}),env:{},pendingExpired:a=>Boolean(a.pendingExpiresAt&&!a.activatedAt&&a.pendingExpiresAt<=new Date().toISOString()),lifecycleView:a=>({assignmentStatus:a.activatedAt?'ACTIVE':'PENDING_ASSIGNMENT'}),NextResponse:{json:(data,options)=>Response.json(data,options)},learningCalls:0,classCalls:0};
+const runtime={and,eq,gt,desc,inArray,sql,getDb:()=>db,cookies:async()=>({get:()=>token?{value:token}:undefined}),env:{},selectedGroup:async a=>({id:a.groupId}),groupWhere:(table,groupId,...conditions)=>and(eq(table.groupId,groupId),...conditions),pendingExpired:a=>Boolean(a.pendingExpiresAt&&!a.activatedAt&&a.pendingExpiresAt<=new Date().toISOString()),lifecycleView:a=>({assignmentStatus:a.activatedAt?'ACTIVE':'PENDING_ASSIGNMENT'}),NextResponse:{json:(data,options)=>Response.json(data,options)},learningCalls:0,classCalls:0};
 globalThis.__startup=runtime;
 async function module(path) {
   let source=fs.readFileSync(new URL('../'+path,import.meta.url),'utf8');
@@ -44,6 +44,7 @@ sqlite.prepare("UPDATE local_credentials SET must_change_password=1 WHERE accoun
 Object.assign(runtime,await module('lib/roster.ts'),await module('lib/access.ts'),await module('lib/lesson-rules.ts'),await module('lib/revision.ts'));
 runtime.currentAccount=auth.currentBusinessAccount;
 runtime.rows=async(sql,...args)=>sqlite.prepare(sql).all(...args);
+runtime.groupRows=async(groupId,sql,...args)=>sqlite.prepare(sql).all(...args);
 runtime.mergedAccountNames=async()=>new Map();
 runtime.learningState=async()=>{runtime.learningCalls++;return{materials:[],homework:[],submissions:[],studyBlocks:[],eligible:[]};};
 runtime.classroomsState=async()=>{runtime.classCalls++;return[];};

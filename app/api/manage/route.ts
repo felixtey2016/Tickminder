@@ -1,3 +1,4 @@
+import {groupReader,groupStatement,requireGroup} from "@/lib/group-data";
 import { NextResponse } from "next/server";
 import { currentBusinessAccount as currentAccount } from "@/lib/auth";
 import { first, learningDb, rows } from "@/lib/learning-server";
@@ -10,11 +11,12 @@ class DeleteError extends Error { constructor(message: string, public status = 4
 type Entry = { kind: string; id: string };
 type Snapshot = {table: string; records: Record<string, unknown>[]};
 async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof currentAccount>>>, kind: string, id: string) {
+    const groupId=requireGroup(actor.groupId); const {first,rows}=groupReader(groupId);
     if (!id || !["account", "teacher", "student", "plan", "lesson", "classroom", "homework"].includes(kind)) throw new DeleteError("请求格式无效", 400);
     if (actor.role !== "admin" && !(actor.role === "teacher" && ["classroom", "homework"].includes(kind))) throw new DeleteError("没有权限执行此操作", 403);
     const raw = learningDb();
     const operations: Array<{sql: string; params: unknown[]}> = [];
-    const db = {prepare: (sql: string) => ({bind: (...params: unknown[]) => {operations.push({sql, params});return raw.prepare(sql).bind(...params);}})};
+    const db = {prepare: (sql: string) => ({bind: (...params: unknown[]) => {operations.push({sql, params});return groupStatement(groupId,sql).bind(...params);}})};
     const statements = [], files: string[] = [];
     if (kind === "account") {
       const target = await first<{ role: string; email: string }>("SELECT role,email FROM accounts WHERE id = ?", id);
@@ -23,9 +25,10 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
       if (await first("SELECT 1 AS found FROM teaching_materials WHERE owner_id = ? UNION SELECT 1 FROM homework WHERE owner_id = ? LIMIT 1", id, id)) throw new DeleteError("此账号仍拥有教学资料或功课，请先处理这些资料后再永久删除");
       const local = await first<{ username: string }>("SELECT username FROM local_credentials WHERE account_id = ?", id);
       statements.push(db.prepare("DELETE FROM notification_deliveries WHERE item_id IN (SELECT id FROM notification_items WHERE account_id=?) OR subscription_id IN (SELECT id FROM push_subscriptions WHERE account_id=?)").bind(id,id));
-      for (const table of ["site_notifications", "notification_items", "push_subscriptions", "sessions", "assignments", "study_blocks", "local_credentials", "google_identities"]) statements.push(db.prepare(`DELETE FROM ${table} WHERE account_id = ?`).bind(id));
+      for (const table of ["push_subscriptions", "sessions", "local_credentials", "google_identities"]) statements.push(db.prepare(`DELETE FROM ${table} WHERE account_id = ?`).bind(id));
+      for (const table of ["site_notifications","notification_items","assignments","study_blocks"]) statements.push(db.prepare(`DELETE FROM ${table} WHERE account_id = ? AND group_id = ?`).bind(id,groupId));
       if (local) statements.push(db.prepare("DELETE FROM login_attempts WHERE username = ?").bind(local.username));
-      statements.push(db.prepare("DELETE FROM accounts WHERE id = ?").bind(id));
+      statements.push(db.prepare("DELETE FROM accounts WHERE (id = ?) AND group_id = ?").bind(id,groupId));
     } else if (kind === "teacher" || kind === "student") {
       const column = kind === "teacher" ? "teacher_name" : "student";
       const accountColumn = kind === "teacher" ? "teacher_name" : "student_name";
@@ -35,42 +38,42 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
       if (await first(`SELECT 1 AS found FROM lessons WHERE ${column} = ? AND status = 'scheduled'`, id)) throw new DeleteError("仍有已安排的课程，请先取消或删除这些课程");
       const member = kind === "teacher" ? await first("SELECT 1 AS found FROM classrooms WHERE teacher_name = ?", id) : await first("SELECT 1 AS found FROM classroom_members WHERE student_name = ?", id);
       if (member) throw new DeleteError("此姓名仍在班级中，请先处理班级或移出名单");
-      statements.push(db.prepare(`DELETE FROM assignments WHERE plan_key IN (SELECT key FROM plans WHERE ${column} = ?)`).bind(id));
-      statements.push(db.prepare(`DELETE FROM plans WHERE ${column} = ?`).bind(id));
-      statements.push(db.prepare(`DELETE FROM ${table} WHERE name = ?`).bind(id));
+      statements.push(db.prepare(`DELETE FROM assignments WHERE (plan_key IN (SELECT key FROM plans WHERE ${column} = ?)) AND group_id = ?`).bind(id,groupId));
+      statements.push(db.prepare(`DELETE FROM plans WHERE (${column} = ?) AND group_id = ?`).bind(id,groupId));
+      statements.push(db.prepare(`DELETE FROM ${table} WHERE (name = ?) AND group_id = ?`).bind(id,groupId));
     } else if (kind === "plan") {
       const plan = await first<{ student: string; subject: string }>("SELECT student,subject FROM plans WHERE key = ?", id);
       if (!plan) throw new DeleteError("记录不存在", 404);
       if (await first("SELECT 1 AS found FROM lessons WHERE student = ? AND subject = ? AND status = 'scheduled'", plan.student, plan.subject)) throw new DeleteError("仍有已安排的课程，请先取消或删除这些课程");
       if (await first("SELECT 1 AS found FROM classroom_members m JOIN classrooms c ON c.id = m.classroom_id WHERE m.student_name = ? AND c.subject = ?", plan.student, plan.subject)) throw new DeleteError("此科目仍用于班级，请先移出班级");
-      statements.push(db.prepare("DELETE FROM assignments WHERE plan_key = ?").bind(id));
-      statements.push(db.prepare("DELETE FROM plans WHERE key = ?").bind(id));
+      statements.push(db.prepare("DELETE FROM assignments WHERE (plan_key = ?) AND group_id = ?").bind(id,groupId));
+      statements.push(db.prepare("DELETE FROM plans WHERE (key = ?) AND group_id = ?").bind(id,groupId));
     } else if (kind === "lesson") {
       if (!await first("SELECT 1 AS found FROM lessons WHERE id = ?", id)) throw new DeleteError("Lesson not found", 404);
       if (await first("SELECT 1 AS found FROM lessons WHERE replacement_for = ?", id)) throw new DeleteError("此课程有关联补课，请先处理补课记录");
-      statements.push(db.prepare("DELETE FROM reschedule_requests WHERE lesson_id = ?").bind(id));
+      statements.push(db.prepare("DELETE FROM reschedule_requests WHERE (lesson_id = ?) AND group_id = ?").bind(id,groupId));
       statements.push(db.prepare("DELETE FROM notification_deliveries WHERE item_id IN (SELECT id FROM notification_items WHERE lesson_id=?)").bind(id));
-      statements.push(db.prepare("DELETE FROM notification_items WHERE lesson_id=?").bind(id));
-      statements.push(db.prepare("DELETE FROM site_notifications WHERE lesson_id=?").bind(id));
-      statements.push(db.prepare("DELETE FROM lessons WHERE id = ?").bind(id));
+      statements.push(db.prepare("DELETE FROM notification_items WHERE (lesson_id=?) AND group_id = ?").bind(id,groupId));
+      statements.push(db.prepare("DELETE FROM site_notifications WHERE (lesson_id=?) AND group_id = ?").bind(id,groupId));
+      statements.push(db.prepare("DELETE FROM lessons WHERE (id = ?) AND group_id = ?").bind(id,groupId));
     } else if (kind === "homework") {
       const item = await first<{ owner_id: string; attachment_file_id: string | null }>("SELECT owner_id,attachment_file_id FROM homework WHERE id = ?", id);
       if (!item || (actor.role !== "admin" && item.owner_id !== actor.id)) throw new DeleteError("没有权限执行此操作", 403);
       if (item.attachment_file_id) files.push(item.attachment_file_id);
       const submissions = await rows<{ fileId: string }>("SELECT file_id AS fileId FROM homework_submissions WHERE homework_id = ?", id);
       files.push(...submissions.map(s => s.fileId));
-      statements.push(db.prepare("UPDATE study_blocks SET homework_id = NULL WHERE homework_id = ?").bind(id));
-      for (const table of ["homework_submissions", "homework_recipients"]) statements.push(db.prepare(`DELETE FROM ${table} WHERE homework_id = ?`).bind(id));
-      statements.push(db.prepare("DELETE FROM homework WHERE id = ?").bind(id));
+      statements.push(db.prepare("UPDATE study_blocks SET homework_id = NULL WHERE (homework_id = ?) AND group_id = ?").bind(id,groupId));
+      for (const table of ["homework_submissions", "homework_recipients"]) statements.push(db.prepare(`DELETE FROM ${table} WHERE (homework_id = ?) AND group_id = ?`).bind(id,groupId));
+      statements.push(db.prepare("DELETE FROM homework WHERE (id = ?) AND group_id = ?").bind(id,groupId));
     } else {
       if (!await classroomMayManage(actor, id)) throw new DeleteError("班级不存在或无权修改", 404);
       const fileRows = await rows<{ fileId: string }>("SELECT file_id AS fileId FROM teaching_materials WHERE classroom_id = ? UNION SELECT attachment_file_id AS fileId FROM homework WHERE classroom_id = ? AND attachment_file_id IS NOT NULL UNION SELECT s.file_id AS fileId FROM homework_submissions s JOIN homework h ON h.id = s.homework_id WHERE h.classroom_id = ?", id, id, id);
       files.push(...fileRows.map(f => f.fileId));
-      statements.push(db.prepare("UPDATE study_blocks SET homework_id = NULL WHERE homework_id IN (SELECT id FROM homework WHERE classroom_id = ?)").bind(id));
-      for (const table of ["homework_submissions", "homework_recipients"]) statements.push(db.prepare(`DELETE FROM ${table} WHERE homework_id IN (SELECT id FROM homework WHERE classroom_id = ?)`).bind(id));
-      statements.push(db.prepare("DELETE FROM material_recipients WHERE material_id IN (SELECT id FROM teaching_materials WHERE classroom_id = ?)").bind(id));
-      for (const table of ["homework", "teaching_materials", "classroom_announcements", "classroom_members"]) statements.push(db.prepare(`DELETE FROM ${table} WHERE classroom_id = ?`).bind(id));
-      statements.push(db.prepare("DELETE FROM classrooms WHERE id = ?").bind(id));
+      statements.push(db.prepare("UPDATE study_blocks SET homework_id = NULL WHERE (homework_id IN (SELECT id FROM homework WHERE classroom_id = ?)) AND group_id = ?").bind(id,groupId));
+      for (const table of ["homework_submissions", "homework_recipients"]) statements.push(db.prepare(`DELETE FROM ${table} WHERE (homework_id IN (SELECT id FROM homework WHERE classroom_id = ?)) AND group_id = ?`).bind(id,groupId));
+      statements.push(db.prepare("DELETE FROM material_recipients WHERE (material_id IN (SELECT id FROM teaching_materials WHERE classroom_id = ?)) AND group_id = ?").bind(id,groupId));
+      for (const table of ["homework", "teaching_materials", "classroom_announcements", "classroom_members"]) statements.push(db.prepare(`DELETE FROM ${table} WHERE (classroom_id = ?) AND group_id = ?`).bind(id,groupId));
+      statements.push(db.prepare("DELETE FROM classrooms WHERE (id = ?) AND group_id = ?").bind(id,groupId));
     }
 
     const snapshots: Snapshot[] = [];
@@ -78,7 +81,7 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
       const deleted = op.sql.match(/^DELETE FROM (\w+) WHERE ([\s\S]+)$/);
       const updated = op.sql.match(/^UPDATE (\w+) SET homework_id = NULL WHERE ([\s\S]+)$/);
       const match = deleted || updated;
-      if (match) snapshots.push({table: match[1], records: await rows<Record<string, unknown>>('SELECT * FROM '+match[1]+' WHERE '+match[2]+' ORDER BY rowid', ...op.params)});
+      if (match) snapshots.push({table: match[1], records: await rows<Record<string, unknown>>('SELECT * FROM '+match[1]+' WHERE '+match[2]+'', ...op.params)});
     }
     const primary = snapshots.find(s => s.table === ({account:'accounts',teacher:'teachers',student:'students',plan:'plans',lesson:'lessons',homework:'homework',classroom:'classrooms'} as Record<string,string>)[kind])?.records[0];
     const label = primary ? String(primary.title || primary.name || (primary.student ? String(primary.student)+' · '+String(primary.subject) : id)) : id;
@@ -99,6 +102,7 @@ export async function POST(request: Request) {
   if (request.headers.get("origin") !== new URL(request.url).origin) return NextResponse.json({error:"没有权限执行此操作"},{status:403});
   const actor = await currentAccount();
   if (!actor) return NextResponse.json({error:"登录已过期，请重新登录"},{status:401});
+  const groupId=requireGroup(actor.groupId); const {first,rows}=groupReader(groupId);
   try {
     const data = await request.json() as Record<string,unknown>;
     const preview = data.action === 'previewDelete';
@@ -119,7 +123,7 @@ export async function POST(request: Request) {
     }
     const db = learningDb();
     const statements = plans.flatMap(p=>p.statements);
-    for (const entry of entries) statements.push(db.prepare("INSERT INTO audit (id,lesson_id,actor_id,action,after_json,at) VALUES (?,?,?,'permanentDelete',?,?)").bind(crypto.randomUUID(),entry.kind+':'+entry.id,actor.id,JSON.stringify(entry),new Date().toISOString()));
+    for (const entry of entries) statements.push(db.prepare("INSERT INTO audit (group_id,id,lesson_id,actor_id,action,after_json,at) VALUES (?,?,?,?,'permanentDelete',?,?)").bind(groupId,crypto.randomUUID(),entry.kind+':'+entry.id,actor.id,JSON.stringify(entry),new Date().toISOString()));
     await db.batch(statements);
     let cleanupPending=false;
     for (const file of new Set(plans.flatMap(p=>p.files))) {try {await deleteUnreferencedFile(file);} catch {cleanupPending=true;}}

@@ -71,8 +71,8 @@ try {
   plain = decrypt(readFileSync(join(snapshot, 'database.json.aes')), manifest.database);
   if (hash(plain) !== manifest.database.sha256) throw new Error('Database checksum mismatch');
   const database = JSON.parse(plain.toString('utf8'));
-  if (!['timelyo-d1-v7','timelyo-d1-v8'].includes(database.format)) throw new Error('Recovery branch requires a v7 or v8 database snapshot');
-  const tables = Object.entries(database.tables);
+  if (!['timelyo-d1-v7','timelyo-d1-v8','timelyo-d1-v9'].includes(database.format)) throw new Error('Recovery branch requires a v7, v8 or v9 database snapshot');
+  const tables = Object.entries(database.tables).sort(([a],[b])=>a==="tuition_groups"?-1:b==="tuition_groups"?1:0);
   const schema = readdirSync(join(root, 'drizzle')).filter(name => /^\d{4}_.*\.sql$/.test(name)).sort()
     .map(name => readFileSync(join(root, 'drizzle', name), 'utf8')).join('\n');
   const sqlParts = [schema];
@@ -80,7 +80,8 @@ try {
     sqlParts.push(`DELETE FROM ${identifier(name)};`);
     const columns = table.columns.map(identifier).join(',');
     for (const row of table.rows) {
-      const statement = `INSERT INTO ${identifier(name)}(${columns}) VALUES(${table.columns.map(c => value(row[c])).join(',')});`;
+      const legacyOwner=name==='accounts'&&!table.columns.includes('group_id')&&row.role==='admin'&&!row.id.startsWith('local:')&&row.email.trim().toLowerCase()==='felixtey2016@gmail.com';
+      const statement = `INSERT INTO ${identifier(name)}(${columns}${legacyOwner?',group_id':''}) VALUES(${table.columns.map(c => value(row[c])).join(',')}${legacyOwner?',NULL':''});`;
       if (Buffer.byteLength(statement) > 90_000) throw new Error('Snapshot row exceeds safe D1 statement size');
       sqlParts.push(statement);
     }

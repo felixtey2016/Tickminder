@@ -70,8 +70,8 @@ export async function generateReminders(nowMs=Date.now(), onlyAccount?:string) {
     const dueMs=Date.parse(lesson.planned_start)-minutes*60_000;
     if (dueMs>nowMs || nowMs-dueMs>GRACE_MS) continue;
     const id=crypto.randomUUID();
-    statements.push(db.prepare(`INSERT OR IGNORE INTO notification_items (id,account_id,lesson_id,planned_start,offset_minutes,due_at,created_at)
-      SELECT ?,?,?,?,?,?,? FROM lessons l JOIN accounts a ON ${participantSql}
+    statements.push(db.prepare(`INSERT OR IGNORE INTO notification_items (group_id,id,account_id,lesson_id,planned_start,offset_minutes,due_at,created_at)
+      SELECT l.group_id,?,?,?,?,?,?,? FROM lessons l JOIN accounts a ON ${participantSql}
       WHERE l.id=? AND a.id=? AND l.planned_start=? AND l.status='scheduled'`).bind(id,lesson.account_id,lesson.id,lesson.planned_start,minutes,new Date(dueMs).toISOString(),now,lesson.id,lesson.account_id,lesson.planned_start));
   }
   // Keep each transactional batch bounded for a large course list.
@@ -85,13 +85,13 @@ export async function notificationState(account:Account) {
   const [reminders,inbox,health]=await Promise.all([
     rows<{id:string;minutes:number;dueAt:string;readAt:string|null;unreadTotal:number}>(`SELECT n.id,n.offset_minutes AS minutes,n.due_at AS dueAt,n.read_at AS readAt,l.subject,l.teacher_name AS teacherName,l.planned_start AS plannedStart,l.planned_end AS plannedEnd,sum(n.read_at IS NULL) OVER () AS unreadTotal
       FROM notification_items n JOIN lessons l ON l.id=n.lesson_id JOIN accounts a ON a.id=n.account_id
-      WHERE n.account_id=? AND n.planned_start=l.planned_start AND l.status<>'cancelled' AND ${participantSql}
-      ORDER BY (n.read_at IS NULL) DESC,n.due_at DESC LIMIT 100`,account.id),
+      WHERE n.account_id=? AND n.group_id=? AND n.group_id=l.group_id AND n.planned_start=l.planned_start AND l.status<>'cancelled' AND ${participantSql}
+      ORDER BY (n.read_at IS NULL) DESC,n.due_at DESC LIMIT 100`,account.id,account.groupId),
     inboxState(account),
     first<{last_dispatch_at:string}>("SELECT last_dispatch_at FROM notification_runtime WHERE id=1"),
   ]);
   const items=[...reminders.map(({unreadTotal:_,...item})=>({...item,kind:"reminder"})),...inbox.items].sort((a,b)=>Number(!b.readAt)-Number(!a.readAt)||b.dueAt.localeCompare(a.dueAt));
-  return {items,accountId:account.id,unreadCount:Number(reminders[0]?.unreadTotal || 0)+inbox.unreadCount,configured:pushConfigured(),publicKey:pushConfigured()?env.VAPID_PUBLIC_KEY:null,
+  return {items,accountId:account.id,groupId:account.groupId,unreadCount:Number(reminders[0]?.unreadTotal || 0)+inbox.unreadCount,configured:pushConfigured(),publicKey:pushConfigured()?env.VAPID_PUBLIC_KEY:null,
     schedulerReady:Boolean(health && Date.now()-Date.parse(health.last_dispatch_at)<10*60_000),lastDispatchAt:health?.last_dispatch_at || null};
 }
 
