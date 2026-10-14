@@ -35,7 +35,7 @@ export async function GET(request: Request) {
   const names = new Map((await db.select({ id: accounts.id, name: accounts.name }).from(accounts).all())
     .filter(row => actorIds.has(row.id)).map(row => [row.id, row.name]));
   const mergedNames = await mergedAccountNames();
-  const nameOf = (accountId: string | null) => accountId ? names.get(accountId) || mergedNames.get(accountId) || "已删除账号" : null;
+  const nameOf = (accountId: string | null) => accountId === "integration:hermes" ? "Hermes AI" : accountId ? names.get(accountId) || mergedNames.get(accountId) || "已删除账号" : null;
   const entries = [
     ...requests.map(row => ({
       id: row.id, type: "request", originalStart: row.originalStart, originalEnd: row.originalEnd,
