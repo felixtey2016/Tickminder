@@ -9,5 +9,5 @@ export function OnlineLessonLink({ href }: { href?: string | null }) {
   try { url = new URL(href); }
   catch { return null; }
   if (url.protocol !== "https:" || url.username || url.password) return null;
-  return <a className="online-lesson-link" href={url.toString()} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} aria-hidden="true"/>{t("进入网课")}</a>;
+  return <a className="online-lesson-link" href={url.toString()} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} aria-hidden="true"/>{t("进入线上课堂")}</a>;
 }

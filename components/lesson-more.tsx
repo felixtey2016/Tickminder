@@ -7,5 +7,5 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { t } from "@/lib/i18n";
 
 export function LessonMore({ children }: { children: ReactNode }) {
-  return <Popover><PopoverTrigger asChild><Button type="button" variant="outline" size="sm"><Ellipsis size={18} aria-hidden="true"/>{t("更多")}</Button></PopoverTrigger><PopoverContent align="end" className="lesson-more">{children}</PopoverContent></Popover>;
+  return <Popover><PopoverTrigger asChild><Button type="button" variant="outline" size="sm"><Ellipsis size={18} aria-hidden="true"/>{t("更多操作")}</Button></PopoverTrigger><PopoverContent align="end" className="lesson-more">{children}</PopoverContent></Popover>;
 }

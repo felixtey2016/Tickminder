@@ -60,7 +60,7 @@ export function AdminLearning({ learning, view, inClassroom = false }: {
           </div>;
         })}</div>
       </article>)}
-      {!visibleCount && <PageState kind="empty" title={filtered ? "没有符合筛选条件的内容" : view === "materials" ? "目前没有教学资料" : "目前没有功课"} action={filtered ? "重置筛选" : undefined} onAction={() => { setTeacher(""); setSubject(""); }}/ >}
+      {!visibleCount && <PageState kind="empty" title={filtered ? "没有符合筛选条件的记录" : view === "materials" ? "暂无已发布的教学资料" : "暂无已发布的功课"} action={filtered ? "重置筛选" : undefined} onAction={() => { setTeacher(""); setSubject(""); }}/ >}
     </div>
   </section>;
 }

@@ -108,7 +108,7 @@ export async function sendPush(subscription:Subscription, data:Record<string,unk
 }
 export function reminderPayload(id:string,minutes:number,language:string) {
   const en=language==="en";
-  return {id,visual:minutes===0?"class-start":"class-reminder",title:en?"Tickminder · Lesson reminder":"Tickminder · 上课提醒",body:minutes===0?(en?"Your lesson is starting. Open Tickminder to view it.":"课程开始了，打开 Tickminder 查看课程。"):(en?`Your lesson starts in ${minutes} minutes.`:`你的课程将在 ${minutes} 分钟后开始。`),url:"/?view=notifications"};
+  return {id,visual:minutes===0?"class-start":"class-reminder",title:en?"Tickminder · Lesson reminder":"Tickminder · 上课提醒",body:minutes===0?(en?"Your lesson start time has arrived. Open Tickminder to view your schedule.":"课程时间已到，请打开 Tickminder 查看课表。"):(en?`Your lesson starts in ${minutes} minutes.`:`你的课程将在 ${minutes} 分钟后开始。`),url:"/?view=notifications"};
 }
 export async function sendTest(account:Account,id:string) {
   const db=learningDb(), now=new Date().toISOString();
@@ -120,7 +120,7 @@ export async function sendTest(account:Account,id:string) {
     throw new NotificationError("请等待一分钟后再发送测试提醒",429);
   }
   let response:Response;
-  try { response=await sendPush(claimed,{id:crypto.randomUUID(),title:"Tickminder",body:claimed.language==="en"?"Test reminder. Notifications are enabled on this device.":"测试提醒：此设备已开启通知。",url:"/?view=notifications"}); }
+  try { response=await sendPush(claimed,{id:crypto.randomUUID(),title:"Tickminder",body:claimed.language==="en"?"Test notification received on this device.":"测试通知：此设备已收到 Tickminder 通知。",url:"/?view=notifications"}); }
   catch { throw new NotificationError("暂时无法发送通知，请检查网络后重试",503); }
   if([404,410].includes(response.status)) { await removeSubscription(id,account.id); throw new NotificationError("此设备通知已失效，请重新开启通知",409); }
   if(!response.ok) throw new NotificationError("通知服务暂时不可用，请稍后重试",503);

@@ -22,6 +22,7 @@ export function actionFailureMessage(error: unknown, fallback = "操作失败，
   const message = error instanceof Error ? error.message : fallback;
   if (/^(Sign in required|Unauthorized)$/i.test(message)) return t("登录已过期，请重新登录");
   if (/^(Administrator access required|Student access only|No permission)/i.test(message)) return t("没有权限执行此操作");
+  if (/^(Google key lookup failed|Google signing key unavailable|Invalid Google credential|Invalid Google signature)$/i.test(message)) return t("Google 登录验证失败，请重试");
   if (/stack trace|internal server error|SQLITE_|D1_ERROR|wrangler|cloudflare:workers|token=|secret=/i.test(message)) return t("操作失败，请稍后重试；如仍失败请联系管理员");
   return t(message || fallback);
 }

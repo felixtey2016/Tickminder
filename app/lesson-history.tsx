@@ -43,9 +43,9 @@ export function LessonHistory({ lessonId }: { lessonId: string }) {
     setOpen(next);
     if (next) void load();
   }}>
-    <summary>{t("改期记录")}</summary>
+    <summary>{t("课程时间变更记录")}</summary>
     {open && <div className="lesson-history-body">
-      {loading && <p>{t("正在载入…")}</p>}
+      {loading && <p>{t("正在加载…")}</p>}
       {error && <p role="alert">{error} <button type="button" onClick={() => void load()}>{t("重试")}</button></p>}
       {history && <><p className="lesson-history-current"><strong>{t("当前确认时间")}：</strong>{span(history.currentStart, history.currentEnd)}</p>
         {history.entries.length ? <ol>{history.entries.map(entry => <li key={entry.id}>
