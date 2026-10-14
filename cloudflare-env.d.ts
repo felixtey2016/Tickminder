@@ -4,6 +4,8 @@ declare namespace Cloudflare {
     BUCKET?: R2Bucket;
     GOOGLE_CLIENT_ID?: string;
     ADMIN_EMAIL?: string;
+    HERMES_TIMETABLE_TOKEN?: string;
+    HERMES_TIMETABLE_BINDINGS?: string;
     SHEET_SYNC_URL?: string;
     SHEET_SYNC_SECRET?: string;
     BACKUP_EXPORT_TOKEN?: string;
