@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { BRAND_NAME } from "@/lib/brand";
 import "./globals.css";
 import "./ui-refresh.css";
+import "./course-navigation.css";
 import { ActionToastHost } from "@/components/action-toast";
 
 export const metadata: Metadata = {

@@ -14,6 +14,16 @@ export function setLanguage(language: Language) {
 export function getLanguage() { return currentLanguage; }
 
 const en: Record<string, string> = {
+  "course.nav.title": "Courses",
+  "course.nav.calendar": "Calendar",
+  "列表": "List",
+  "课程与考勤": "Courses & attendance",
+  "课程视图": "Course views",
+  "按学生": "By student",
+  "按老师": "By teacher",
+  "时间表对象": "Timetable by",
+  "考勤视图": "Attendance view",
+  "待处理事项": "items to resolve",
   "班级列表": "Classroom list",
   "发布资料": "Publish material",
   "选择 PDF 后，点击「提交功课」完成提交。": "Select a PDF, then choose Submit homework.",
@@ -1388,6 +1398,8 @@ const en: Record<string, string> = {
 
 // Server error keys remain stable; only their displayed wording is localised.
 const zh: Record<string, string> = {
+  "course.nav.title": "课程",
+  "course.nav.calendar": "日历",
   "This lesson is not assigned to you": "你没有权限处理这堂课",
   "Only scheduled lessons may be rescheduled": "只有尚未记录出席的已安排课程可以申请改期",
   "This lesson already has a pending reschedule request": "此课程已有待确认的改期申请，请等待对方回应",

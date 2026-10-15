@@ -47,6 +47,8 @@ const AccountDirectory = lazy(() => import("./account-directory").then(module =>
 import { AccountSettings } from "./account-settings";
 import { NotificationsProvider, NotificationCentre, MenuBadge, detachPushOnLogout } from "./notifications";
 import { navigationBadges } from "@/lib/navigation-badges";
+import { courseBadgeCount, defaultCourseView, isCourseView, normalizeCourseView } from "@/lib/course-navigation";
+import { CourseNavigation } from "@/components/course-navigation";
 import { AccountSetup } from "./account-setup";
 import { DeleteButton, DirectoryFilters, PeopleDirectory } from "./directory-tools";
 
@@ -601,9 +603,9 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
 };
 
 const NAV_GROUPS: Record<NavigationRole, Array<{ label: string; ids: string[] }>> = {
- admin: [{label:"",ids:["groups","home","groupInfo"]},{label:"课程管理",ids:["calendar","list","schedule","attention","overview"]},{label:"教学",ids:["classrooms","homework","materials","quizzes","subjects","students","teachers"]},{label:"人员与账号",ids:["teacherRoster","studentRoster","accounts"]},{label:"系统与账号",ids:["notifications","myAccount","sheet","activity"]}],
- teacher: [{label:"",ids:["home"]},{label:"课程管理",ids:["calendar","lessons","schedule","attendance","reschedule","hours"]},{label:"教学",ids:["classrooms","students","homework","materials","quizzes"]},{label:"我的账号",ids:["notifications","myAccount"]}],
- student: [{label:"",ids:["home"]},{label:"学习",ids:["calendar","list","reschedule"]},{label:"班级与作业",ids:["classrooms","homework","materials","quizzes"]},{label:"我的账号",ids:["notifications","myAccount"]}],
+ admin: [{label:"",ids:["groups","home","groupInfo"]},{label:"课程管理",ids:["courses"]},{label:"教学",ids:["classrooms","homework","materials","quizzes","subjects"]},{label:"人员与账号",ids:["teacherRoster","studentRoster","accounts"]},{label:"系统与账号",ids:["notifications","myAccount","sheet","activity"]}],
+ teacher: [{label:"",ids:["home"]},{label:"课程管理",ids:["courses"]},{label:"教学",ids:["classrooms","students","homework","materials","quizzes"]},{label:"我的账号",ids:["notifications","myAccount"]}],
+ student: [{label:"",ids:["home"]},{label:"学习",ids:["courses"]},{label:"班级与作业",ids:["classrooms","homework","materials","quizzes"]},{label:"我的账号",ids:["notifications","myAccount"]}],
  pending: [{label:"",ids:["home"]},{label:"我的账号",ids:["notifications","myAccount"]}],
 };
 
@@ -629,18 +631,19 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     changeLanguage: (next: Language) => void;
 }) {
     const role = account.role as NavigationRole;
-    const items = [...(account.isOwner?[{id:"groups",label:"平台总控制台",Icon:Building2}]:[]),...NAV_ITEMS[role],...(role==="admin"?[{id:"groupInfo",label:"集团信息",Icon:Building2}]:[]), { id: "notifications", label: "通知中心", Icon: Bell }];
+    const items = [...(account.isOwner?[{id:"groups",label:"平台总控制台",Icon:Building2}]:[]),...NAV_ITEMS[role],...(role!=="pending"?[{id:"courses",label:"course.nav.title",Icon:CalendarDays}]:[]),...(role==="admin"?[{id:"groupInfo",label:"集团信息",Icon:Building2}]:[]), { id: "notifications", label: "通知中心", Icon: Bell }];
     const [badgeNow,setBadgeNow]=useState(()=>Date.now());
     useEffect(()=>{const timer=window.setInterval(()=>setBadgeNow(Date.now()),30_000);return()=>window.clearInterval(timer);},[]);
     const badgeCounts=navigationBadges(role,account.id || "",lessons,state?.proposals || [],badgeNow);
     const taskCount=badgeCounts.lessons+badgeCounts.reschedule+badgeCounts.attention;
     const [selectedView, setSelectedView] = useState(items[0].id);
+    const lastCourseView = useRef<string>(defaultCourseView(role) || "calendar");
     const currentViewRef=useRef(selectedView);currentViewRef.current=selectedView;
     const [menuOpen, setMenuOpen] = useState(false);
     const [desktop, setDesktop] = useState(false);
     useEffect(() => {
         const home = account.isOwner?"groups":NAV_ITEMS[role][0].id;
-        const normalizedView=(view:unknown):string=>typeof view==='string'?(view==='quizBank'?'quizzes':view):home;
+        const normalizedView=(view:unknown):string=>typeof view==='string'?normalizeCourseView(role,view):home;
         const valid = (view: unknown) => view === "notifications" || (typeof view === "string" && items.some(item => item.id === normalizedView(view)));
         const state = window.history.state || {};
         const url = new URL(window.location.href);
@@ -659,14 +662,16 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
         }
         else {
             setSelectedView(home);
-            window.history.replaceState({ ...state, timelyoRole: role, timelyoView: home, timelyoMenu: false }, "");
+            window.history.replaceState({ ...state, timelyoRole: role, timelyoGroup: account.groupId, timelyoView: home, timelyoMenu: false }, "");
         }
         const onPopState = () => {
             const raw=window.history.state || {};
             const next = {...raw,timelyoView:normalizedView(raw.timelyoView)};
-            if(next.timelyoView!==currentViewRef.current&&!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true}))){window.history.pushState({...next,timelyoView:currentViewRef.current,timelyoMenu:false},'');return;}
-            setMenuOpen(window.matchMedia("(min-width: 901px)").matches || Boolean(next.timelyoMenu));
-            setSelectedView(next.timelyoRole === role && valid(next.timelyoView) ? next.timelyoView : home);
+            const sameContext=next.timelyoRole === role && next.timelyoGroup === account.groupId;
+            const target=sameContext && valid(next.timelyoView) ? next.timelyoView : home;
+            if(target!==currentViewRef.current&&!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true}))){window.history.pushState({...next,timelyoRole:role,timelyoGroup:account.groupId,timelyoView:currentViewRef.current,timelyoMenu:false},'');return;}
+            setMenuOpen(window.matchMedia("(min-width: 901px)").matches || Boolean(sameContext && next.timelyoMenu));
+            setSelectedView(target);
         };
         window.addEventListener("popstate", onPopState);
         return () => window.removeEventListener("popstate", onPopState);
@@ -690,7 +695,9 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
         return () => window.removeEventListener("keydown", closeOnEscape);
     }, [menuOpen, desktop]);
     const activeView = items.some(item => item.id === selectedView) ? selectedView : items[0].id;
-    const title = items.find(item => item.id === activeView)?.label || items[0].label;
+    const courseView = isCourseView(role, activeView);
+    if (courseView) lastCourseView.current = activeView;
+    const title = courseView ? "course.nav.title" : items.find(item => item.id === activeView)?.label || items[0].label;
     const requiredScope: StateScope | null = activeView === "classrooms" ? "classrooms" : activeView === "accounts" ? "accounts" : activeView === "activity" ? "activity" : ["homework","materials", ...(role === "student" ? ["calendar"] : [])].includes(activeView) ? "learning" : null;
     const scopeLoaded = !requiredScope || state?.loadedScopes?.includes(requiredScope) || (!state?.loadedScopes && Boolean(requiredScope === "learning" ? state?.learning : requiredScope === "classrooms" ? state?.classrooms : requiredScope === "accounts" ? state?.users : state?.activity));
     const scopeError = requiredScope ? state?.scopeErrors?.[requiredScope] : undefined;
@@ -705,7 +712,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     }, [state?.account.id, state?.loadedScopes, state?.scopeErrors?.learning, requiredScope, scopeLoaded, scopeError, activeView, role, ensureScope]);
     const learning = state?.learning || { materials: [], homework: [], submissions: [], studyBlocks: [], eligible: [] };
     const learningReady = Boolean(state?.learning && (!state.loadedScopes || state.loadedScopes.includes("learning")));
-    const showMonth = (role === "teacher" && activeView === "hours") || (role === "admin" && ["overview", "attention", "schedule", "calendar", "list", "students", "teachers"].includes(activeView));
+    const showMonth = (role === "teacher" && activeView === "hours") || (role === "admin" && ["overview", "attention", "schedule", "calendar", "list"].includes(activeView));
     const closeMobileMenu = () => {
         if (desktop) return;
         if (window.history.state?.timelyoMenu) window.history.back();
@@ -718,10 +725,12 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
         } else if (!desktop && menuOpen) closeMobileMenu();
         else setMenuOpen(open => !open);
     };
-    const choose = (id: string) => {
+    const choose = (requested: string) => {
+        const id = requested === "courses" ? (isCourseView(role,lastCourseView.current) ? lastCourseView.current : defaultCourseView(role)) : normalizeCourseView(role,requested);
+        if (!id || !items.some(item => item.id === id)) return;
         if(id!==activeView&&!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;
         if (id !== activeView) {
-            const next = { ...(window.history.state || {}), timelyoRole: role, timelyoView: id, timelyoMenu: false };
+            const next = { ...(window.history.state || {}), timelyoRole: role, timelyoGroup: account.groupId, timelyoView: id, timelyoMenu: false };
             if (!desktop && menuOpen && window.history.state?.timelyoMenu) window.history.replaceState(next, "");
             else window.history.pushState(next, "");
             setSelectedView(id);
@@ -792,7 +801,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
             {menuOpen && <aside id="workspace-menu" className="workspace-menu" aria-label={t("功能菜单")}>
                 <SignedInIdentity account={account}/>
                 <nav className="menu-links" aria-label={t("功能菜单")}>
-                    {NAV_GROUPS[role].map(group => <div className="menu-group" key={group.label}>{group.label && <h2 className="menu-group-title">{t(group.label)}</h2>}{group.ids.map(id => items.find(item => item.id === id)!).filter(Boolean).map(item => <button key={item.id} type="button" className={"menu-link" + (activeView === item.id ? " active" : "")} aria-current={activeView === item.id ? "page" : undefined} onClick={() => choose(item.id)}><item.Icon size={19} aria-hidden="true"/><span>{t(item.label)}</span><MenuBadge count={badgeCounts[item.id as keyof typeof badgeCounts] || 0} includeUnread={item.id==="notifications"} quizOnly={item.id==="quizzes"}/></button>)}</div>)}
+                    {NAV_GROUPS[role].map(group => <div className="menu-group" key={group.label}>{group.label && <h2 className="menu-group-title">{t(group.label)}</h2>}{group.ids.map(id => items.find(item => item.id === id)!).filter(Boolean).map(item => <button key={item.id} type="button" data-testid={`menu-${item.id}`} className={"menu-link" + (activeView === item.id || item.id === "courses" && courseView ? " active" : "")} aria-current={activeView === item.id || item.id === "courses" && courseView ? "page" : undefined} onClick={() => choose(item.id)}><item.Icon size={19} aria-hidden="true"/><span>{t(item.label)}</span><MenuBadge count={item.id === "courses" ? courseBadgeCount(role,badgeCounts) : badgeCounts[item.id as keyof typeof badgeCounts] || 0} includeUnread={item.id==="notifications"} quizOnly={item.id==="quizzes"}/></button>)}</div>)}
                 </nav>
                 <div className="menu-utilities">
                     <button type="button" className="menu-link" onClick={reload}><RefreshCw size={19}/><span>{t("刷新")}</span></button>
@@ -804,10 +813,11 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
                 <div className="page-head"><div><p className="eyebrow">{t(role === "admin" ? "管理员工作台" : role === "student" ? "学生工作台" : role === "pending" ? "待分配账号" : "老师工作台")}</p><h1>{t(title)}</h1></div>
                     {showMonth && <label className="month-select">{t("统计月份")}<input type="month" value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)}/></label>}
                 </div>
+                {courseView && <CourseNavigation role={role} activeView={activeView} onChoose={choose} badges={badgeCounts}/>}
                 {message && state && !state.error && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("关闭")}>×</button></div>}
 
                 {role === "teacher" && state && !state.error && !(state.plans || []).length && <div className="notice">{t("暂无负责的学生科目。请联系管理员完成课程分配。")}</div>}
-                <FilterScope.Provider value={`${account.id || "anonymous"}:${account.groupId || "none"}`}>{role !== "pending" && activeView !== "quizzes" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "页面加载失败" : "正在加载…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : !scopeLoaded ? <PageState kind={scopeError ? "error" : "loading"} title={scopeError ? "页面加载失败" : "正在加载…"} description={scopeError} action={scopeError ? "重试" : undefined} onAction={() => { if (requiredScope) void ensureScope(requiredScope, true); }}/> : <Suspense fallback={<PageState kind="loading" title="正在加载…"/>}>{pageContent}</Suspense>}</FilterScope.Provider>
+                <FilterScope.Provider value={`${account.id || "anonymous"}:${account.groupId || "none"}`}>{role !== "pending" && activeView !== "quizzes" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "页面加载失败" : "正在加载…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : !scopeLoaded ? <PageState kind={scopeError ? "error" : "loading"} title={scopeError ? "页面加载失败" : "正在加载…"} description={scopeError} action={scopeError ? "重试" : undefined} onAction={() => { if (requiredScope) void ensureScope(requiredScope, true); }}/> : <Suspense fallback={<PageState kind="loading" title="正在加载…"/>}>{courseView ? <div id="course-view-content" data-testid="course-view-content" data-course-leaf={activeView}>{pageContent}</div> : pageContent}</Suspense>}</FilterScope.Provider>
             </main>
         </div>
         {modal && ["attendance","review"].includes(modal.type)&&state?.attendanceSessions?.find(s=>s.id===modal.lesson.sessionId)?<SessionAttendanceDialog session={state.attendanceSessions.find(s=>s.id===modal.lesson.sessionId)!} review={modal.type==="review"} role="admin" close={()=>setModal(null)} mutate={mutate} busy={busy}/>:modal&&<LessonDialog modal={modal} close={() => setModal(null)} mutate={mutate} busy={busy}/>}
