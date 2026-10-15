@@ -1,5 +1,13 @@
 # Timelyo versions and recovery
 
+## 2026-10-16 - Remove unfinished self-practice records (Cloudflare)
+
+- Formal domains run Worker `1ebdaa8e-aa37-421f-8aae-76ba2017f3f6`, from GitHub source `66a49ab29582283c83210033c20cd4f5084f6c7c` (tree `ae58d289de67dc5f65b13d3871695c39a4b8f20b`). Only additive migration `0030_quiz_practice_discard.sql` was applied; runtime variables and original domain/D1/R2 bindings retained. No public test deployment.
+- Students, teachers and administrators can confirm removal of their own unfinished self-practice through Quiz history. Library quizzes remain intact. Assigned, submitted and expired work cannot be removed. Retained discard timestamps hide records from history and resume, prevent stale saves/submissions and allow a genuinely new self-practice start. Actor/group ownership, live authority, CAS, timer finalisation, idempotency and operation/event history remain enforced.
+- Assigned practice, formal Quiz and Quiz homework answers remain editable before submission. Only a checked question revealed through immediate feedback locks; unrelated questions stay editable. This behavior already existed and was independently verified. The eight existing test quizzes remain unclassified, as requested; no real Quiz or attempt was deleted during QA.
+- Tests passed: 169 discard API/SQL/race checks, 82 assigned-answer editing checks, 31 v18/v19 backup checks, 52 autosave performance checks, 92 publishing checks and the original practice suite. Actual Chromium passed 12 mobile checks, including student cancellation/deletion/restart, assigned answer edits, and teacher/owner deletion controls. Guarded build and TypeScript passed. Formal-domain/auth/CSRF/asset/FK acceptance passed 36 checks.
+- Backups are v19/53 tables and retain prior snapshot compatibility. Encrypted pre/post snapshots preserve original business fields and every PDF/question-image byte; evidence is in `work/quiz-self-practice-discard-release/` outside public source. Application rollback must retain discard filtering/write guards: the preceding Worker does not understand discarded attempts and must not resume them.
+
 ## 2026-10-16 - Academic catalogues, Quiz paging and confirmed promotion (Cloudflare)
 
 - Formal domains now run Worker `fdbfd958-cff7-4466-9b54-c41b96a4bddc`. Runtime source is GitHub commit `3f4ad0e4917e20e094bd0deed25795717b240476`, tree `bcc0d102257100cd50c90e5726dddf799b43a7d6`; the main feature commit is `5363c02159310506c72d54a6c1f314ec5d0f0a58`. Variables, domain bindings and D1/R2 resources were retained. No public test site was updated.

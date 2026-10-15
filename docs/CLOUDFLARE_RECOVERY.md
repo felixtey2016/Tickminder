@@ -1,6 +1,14 @@
 # Tickminder independent Cloudflare recovery
 
-## Current release - Academic catalogues and Quiz paging
+## Current release - Unfinished self-practice removal
+
+Worker `1ebdaa8e-aa37-421f-8aae-76ba2017f3f6` serves both formal domains from source commit `66a49ab29582283c83210033c20cd4f5084f6c7c` (tree `ae58d289de67dc5f65b13d3871695c39a4b8f20b`). Only `0030_quiz_practice_discard.sql` was executed. Runtime settings, domain bindings, global menus, classifications and original business data are retained.
+
+Backups are **v19/53 tables** with a nullable `quiz_practice_attempts.discarded_at`. Soft-discarded records retain answers, versions, keys, images and events; only own unfinished self-practice is eligible. Server save/submit/resume/history paths honor the flag. Rollback must retain those filters and write guards; the earlier unmodified Worker would resume discarded records. A restored v18 database needs additive migration 0030 before running this runtime. Do not replay unrelated historical migrations.
+
+Verification includes 169 discard checks, 82 assigned-answer editing checks, 31 actual backup export/restore checks, 12 real mobile Chromium checks and 36 formal-domain/security/asset/integrity checks. Existing test quizzes remain unclassified; no production attempt or Quiz was removed for testing. Evidence and encrypted snapshots are outside public source in `work/quiz-self-practice-discard-release/` and `backups/`.
+
+## Preceding release - Academic catalogues and Quiz paging
 
 Published on **2026-10-16** as Worker `fdbfd958-cff7-4466-9b54-c41b96a4bddc`, from source commit `3f4ad0e4917e20e094bd0deed25795717b240476` (tree `bcc0d102257100cd50c90e5726dddf799b43a7d6`). Both formal domains, runtime variables and original D1/R2 resources are retained. GitHub `feat/tuition-groups` holds the complete source, including preceding feature commit `5363c02159310506c72d54a6c1f314ec5d0f0a58`.
 
