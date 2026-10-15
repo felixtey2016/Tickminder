@@ -46,13 +46,13 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
   const tabListId = useId();
   const tabListRef = useRef<HTMLDivElement>(null);
   const directorySummaryRef = useRef<HTMLElement>(null);
-  const focusDirectory = () => requestAnimationFrame(() => {
-    const summary = directorySummaryRef.current;
-    if (!summary) return;
-    summary.focus({ preventScroll: true });
-    const bounds = summary.getBoundingClientRect();
+  const focusClassroomContent = () => requestAnimationFrame(() => {
+    const target = tabButtons.current.announcements || directorySummaryRef.current;
+    if (!target) return;
+    target.focus({ preventScroll: true });
+    const bounds = target.getBoundingClientRect();
     const headerBottom = document.querySelector(".topbar")?.getBoundingClientRect().bottom || 0;
-    if (bounds.top < headerBottom + 12 || bounds.bottom > window.innerHeight - 12) summary.scrollIntoView({ block: "center" });
+    if (bounds.top < headerBottom + 12 || bounds.bottom > window.innerHeight - 12) target.scrollIntoView({ block: "center" });
   });
   const managementRef = useRef<HTMLDetailsElement>(null);
   const tabButtons = useRef<Partial<Record<ClassroomTab, HTMLButtonElement | null>>>({});
@@ -109,7 +109,7 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
   async function saveClassroom(event: React.FormEvent) {
     event.preventDefault();
     const result = await mutate({ action: "saveClassroom", id: editingId, title, description, termId, teacherName: teacher, subject,subjectId:subject,syllabusId,grade, students: members });
-    if (result.ok) { setFilterTerm(termId || "unassigned"); setCreating(false); setDirectoryOpen(false); if (result.id) setSelectedId(result.id); setTab("announcements"); focusDirectory(); }
+    if (result.ok) { setFilterTerm(termId || "unassigned"); setCreating(false); setDirectoryOpen(false); if (result.id) setSelectedId(result.id); setTab("announcements"); focusClassroomContent(); }
   }
   async function saveAnnouncement(event: React.FormEvent) {
     event.preventDefault(); if (!selected) return;
@@ -118,7 +118,7 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
   }
   const canManage = role !== "student";
   const classTabs = ([{ id: "announcements", Icon: Megaphone, label: "公告" }, { id: "schedule", Icon: CalendarDays, label: "课程安排" }, { id: "materials", Icon: FileText, label: "教学资料" }, { id: "homework", Icon: BookOpen, label: "功课" }, ...(canManage ? [{ id: "members", Icon: Users, label: "学生名单" } as const] : [])] as const);
-  const pick = (item: Classroom) => { setSelectedId(item.id); setDirectoryOpen(false); setCreating(false); setTab("announcements"); setAnnouncementId(""); setAnnouncementTitle(""); setAnnouncementBody(""); setPinned(false); focusDirectory(); };
+  const pick = (item: Classroom) => { setSelectedId(item.id); setDirectoryOpen(false); setCreating(false); setTab("announcements"); setAnnouncementId(""); setAnnouncementTitle(""); setAnnouncementBody(""); setPinned(false); focusClassroomContent(); };
   const classButtons = (items: Classroom[]) => <div className="classroom-chips">{items.map(item => <button type="button" key={item.id} className={selected?.id === item.id && !creating ? "selected" : ""} onClick={() => pick(item)}><strong>{item.title}</strong><span>{catalogue?.syllabuses.find(s=>s.id===item.syllabusId)?.name||item.syllabusId||t('课程体系待补充')} · {item.grade||t('年级待补充')} · {item.subject} · {item.teacherName} · {terms.find(term=>term.id===item.termId)?.name || t("未指定学期")}{item.archived ? ` · ${t("已封存")}` : ""}</span></button>)}</div>;
   return <div className="classrooms-page">
     <details className="panel classroom-picker" open={directoryOpen || !selected || creating} onToggle={event => { if (selected && !creating) setDirectoryOpen(event.currentTarget.open); }}>
