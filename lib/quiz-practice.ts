@@ -151,6 +151,7 @@ export async function startPractice(a:Account,data:Record<string,unknown>){
 
 export async function updatePractice(a:Account,data:Record<string,unknown>){
  const action=String(data.action);if(!['save','check','submit'].includes(action))return invalid();const replay=await operationReplay(a,data);if(replay.prior)return getPracticeAttempt(a,replay.prior.record_id);const row=await loadedAttempt(a,id(data.attemptId));
+ if(data.deferCompletion!==undefined&&typeof data.deferCompletion!=='boolean')return invalid();
  if(row.account_id!==a.id||row.group_id!==group(a)||row.student_name!==(a.role==='student'?a.studentName:null))throw new QuizError('quiz.forbidden',403);if(row.status!=='in_progress')throw new QuizError('quiz.practiceFinished',409);if(row.revision!==data.revision)throw new QuizError('quiz.conflict',409);
  const policy=settings(row),deadline=effectiveQuizDeadline(row.deadline_at,policy,row.recipient_due_at);if(deadline&&deadline<=new Date().toISOString())return attemptResponse(a,row);
  // A browser clock or stale deadline cannot submit an attempt early. A timed
@@ -158,15 +159,24 @@ export async function updatePractice(a:Account,data:Record<string,unknown>){
  if(action==='submit'&&data.automatic===true)return attemptResponse(a,row);
  const content=JSON.parse(row.content_json) as QuizContent,incoming=checkedPracticeAnswers(content,data.answers),previous=JSON.parse(row.answers_json) as Record<string,QuizAnswer>,answers={...previous,...incoming},checked=JSON.parse(row.checked_json) as string[],flagged=flags(content,data.flaggedQuestionIds,row.flagged_json);
  for(const qid of checked){if(qid in incoming&&JSON.stringify(incoming[qid])!==JSON.stringify(previous[qid]))throw new QuizError('quiz.practiceLocked',409);answers[qid]=previous[qid];}
+ const answeredCount=content.questions.filter(q=>{const answer=answers[q.id];return q.type==='mcq'||q.type==='true_false'?Boolean(answer?.optionId):Boolean(answer?.text?.trim());}).length,complete=answeredCount===content.questions.length;
+ // Only an actual server-side expiry may finalise unanswered work. A normal
+ // submit must include a valid answer for every question, including manual work.
+ if(action==='submit'&&!complete)throw new QuizError('quiz.allAnswersRequired');
  const keys=await attemptKeys(row);let newlyChecked:string|null=null;
  if(action==='check'){const qid=String(data.questionId),q=content.questions.find(q=>q.id===qid),key=keys.find(k=>k.questionId===qid);if(!row.immediate||!q||!key||key.mode==='manual')return invalid();const answer=answers[qid];if(!answer||!answer.optionId&&!answer.text?.trim())throw new QuizError('quiz.practiceAnswer');if(!checked.includes(qid)){checked.push(qid);newlyChecked=qid;}}
- // Checked answers are immutable: autosave preserves their results and checking
- // another answer evaluates only that answer. Submission/expiry grade all.
- const preserved=JSON.parse(row.results_json) as PracticeResult[],resultMap=new Map([...preserved,...(newlyChecked?resultsFor(content,keys,answers,new Set([newlyChecked])):[])].map(result=>[result.questionId,result]));
- const submit=action==='submit',results=submit?resultsFor(content,keys,answers):newlyChecked?content.questions.filter(q=>resultMap.has(q.id)).map(q=>resultMap.get(q.id)!):preserved,sum=totals(results),now=new Date().toISOString(),access=ownAccess(a),db=learningDb(),snapshot=assignmentSnapshot(row),guard=operationGuard(replay.operation),due=row.recipient_due_at||policy.dueAt;
+ // Self-practice finishes through the normal save/check operation. Do not finish
+ // an immediate-feedback paper before every objective answer has been checked,
+ // or while the browser is still editing a free-text answer. Assigned work keeps
+ // its explicit submission step and teacher release policy.
+ const autoComplete=!row.assignment_id&&complete&&!(action==='save'&&data.deferCompletion===true)&&(!row.immediate||keys.every(key=>key.mode==='manual'||checked.includes(key.questionId)));
+ // Checked answers are immutable: a partial autosave preserves their results
+ // and checking another answer evaluates only that answer. Completion grades all.
+ const submit=action==='submit'||autoComplete,preserved=JSON.parse(row.results_json) as PracticeResult[],resultMap=new Map([...preserved,...(!submit&&newlyChecked?resultsFor(content,keys,answers,new Set([newlyChecked])):[])].map(result=>[result.questionId,result]));
+ const results=submit?resultsFor(content,keys,answers):newlyChecked?content.questions.filter(q=>resultMap.has(q.id)).map(q=>resultMap.get(q.id)!):preserved,sum=totals(results),now=new Date().toISOString(),access=ownAccess(a),db=learningDb(),snapshot=assignmentSnapshot(row),guard=operationGuard(replay.operation),due=row.recipient_due_at||policy.dueAt;
  if(deadline&&deadline<=now)return attemptResponse(a,row);
  const update=db.prepare(`UPDATE quiz_practice_attempts AS pa SET answers_json=?,checked_json=?,results_json=?,flagged_json=?,status=?,submitted_at=?,updated_at=?,score=?,pending_manual=?,submission_reason=?,submission_due_at=?,late=?,revision=revision+1 WHERE id=? AND revision=? AND status='in_progress' AND discarded_at IS NULL AND ${practiceAuthority} AND ${access.sql} AND ${snapshot.sql}`).bind(JSON.stringify(answers),JSON.stringify(checked),JSON.stringify(results),JSON.stringify(flagged),submit?'submitted':'in_progress',submit?now:null,now,sum.score,sum.pending,submit?'student':null,submit?due:null,submit&&due&&now>due?1:0,row.id,row.revision,...practiceAuthorityValues(a),...access.values,...snapshot.values);
- try{const result=await db.batch([update,operationStatement(a,replay.operation,replay.hash,row.id,action,now),eventStatement(a,replay.operation,row.group_id,row.assignment_id,row.id,action,{revision:row.revision},{revision:row.revision+1,answeredCount:Object.values(answers).filter(v=>v.optionId||v.text?.trim()).length,flaggedCount:flagged.length,...(submit?{score:sum.score,pendingManual:sum.pending}:{} )},now,guard),...(submit?notices(row.assignment_id,row.group_id,replay.operation,now,guard,'pending_marking',row.id):[])]);if(!result[0].meta.changes)throw new QuizError('quiz.conflict',409);}catch(error){const retry=await operationReplay(a,data);if(retry.prior)return getPracticeAttempt(a,row.id);throw error;}
+ try{const result=await db.batch([update,operationStatement(a,replay.operation,replay.hash,row.id,action,now),eventStatement(a,replay.operation,row.group_id,row.assignment_id,row.id,action,{revision:row.revision},{revision:row.revision+1,answeredCount,flaggedCount:flagged.length,...(submit?{score:sum.score,pendingManual:sum.pending}:{}),...(autoComplete?{autoCompleted:true}:{})},now,guard),...(submit?notices(row.assignment_id,row.group_id,replay.operation,now,guard,'pending_marking',row.id):[])]);if(!result[0].meta.changes)throw new QuizError('quiz.conflict',409);}catch(error){const retry=await operationReplay(a,data);if(retry.prior)return getPracticeAttempt(a,row.id);throw error;}
  // The update checked live authority, recipient eligibility, attempt revision
  // and assignment revision atomically. Project that successful snapshot rather
  // than issuing another full-paper read and key read after every autosave.

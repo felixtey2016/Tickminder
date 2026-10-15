@@ -49,7 +49,7 @@ for(const kind of ['practice','quiz','homework']){
  check(attempt.checkedQuestionIds.length===0&&attempt.results.length===0,'Autosave does not check or reveal deferred answers: '+kind);
  const fetched=(await getAttempt(attempt.id)).attempt;check(fetched.answers[first.id].optionId===wrong&&fetched.answers[second.id].optionId===answer(second,true).optionId,'Edits persist after reload: '+kind);
  await post({action:'check',attemptId:attempt.id,revision:attempt.revision,answers:{},questionId:first.id,operationId:op()},student,400);
- attempt=(await mutate(attempt,'submit',{[first.id]:{optionId:correct}})).attempt;check(attempt.status==='submitted'&&attempt.answers[first.id].optionId===correct,'Final submission accepts last edits: '+kind);
+ attempt=(await mutate(attempt,'submit',{[first.id]:{optionId:correct},[third.id]:answer(third,true)})).attempt;check(attempt.status==='submitted'&&attempt.answers[first.id].optionId===correct,'Final complete submission accepts last edits: '+kind);
  const rejected=await post({action:'save',attemptId:attempt.id,revision:attempt.revision,answers:{[first.id]:{optionId:wrong}},operationId:op()},student,409);check(rejected.error==='quiz.practiceFinished','Submitted answers cannot be edited: '+kind);
  check((await getAttempt(attempt.id)).attempt.answers[first.id].optionId===correct,'Rejected post-submission edit leaves recorded answer unchanged: '+kind);
 }
