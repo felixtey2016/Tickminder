@@ -166,7 +166,8 @@ fieldset { border: 1px solid #d8e1eb; padding: 12px; border-radius: 10px; }
 .catalogue-list details,.student-promotions{border:1px solid var(--border);border-radius:10px;padding:16px;margin-block:12px;min-width:0}
 .catalogue-list summary,.student-promotions summary{font-weight:600;cursor:pointer;overflow-wrap:anywhere}
 .catalogue-list details[open]>*,.student-promotions[open]>*{margin-block:12px}
-.student-promotions input[type=number]{max-width:180px}
+.student-promotions>label{display:grid;gap:8px;font-weight:600}
+.student-promotions input[type=number]{width:180px;max-width:100%;min-height:44px;padding:8px 12px;border:1px solid #978aab;border-radius:6px;background:#fff;color:var(--foreground)}
 .promotion-list{list-style:none;padding:0;margin:0;max-height:420px;overflow-y:auto}
 .promotion-list li{padding-block:10px;border-bottom:1px solid var(--border)}
 .promotion-list small{display:block;font-weight:400;overflow-wrap:anywhere}
