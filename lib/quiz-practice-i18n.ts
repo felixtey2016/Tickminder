@@ -1,5 +1,8 @@
 // Practice, allocation and results share the application's language switcher.
 const pairs:Record<string,[string,string]>={
+ 'quiz.discardPractice':['删除练习记录','Delete practice record'],
+ 'quiz.discardPracticeConfirm':['删除「{title}」这次未完成的自主练习记录？已保存的答案将无法继续作答，题库中的测验会保留。','Delete this unfinished practice record for “{title}”? You will not be able to resume its saved answers. The Quiz remains in the library.'],
+ 'quiz.discardingPractice':['正在删除…','Deleting…'],
  'quiz.assignmentKind':['安排类型','Assignment type'],
  'quiz.feedbackDeferred':['不逐题显示对错','No question-by-question feedback'],
  'quiz.invalidAccommodation':['请检查延期时间及额外次数，并填写调整原因；延期不得早于原截止时间，额外次数须为 0–20。','Check the extension and extra attempts, and enter a reason. The extension cannot be earlier than the original due time; extra attempts must be 0–20.'],

@@ -1,6 +1,6 @@
 import {QuizError} from '@/lib/quiz';
 import {quizFailure,quizResponse,quizRequestBytes} from '@/lib/quiz-server';
-import {practiceActor,practiceState,practiceTargets,getPracticeAttempt,startPractice,assignPractice,updatePractice,gradePractice,withdrawPractice,releasePractice,accommodatePractice} from '@/lib/quiz-practice';
+import {practiceActor,practiceState,practiceTargets,getPracticeAttempt,startPractice,assignPractice,updatePractice,gradePractice,withdrawPractice,releasePractice,accommodatePractice,discardPractice} from '@/lib/quiz-practice';
 export async function GET(request:Request){try{
  const actor=await practiceActor(),url=new URL(request.url),attemptId=url.searchParams.get('attemptId');
  if(attemptId)return quizResponse(await getPracticeAttempt(actor,attemptId));
@@ -14,6 +14,7 @@ export async function POST(request:Request){try{
  if(!data||typeof data!=='object'||Array.isArray(data))throw new QuizError('quiz.invalidFields');
  if(data.action==='start')return quizResponse(await startPractice(actor,data));
  if(data.action==='assign')return quizResponse(await assignPractice(actor,data));
+ if(data.action==='discard')return quizResponse(await discardPractice(actor,data));
  if(['save','check','submit'].includes(String(data.action)))return quizResponse(await updatePractice(actor,data));
  if(data.action==='grade')return quizResponse(await gradePractice(actor,data));
  if(data.action==='withdraw')return quizResponse(await withdrawPractice(actor,data));

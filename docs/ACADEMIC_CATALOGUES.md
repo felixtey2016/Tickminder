@@ -31,9 +31,15 @@ Administrators open **Student subject pairing → Annual grade promotion**, sele
 - The batch checks current student details, catalogue revision, active administrator and organisation. A stale selection rejects the whole batch.
 - `student_grade_promotions` records each confirmation; a student cannot be promoted twice for the same or an earlier academic year.
 
+## Unfinished Quiz records
+
+All current account roles may remove their own unfinished self-practice records from **Quiz → History**, with confirmation. The library Quiz is retained. Teacher-assigned work, submitted work and timed-out attempts cannot be removed this way. Soft discard retains answers and events for consistency, hides the record from history/resume, blocks stale saves and lets a later self-practice start create a fresh record.
+
+Teacher-assigned answers remain editable before submission. If immediate feedback is enabled, only a question whose answer has been checked and revealed becomes immutable; other questions remain editable.
+
 ## Backups and migration
 
-Migration `0029_academic_catalogues.sql` adds metadata and the two new tables without rebuilding existing business tables. Backups use v18 (53 tables), including both global menu revisions and promotion history. Restore retains prior snapshot compatibility and checks academic references.
+Migration `0029_academic_catalogues.sql` adds metadata and the two new tables without rebuilding existing business tables. Migration `0030_quiz_practice_discard.sql` adds a nullable discard timestamp. Backups use v19 (53 tables), including both global menu revisions, promotion history and retained discarded attempts. Restore retains prior snapshot compatibility and checks academic references.
 
 Do not blanket-apply restored historical migrations. Execute only the audited new migration and the reviewed metadata plan, then verify profiles, classifications, foreign keys, encrypted restore and existing file checksums.
 

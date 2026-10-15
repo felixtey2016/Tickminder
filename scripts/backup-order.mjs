@@ -120,6 +120,7 @@ export function checkRestoredFolderStructure(db) {
    const order=JSON.parse(a.order_json),answers=JSON.parse(a.answers_json),checked=JSON.parse(a.checked_json),results=JSON.parse(a.results_json);
    if(!order||typeof order!=='object'||!answers||typeof answers!=='object'||Array.isArray(answers)||!Array.isArray(checked)||!Array.isArray(results)||checked.some(id=>!content.questions.some(q=>q.id===id))||Object.keys(answers).some(id=>!content.questions.some(q=>q.id===id))||results.some(r=>!content.questions.some(q=>q.id===r.questionId)))throw Error('Restored quiz practice answers are invalid');
    if('flagged_json' in a){const flagged=JSON.parse(a.flagged_json);if(!Array.isArray(flagged)||flagged.some(id=>!content.questions.some(q=>q.id===id)))throw Error('Restored quiz review flags are invalid');}
+   if('discarded_at' in a&&a.discarded_at!==null&&(typeof a.discarded_at!=='string'||!Number.isFinite(Date.parse(a.discarded_at))||new Date(a.discarded_at).toISOString()!==a.discarded_at||a.assignment_id!==null||a.status!=='in_progress'||a.submitted_at!==null))throw Error('Restored discarded quiz practice metadata is invalid');
   }
  }
  if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='quiz_practice_events'").get()){
@@ -138,7 +139,7 @@ export function checkRestoredFolderStructure(db) {
  if(invalid||db.prepare('PRAGMA foreign_key_check').all().length)throw Error('Restored folder relationships are invalid');
 }
 
-export function snapshotVersion(data){return Number(data?.format?.match(/^timelyo-d1-v(18|17|16|15|14|13|12|11|10|[1-9])$/)?.[1]||0);}
+export function snapshotVersion(data){return Number(data?.format?.match(/^timelyo-d1-v(19|18|17|16|15|14|13|12|11|10|[1-9])$/)?.[1]||0);}
 export function expectedSnapshotTables(version){
  const base=['accounts','assignments','audit','lessons','local_credentials','login_attempts','plans','reschedule_requests','sessions','students','teachers','pdf_files','storage_quota','teaching_materials','material_recipients','homework','homework_recipients','homework_submissions','study_blocks'];
  return [...(version>=9?['tuition_groups']:[]),...base,...(version>=2?['classrooms','classroom_members','classroom_announcements']:[]),...(version>=3?['google_identities']:[]),...(version>=4?['academic_terms']:[]),...(version>=7?['notification_items','notification_deliveries','push_subscriptions','notification_runtime']:[]),...(version>=8?['site_notifications']:[]),...(version>=10?['classroom_folders','classroom_content_state']:[]),...(version>=11?['learning_versions','homework_score_history']:[]),...(version>=12?['homework_resubmission_grants','homework_feedback','learning_notifications','learning_notification_deliveries']:[]),...(version>=13?['class_sessions','class_session_participants']:[]),...(version>=15?['quizzes','quiz_versions','quiz_answer_keys','quiz_images','quiz_version_images']:[]),...(version>=16?['quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations']:[]),...(version>=17?['quiz_practice_events','quiz_assignment_notifications']:[]),...(version>=18?['academic_catalogues','student_grade_promotions']:[])];
