@@ -8,6 +8,9 @@ import { OnlineLessonLink } from "./online-lesson-link";
 import { Button } from "@/components/ui/button";
 import type { RescheduleProposal } from "./reschedule-panel";
 import { LessonHistory } from "./lesson-history";
+import {CourseCompletionFilter} from "@/components/course-completion-filter";
+import {matchesCourseCompletion} from "@/lib/course-completion";
+import {useFilterPreference} from "@/lib/filter-preferences";
 
 type Lesson = SessionLesson & {
   id: string; subject: string; teacherName: string; plannedStart: string; plannedEnd: string;
@@ -18,15 +21,16 @@ const statusText: Record<string, string> = { scheduled: "已安排", completed: 
 const time = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
 
 export function StudentLessonList({ lessons, proposals = [], onRequestReschedule, busy }: { lessons: Lesson[]; proposals?: RescheduleProposal[]; onRequestReschedule?: (id: string) => void; busy?: boolean }) {
+  const [completion,setCompletion]=useFilterPreference<string>('student-courses-completion','all');
   const today = malaysiaDay(new Date().toISOString());
-  const sorted = lessons.filter(lesson => lesson.status !== "cancelled").slice().sort((a, b) => a.plannedStart.localeCompare(b.plannedStart));
+  const sorted = lessons.filter(lesson => lesson.status !== "cancelled"&&matchesCourseCompletion(lesson,completion)).slice().sort((a, b) => a.plannedStart.localeCompare(b.plannedStart));
   const sections = [
     { title: "今天的课", rows: sorted.filter(lesson => malaysiaDay(lesson.plannedStart) === today) },
     { title: "接下来的课", rows: sorted.filter(lesson => malaysiaDay(lesson.plannedStart) > today) },
     { title: "过往课程", rows: sorted.filter(lesson => malaysiaDay(lesson.plannedStart) < today).reverse() },
   ];
   const date = (iso: string) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "long", day: "numeric", weekday: "short" }).format(new Date(iso));
-  return <div className="student-lesson-list student-portal">{sections.map(section => <section className="panel" key={section.title}>
+  return <div className="student-lesson-list student-portal"><section className="panel"><CourseCompletionFilter value={completion} onChange={setCompletion} testId="student-course-completion-filter"/></section>{sections.map(section => <section className="panel" key={section.title}>
     <div className="section-head"><h2>{t(section.title)}</h2><span>{section.rows.length} {t("堂课")}</span></div>
     {section.rows.length ? section.rows.map(lesson => <article className="portal-card" key={lesson.id}>
       <div><strong>{lesson.subject}</strong><span>{date(lesson.plannedStart)} · {time(lesson.plannedStart)}–{time(lesson.plannedEnd)}</span><span>{t("负责老师")}：{lesson.teacherName}</span>

@@ -5,6 +5,8 @@ import {GroupSessionPlanner,GroupSessionBoard,type GroupSession,type GroupSessio
 import {uniqueSessionLessons} from "@/lib/class-session-display";
 import type {SessionLesson} from "@/lib/class-session-display";
 import {ClassSessionLabel} from "@/components/class-session-label";
+import {CourseCompletionFilter} from "@/components/course-completion-filter";
+import {matchesCourseCompletion} from "@/lib/course-completion";
 import {groupFetch,setClientGroup} from "@/lib/group-client";
 
 import { BulkDeleteTool } from "./bulk-delete";
@@ -910,7 +912,8 @@ function Schedule({ state, lessons, mutate, open, busy, view }: {
 }) {
     const plans = state?.plans || [];
     const [filterTeacher, setFilterTeacher] = useFilterPreference<string>("courses-teacher", ""), [filterStudent, setFilterStudent] = useFilterPreference<string>("courses-student", ""), [cancelled, setCancelled] = useFilterPreference<boolean>("courses-cancelled", false);
-    const visible = lessons.filter(l => l.sessionType!=="group" && (l.status === "cancelled") === cancelled && (!state?.month || local(l.plannedStart).slice(0,7) === state.month) && (!filterTeacher || l.teacherName === filterTeacher) && (!filterStudent || l.student === filterStudent));
+    const [completion,setCompletion]=useFilterPreference<string>("courses-completion","all");
+    const visible = lessons.filter(l => l.sessionType!=="group" && (l.status === "cancelled") === cancelled && (!state?.month || local(l.plannedStart).slice(0,7) === state.month) && (!filterTeacher || l.teacherName === filterTeacher) && (!filterStudent || l.student === filterStudent)&&(view!=="list"||matchesCourseCompletion(l,completion)));
     const groups = [...new Set(visible.map(l => l.teacherName))].sort();
     const [scheduleMode,setScheduleMode]=useState("one_to_one");
     const [student, setStudent] = useState("");
@@ -953,10 +956,10 @@ function Schedule({ state, lessons, mutate, open, busy, view }: {
             <label>{t("每周重复至（可留空）")}<input type="date" value={until} onChange={e => setUntil(e.target.value)}/></label>
             <Button disabled={busy || !chosen || !selectedClassId || classOptions===null} className="primary-full">{t("保存排课")}</Button>
         </form></section>
-        <GroupSessionBoard sessions={state?.classSessions||[]} requests={state?.classSessionRequests||[]} role={state?.account.role==="teacher"?"teacher":"admin"} mutate={mutate} busy={busy} month={state?.month} onAttendance={state?.account.role==="admin"?id=>{const lesson=lessons.find(l=>l.id===id);if(lesson)open({type:"attendance",lesson});}:undefined}/>
+        <GroupSessionBoard sessions={state?.classSessions||[]} requests={state?.classSessionRequests||[]} role={state?.account.role==="teacher"?"teacher":"admin"} mutate={mutate} busy={busy} month={state?.month} completionScope={'class-sessions-'+view} onAttendance={state?.account.role==="admin"?id=>{const lesson=lessons.find(l=>l.id===id);if(lesson)open({type:"attendance",lesson});}:undefined}/>
         <section className="panel" hidden={view === "create"}><div className="section-head"><div><h2>{t(view === "calendar" ? "课程日历" : "课程列表")}</h2></div><span>{visible.length}{t(" 堂")}</span></div>
             {view === "calendar" && <LessonCalendar lessons={lessons.filter(l => l.status !== "cancelled")} teachers={state?.teachers || []} proposals={state?.proposals || []} onSelect={id => { const lesson = lessons.find(l => l.id === id); if (lesson) open({ type: "edit", lesson }); }}/>}
-            {view === "list" && <><FilterPanel active={Boolean(filterTeacher || filterStudent || cancelled)}><DirectoryFilters teachers={[...new Set(lessons.map(l => l.teacherName))].sort()} students={[...new Set(lessons.map(l => l.student))].sort()} teacher={filterTeacher} student={filterStudent} onTeacher={setFilterTeacher} onStudent={setFilterStudent}/><Button variant="outline" size="sm" onClick={() => { setFilterTeacher(""); setFilterStudent(""); setCancelled(false); }}>{t("重置筛选")}</Button><label className="check-row"><input type="checkbox" checked={cancelled} onChange={e => setCancelled(e.target.checked)}/>{t("查看已取消课程")}</label></FilterPanel><BulkDeleteTool kind="lesson" records={visible.map(l=>({id:l.id,label:l.student+" · "+l.subject+" · "+day(l.plannedStart)+" "+time(l.plannedStart)}))} mutate={mutate} busy={busy}/>{groups.map(name => <details className="directory-group" key={name} open={Boolean(filterTeacher || filterStudent)}><summary>{name} <span>{visible.filter(l => l.teacherName === name).length}</span></summary><div className="lesson-stack">{visible.filter(l => l.teacherName === name).map(l => <LessonCard key={l.id} lesson={l} admin open={open} mutate={mutate} busy={busy}/>)}</div></details>)}{!visible.length && <p className="empty">{t("没有符合条件的记录")}</p>}</>}
+            {view === "list" && <><FilterPanel active={Boolean(filterTeacher || filterStudent || cancelled || completion!=="all")}><DirectoryFilters teachers={[...new Set(lessons.map(l => l.teacherName))].sort()} students={[...new Set(lessons.map(l => l.student))].sort()} teacher={filterTeacher} student={filterStudent} onTeacher={setFilterTeacher} onStudent={setFilterStudent}/><CourseCompletionFilter value={completion} onChange={setCompletion} testId="individual-course-completion-filter"/><Button variant="outline" size="sm" onClick={() => { setFilterTeacher(""); setFilterStudent(""); setCancelled(false);setCompletion("all"); }}>{t("重置筛选")}</Button><label className="check-row"><input type="checkbox" checked={cancelled} onChange={e => setCancelled(e.target.checked)}/>{t("查看已取消课程")}</label></FilterPanel><BulkDeleteTool kind="lesson" records={visible.map(l=>({id:l.id,label:l.student+" · "+l.subject+" · "+day(l.plannedStart)+" "+time(l.plannedStart)}))} mutate={mutate} busy={busy}/>{groups.map(name => <details className="directory-group" key={name} open={Boolean(filterTeacher || filterStudent || completion!=="all")}><summary>{name} <span>{visible.filter(l => l.teacherName === name).length}</span></summary><div className="lesson-stack">{visible.filter(l => l.teacherName === name).map(l => <LessonCard key={l.id} lesson={l} admin open={open} mutate={mutate} busy={busy}/>)}</div></details>)}{!visible.length && <p className="empty">{t("没有符合条件的记录")}</p>}</>}
         </section>
     </div>;
 }

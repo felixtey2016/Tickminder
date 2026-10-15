@@ -23,6 +23,7 @@ Teachers can edit the room and add eligible students who have the same teacher/s
 - One-to-one creation shows the classroom, automatically choosing its unique match. A selection is required when multiple valid classrooms match.
 - Classroom details have a lazily loaded Course schedule tab with one-to-one and group lessons. Editing and attendance continue through the established calendar flows and permissions.
 - Schedule dropdowns use visible borders, separated labels, keyboard focus and full-width mobile controls.
+- Course lists, whole-class sessions, teacher attendance lists, student lists and classroom schedules offer All / Completed / Incomplete filters. Preferences are isolated by account/role/view. A taught group session counts as completed even if an individual student was absent; cancelled visibility remains a separate control. Group-only boards are labelled Group class sessions to distinguish them from classroom-linked individual lessons.
 
 ## Verification and rollback
 
