@@ -10,6 +10,7 @@ import {checkQuiz,newQuestion,quizImageIds,type Difficulty,type QuizCatalog,type
 import {groupFetch} from '@/lib/group-client';
 import {readApiJson,showActionToast} from '@/lib/action-feedback';
 import {t} from '@/lib/i18n';
+import {uploadQuizImages} from '@/lib/quiz-upload';
 
 export type LocalQuiz=QuizDraft & {sourceKey?:string;pendingImages?:Map<string,Uint8Array>;importWarnings?:string[];bank?:boolean;maintenanceImport?:boolean};
 type SaveReply={id:string;revision:number;existingImport?:boolean;error?:string};
@@ -31,6 +32,7 @@ export default function QuizEditor({initial,onBack,onSaved}:{initial:LocalQuiz;o
  const [busy,setBusy]=useState<'save'|'upload'|'preview'|'share'|null>(null);
  const [error,setError]=useState('');
  const [status,setStatus]=useState('');
+ const [uploadProgress,setUploadProgress]=useState<{completed:number;total:number}|null>(null);
  const [confirmation,setConfirmation]=useState<Confirmation|null>(null);
  const [preview,setPreview]=useState<QuizContent|null>(null);
  const [visibility,setVisibility]=useState<QuizVisibility>(initial.visibility);
@@ -40,6 +42,8 @@ export default function QuizEditor({initial,onBack,onSaved}:{initial:LocalQuiz;o
  const saveOperation=useRef<{stamp:string;id:string}|null>(null);
  const shareOperation=useRef<{stamp:string;id:string}|null>(null);
  const uploadCache=useRef(new Map<string,string>());
+ const operationActive=useRef(false);
+ const savedContent=useRef<QuizContent|null>(initial.revision?copy(initial.content):null);
  const locked=Boolean(busy)||!draft.canEdit;
  const dirty=contentStamp(draft)!==savedStamp;
  const visibilityDirty=visibility!==draft.visibility;
@@ -51,8 +55,8 @@ export default function QuizEditor({initial,onBack,onSaved}:{initial:LocalQuiz;o
  const total=useMemo(()=>Math.round(draft.content.questions.reduce((n,q)=>n+(Number.isFinite(q.points)?q.points:0),0)*100)/100,[draft.content.questions]);
 
  useEffect(()=>{
-  const unload=(event:BeforeUnloadEvent)=>{if(dirtyRef.current){event.preventDefault();event.returnValue='';}};
-  const navigate=(event:Event)=>{if(dirtyRef.current&&!window.confirm(t('quiz.leave')))event.preventDefault();};
+  const unload=(event:BeforeUnloadEvent)=>{if(operationActive.current||dirtyRef.current){event.preventDefault();event.returnValue='';}};
+  const navigate=(event:Event)=>{if(operationActive.current){event.preventDefault();return;}if(dirtyRef.current&&!window.confirm(t('quiz.leave')))event.preventDefault();};
   window.addEventListener('beforeunload',unload);window.addEventListener('tickminder-navigate',navigate);
   return()=>{window.removeEventListener('beforeunload',unload);window.removeEventListener('tickminder-navigate',navigate);};
  },[]);
@@ -76,29 +80,25 @@ export default function QuizEditor({initial,onBack,onSaved}:{initial:LocalQuiz;o
  function duplicateQuestion(q:QuizQuestion){if(draft.content.questions.length>=150){setError('quiz.questionCount');return;}const previous=draft.keys.find(k=>k.questionId===q.id);if(!previous)return;const duplicate=copy(q),newId=crypto.randomUUID(),optionIds=new Map(duplicate.options.map(o=>[o.id,crypto.randomUUID()]));duplicate.id=newId;duplicate.sourceId='';duplicate.options=duplicate.options.map(o=>({...o,id:optionIds.get(o.id)!}));const duplicateKey={...copy(previous),questionId:newId,correctOptionId:previous.correctOptionId?optionIds.get(previous.correctOptionId)||null:null};const index=draft.content.questions.findIndex(x=>x.id===q.id);setDraft(d=>({...d,content:{...d.content,questions:[...d.content.questions.slice(0,index+1),duplicate,...d.content.questions.slice(index+1)]},keys:[...d.keys,duplicateKey]}));setActiveId(newId);setStatus('');}
  function removeQuestion(q:QuizQuestion){setConfirmation({title:t('quiz.remove'),description:t('quiz.deleteConfirm'),accept:t('quiz.removeConfirm'),run:()=>{const index=draft.content.questions.findIndex(x=>x.id===q.id),questions=draft.content.questions.filter(x=>x.id!==q.id);setDraft(d=>({...d,content:{...d.content,questions},keys:d.keys.filter(k=>k.questionId!==q.id)}));setActiveId(questions[Math.min(index,questions.length-1)]?.id||'');setStatus('');}});}
  function changeType(q:QuizQuestion,type:QuizType){if(type===q.type)return;setConfirmation({title:t('quiz.type'),description:t('quiz.typeChangeConfirm'),accept:t('quiz.confirmType'),run:()=>{const next=newQuestion(type);updateQuestion(q.id,{type,options:next.question.options});updateKey(q.id,{...next.key,questionId:q.id});setAnswerInputs(v=>{const result={...v};delete result[q.id];return result;});}});}
- function leave(){if(!dirty&&!visibilityDirty){onBack();return;}setConfirmation({title:t('quiz.unsaved'),description:t('quiz.leave'),accept:t('quiz.back'),run:onBack});}
+ function leave(){if(operationActive.current)return;if(!dirty&&!visibilityDirty){onBack();return;}setConfirmation({title:t('quiz.unsaved'),description:t('quiz.leave'),accept:t('quiz.back'),run:onBack});}
 
  async function uploadImage(file:File){
   if(!file.size||file.size>5242880)throw new Error('quiz.imageSize');
   if(!['image/png','image/jpeg','image/webp'].includes(file.type)&&!/^.+\.(?:png|jpe?g|webp)$/i.test(file.name))throw new Error('quiz.imageType');
   const form=new FormData();form.set('file',file);return (await api<{id:string;error?:string}>('/api/quiz-images',{method:'POST',body:form})).id;
  }
- async function selectImage(file:File,qid:string,optionId?:string,extraIndex?:number){setBusy('upload');setError('');try{const id=await uploadImage(file);setDraft(d=>({...d,content:{...d.content,questions:d.content.questions.map(q=>q.id!==qid?q:optionId?{...q,options:q.options.map(o=>o.id===optionId?{...o,imageId:id}:o)}:extraIndex!==undefined?{...q,extraImageIds:q.extraImageIds.map((old,index)=>index===extraIndex?id:old)}:{...q,imageId:id})}}));setStatus('');}catch(e){setError(errorCode(e));}finally{setBusy(null);}}
+ async function selectImage(file:File,qid:string,optionId?:string,extraIndex?:number){if(operationActive.current)return;operationActive.current=true;setBusy('upload');setError('');try{const id=await uploadImage(file);setDraft(d=>({...d,content:{...d.content,questions:d.content.questions.map(q=>q.id!==qid?q:optionId?{...q,options:q.options.map(o=>o.id===optionId?{...o,imageId:id}:o)}:extraIndex!==undefined?{...q,extraImageIds:q.extraImageIds.map((old,index)=>index===extraIndex?id:old)}:{...q,imageId:id})}}));setStatus('');}catch(e){setError(errorCode(e));}finally{operationActive.current=false;setBusy(null);}}
  async function prepareImages(current:LocalQuiz){
-  const replacements=new Map<string,string>();
-  for(const path of quizImageIds(current.content)){
-   const bytes=current.pendingImages?.get(path);if(!bytes)continue;
-   let imageId=uploadCache.current.get(path);
-   if(!imageId){const mime=bytes[0]===137?'image/png':bytes[0]===255?'image/jpeg':'image/webp';imageId=await uploadImage(new File([new Uint8Array(bytes).buffer],path.split('/').pop()||'question.png',{type:mime}));uploadCache.current.set(path,imageId);}
-   replacements.set(path,imageId);
-  }
+  const entries=quizImageIds(current.content).flatMap(path=>{const bytes=current.pendingImages?.get(path);return bytes?[{path,bytes}]:[];});
+  const replacements=await uploadQuizImages(entries,uploadCache.current,async({path,bytes})=>{const mime=bytes[0]===137?'image/png':bytes[0]===255?'image/jpeg':'image/webp';return uploadImage(new File([new Uint8Array(bytes).buffer],path.split('/').pop()||'question.png',{type:mime}));},(completed,total)=>setUploadProgress(total?{completed,total}:null));
+  setUploadProgress(null);
   if(!replacements.size)return current;
   const replace=(id:string|null)=>id?replacements.get(id)||id:null;
   const next={...current,content:{...current.content,questions:current.content.questions.map(q=>({...q,imageId:replace(q.imageId),extraImageIds:q.extraImageIds.map(id=>replace(id)!),options:q.options.map(o=>({...o,imageId:replace(o.imageId)}))}))}};
   setDraft(next);return next;
  }
  async function save(){
-  if(locked)return;setBusy('save');setError('');setStatus('');
+  if(locked||operationActive.current)return;operationActive.current=true;setBusy('save');setError('');setStatus('');setUploadProgress(null);
   try{
    // Validate content before uploading any imported images. Temporary ZIP paths
    // are replaced only for this local validation; the server receives real IDs.
@@ -112,17 +112,19 @@ export default function QuizEditor({initial,onBack,onSaved}:{initial:LocalQuiz;o
    let saved:LocalQuiz;
    if(result.existingImport){saved=await api<LocalQuiz & {error?:string}>('/api/quizzes?id='+encodeURIComponent(result.id));saved.sourceKey=normalised.sourceKey;setActiveId(saved.content.questions[0]?.id||'');setAnswerInputs({});}
    else saved={...normalised,id:result.id,revision:result.revision,pendingImages:undefined,importWarnings:undefined};
-   setDraft(saved);setSavedStamp(contentStamp(saved));if(result.existingImport){setVisibility(saved.visibility);setRights(false);}setStatus(result.existingImport?'quiz.importExisting':'quiz.saved');saveOperation.current=null;onSaved(saved);showActionToast('success',t(result.existingImport?'quiz.importExisting':'quiz.saved'));
-  }catch(e){setError(errorCode(e));}finally{setBusy(null);}
+   savedContent.current=copy(saved.content);setDraft(saved);setSavedStamp(contentStamp(saved));if(result.existingImport){setVisibility(saved.visibility);setRights(false);}setStatus(result.existingImport?'quiz.importExisting':'quiz.saved');saveOperation.current=null;onSaved(saved);showActionToast('success',t(result.existingImport?'quiz.importExisting':'quiz.saved'));
+  }catch(e){setError(errorCode(e));}finally{operationActive.current=false;setBusy(null);setUploadProgress(null);}
  }
- async function openPreview(){if(!draft.revision){setError('quiz.saveFirst');return;}setBusy('preview');setError('');try{const result=await api<{content:QuizContent;error?:string}>('/api/quizzes?id='+encodeURIComponent(draft.id)+'&preview=1'+(draft.bank?'&bank=1':''));setPreview(result.content);}catch(e){setError(errorCode(e));}finally{setBusy(null);}}
- async function share(){if(locked)return;if(dirty||!draft.revision){setError('quiz.saveFirst');return;}if(visibility!=='private'&&!rights){setError('quiz.publicRights');return;}setBusy('share');setError('');try{const stamp=JSON.stringify({id:draft.id,revision:draft.revision,visibility});if(shareOperation.current?.stamp!==stamp)shareOperation.current={stamp,id:crypto.randomUUID()};await api<{ok:boolean;error?:string}>('/api/quizzes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'share',id:draft.id,revision:draft.revision,visibility,operationId:shareOperation.current.id})});const saved={...draft,visibility,sharedRevision:visibility==='private'?null:draft.revision};setDraft(saved);setRights(false);setStatus('quiz.shareUpdated');shareOperation.current=null;onSaved(saved);showActionToast('success',t('quiz.shareUpdated'));}catch(e){setError(errorCode(e));}finally{setBusy(null);}}
+ function openPreview(){if(operationActive.current)return;if(!draft.revision||!savedContent.current){setError('quiz.saveFirst');return;}setError('');setPreview(copy(savedContent.current));}
+ async function share(){if(locked||operationActive.current)return;if(dirty||!draft.revision){setError('quiz.saveFirst');return;}if(visibility!=='private'&&!rights){setError('quiz.publicRights');return;}operationActive.current=true;setBusy('share');setError('');try{const stamp=JSON.stringify({id:draft.id,revision:draft.revision,visibility});if(shareOperation.current?.stamp!==stamp)shareOperation.current={stamp,id:crypto.randomUUID()};await api<{ok:boolean;error?:string}>('/api/quizzes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'share',id:draft.id,revision:draft.revision,visibility,operationId:shareOperation.current.id})});const saved={...draft,visibility,sharedRevision:visibility==='private'?null:draft.revision};setDraft(saved);setRights(false);setStatus('quiz.shareUpdated');shareOperation.current=null;onSaved(saved);showActionToast('success',t('quiz.shareUpdated'));}catch(e){setError(errorCode(e));}finally{operationActive.current=false;setBusy(null);}}
 
  const source=(id:string)=>imageSources[id]||'/api/quiz-images?id='+encodeURIComponent(id);
+ const busyLabel=uploadProgress?t('quiz.uploadProgress').replace('{completed}',String(uploadProgress.completed)).replace('{total}',String(uploadProgress.total)):t(busy==='upload'?'quiz.uploading':busy==='save'?'quiz.savingContent':busy==='share'?'quiz.publishing':'quiz.loading');
  function imageEditor(id:string|null,onRemove:()=>void,qid:string,optionId?:string,extraIndex?:number){return <div className="quiz-image-editor">{id&&<><QuizPicture id={id} source={source} alt={t(optionId?'quiz.optionImage':'quiz.promptImage')}/>{draft.canEdit&&<Button type="button" variant="outline" disabled={locked} onClick={onRemove}><Trash2 size={16}/>{t('quiz.imageRemove')}</Button>}</>}{draft.canEdit&&<label className={'quiz-image-upload'+(locked?' is-disabled':'')}><ImagePlus size={17}/><span>{t('quiz.image')}</span><input type="file" accept="image/png,image/jpeg,image/webp" disabled={locked} onChange={event=>{const file=event.target.files?.[0];event.target.value='';if(file)void selectImage(file,qid,optionId,extraIndex);}}/></label>}</div>;}
 
  return <section className="quiz-editor" aria-busy={Boolean(busy)}>
-  <header className="quiz-editor-header"><Button type="button" variant="outline" onClick={leave} disabled={Boolean(busy)}><ArrowLeft size={17}/>{t('quiz.back')}</Button><div className="quiz-editor-title"><h2>{draft.content.title||t('quiz.new')}</h2><span className="quiz-status" role="status">{busy?t(busy==='upload'?'quiz.uploading':busy==='save'?'quiz.saving':'quiz.loading'):status?t(status):t(dirty?'quiz.unsaved':draft.canEdit?'quiz.saved':'quiz.readOnly')}</span></div><div className="quiz-editor-tools"><Button type="button" variant="outline" disabled={Boolean(busy)||!draft.revision} onClick={()=>void openPreview()}><Eye size={17}/>{t('quiz.preview')}</Button>{draft.canEdit&&<Button type="button" disabled={Boolean(busy)||!dirty} onClick={()=>void save()}><Save size={17}/>{t('quiz.save')}</Button>}</div></header>
+  <header className="quiz-editor-header"><Button type="button" variant="outline" onClick={leave} disabled={Boolean(busy)}><ArrowLeft size={17}/>{t('quiz.back')}</Button><div className="quiz-editor-title"><h2>{draft.content.title||t('quiz.new')}</h2><span className="quiz-status" role="status">{busy?busyLabel:status?t(status):t(dirty?'quiz.unsaved':draft.canEdit?'quiz.saved':'quiz.readOnly')}</span></div><div className="quiz-editor-tools"><Button type="button" variant="outline" disabled={Boolean(busy)||!draft.revision} onClick={()=>void openPreview()}><Eye size={17}/>{t('quiz.preview')}</Button>{draft.canEdit&&<Button type="button" disabled={Boolean(busy)||!dirty} onClick={()=>void save()}><Save size={17}/>{t('quiz.save')}</Button>}</div></header>
+  {busy&&<div className="quiz-upload-progress" role="status" aria-live="polite"><span>{busyLabel}</span>{uploadProgress&&<progress value={uploadProgress.completed} max={uploadProgress.total} aria-label={busyLabel}/>}</div>}
   {error&&<div className="quiz-alert" role="alert">{t(error)}</div>}
   {draft.importWarnings?.length?<section className="quiz-alert quiz-import-warnings"><h3>{t('quiz.importReview')}</h3><ul>{draft.importWarnings.map((warning,i)=><li key={i}>{warning}</li>)}</ul></section>:null}
   <fieldset className="quiz-panel" disabled={locked}><legend>{t('quiz.settings')}</legend><div className="quiz-fields">

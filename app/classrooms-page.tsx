@@ -6,7 +6,7 @@ import { getLanguage } from "@/lib/i18n";
 import { useFilterPreference } from "@/lib/filter-preferences";
 import { BulkDeleteTool } from "./bulk-delete";
 import { TermManager, TermSelect, type Term } from "./term-manager";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BookOpen, FileText, Megaphone, Plus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { t } from "@/lib/i18n";
@@ -42,6 +42,9 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
   const [termId,setTermId] = useState("");
   const visibleClasses = classes.filter(item => Boolean(item.archived) === archived && (effectiveTerm === "all" || (effectiveTerm === "unassigned" ? !item.termId : item.termId === effectiveTerm)) && (!filterTeacher || item.teacherName === filterTeacher) && (!filterStudent || item.members?.includes(filterStudent)));
   const selected = visibleClasses.find(item => item.id === selectedId) || (role === "admin" ? null : visibleClasses[0]) || null;
+  useEffect(() => {
+    if (!creating && selected?.id && (tab === "materials" || tab === "homework") && !learningReady && !learningError) void loadLearning?.();
+  }, [creating, selected?.id, tab, learningReady, learningError, loadLearning]);
   const [editingId, setEditingId] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -112,7 +115,7 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
     {!creating && selected && <>
       <section className="panel classroom-intro"><div><p className="eyebrow">{selected.subject} · {selected.teacherName}</p><h2>{selected.title}</h2>{selected.description && <p>{selected.description}</p>}</div>{canManage && <div className="learning-card-actions"><Button size="sm" variant="outline" onClick={() => startEdit(selected)} disabled={Boolean(selected.archived)}>{t("编辑班级")}</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => { if (window.confirm(t(selected.archived ? "确定重新开放这个班级？" : "确定封存这个班级？学生仍能查看已发布内容。"))) void mutate({ action: "archiveClassroom", id: selected.id, archived: !selected.archived }); }}>{t(selected.archived ? "恢复班级" : "封存班级")}</Button><DeleteButton kind="classroom" id={selected.id} busy={busy} mutate={async body => (await mutate(body)).ok} message="永久删除这个班级及其公告、资料、功课和提交记录？共用 PDF 会保留，此操作无法恢复。"/></div>}</section>
       <div className="classroom-tabs" role="tablist" aria-label={t("班级内容")}>
-        {([{ id: "announcements", Icon: Megaphone, label: "公告" }, { id: "materials", Icon: FileText, label: "教学资料" }, { id: "homework", Icon: BookOpen, label: "功课" }, ...(canManage ? [{ id: "members", Icon: Users, label: "学生名单" }] : [])] as const).map(item => <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} className={tab === item.id ? "active" : ""} onClick={() => { setTab(item.id as typeof tab); if ((item.id === "materials" || item.id === "homework") && !learningReady && !learningError) void loadLearning?.(); }}><item.Icon size={17}/>{t(item.label)}</button>)}
+        {([{ id: "announcements", Icon: Megaphone, label: "公告" }, { id: "materials", Icon: FileText, label: "教学资料" }, { id: "homework", Icon: BookOpen, label: "功课" }, ...(canManage ? [{ id: "members", Icon: Users, label: "学生名单" }] : [])] as const).map(item => <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id as typeof tab)}><item.Icon size={17}/>{t(item.label)}</button>)}
       </div>
       {tab === "announcements" && <section className="panel"><h2>{t("班级公告")}</h2>
         {canManage && !selected.archived && <form className="learning-form classroom-announcement-form" onSubmit={saveAnnouncement}><label>{t("公告标题")}<input required maxLength={120} value={announcementTitle} onChange={event => setAnnouncementTitle(event.target.value)}/></label><label>{t("公告内容")}<textarea required maxLength={4000} value={announcementBody} onChange={event => setAnnouncementBody(event.target.value)}/></label><label className="classroom-pin"><input type="checkbox" checked={pinned} onChange={event => setPinned(event.target.checked)}/>{t("置顶公告")}</label><div className="learning-card-actions"><Button disabled={busy}>{announcementId ? t("保存修改") : t("发布公告")}</Button>{announcementId && <Button type="button" variant="outline" onClick={() => { setAnnouncementId(""); setAnnouncementTitle(""); setAnnouncementBody(""); setPinned(false); }}>{t("取消编辑")}</Button>}</div></form>}

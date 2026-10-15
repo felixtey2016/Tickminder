@@ -209,13 +209,13 @@ export function Scheduler() {
     const channelRef = useRef<BroadcastChannel | null>(null);
     const loadedScopes = useRef(new Set<StateScope>());
     const wantedScopes = useRef(new Set<StateScope>());
+    const setActiveScopes = useCallback((scopes: StateScope[]) => { wantedScopes.current = new Set(scopes); }, []);
     const scopeRequests = useRef(new Map<StateScope, Promise<void>>());
     const activeAccountId = useRef(auth?.account?.id);
     activeAccountId.current = auth?.account?.id;
     const ensureScope = useCallback(async (scope: StateScope, force = false) => {
         const accountId = auth?.account?.id;
         if (!accountId) return;
-        wantedScopes.current.add(scope);
         if (!force && loadedScopes.current.has(scope)) return;
         const pending = scopeRequests.current.get(scope);
         if (pending) return pending;
@@ -252,10 +252,14 @@ export function Scheduler() {
                 return;
             }
             revisionRef.current = typeof next.revision === "number" ? next.revision : null;
+            // Non-visible scopes become stale, rather than being reread after
+            // every mutation for the rest of this signed-in session.
+            const retainedScopes = [...wantedScopes.current].filter(scope => loadedScopes.current.has(scope));
+            loadedScopes.current = new Set(retainedScopes);
             setState(previous => {
                 const sameIdentity = previous?.account.id === next.account.id && previous?.account.groupId === next.account.groupId && previous?.account.role === next.account.role && previous?.account.teacherName === next.account.teacherName && previous?.account.studentName === next.account.studentName;
                 if (!sameIdentity) loadedScopes.current.clear();
-                return sameIdentity ? {...previous, ...next, loadedScopes: [...new Set([...(previous.loadedScopes || []), ...(next.loadedScopes || ["core"])])]} : next;
+                return sameIdentity ? {...previous, ...next, loadedScopes: [...new Set([...(next.loadedScopes || ["core"]), ...retainedScopes])]} : next;
             });
             setAuth(previous => {
                 if (!previous?.account || !next.account || previous.account.id !== next.account.id) return previous;
@@ -470,7 +474,7 @@ export function Scheduler() {
     } finally {
         setBusy(false);
     } }
-    const lessons = useMemo(() => [...(state?.lessons || [])].sort((a, b) => a.plannedStart.localeCompare(b.plannedStart)), [state]);
+    const lessons = useMemo(() => [...(state?.lessons || [])].sort((a, b) => a.plannedStart.localeCompare(b.plannedStart)), [state?.lessons]);
     useLessonWebMcp(auth?.account?.role, lessons, reload);
     if (!auth)
         return <main className="auth-loading"><LanguageSwitcher language={language} change={changeLanguage}/><PageState kind={message ? "error" : "loading"} title={message ? "页面加载失败" : "正在加载…"} description={message ? actionFailureMessage(new Error(message)) : undefined} action={message ? "重试" : undefined} onAction={() => { setMessage(""); void request("/api/auth").then(setAuth).catch(error => setMessage(actionFailureMessage(error))); }}/></main>;
@@ -485,7 +489,7 @@ export function Scheduler() {
         return <AccountSetup email={account.email} onSaved={async()=>setAuth(await request("/api/auth"))} logout={logout} language={language} changeLanguage={changeLanguage}/>;
     if(account.groupUnavailable)return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><h1>{t("补习集团暂不可用")}</h1><p>{t("请联系所属集团的管理员，或稍后重试。")}</p><Button onClick={()=>window.location.reload()}>{t("刷新")}</Button><Button variant="outline" onClick={logout}>{t("退出登录")}</Button></div></main>;
     const admin = account.role === "admin";
-    return <Workspace key={`${account.id}:${account.groupId}`} account={account} state={state} ensureScope={ensureScope} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/>;
+    return <Workspace key={`${account.id}:${account.groupId}`} account={account} state={state} ensureScope={ensureScope} setActiveScopes={setActiveScopes} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/>;
 }
 function BrandLogo({ small = false }: { small?: boolean }) { return <span className={`brand-logo ${small ? "small" : ""}`}><img src="/tickminder-logo.svg" width={small ? 40 : 80} height={small ? 40 : 80} alt={BRAND_NAME} /></span>; }
 function LanguageSwitcher({ language, change }: { language: Language; change: (next: Language) => void }) { return <div className="language-switch" role="group" aria-label={t("语言")}><button type="button" aria-pressed={language === "zh"} onClick={() => change("zh")}>中文</button><span className="language-separator" aria-hidden="true">|</span><button type="button" aria-pressed={language === "en"} onClick={() => change("en")}>EN</button></div>; }
@@ -598,10 +602,11 @@ const NAV_GROUPS: Record<NavigationRole, Array<{ label: string; ids: string[] }>
  pending: [{label:"",ids:["home"]},{label:"我的账号",ids:["notifications","myAccount"]}],
 };
 
-function Workspace({ account, state, ensureScope, lessons, message, setMessage, reload, logout, modal, setModal, mutate, learningMutate, classroomMutate, busy, selectedMonth, setSelectedMonth, language, changeLanguage }: {
+function Workspace({ account, state, ensureScope, setActiveScopes, lessons, message, setMessage, reload, logout, modal, setModal, mutate, learningMutate, classroomMutate, busy, selectedMonth, setSelectedMonth, language, changeLanguage }: {
     account: Account;
     state: State | null;
     ensureScope: (scope: StateScope, force?: boolean) => Promise<void>;
+    setActiveScopes: (scopes: StateScope[]) => void;
     lessons: Lesson[];
     message: string;
     setMessage: (x: string) => void;
@@ -685,11 +690,16 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
     const scopeLoaded = !requiredScope || state?.loadedScopes?.includes(requiredScope) || (!state?.loadedScopes && Boolean(requiredScope === "learning" ? state?.learning : requiredScope === "classrooms" ? state?.classrooms : requiredScope === "accounts" ? state?.users : state?.activity));
     const scopeError = requiredScope ? state?.scopeErrors?.[requiredScope] : undefined;
     useEffect(() => {
+        setActiveScopes(activeView === "classrooms" ? ["classrooms", "learning"] : requiredScope ? [requiredScope] : activeView === "home" && role !== "admin" ? ["learning"] : []);
+        return () => setActiveScopes([]);
+    }, [requiredScope, activeView, role, setActiveScopes, state?.account.id]);
+    useEffect(() => {
         if (!state?.account.id || role === "pending") return;
         if (requiredScope && !scopeLoaded && !scopeError) void ensureScope(requiredScope);
-        if (activeView === "home" && role !== "admin" && !state.learning && !state.scopeErrors?.learning) void ensureScope("learning");
-    }, [state?.account.id, state?.learning, state?.scopeErrors?.learning, requiredScope, scopeLoaded, scopeError, activeView, role, ensureScope]);
+        if (activeView === "home" && role !== "admin" && !state.loadedScopes?.includes("learning") && !state.scopeErrors?.learning) void ensureScope("learning");
+    }, [state?.account.id, state?.loadedScopes, state?.scopeErrors?.learning, requiredScope, scopeLoaded, scopeError, activeView, role, ensureScope]);
     const learning = state?.learning || { materials: [], homework: [], submissions: [], studyBlocks: [], eligible: [] };
+    const learningReady = Boolean(state?.learning && (!state.loadedScopes || state.loadedScopes.includes("learning")));
     const showMonth = (role === "teacher" && activeView === "hours") || (role === "admin" && ["overview", "attention", "schedule", "calendar", "list", "students", "teachers"].includes(activeView));
     const closeMobileMenu = () => {
         if (desktop) return;
@@ -722,14 +732,14 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
     else if (activeView === "home" && role === "pending") {
         pageContent = <section className="panel pending-home"><h2>{t(account.assignmentStatus === "ACTIVE" ? "账号已启用" : "等待分配")}</h2><p>{t("管理员分配身份后，课程、功课及班级会显示在这里。")}</p>{account.pendingExpiresAt && <p className="notice">{t("待分配期限")} · {new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-GB",{timeZone:"Asia/Kuala_Lumpur",dateStyle:"medium",timeStyle:"short"}).format(new Date(account.pendingExpiresAt))}<br/>{t("新注册账号在 7 天内未启用或绑定，会到期清理。请联系管理员。")}</p>}<Button variant="outline" onClick={()=>choose("myAccount")}>{t("我的账号")}</Button></section>;
     } else if (activeView === "home" && role !== "pending") {
-        pageContent = <HomeDashboard role={role} name={account.name} lessons={lessons} learning={learning} learningReady={Boolean(state?.learning) || role === "admin"} learningError={state?.scopeErrors?.learning} onNavigate={choose}/>;
+        pageContent = <HomeDashboard role={role} name={account.name} lessons={lessons} learning={learning} learningReady={learningReady || role === "admin"} learningError={state?.scopeErrors?.learning} onNavigate={choose}/>;
     } else if (activeView === "notifications") {
         pageContent = <NotificationCentre onQuiz={()=>choose("quizzes")} onLearning={kind=>choose(kind==="homework"?"homework":"materials")} language={language} onLesson={() => choose(role === "teacher" ? "lessons" : role === "pending" ? "home" : "calendar")}/>;
     } else if (activeView === "myAccount") {
         pageContent = <AccountSettings/>;
     } else if (activeView === "classrooms" && role !== "pending") {
         const classPlans = role === "teacher" ? (state?.plans || []).map(plan => ({ student: plan.student, subject: plan.subject, teacherName: account.teacherName || "", active: true })) : (state?.allPlans || []).map(plan => ({ student: plan.student, subject: plan.subject, teacherName: plan.teacherName, active: plan.active }));
-        pageContent = <ClassroomsPage role={role} classes={state?.classrooms || []} terms={state?.terms || []} learning={learning} learningReady={Boolean(state?.learning)} learningError={state?.scopeErrors?.learning} loadLearning={force => ensureScope("learning", force)} teacherName={account.teacherName} teachers={role === "teacher" && account.teacherName ? [account.teacherName] : state?.teachers || []} plans={classPlans} mutate={classroomMutate} learningMutate={learningMutate} busy={busy} onCalendar={() => choose("calendar")}/>;
+        pageContent = <ClassroomsPage role={role} classes={state?.classrooms || []} terms={state?.terms || []} learning={learning} learningReady={learningReady} learningError={state?.scopeErrors?.learning} loadLearning={force => ensureScope("learning", force)} teacherName={account.teacherName} teachers={role === "teacher" && account.teacherName ? [account.teacherName] : state?.teachers || []} plans={classPlans} mutate={classroomMutate} learningMutate={learningMutate} busy={busy} onCalendar={() => choose("calendar")}/>;
     } else if (role === "admin") {
         if (activeView === "homework" || activeView === "materials") {
             pageContent = <AdminLearning key={activeView} learning={learning} view={activeView} onChanged={()=>ensureScope("learning",true)}/>;
@@ -792,7 +802,7 @@ function Workspace({ account, state, ensureScope, lessons, message, setMessage, 
                 {message && state && !state.error && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("关闭")}>×</button></div>}
 
                 {role === "teacher" && state && !state.error && !(state.plans || []).length && <div className="notice">{t("暂无负责的学生科目。请联系管理员完成课程分配。")}</div>}
-                <FilterScope.Provider value={`${account.id || "anonymous"}:${account.groupId || "none"}`}>{role !== "pending" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "页面加载失败" : "正在加载…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : !scopeLoaded ? <PageState kind={scopeError ? "error" : "loading"} title={scopeError ? "页面加载失败" : "正在加载…"} description={scopeError} action={scopeError ? "重试" : undefined} onAction={() => { if (requiredScope) void ensureScope(requiredScope, true); }}/> : <Suspense fallback={<PageState kind="loading" title="正在加载…"/>}>{pageContent}</Suspense>}</FilterScope.Provider>
+                <FilterScope.Provider value={`${account.id || "anonymous"}:${account.groupId || "none"}`}>{role !== "pending" && activeView !== "quizzes" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "页面加载失败" : "正在加载…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : !scopeLoaded ? <PageState kind={scopeError ? "error" : "loading"} title={scopeError ? "页面加载失败" : "正在加载…"} description={scopeError} action={scopeError ? "重试" : undefined} onAction={() => { if (requiredScope) void ensureScope(requiredScope, true); }}/> : <Suspense fallback={<PageState kind="loading" title="正在加载…"/>}>{pageContent}</Suspense>}</FilterScope.Provider>
             </main>
         </div>
         {modal && ["attendance","review"].includes(modal.type)&&state?.attendanceSessions?.find(s=>s.id===modal.lesson.sessionId)?<SessionAttendanceDialog session={state.attendanceSessions.find(s=>s.id===modal.lesson.sessionId)!} review={modal.type==="review"} role="admin" close={()=>setModal(null)} mutate={mutate} busy={busy}/>:modal&&<LessonDialog modal={modal} close={() => setModal(null)} mutate={mutate} busy={busy}/>}

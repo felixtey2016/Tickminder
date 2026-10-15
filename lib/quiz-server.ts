@@ -7,7 +7,15 @@ import {checkQuiz,QuizError,type QuizContent,type QuizKey,type QuizVisibility} f
 import {quizBankKind,quizWriteForbidden} from '@/lib/quiz-catalog';
 export const quizHeaders={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'};
 export function quizResponse(data:unknown,status=200){return Response.json(data,{status,headers:quizHeaders});}
-export async function quizActor(allowStudent=false){const a=await currentBusinessAccount();if(!a)throw new QuizError('quiz.signIn',401);if(!['teacher','admin',...(allowStudent?['student']:[])].includes(a.role))throw new QuizError('quiz.forbidden',403);requireGroup(a.groupId);if(!await learningDb().prepare('SELECT 1 FROM tuition_groups WHERE id=? AND active=1').bind(a.groupId).first())throw new QuizError('quiz.forbidden',403);if(a.role==='teacher'&&!await learningDb().prepare('SELECT 1 FROM teachers WHERE group_id=? AND name=? AND active=1').bind(a.groupId,a.teacherName).first())throw new QuizError('quiz.forbidden',403);if(a.role==='student'&&!await learningDb().prepare('SELECT 1 FROM students WHERE group_id=? AND name=? AND active=1').bind(a.groupId,a.studentName).first())throw new QuizError('quiz.forbidden',403);return a;}
+export async function quizActor(allowStudent=false){
+ const a=await currentBusinessAccount();if(!a)throw new QuizError('quiz.signIn',401);
+ if(!['teacher','admin',...(allowStudent?['student']:[])].includes(a.role))throw new QuizError('quiz.forbidden',403);
+ requireGroup(a.groupId);
+ // Keep group and active roster checks in one read. This is request-local;
+ // revocation is still checked afresh on every request and atomic mutation.
+ const permitted=await learningDb().prepare(`SELECT 1 FROM tuition_groups g WHERE g.id=? AND g.active=1 AND (?<>'teacher' OR EXISTS(SELECT 1 FROM teachers t WHERE t.group_id=g.id AND t.name=? AND t.active=1)) AND (?<>'student' OR EXISTS(SELECT 1 FROM students s WHERE s.group_id=g.id AND s.name=? AND s.active=1))`).bind(a.groupId,a.role,a.teacherName,a.role,a.studentName).first();
+ if(!permitted)throw new QuizError('quiz.forbidden',403);return a;
+}
 export function quizFailure(error:unknown){if(error instanceof QuizError)return quizResponse({error:error.code},error.status);if(/UNIQUE constraint|quiz group mismatch|quiz key group mismatch|quiz image grant mismatch/.test(String(error)))return quizResponse({error:'quiz.conflict'},409);console.error('Quiz request failed',error instanceof Error?error.name:'unknown');return quizResponse({error:'quiz.unavailable'},503);}
 export async function quizRequestBytes(request:Request,maximum:number,error='quiz.tooLarge'){
  const declared=Number(request.headers.get('content-length')||0);if(!Number.isFinite(declared)||declared>maximum)throw new QuizError(error,413);
@@ -17,15 +25,14 @@ export async function quizRequestBytes(request:Request,maximum:number,error='qui
 }
 type QuizRow={id:string;group_id:string;owner_id:string;revision:number;shared_revision:number|null;visibility:QuizVisibility;title:string;source_key:string|null};
 export async function readQuiz(actor:Account,id:string,bank=false){
- const db=learningDb(),q=await db.prepare('SELECT q.* FROM quizzes q JOIN tuition_groups g ON g.id=q.group_id AND g.active=1 WHERE q.id=? AND q.deleted_at IS NULL').bind(id).first<QuizRow>();
- if(!q)throw new QuizError('quiz.notFound',404);
+ const db=learningDb(),row=await db.prepare(`SELECT q.*,v.id AS version_id,v.content_json,v.revision AS version_revision FROM quizzes q JOIN tuition_groups g ON g.id=q.group_id AND g.active=1 JOIN quiz_versions v ON v.quiz_id=q.id AND v.group_id=q.group_id AND v.revision=CASE WHEN ?=1 THEN q.shared_revision WHEN ?<>'student' AND (?=1 OR q.group_id=? AND (q.owner_id=? OR ?='admin')) THEN q.revision ELSE q.shared_revision END WHERE q.id=? AND q.deleted_at IS NULL`).bind(bank?1:0,actor.role,isOwnerAccount(actor)?1:0,actor.groupId,actor.id,actor.role,id).first<QuizRow&{version_id:string;content_json:string;version_revision:number}>();
+ if(!row)throw new QuizError('quiz.notFound',404);
+ const {version_id,content_json,version_revision,...q}=row;
  const own=actor.role!=='student'&&(isOwnerAccount(actor)||q.group_id===actor.groupId&&(q.owner_id===actor.id||actor.role==='admin'));
  const shared=q.shared_revision!==null&&(q.visibility==='public'||q.visibility==='organisation'&&q.group_id===actor.groupId);
  if(!own&&!shared||bank&&!shared)throw new QuizError('quiz.notFound',404);
- const revision=bank||!own?q.shared_revision:q.revision;
- const v=await db.prepare('SELECT id,content_json FROM quiz_versions WHERE quiz_id=? AND revision=? AND group_id=?').bind(id,revision,q.group_id).first<{id:string;content_json:string}>();
- if(!v)throw new QuizError('quiz.notFound',404);
- const content=JSON.parse(v.content_json) as QuizContent;
+ const revision=version_revision,v={id:version_id,content_json};
+ const content=JSON.parse(content_json) as QuizContent;
  return {q,v,revision,content,canEdit:q.owner_id===actor.id&&q.group_id===actor.groupId&&!bank&&(quizBankKind(content)!=='platform'||actor.role==='admin')};
 }
 export async function quizKeys(versionId:string){const r=await learningDb().prepare('SELECT answers_json FROM quiz_answer_keys WHERE version_id=?').bind(versionId).first<{answers_json:string}>();if(!r)throw new QuizError('quiz.unavailable',503);return JSON.parse(r.answers_json) as QuizKey[];}
