@@ -1,5 +1,14 @@
 # Timelyo versions and recovery
 
+## 2026-10-16 - Complete-only Quiz submission and automatic self-practice (Cloudflare)
+
+- Formal domains run Worker `e9c38aca-e16b-45e6-9d1c-522f5384cd2e` from GitHub runtime source `0aff48c77c0923b7a0c6316df75bcab8688af084`, tree `27fb8b50c87c9667c08247cd6401dc990f1a592f`. Runtime secrets, custom domains and D1/R2 bindings retained. No schema migration or public test deployment.
+- Incomplete manual submissions are rejected by the server. Assigned work submits explicitly after every question is answered; existing confirmed-answer locks and release policies remain. Actual server expiry can still finalise saved partial work, while a premature client expiry claim is ignored.
+- Self-practice completes through normal save/check with no Submit action. All objective questions must be confirmed in immediate mode. Text autosave defers completion until the answer field loses focus; finalising requests lock edits and preserve queued save/exit behavior. Existing records are retained without rewriting historical results.
+- History uses Resume for own unfinished work, View saved answers for an authorised progress review, and View results for finished work, with consistent purple buttons. Self-practice shows Completed and a completion timestamp. Delete confirmation is deep red with readable white text in either OS colour preference.
+- TypeScript and guarded build passed. Completion134, editing82, discard169, performance52, publishing92 and original practice tests passed. Real mobile Chromium passed32 checks, including text-focus deferral, assigned submission, immediate confirmation, permissions, deletion and no horizontal overflow. Formal-domain/auth/CSRF/exact asset/integrity checks passed36 with no FK violations.
+- Encrypted pre/post snapshots `quiz-completion-before-20261016` and `quiz-completion-after-20261016` restore v19/53 tables,10 PDFs and163 Quiz images. Original Quiz/attempt records and every file checksum remain unchanged; existing8 test papers remain unclassified. A concurrent live savePlan changed one student/class grade and its content revision, with the expected audit; all unrelated business fields were retained. Evidence stays outside public source in `work/quiz-completion-release/`. Rollback must preserve discard guards and later user work.
+
 ## 2026-10-16 - Remove unfinished self-practice records (Cloudflare)
 
 - Formal domains run Worker `1ebdaa8e-aa37-421f-8aae-76ba2017f3f6`, from GitHub source `66a49ab29582283c83210033c20cd4f5084f6c7c` (tree `ae58d289de67dc5f65b13d3871695c39a4b8f20b`). Only additive migration `0030_quiz_practice_discard.sql` was applied; runtime variables and original domain/D1/R2 bindings retained. No public test deployment.

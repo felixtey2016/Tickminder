@@ -1,6 +1,14 @@
 # Tickminder independent Cloudflare recovery
 
-## Current release - Unfinished self-practice removal
+## Current release - Complete-only Quiz submission and automatic self-practice
+
+Both formal domains run Worker `e9c38aca-e16b-45e6-9d1c-522f5384cd2e` from runtime source `0aff48c77c0923b7a0c6316df75bcab8688af084` (tree `27fb8b50c87c9667c08247cd6401dc990f1a592f`). No migration; v19/53 tables, runtime settings and original bindings retained. Only local isolated testing preceded production publication.
+
+Assigned manual submission requires every answer. Self-practice completes automatically through save/check; text editing defers completion until blur, and immediate feedback requires objective answer confirmation. Actual timer/deadline finalisation still accepts only saved work. History actions distinguish editable unfinished work, authorised saved progress and final results. Destructive Quiz confirmation remains readable under dark OS preferences.
+
+Completion134, editing82, discard169, performance52, publishing92 and original practice tests passed; mobile Chromium32 and formal read-only/security/assets36 checks passed. Encrypted pre/post snapshots restore all53 tables and173 files with unchanged Quiz/attempt data and file checksums. Concurrent live savePlan metadata changes (student/class grade and revision) are recorded separately and retained. Existing8 test papers remain unclassified. Evidence is outside Git in `work/quiz-completion-release/` and `backups/`. A rollback must retain discard filtering/write guards and later user records; never replace production data with an older snapshot for a code rollback.
+
+## Preceding release - Unfinished self-practice removal
 
 Worker `1ebdaa8e-aa37-421f-8aae-76ba2017f3f6` serves both formal domains from source commit `66a49ab29582283c83210033c20cd4f5084f6c7c` (tree `ae58d289de67dc5f65b13d3871695c39a4b8f20b`). Only `0030_quiz_practice_discard.sql` was executed. Runtime settings, domain bindings, global menus, classifications and original business data are retained.
 
