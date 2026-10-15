@@ -1,3 +1,4 @@
+import {classPlanSubjectSql} from "./academic-subject-match";
 import type {AttendanceSession,AttendanceParticipant} from "./attendance-types";
 import type {Account} from "./auth";
 import {groupReader,requireGroup} from "./group-data";
@@ -12,9 +13,9 @@ import {participantSql} from "./notification-access";
 export class ClassSessionError extends Error {constructor(message:string,readonly status=400,readonly conflict?:Record<string,unknown>){super(message);}}
 const str=(value:unknown)=>typeof value==="string"?value.trim():"";
 export const classSessionActions=["createClassSession","editClassSession","cancelClassSession","proposeClassReschedule","respondClassReschedule","updateClassSessionLink"];
-export type ClassSession=Omit<AttendanceSession,"participants"|"participantCount">&{id:string;groupId:string;sessionType:string;classroomId:string|null;classroomTitle:string|null;teacherName:string;subject:string;plannedStart:string;plannedEnd:string;onlineLink:string|null;status:string;seriesId:string|null;revision:number;createdAt:string;updatedAt:string};
+export type ClassSession=Omit<AttendanceSession,"participants"|"participantCount">&{id:string;groupId:string;sessionType:string;classroomId:string|null;classroomTitle:string|null;teacherName:string;subject:string;subjectId?:string|null;syllabusId?:string|null;plannedStart:string;plannedEnd:string;onlineLink:string|null;status:string;seriesId:string|null;revision:number;createdAt:string;updatedAt:string};
 type Participant=AttendanceParticipant;
-const columns="s.id,s.group_id AS groupId,s.session_type AS sessionType,s.classroom_id AS classroomId,s.classroom_title AS classroomTitle,s.teacher_name AS teacherName,s.subject,s.planned_start AS plannedStart,s.planned_end AS plannedEnd,s.online_link AS onlineLink,s.status,s.series_id AS seriesId,s.revision,s.created_at AS createdAt,s.updated_at AS updatedAt,s.teaching_status AS teachingStatus,s.actual_start AS actualStart,s.actual_end AS actualEnd,s.attendance_note AS attendanceNote,s.attendance_recorded_at AS attendanceRecordedAt,s.attendance_recorded_by AS attendanceRecordedBy,s.attendance_reviewed_at AS attendanceReviewedAt,s.attendance_reviewed_by AS attendanceReviewedBy";
+const columns="s.id,s.group_id AS groupId,s.session_type AS sessionType,s.classroom_id AS classroomId,s.classroom_title AS classroomTitle,s.teacher_name AS teacherName,s.subject,(SELECT subject_id FROM classrooms WHERE id=s.classroom_id AND group_id=s.group_id) AS subjectId,(SELECT syllabus_id FROM classrooms WHERE id=s.classroom_id AND group_id=s.group_id) AS syllabusId,s.planned_start AS plannedStart,s.planned_end AS plannedEnd,s.online_link AS onlineLink,s.status,s.series_id AS seriesId,s.revision,s.created_at AS createdAt,s.updated_at AS updatedAt,s.teaching_status AS teachingStatus,s.actual_start AS actualStart,s.actual_end AS actualEnd,s.attendance_note AS attendanceNote,s.attendance_recorded_at AS attendanceRecordedAt,s.attendance_recorded_by AS attendanceRecordedBy,s.attendance_reviewed_at AS attendanceReviewedAt,s.attendance_reviewed_by AS attendanceReviewedBy";
 function roleFilter(actor:Account) {return actor.role==="admin"?{sql:"1",args:[]}:actor.role==="teacher"?{sql:"s.teacher_name=?",args:[actor.teacherName]}:{sql:"EXISTS(SELECT 1 FROM class_session_participants p WHERE p.session_id=s.id AND p.group_id=s.group_id AND p.student_name=?)",args:[actor.studentName]};}
 export async function classSessionState(actor:Account) {
  const {rows}=groupReader(actor.groupId),filter=roleFilter(actor);
@@ -36,8 +37,9 @@ export async function classScheduleOptions(actor:Account) {
  const {rows}=groupReader(actor.groupId);
  const classes=await rows<{id:string;title:string;teacherName:string;subject:string;updatedAt:string}>("SELECT c.id,c.title,c.teacher_name AS teacherName,c.subject,c.updated_at AS updatedAt FROM classrooms c JOIN teachers t ON t.name=c.teacher_name AND t.active=1 WHERE c.archived=0"+(actor.role==="teacher"?" AND c.teacher_name=?":"")+" ORDER BY c.title",...(actor.role==="teacher"?[actor.teacherName]:[]));
  return Promise.all(classes.map(async c=>{
-  const members=await activeClassroomMemberNames(c.id,actor.groupId),links=await rows<{link:string|null}>("SELECT DISTINCT p.online_link AS link FROM plans p JOIN classroom_members m ON m.student_name=p.student JOIN classrooms c ON c.id=m.classroom_id WHERE c.id=? AND p.subject=c.subject AND p.teacher_name=c.teacher_name AND p.active=1",c.id);
-  return {...c,members,optionKey:await operationHash([c.id,c.title,c.teacherName,c.subject,c.updatedAt,members]),onlineLink:links.length===1?links[0].link:null};
+  const members=await activeClassroomMemberNames(c.id,actor.groupId),matched=await rows<{student:string;subject:string;link:string|null;key:string}>(`SELECT p.student,p.subject,p.online_link AS link,p.key FROM plans p JOIN classroom_members m ON m.student_name=p.student JOIN classrooms c ON c.id=m.classroom_id JOIN students s ON s.name=p.student AND s.active=1 WHERE c.id=? AND ${classPlanSubjectSql()} AND p.teacher_name=c.teacher_name AND p.active=1 ORDER BY p.key`,c.id);
+  const links=[...new Set(matched.map(plan=>plan.link))];
+  return {...c,members,optionKey:await operationHash([c.id,c.title,c.teacherName,c.subject,c.updatedAt,members]),onlineLink:links.length===1?links[0]:null};
  }));
 }
 async function session(actor:Account,id:string) {
@@ -46,7 +48,7 @@ async function session(actor:Account,id:string) {
  if(actor.role!=="admin"&&(actor.role!=="teacher"||actor.teacherName!==value.teacherName))throw new ClassSessionError("没有班级课次操作权限",403);
  return value;
 }
-const activeMembersSql="SELECT m.student_name FROM classroom_members m JOIN students st ON st.group_id=m.group_id AND st.name=m.student_name AND st.active=1 JOIN classrooms c ON c.id=m.classroom_id AND c.group_id=m.group_id JOIN plans p ON p.group_id=c.group_id AND p.student=m.student_name AND p.subject=c.subject AND p.teacher_name=c.teacher_name AND p.active=1 WHERE m.classroom_id=c0.id AND m.group_id=c0.group_id ORDER BY m.student_name";
+const activeMembersSql=`SELECT m.student_name FROM classroom_members m JOIN students st ON st.group_id=m.group_id AND st.name=m.student_name AND st.active=1 JOIN classrooms c ON c.id=m.classroom_id AND c.group_id=m.group_id WHERE m.classroom_id=c0.id AND m.group_id=c0.group_id AND EXISTS(SELECT 1 FROM plans p WHERE p.group_id=c.group_id AND p.student=m.student_name AND ${classPlanSubjectSql('p','c','st')} AND p.teacher_name=c.teacher_name AND p.active=1) ORDER BY m.student_name`;
 function actorGuard(actor:Account,groupId:string) {
  return {sql:"EXISTS(SELECT 1 FROM accounts a JOIN tuition_groups g ON g.id=? AND g.active=1 WHERE a.id=? AND a.disabled_at IS NULL AND (a.group_id=g.id OR (?=1 AND a.group_id IS NULL)) AND a.role=? AND (a.role='admin' OR EXISTS(SELECT 1 FROM teachers t WHERE t.group_id=g.id AND t.name=a.teacher_name AND t.active=1)))",args:[groupId,actor.id,isOwnerAccount(actor)?1:0,actor.role]};
 }

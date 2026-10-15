@@ -123,7 +123,7 @@ export async function POST(request: Request) {
       const materialId = str(data.materialId), fileId = str(data.fileId);
       if (materialId && fileId) throw new ActionError("请选择已有资料或新 PDF，不能同时选择");
       if (materialId) {
-        const material = await first<{ fileId: string; classroomId: string | null }>("SELECT m.file_id AS fileId,m.classroom_id AS classroomId FROM teaching_materials m JOIN material_recipients r ON r.material_id = m.id WHERE m.id = ? AND m.owner_id = ? AND r.subject = ? LIMIT 1", materialId, actor.id, subject);
+        const material = await first<{ fileId: string; classroomId: string | null }>("SELECT m.file_id AS fileId,m.classroom_id AS classroomId FROM teaching_materials m WHERE m.id=? AND m.owner_id=? AND m.classroom_id=?",materialId,actor.id,classroomId);
         if (!material || material.classroomId !== (classroomId || null)) throw new ActionError("只能选择自己上传且属于当前班级的教学资料", 403);
         attachmentFileId = material.fileId;
       } else if (fileId) {

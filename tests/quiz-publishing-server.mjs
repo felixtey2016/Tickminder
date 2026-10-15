@@ -29,7 +29,7 @@ const classroom='publishing-class-001';sqlite.prepare('INSERT INTO classrooms(id
 // A class member needs no duplicate legacy plan. A direct student has a Science
 // plan; assigning the Mathematics source exercises the all-teacher policy.
 sqlite.prepare('INSERT INTO plans(group_id,key,student,subject,teacher_name,duration,active,created_at) VALUES(?,?,?,?,?,1,1,?)').run(g,op(),student2.studentName,'Science',teacher.teacherName,now);
-const content={...quiz.emptyQuiz(),title:'数学测验发布测试',subject:'Mathematics',timeLimitSeconds:600,shuffleQuestions:true,shuffleOptions:true},keys=[];
+const content={...quiz.emptyQuiz(),title:'数学测验发布测试',subject:'Mathematics',exam:'SPM',timeLimitSeconds:600,shuffleQuestions:true,shuffleOptions:true},keys=[];
 for(const [type,points] of [['mcq',2],['math',3],['written',5]]){const {question,key}=quiz.newQuestion(type);question.prompt={primary:'发布测试 '+type,en:''};question.points=points;question.options.forEach((option,i)=>option.text.primary='答案 '+i);if(type==='math'){key.accepted=['1/2'];key.tolerance=.001;}if(type==='written')key.rubric='解释计算过程';content.questions.push(question);keys.push(key);}
 const quizId=op();actor=teacher;await server.saveQuiz(actor,{id:quizId,revision:0,operationId:op(),content,keys});await server.shareQuiz(actor,{id:quizId,revision:1,operationId:op(),visibility:'public'});
 const correctAnswers={[content.questions[0].id]:{optionId:keys[0].correctOptionId},[content.questions[1].id]:{text:'0.5'},[content.questions[2].id]:{text:'先计算，再解释。'}},wrongAnswers={[content.questions[0].id]:{optionId:content.questions[0].options.find(o=>o.id!==keys[0].correctOptionId).id}};

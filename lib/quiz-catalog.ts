@@ -1,13 +1,13 @@
 import type {Difficulty,QuizBankKind,QuizCatalog} from './quiz';
 
 export type QuizCatalogTopic=Omit<QuizCatalog,'setNumber'>;
-export type QuizCatalogItem={id:string;subject:string;difficulty:Difficulty;bankKind?:QuizBankKind;catalog?:QuizCatalog|null};
+export type QuizCatalogItem={id:string;subject:string;exam?:string;syllabusId?:string;subjectId?:string;difficulty:Difficulty;bankKind?:QuizBankKind;catalog?:QuizCatalog|null};
 export type QuizCatalogGroup<T extends QuizCatalogItem=QuizCatalogItem>={key:string;bankKind:QuizBankKind;subject:string;catalog:QuizCatalogTopic|null;items:T[];difficulties:{easy:number;medium:number;hard:number};setCount:number};
 export function quizBankKind(content:{bankKind?:unknown}):QuizBankKind{return content.bankKind==='platform'?'platform':'creator';}
 // JSON tuples keep topic identifiers unambiguous even when titles contain a
 // separator. Year and Set number deliberately do not identify a topic.
-export function quizCatalogGroupKey(item:Pick<QuizCatalogItem,'id'|'subject'|'bankKind'|'catalog'>){
- const c=item.catalog;return quizBankKind(item)==='platform'&&c?JSON.stringify(['platform',item.subject,c.level,c.kind,c.chapterCode,c.subtopicCode]):JSON.stringify(['creator',item.id]);
+export function quizCatalogGroupKey(item:Pick<QuizCatalogItem,'id'|'subject'|'exam'|'syllabusId'|'subjectId'|'bankKind'|'catalog'>){
+ const c=item.catalog;return quizBankKind(item)==='platform'&&c?JSON.stringify(['platform',(item.exam||'').trim().toLowerCase(),item.subject.trim().toLowerCase(),c.level,c.kind,c.chapterCode,c.subtopicCode]):JSON.stringify(['creator',item.id]);
 }
 export function groupQuizCatalog<T extends QuizCatalogItem>(items:T[]):QuizCatalogGroup<T>[] {
  const groups=new Map<string,QuizCatalogGroup<T>>();

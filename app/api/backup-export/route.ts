@@ -92,6 +92,15 @@ export async function GET(request: Request) {
     const hasFormalPractice=formalTables?.count===2;
     if(hasFormalPractice&&!hasPractice)throw new Error("Formal quiz schema lacks practice tables");
     if(hasFormalPractice)(names as string[]).push("quiz_practice_events","quiz_assignment_notifications");
+    const academicTables=await db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN ('academic_catalogues','student_grade_promotions')").first<{count:number}>();
+    if(academicTables?.count&&academicTables.count!==2)throw new Error("Incomplete academic catalogue schema");
+    const hasAcademicCatalogues=academicTables?.count===2;
+    if(hasAcademicCatalogues){
+      const scopes=await db.prepare("SELECT scope FROM academic_catalogues ORDER BY scope").all<{scope:string}>();
+      if(scopes.results.map(row=>row.scope).join(',')!=='quiz,student')throw new Error("Incomplete academic catalogue settings");
+      (names as string[]).unshift("academic_catalogues");
+      (names as string[]).push("student_grade_promotions");
+    }
     const tables: Record<string, { columns: string[]; rows: Record<string, unknown>[] }> = {};
     for (const name of names) {
       const info = await db.prepare(`PRAGMA table_info("${name}")`).all<{ name: string }>();
@@ -101,7 +110,7 @@ export async function GET(request: Request) {
     }
     const contents=await db.batch<Record<string,unknown>>(names.map(name=>db.prepare(`SELECT * FROM "${name}"`)));
     names.forEach((name,index)=>{tables[name].rows=contents[index].results;});
-    return Response.json({ format: hasFormalPractice ? "timelyo-d1-v17" : hasPractice ? "timelyo-d1-v16" : hasQuizzes ? "timelyo-d1-v15" : hasClassSessions&&tables.class_sessions.columns.includes("teaching_status") ? "timelyo-d1-v14" : hasClassSessions ? "timelyo-d1-v13" : hasReview ? "timelyo-d1-v12" : hasVersions ? "timelyo-d1-v11" : hasFolders ? "timelyo-d1-v10" : hasGroups ? "timelyo-d1-v9" : hasInbox ? "timelyo-d1-v8" : hasNotifications ? "timelyo-d1-v7" : tables.accounts.columns.includes("pending_expires_at") ? "timelyo-d1-v6" : tables.reschedule_requests.columns.includes("requested_role") ? "timelyo-d1-v5" : hasTerms ? "timelyo-d1-v4" : hasIdentities ? "timelyo-d1-v3" : hasClassrooms ? "timelyo-d1-v2" : "timelyo-d1-v1", tables }, { headers: noStore });
+    return Response.json({ format: hasAcademicCatalogues ? "timelyo-d1-v18" : hasFormalPractice ? "timelyo-d1-v17" : hasPractice ? "timelyo-d1-v16" : hasQuizzes ? "timelyo-d1-v15" : hasClassSessions&&tables.class_sessions.columns.includes("teaching_status") ? "timelyo-d1-v14" : hasClassSessions ? "timelyo-d1-v13" : hasReview ? "timelyo-d1-v12" : hasVersions ? "timelyo-d1-v11" : hasFolders ? "timelyo-d1-v10" : hasGroups ? "timelyo-d1-v9" : hasInbox ? "timelyo-d1-v8" : hasNotifications ? "timelyo-d1-v7" : tables.accounts.columns.includes("pending_expires_at") ? "timelyo-d1-v6" : tables.reschedule_requests.columns.includes("requested_role") ? "timelyo-d1-v5" : hasTerms ? "timelyo-d1-v4" : hasIdentities ? "timelyo-d1-v3" : hasClassrooms ? "timelyo-d1-v2" : "timelyo-d1-v1", tables }, { headers: noStore });
   } catch {
     return Response.json({ error: "Backup export unavailable" }, { status: 503, headers: noStore });
   }

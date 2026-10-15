@@ -10,6 +10,8 @@ import {readApiJson} from '@/lib/action-feedback';
 import {emptyQuiz,newQuestion,type QuizContent} from '@/lib/quiz';
 import type {LocalQuiz} from './quiz-editor';
 import QuizPracticePanel,{QuizAllocateDialog,QuizPracticeStart,type PracticeSource} from './quiz-practice-panel';
+import {useAcademicCatalogue} from '@/lib/use-academic-catalogue';
+import {findCatalogueSyllabus,findCatalogueSubject} from '@/lib/academic-catalogue';
 import './quiz.css';
 
 const QuizEditor=lazy(()=>import('./quiz-editor'));
@@ -18,13 +20,13 @@ const QuizPracticePlayer=lazy(()=>import('@/components/quiz-practice-player'));
 
 type Catalog={kind:'subtopic'|'chapter_overall'|'level_overall';level:string;chapterCode:string;chapterTitle:string;subtopicCode:string;subtopicTitle:string;setNumber:number};
 type Item={id:string;title:string;subject:string;exam:string;difficulty:string;questionCount:number;totalScore:number;visibility:string;creator:string;organisation:string;canEdit:boolean|number;canDelete?:boolean|number;revision?:number;sharedRevision:number|null;bankKind?:'platform'|'creator';catalog?:Catalog|null;updatedAt?:string;createdAt?:string};
-type Topic={key:string;bankKind:'platform';subject:string;catalog:Omit<Catalog,'setNumber'>;difficulties:{easy:number;medium:number;hard:number};setCount:number;updatedAt?:string;latestAt?:string};
-type Facets={subjects:string[];levels:string[];chapters:{code:string;title:string;level:string;subject:string}[];maintenanceImport?:boolean;manageQuizzes?:boolean};
+type Topic={key:string;bankKind:'platform';subject:string;exam:string;catalog:Omit<Catalog,'setNumber'>;difficulties:{easy:number;medium:number;hard:number};setCount:number;updatedAt?:string;latestAt?:string};
+type Facets={subjects:string[];levels:string[];chapters:{code:string;title:string;level:string;subject:string;exam:string}[];maintenanceImport?:boolean;manageQuizzes?:boolean};
 type Reply={items?:Item[];topics?:Topic[];hasMore?:boolean;facets?:Facets;error?:string};
-type Filters={search:string;subject:string;level:string;chapterCode:string;sort:'latest'|'oldest'|'title'};
+type Filters={search:string;syllabus:string;subject:string;level:string;chapterCode:string;sort:'latest'|'oldest'|'title'};
 type CopyOperation={id:string;operationId:string;sourceId:string;bank:boolean;title:string;resultId?:string};
 type Opening={item:Item;mode:'edit'|'preview'|'copy';token:number;error:string};
-const EMPTY_FILTERS:Filters={search:'',subject:'',level:'',chapterCode:'',sort:'latest'};
+const EMPTY_FILTERS:Filters={search:'',syllabus:'',subject:'',level:'',chapterCode:'',sort:'latest'};
 const EMPTY_FACETS:Facets={subjects:[],levels:[],chapters:[]};
 const DIFFICULTIES=['easy','medium','hard'] as const;
 type SelectedDifficulty=typeof DIFFICULTIES[number];
@@ -33,21 +35,22 @@ function errorCode(error:unknown){return error instanceof Error&&error.message.s
 async function api<T extends {error?:string}>(url:string,init?:RequestInit){const response=await groupFetch(url,init);const data=await readApiJson<T>(response);if(!response.ok)throw new Error(data.error||'quiz.unavailable');return data;}
 function query(filters:Filters,bank:boolean,extra:Record<string,string>={}){const params=new URLSearchParams({bank:bank?'1':'0',...extra});for(const [name,value] of Object.entries(filters))if(value)params.set(name,value);return '/api/quizzes?'+params.toString();}
 function mergeFacets(values:(Facets|undefined)[]):Facets{
- const chapters=new Map<string,Facets['chapters'][number]>();for(const value of values)for(const chapter of value?.chapters||[])chapters.set(JSON.stringify([chapter.subject,chapter.level,chapter.code]),chapter);
+ const chapters=new Map<string,Facets['chapters'][number]>();for(const value of values)for(const chapter of value?.chapters||[])chapters.set(JSON.stringify([chapter.exam,chapter.subject,chapter.level,chapter.code]),chapter);
  return {maintenanceImport:values.some(value=>value?.maintenanceImport===true),manageQuizzes:values.some(value=>value?.manageQuizzes===true),subjects:[...new Set(values.flatMap(value=>value?.subjects||[]))].sort((a,b)=>a.localeCompare(b)),levels:[...new Set(values.flatMap(value=>value?.levels||[]))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})),chapters:[...chapters.values()].sort((a,b)=>a.code.localeCompare(b.code,undefined,{numeric:true}))};
 }
 function topicTitle(topic:Topic){const c=topic.catalog;if(c.kind==='level_overall')return c.level+' · '+t('quiz.levelOverall');if(c.kind==='chapter_overall')return [c.chapterCode,t('quiz.chapterOverall')].filter(Boolean).join(' · ');return [c.subtopicCode,c.subtopicTitle].filter(Boolean).join(' · ');}
-function topicContext(topic:Topic){return [topic.subject,topic.catalog.level,topic.catalog.kind==='level_overall'?'':topic.catalog.chapterTitle||topic.catalog.chapterCode].filter(Boolean).join(' · ');}
+function topicContext(topic:Topic){return [topic.exam,topic.subject,topic.catalog.level,topic.catalog.kind==='level_overall'?'':topic.catalog.chapterTitle||topic.catalog.chapterCode].filter(Boolean).join(' · ');}
 function FilterField({label,children,className=''}:{label:string;children:(id:string)=>ReactNode;className?:string}){const id=useId();return <div className={'quiz-field '+className}><label htmlFor={id}>{label}</label>{children(id)}</div>;}
 
 export default function QuizWorkspace({view,language,role='teacher'}:{view:'quizzes'|'quizBank';language:Language;role?:'student'|'teacher'|'admin'}){
  const author=role!=='student';
+ const {catalogue,loading:catalogueLoading,error:catalogueError,reload:reloadCatalogue}=useAcademicCatalogue('quiz');
  const [tab,setTab]=useState<'bank'|'mine'|'assigned'|'history'|'manage'>('bank');
  const [source,setSource]=useState<'all'|'platform'|'creator'>('all');
  const [filters,setFilters]=useState<Filters>(EMPTY_FILTERS),[searchInput,setSearchInput]=useState('');
  const [facets,setFacets]=useState<Facets>(EMPTY_FACETS),[items,setItems]=useState<Item[]>([]),[topics,setTopics]=useState<Topic[]>([]);
  const [selectedTopic,setSelectedTopic]=useState<Topic|null>(null),[selectedDifficulty,setSelectedDifficulty]=useState<SelectedDifficulty|null>(null),[sets,setSets]=useState<Item[]>([]);
- const [loading,setLoading]=useState(true),[setsLoading,setSetsLoading]=useState(false),[busy,setBusy]=useState<string|null>(null),[more,setMore]=useState(false),[setsMore,setSetsMore]=useState(false);
+ const [loading,setLoading]=useState(true),[setsLoading,setSetsLoading]=useState(false),[busy,setBusy]=useState<string|null>(null),[more,setMore]=useState(false),[topicsMore,setTopicsMore]=useState(false),[topicsLoading,setTopicsLoading]=useState(false),[setsMore,setSetsMore]=useState(false);
  const [loadError,setLoadError]=useState(''),[setsError,setSetsError]=useState(''),[actionError,setActionError]=useState(''),[actionRetry,setActionRetry]=useState<(()=>void)|null>(null);
  const [importStatus,setImportStatus]=useState(''),[importDetail,setImportDetail]=useState('');
  const [editor,setEditor]=useState<LocalQuiz|null>(null),[preview,setPreview]=useState<QuizContent|null>(null),[reload,setReload]=useState(0);
@@ -63,8 +66,10 @@ export default function QuizWorkspace({view,language,role='teacher'}:{view:'quiz
  const bank=tab==='bank',catalogTab=bank||tab==='mine'||tab==='manage';
  const suspended=Boolean(editor||opening||preview||practiceSource||allocation||attemptId);
  const tabs:typeof tab[]=author?['bank','mine','assigned','history',...(facets.manageQuizzes?['manage' as const]:[])]:['bank','assigned','history'];
- const chapters=useMemo(()=>facets.chapters.filter(chapter=>chapter.subject===filters.subject&&(!filters.level||chapter.level===filters.level)),[facets.chapters,filters.subject,filters.level]);
- const hasFilters=Boolean(filters.search||filters.subject||filters.level||filters.chapterCode);
+ const selectedSyllabus=catalogue?findCatalogueSyllabus(catalogue,filters.syllabus):null;
+ const chapters=useMemo(()=>facets.chapters.filter(chapter=>(chapter.subject===filters.subject||Boolean(selectedSyllabus&&findCatalogueSubject(selectedSyllabus,filters.subject)?.name===chapter.subject))&&(!filters.level||chapter.level===filters.level)),[facets.chapters,filters.subject,filters.level,selectedSyllabus]);
+ const subjectOptions=selectedSyllabus?selectedSyllabus.subjects.filter(s=>s.active):catalogue?[...new Map(catalogue.syllabuses.filter(s=>s.active).flatMap(s=>s.subjects.filter(x=>x.active)).map(s=>[s.id,s])).values()]:[];
+ const hasFilters=Boolean(filters.search||filters.syllabus||filters.subject||filters.level||filters.chapterCode);
 
  // Both legacy menu IDs resolve to this single hub.
  useEffect(()=>{setTab('bank');setSelectedTopic(null);setSelectedDifficulty(null);},[view]);
@@ -74,25 +79,30 @@ export default function QuizWorkspace({view,language,role='teacher'}:{view:'quiz
  useEffect(()=>{setSelectedTopic(null);setSelectedDifficulty(null);setSets([]);setSetsError('');},[tab,source,filters]);
 
  async function load(offset=0){
-  if(!catalogTab||suspended)return;
+  if(!catalogTab||suspended||!catalogue)return;
   listAbort.current?.abort();const controller=new AbortController();listAbort.current=controller;
-  const gen=++generation.current;setLoading(true);setLoadError('');if(!offset){setItems([]);setTopics([]);setMore(false);}
+  const gen=++generation.current;setLoading(true);setLoadError('');if(!offset){setItems([]);setTopics([]);setMore(false);setTopicsMore(false);}
   try{
-   const listKey=bank?'bank:creator':tab,topicKey='bank:platform',listFacets=!offset&&!facetCache.current.has(listKey),topicFacets=!facetCache.current.has(topicKey);
+   const scopeKey=JSON.stringify([catalogue?.revision,filters.syllabus,filters.subject,filters.level]),listKey=(bank?'bank:creator':tab)+scopeKey,topicKey='bank:platform'+scopeKey,listFacets=!offset&&!facetCache.current.has(listKey),topicFacets=!facetCache.current.has(topicKey);
    const creatorRequest=!bank||source!=='platform'?api<Reply>(query(filters,bank,{...(listFacets?{facets:'1'}:{}),offset:String(offset),...(bank?{bankKind:'creator'}:{}),...(tab==='manage'?{manage:'1'}:{})}),{signal:controller.signal}):null;
    const topicRequest=bank&&source!=='creator'&&!offset?api<Reply>(query(filters,true,{topics:'1',bankKind:'platform',...(topicFacets?{facets:'1'}:{})}),{signal:controller.signal}):null;
    const [listReply,topicReply]=await Promise.all([creatorRequest,topicRequest]);
    if(gen!==generation.current)return;
    if(listReply){setItems(old=>offset?[...old,...(listReply.items||[])].filter((item,index,all)=>all.findIndex(other=>other.id===item.id)===index):listReply.items||[]);setMore(Boolean(listReply.hasMore));}
-   if(!offset){if(listReply?.facets)facetCache.current.set(listKey,listReply.facets);if(topicReply?.facets)facetCache.current.set(topicKey,topicReply.facets);setTopics(topicReply?.topics||[]);setFacets(mergeFacets([!bank||source!=='platform'?facetCache.current.get(listKey):undefined,bank&&source!=='creator'?facetCache.current.get(topicKey):undefined]));}
+   if(!offset){if(listReply?.facets)facetCache.current.set(listKey,listReply.facets);if(topicReply?.facets)facetCache.current.set(topicKey,topicReply.facets);setTopics(topicReply?.topics||[]);setTopicsMore(Boolean(topicReply?.hasMore));setFacets(mergeFacets([!bank||source!=='platform'?facetCache.current.get(listKey):undefined,bank&&source!=='creator'?facetCache.current.get(topicKey):undefined]));}
   }catch(error){if(gen===generation.current&&!controller.signal.aborted)setLoadError(errorCode(error));}finally{if(gen===generation.current)setLoading(false);}
  }
- useEffect(()=>{if(!suspended)void load();return()=>{generation.current++;listAbort.current?.abort();};},[tab,source,filters,reload,suspended]);
+ useEffect(()=>{if(!suspended)void load();return()=>{generation.current++;listAbort.current?.abort();};},[tab,source,filters,reload,suspended,catalogue?.revision]);
 
+ async function loadTopics(){
+  if(!topicsMore||topicsLoading||suspended)return;const controller=listAbort.current,gen=generation.current;setTopicsLoading(true);setLoadError('');
+  try{const data=await api<Reply>(query(filters,true,{topics:'1',bankKind:'platform',offset:String(topics.length)}),{signal:controller?.signal});if(gen!==generation.current)return;setTopics(old=>[...old,...(data.topics||[])].filter((topic,index,all)=>all.findIndex(other=>other.key===topic.key)===index));setTopicsMore(Boolean(data.hasMore));}
+  catch(error){if(gen===generation.current&&!controller?.signal.aborted)setLoadError(errorCode(error));}finally{setTopicsLoading(false);}
+ }
  async function loadSets(offset=0){
   if(!selectedTopic||!selectedDifficulty||suspended)return;setsAbort.current?.abort();const controller=new AbortController();setsAbort.current=controller;const gen=++setGeneration.current;setSetsLoading(true);setSetsError('');if(!offset){setSets([]);setSetsMore(false);}
   try{
-   const c=selectedTopic.catalog,data=await api<Reply>(query({search:filters.search,subject:selectedTopic.subject,level:c.level,chapterCode:c.chapterCode,sort:filters.sort},true,{bankKind:'platform',catalogKind:c.kind,subtopicCode:c.subtopicCode,difficulty:selectedDifficulty,offset:String(offset)}),{signal:controller.signal});
+   const c=selectedTopic.catalog,data=await api<Reply>(query({search:filters.search,syllabus:selectedTopic.exam||'__unclassified__',subject:selectedTopic.subject,level:c.level,chapterCode:c.chapterCode,sort:filters.sort},true,{bankKind:'platform',catalogKind:c.kind,subtopicCode:c.subtopicCode,difficulty:selectedDifficulty,offset:String(offset)}),{signal:controller.signal});
    if(gen!==setGeneration.current)return;setSets(old=>offset?[...old,...(data.items||[])].filter((item,index,all)=>all.findIndex(other=>other.id===item.id)===index):data.items||[]);setSetsMore(Boolean(data.hasMore));
   }catch(error){if(gen===setGeneration.current&&!controller.signal.aborted)setSetsError(errorCode(error));}finally{if(gen===setGeneration.current)setSetsLoading(false);}
  }
@@ -137,14 +147,16 @@ export default function QuizWorkspace({view,language,role='teacher'}:{view:'quiz
   {author&&facets.maintenanceImport&&<input ref={importInput} className="sr-only" tabIndex={-1} type="file" accept=".zip,application/zip" aria-label={t('quiz.import')} onChange={event=>{void importFile(event.target.files?.[0]);event.target.value='';}}/>}
   <div className="quiz-hub-tabs" role="tablist" aria-label={t('quiz.hubTitle')} onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const index=tabs.indexOf(tab),next=event.key==='Home'?tabs[0]:event.key==='End'?tabs[tabs.length-1]:tabs[(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length];changeTab(next);document.getElementById('quiz-tab-'+next)?.focus();}}>{tabs.map(value=><button type="button" role="tab" key={value} className="quiz-hub-tab" id={'quiz-tab-'+value} data-testid={'quiz-tab-'+value} aria-selected={tab===value} tabIndex={tab===value?0:-1} aria-controls="quiz-hub-panel" onClick={()=>changeTab(value)}>{t(value==='bank'?'quiz.catalogTab':value==='mine'?'quiz.mineTab':value==='assigned'?'quiz.assignedTab':value==='manage'?'quiz.manageTab':'quiz.historyTab')}</button>)}</div>
   <section id="quiz-hub-panel" role="tabpanel" aria-labelledby={'quiz-tab-'+tab}>
+   {catalogueError&&<div className="quiz-error" role="alert"><span>{t('quiz.catalogueUnavailable')}</span><Button variant="outline" onClick={()=>void reloadCatalogue()}>{t('quiz.retry')}</Button></div>}
    {!catalogTab?<QuizPracticePanel mode={tab==='assigned'?'assigned':'history'} role={role} language={language} reload={reload} onOpen={setAttemptId} onStart={setPracticeSource}/>:<>
    {!selectedTopic&&<>
     {bank&&<div className="quiz-source-tabs" role="group" aria-label={t('quiz.source')} data-testid="quiz-source-filter">{(['all','platform','creator'] as const).map(value=><button className="quiz-source-tab" type="button" key={value} aria-pressed={source===value} onClick={()=>{setSource(value);setActionError('');setActionRetry(null);}}>{t(value==='all'?'quiz.allBanks':value==='platform'?'quiz.platformBank':'quiz.creatorBank')}</button>)}</div>}
     <form className="quiz-catalog-filters" onSubmit={event=>{event.preventDefault();setFilters(old=>({...old,search:searchInput.trim()}));}}>
      <FilterField label={t('quiz.search')} className="quiz-catalog-search">{id=><div className="quiz-search-input"><Search size={17} aria-hidden="true"/><input id={id} value={searchInput} maxLength={100} placeholder={t('quiz.searchPlaceholder')} onChange={event=>setSearchInput(event.target.value)}/></div>}</FilterField>
-     <FilterField label={t('quiz.subject')}>{id=><select id={id} data-testid="quiz-subject-filter" value={filters.subject} onChange={event=>setFilters(old=>({...old,subject:event.target.value,level:'',chapterCode:''}))}><option value="">{t('quiz.allSubjects')}</option>{facets.subjects.map(subject=><option key={subject} value={subject}>{subject}</option>)}</select>}</FilterField>
-     {filters.subject&&facets.levels.length>0&&<FilterField label={t('quiz.catalogLevel')}>{id=><select id={id} data-testid="quiz-level-filter" value={filters.level} onChange={event=>setFilters(old=>({...old,level:event.target.value,chapterCode:''}))}><option value="">{t('quiz.allLevels')}</option>{facets.levels.map(level=><option value={level} key={level}>{level}</option>)}</select>}</FilterField>}
-     {filters.subject&&chapters.length>0&&<FilterField label={t('quiz.catalogChapter')}>{id=><select id={id} data-testid="quiz-chapter-filter" value={filters.chapterCode?JSON.stringify([filters.level,filters.chapterCode]):''} onChange={event=>{const chapter=chapters.find(item=>JSON.stringify([item.level,item.code])===event.target.value);setFilters(old=>({...old,chapterCode:chapter?.code||'',level:chapter?.level||old.level}));}}><option value="">{t('quiz.allChapters')}</option>{chapters.map(chapter=><option value={JSON.stringify([chapter.level,chapter.code])} key={chapter.level+':'+chapter.code}>{[chapter.code,chapter.title,!filters.level?chapter.level:''].filter(Boolean).join(' · ')}</option>)}</select>}</FilterField>}
+     <FilterField label={t('quiz.syllabus')}>{id=><select id={id} data-testid="quiz-syllabus-filter" value={filters.syllabus} disabled={catalogueLoading} onChange={event=>setFilters(old=>({...old,syllabus:event.target.value,subject:'',level:'',chapterCode:''}))}><option value="">{t('quiz.allSyllabuses')}</option>{catalogue?.syllabuses.filter(s=>s.active).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}<option value="__unclassified__">{t('quiz.unclassifiedSyllabus')}</option></select>}</FilterField>
+     <FilterField label={t('quiz.subject')}>{id=><select id={id} data-testid="quiz-subject-filter" value={filters.subject} onChange={event=>setFilters(old=>({...old,subject:event.target.value,level:'',chapterCode:''}))}><option value="">{t('quiz.allSubjects')}</option>{subjectOptions.map(subject=><option key={subject.id} value={subject.id}>{subject.name}</option>)}</select>}</FilterField>
+     {selectedSyllabus&&selectedSyllabus.grades.length>0&&<FilterField label={t('quiz.catalogLevel')}>{id=><select id={id} data-testid="quiz-level-filter" value={filters.level} onChange={event=>setFilters(old=>({...old,level:event.target.value,chapterCode:''}))}><option value="">{t('quiz.allLevels')}</option>{selectedSyllabus?.grades.map(level=><option value={level} key={level}>{level}</option>)}</select>}</FilterField>}
+     {filters.syllabus&&filters.subject&&chapters.length>0&&<FilterField label={t('quiz.catalogChapter')}>{id=><select id={id} data-testid="quiz-chapter-filter" value={filters.chapterCode?JSON.stringify([filters.level,filters.chapterCode]):''} onChange={event=>{const chapter=chapters.find(item=>JSON.stringify([item.level,item.code])===event.target.value);setFilters(old=>({...old,chapterCode:chapter?.code||'',level:chapter?.level||old.level}));}}><option value="">{t('quiz.allChapters')}</option>{chapters.map(chapter=><option value={JSON.stringify([chapter.level,chapter.code])} key={chapter.level+':'+chapter.code}>{[chapter.code,chapter.title,!filters.level?chapter.level:''].filter(Boolean).join(' · ')}</option>)}</select>}</FilterField>}
      <FilterField label={t('quiz.sort')}>{id=><select id={id} data-testid="quiz-sort-filter" value={filters.sort} onChange={event=>setFilters(old=>({...old,sort:event.target.value as Filters['sort']}))}><option value="latest">{t('quiz.sortLatest')}</option><option value="oldest">{t('quiz.sortOldest')}</option><option value="title">{t('quiz.sortTitle')}</option></select>}</FilterField>
     </form>
    </>}
@@ -162,9 +174,9 @@ export default function QuizWorkspace({view,language,role='teacher'}:{view:'quiz
     </>}
    </div>:<>
     {loadError&&<div className="quiz-error" role="alert"><span>{t(loadError)}</span><Button variant="outline" onClick={()=>void load()}>{t('quiz.retry')}</Button></div>}
-    {loading&&loadingState()}
+    {loading&&!catalogueError&&loadingState()}
     {!loading&&!loadError&&!items.length&&!topics.length&&emptyState(hasFilters?'quiz.noMatches':!bank?'quiz.noDrafts':source==='platform'?'quiz.noPlatform':'quiz.noCreators')}
-    {bank&&topics.length>0&&<section className="quiz-catalog-section" aria-label={t('quiz.platformBank')}><h3>{t('quiz.platformBank')}</h3><div className="quiz-topic-grid">{topics.map(topic=><button type="button" className="quiz-topic-card" data-testid="quiz-topic-card" key={topic.key} onClick={()=>chooseTopic(topic)}><BookOpen size={22} aria-hidden="true"/><span className="quiz-topic-content"><strong>{topicTitle(topic)}</strong><span>{topicContext(topic)}</span>{dateLabel(topic.updatedAt||topic.latestAt)&&<span className="quiz-card-date">{dateLabel(topic.updatedAt||topic.latestAt)}</span>}<span className="quiz-topic-count">{topic.setCount} {t('quiz.sets')}</span></span><ArrowRight size={18} aria-hidden="true"/></button>)}</div></section>}
+    {bank&&topics.length>0&&<section className="quiz-catalog-section" aria-label={t('quiz.platformBank')}><h3>{t('quiz.platformBank')}</h3><div className="quiz-topic-grid">{topics.map(topic=><button type="button" className="quiz-topic-card" data-testid="quiz-topic-card" key={topic.key} onClick={()=>chooseTopic(topic)}><BookOpen size={22} aria-hidden="true"/><span className="quiz-topic-content"><strong>{topicTitle(topic)}</strong><span>{topicContext(topic)}</span>{dateLabel(topic.updatedAt||topic.latestAt)&&<span className="quiz-card-date">{dateLabel(topic.updatedAt||topic.latestAt)}</span>}<span className="quiz-topic-count">{topic.setCount} {t('quiz.sets')}</span></span><ArrowRight size={18} aria-hidden="true"/></button>)}</div>{topicsMore&&<Button variant="outline" data-testid="quiz-topics-more" disabled={topicsLoading||loading} onClick={()=>void loadTopics()}>{t(topicsLoading?'quiz.loading':'quiz.more')}</Button>}</section>}
     {bank&&items.length>0&&<h3 className="quiz-catalog-section-title">{t('quiz.creatorBank')}</h3>}
     <div className="quiz-list">{items.map(item=>itemCard(item))}</div>{more&&!loading&&<Button variant="outline" onClick={()=>void load(items.length)}>{t('quiz.more')}</Button>}
    </>}

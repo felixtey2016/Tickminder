@@ -4,13 +4,15 @@ export type Difficulty='easy'|'medium'|'hard'|'mixed';
 export type QuizVisibility='private'|'organisation'|'public';
 export type QuizBankKind='platform'|'creator';
 export type QuizCatalogKind='subtopic'|'chapter_overall'|'level_overall';
-export type QuizLevel='Form 1'|'Form 2'|'Form 3'|'Form 4'|'Form 5';
+// The central Quiz catalogue owns syllabus grades; this type only represents
+// their persisted label. Historic immutable versions retain their original label.
+export type QuizLevel=string;
 export type QuizCatalog={kind:QuizCatalogKind;level:QuizLevel;chapterCode:string;chapterTitle:string;subtopicCode:string;subtopicTitle:string;setNumber:number};
 export type QuizText={primary:string;en:string};
 export type QuizOption={id:string;text:QuizText;imageId:string|null};
 export type QuizQuestion={id:string;type:QuizType;prompt:QuizText;imageId:string|null;extraImageIds:string[];options:QuizOption[];points:number;difficulty:Exclude<Difficulty,'mixed'>;sourceId:string;chapter:string;level:string;answerUnit?:string};
 export type QuizKey={questionId:string;mode:'choice'|'text'|'numeric'|'manual';correctOptionId:string|null;accepted:string[];caseSensitive:boolean;tolerance:number;unit:string;rubric:string;explanation:string};
-export type QuizContent={schemaVersion:1;title:string;instructions:string;subject:string;exam:string;year:number|null;region:string;paper:string;difficulty:Difficulty;primaryLanguage:'zh'|'en'|'ms';timeLimitSeconds:number|null;shuffleQuestions:boolean;shuffleOptions:boolean;questions:QuizQuestion[];bankKind?:QuizBankKind;catalog?:QuizCatalog|null};
+export type QuizContent={schemaVersion:1;title:string;instructions:string;subject:string;exam:string;syllabusId?:string;subjectId?:string;year:number|null;region:string;paper:string;difficulty:Difficulty;primaryLanguage:'zh'|'en'|'ms';timeLimitSeconds:number|null;shuffleQuestions:boolean;shuffleOptions:boolean;questions:QuizQuestion[];bankKind?:QuizBankKind;catalog?:QuizCatalog|null};
 export type QuizDraft={id:string;revision:number;visibility:QuizVisibility;content:QuizContent;keys:QuizKey[];canEdit:boolean;sharedRevision:number|null};
 export class QuizError extends Error{constructor(public code:string,public status=400){super(code);}}
 export function quizImageMime(bytes:Uint8Array):'image/png'|'image/jpeg'|'image/webp'|null{
@@ -29,8 +31,8 @@ function finite(value:unknown,min:number,max:number){return typeof value==='numb
 function record(value:unknown):Record<string,unknown>{if(!value||typeof value!=='object'||Array.isArray(value))return fail('quiz.invalidFields');return value as Record<string,unknown>;}
 export function checkQuizCatalog(value:unknown):QuizCatalog|null{
  if(value==null)return null;const v=record(value);
- if(!['subtopic','chapter_overall','level_overall'].includes(String(v.kind))||!['Form 1','Form 2','Form 3','Form 4','Form 5'].includes(String(v.level)))return fail('quiz.invalidCatalog');
- const c:QuizCatalog={kind:v.kind as QuizCatalogKind,level:v.level as QuizLevel,chapterCode:string(v.chapterCode,16),chapterTitle:string(v.chapterTitle,160),subtopicCode:string(v.subtopicCode,32),subtopicTitle:string(v.subtopicTitle,160),setNumber:finite(v.setNumber,1,10000)};
+ if(!['subtopic','chapter_overall','level_overall'].includes(String(v.kind))||typeof v.level!=='string'||!v.level.trim()||v.level.length>80)return fail('quiz.invalidCatalog');
+ const c:QuizCatalog={kind:v.kind as QuizCatalogKind,level:v.level.trim(),chapterCode:string(v.chapterCode,16),chapterTitle:string(v.chapterTitle,160),subtopicCode:string(v.subtopicCode,32),subtopicTitle:string(v.subtopicTitle,160),setNumber:finite(v.setNumber,1,10000)};
  if(!Number.isInteger(c.setNumber))return fail('quiz.invalidCatalog');
  if(c.kind==='level_overall'){if(c.chapterCode||c.chapterTitle||c.subtopicCode||c.subtopicTitle)return fail('quiz.invalidCatalog');}
  else{
@@ -48,8 +50,10 @@ export function numericAnswer(raw:string):number|null{
 }
 export function checkQuiz(input:unknown,rawKeys:unknown):{content:QuizContent;keys:QuizKey[];images:string[];total:number}{
  const v=record(input) as unknown as QuizContent;if(v.schemaVersion!==1||!Array.isArray(v.questions)||v.questions.length<1||v.questions.length>150)return fail('quiz.questionCount');
- const content:QuizContent={schemaVersion:1,title:string(v.title,160,true),instructions:string(v.instructions,4000),subject:string(v.subject,100,true),exam:string(v.exam,80),year:v.year==null?null:finite(v.year,1900,2200),region:string(v.region,100),paper:string(v.paper,80),difficulty:['easy','medium','hard','mixed'].includes(v.difficulty)?v.difficulty:fail('quiz.invalidFields'),primaryLanguage:['zh','en','ms'].includes(v.primaryLanguage)?v.primaryLanguage:fail('quiz.invalidFields'),timeLimitSeconds:v.timeLimitSeconds==null?null:finite(v.timeLimitSeconds,60,21600),shuffleQuestions:v.shuffleQuestions===true,shuffleOptions:v.shuffleOptions===true,questions:[]};
+ const content:QuizContent={schemaVersion:1,title:string(v.title,160,true),instructions:string(v.instructions,4000),subject:string(v.subject,100,true),exam:string(v.exam,100),year:v.year==null?null:finite(v.year,1900,2200),region:string(v.region,100),paper:string(v.paper,80),difficulty:['easy','medium','hard','mixed'].includes(v.difficulty)?v.difficulty:fail('quiz.invalidFields'),primaryLanguage:['zh','en','ms'].includes(v.primaryLanguage)?v.primaryLanguage:fail('quiz.invalidFields'),timeLimitSeconds:v.timeLimitSeconds==null?null:finite(v.timeLimitSeconds,60,21600),shuffleQuestions:v.shuffleQuestions===true,shuffleOptions:v.shuffleOptions===true,questions:[]};
  if(v.bankKind!==undefined&&!['platform','creator'].includes(v.bankKind))return fail('quiz.invalidCatalog');
+ if(v.syllabusId!==undefined)content.syllabusId=id(v.syllabusId);
+ if(v.subjectId!==undefined)content.subjectId=id(v.subjectId);
  content.bankKind=v.bankKind||'creator';content.catalog=checkQuizCatalog(v.catalog);
  if(content.year!==null&&!Number.isInteger(content.year)||content.timeLimitSeconds!==null&&!Number.isInteger(content.timeLimitSeconds))return fail('quiz.invalidFields');
  const ids=new Set<string>(),images=new Set<string>();

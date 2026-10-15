@@ -1,3 +1,6 @@
+import {planSubjectLabelSql} from "@/lib/academic-subject-match";
+import {readAcademicCatalogue} from "@/lib/academic-catalogue-server";
+import {resolveCatalogueSelection,catalogueGradeValid,findCatalogueGrade} from "@/lib/academic-catalogue";
 import {groupReader,groupStatement,requireGroup} from "@/lib/group-data";
 import { NextResponse } from "next/server";
 import { currentBusinessAccount as currentAccount } from "@/lib/auth";
@@ -15,12 +18,12 @@ function selectedStudents(value: unknown) {
   return names;
 }
 
-async function eligible(groupId:string,teacherName: string, subject: string, students: string[]) {
+async function eligible(groupId:string,teacherName:string,subject:string,students:string[],classification:{syllabusId:string|null;subjectId:string|null;grade:string|null},existingMembers:string[]=[]) {
   const {first}=groupReader(groupId);
   for (const student of students) {
-    const allowed = await first(`SELECT 1 AS allowed FROM plans p JOIN students s ON s.name = p.student JOIN teachers t ON t.name = p.teacher_name
-      WHERE p.student = ? AND p.subject = ? AND p.teacher_name = ? AND p.active = 1 AND s.active = 1 AND t.active = 1`, student, subject, teacherName);
-    if (!allowed) throw new RequestError("班级只能加入该老师目前负责的学生科目", 403);
+    const allowed=await first<{syllabusId:string;grade:string|null}>(`SELECT s.syllabus_id AS syllabusId,s.grade FROM plans p JOIN students s ON s.name=p.student JOIN teachers t ON t.name=p.teacher_name CROSS JOIN (SELECT ? AS subject) requested WHERE p.student=? AND p.teacher_name=? AND p.active=1 AND s.active=1 AND t.active=1 AND ((? IS NOT NULL AND p.subject_id=?) OR (? IS NULL AND ${planSubjectLabelSql()}))`,subject,student,teacherName,classification.subjectId,classification.subjectId,classification.subjectId);
+    if(!allowed)throw new RequestError("班级只能加入该老师目前负责的学生科目",403);
+    if(!existingMembers.includes(student)&&((classification.syllabusId&&allowed.syllabusId!==classification.syllabusId)||(classification.grade&&allowed.grade&&allowed.grade!==classification.grade)))throw new RequestError("班级成员的课程体系或年级与所选班级不一致");
   }
 }
 
@@ -61,22 +64,27 @@ export async function POST(request: Request) {
       const existing = id ? await classroomMayManage(actor, id) : null;
       if (id && !existing) throw new RequestError("班级不存在或无权修改", 404);
       const teacherName = existing?.teacherName || (actor.role === "teacher" ? actor.teacherName || "" : str(data.teacherName));
-      const subject = existing?.subject || str(data.subject);
+      const catalogue=await readAcademicCatalogue('student');
+      const selected=resolveCatalogueSelection(catalogue,str(data.syllabusId),str(data.subjectId)||str(data.subject));
+      if(!existing&&(!selected||!catalogueGradeValid(selected.syllabus,str(data.grade))||!str(data.grade)))throw new RequestError("请选择有效的课程体系、年级及科目");
+      const classification=existing?{syllabusId:existing.syllabusId,subjectId:existing.subjectId,grade:existing.grade}:{syllabusId:selected!.syllabus.id,subjectId:selected!.subject.id,grade:findCatalogueGrade(selected!.syllabus,str(data.grade))!};
+      const subject = existing?.subject || selected!.subject.name;
       if (!teacherName || !subject || subject.length > 100) throw new RequestError("请选择老师和科目");
       if (existing?.archived) throw new RequestError("已封存班级不能修改名单", 409);
-      await eligible(groupId,teacherName, subject, students);
+      const previousMembers=existing?await classroomMemberNames(existing.id,groupId):[];
+      await eligible(groupId,teacherName,subject,students,classification,previousMembers);
       if (!id) {
         const duplicate = await first("SELECT 1 AS found FROM classrooms WHERE teacher_name = ? AND subject = ? AND lower(title) = lower(?) AND archived = 0 AND term_id IS ?", teacherName, subject, title, termId);
         if (duplicate) throw new RequestError("这位老师已有同名同科目的班级", 409);
         const classId = crypto.randomUUID();
         await db.batch([
-          groupStatement(groupId,"INSERT INTO classrooms (group_id,id,title,description,subject,teacher_name,created_by,archived,created_at,updated_at,term_id) VALUES (?,?,?,?,?,?,?,0,?,?,?)").bind(groupId,classId, title, description || null, subject, teacherName, actor.id, now, now, termId),
+          groupStatement(groupId,"INSERT INTO classrooms (group_id,id,title,description,subject,teacher_name,created_by,archived,created_at,updated_at,term_id,syllabus_id,subject_id,grade) VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,?)").bind(groupId,classId, title, description || null, subject, teacherName, actor.id, now, now, termId,classification.syllabusId,classification.subjectId,classification.grade),
           ...students.map(student => groupStatement(groupId,"INSERT INTO classroom_members (group_id,id,classroom_id,student_name,created_at) VALUES (?,?,?,?,?)").bind(groupId,crypto.randomUUID(), classId, student, now)),
         ]);
         await change(groupId,"createClassroom", actor.id, classId, { title, subject, teacherName, studentCount: students.length });
         return NextResponse.json({ ok: true, id: classId });
       }
-      const previous = await classroomMemberNames(id,groupId);
+      const previous = previousMembers;
       const added = students.filter(student => !previous.includes(student));
       const removed = previous.filter(student => !students.includes(student));
       await db.batch([

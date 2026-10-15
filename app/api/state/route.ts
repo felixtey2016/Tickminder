@@ -15,10 +15,10 @@ import { learningState, rows } from "@/lib/learning-server";
 import { mergedAccountNames } from "@/lib/merged-account-names";
 import { classroomsState } from "@/lib/classrooms-server";
 
-function monthlySummary(plans: Array<{ key: string; student: string; subject: string }>, rows: Array<typeof lessons.$inferSelect>, month: string) {
+function monthlySummary(plans: Array<{ key: string; student: string; subject: string;subjectId?:string|null;syllabusId?:string }>, rows: Array<typeof lessons.$inferSelect>, month: string,sessionSubjects:Map<string,{subjectId?:string|null;syllabusId?:string|null}>=new Map()) {
   const now = new Date().toISOString();
   return plans.map(p => {
-    const items = rows.filter(l => l.student === p.student && l.subject === p.subject);
+    const items = rows.filter(l => l.student === p.student && (l.subject === p.subject||Boolean(l.sessionId&&p.subjectId&&sessionSubjects.get(l.sessionId)?.subjectId===p.subjectId&&sessionSubjects.get(l.sessionId)?.syllabusId===p.syllabusId)));
     const completed = items.filter(l => l.actualStart && inMonth(l.actualStart, month));
     const planned = items.filter(l => inMonth(l.plannedStart, month));
     return {
@@ -64,9 +64,9 @@ async function coreState(account: Account, selected: string) {
   const ids = new Set(visible.map(l => l.id));
   const records = visible.filter(l => l.actualStart && inMonth(l.actualStart, selected) && approvedActualHours(l) > 0).sort((a,b) => a.actualStart!.localeCompare(b.actualStart!));
   const checkins = visible.filter(l => checkinInMonth(l, selected)).sort((a,b) => (a.actualStart || a.plannedStart).localeCompare(b.actualStart || b.plannedStart)).map(withOnlineLink);
-  if (account.role === "teacher") return {...base, plans, lessons: visible.map(withOnlineLink), proposals: legacyRequests.filter(r => ids.has(r.lessonId)), records, checkins, summary: monthlySummary(plans, visible, selected)};
+  if (account.role === "teacher") return {...base, plans, lessons: visible.map(withOnlineLink), proposals: legacyRequests.filter(r => ids.has(r.lessonId)), records, checkins, summary: monthlySummary(plans, visible, selected,sessionData.byId)};
   return {...base, plans: roster.plans, allPlans: roster.allPlans, students: roster.students, allStudents: roster.allStudents, teachers: roster.teachers, allTeachers: roster.allTeachers,
-    lessons: visible.map(withOnlineLink), proposals: legacyRequests, records, checkins, summary: monthlySummary(roster.allPlans, visible, selected)};
+    lessons: visible.map(withOnlineLink), proposals: legacyRequests, records, checkins, summary: monthlySummary(roster.allPlans, visible, selected,sessionData.byId)};
 }
 
 async function extraState(account: Account, scope: Exclude<Scope, "core">) {

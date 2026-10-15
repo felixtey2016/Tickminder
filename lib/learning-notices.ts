@@ -1,3 +1,4 @@
+import {classPlanSubjectSql} from "./academic-subject-match";
 import type {Account} from "./auth";
 import {learningDb,rows} from "./learning-server";
 
@@ -9,7 +10,8 @@ export function learningRecipientSql(kind:"material"|"homework",record="h",accou
     AND EXISTS(SELECT 1 FROM students st WHERE st.name=${account}.student_name AND st.group_id=${record}.group_id AND st.active=1)
     AND EXISTS(SELECT 1 FROM ${recipients} r WHERE r.${key}=${record}.id AND r.group_id=${record}.group_id AND r.student_name=${account}.student_name)
     AND (${record}.classroom_id IS NULL OR EXISTS(SELECT 1 FROM classroom_members cm JOIN classrooms c ON c.id=cm.classroom_id AND c.group_id=cm.group_id
-      JOIN plans p ON p.group_id=c.group_id AND p.student=cm.student_name AND p.subject=c.subject AND p.teacher_name=c.teacher_name AND p.active=1
+      JOIN students class_student ON class_student.group_id=cm.group_id AND class_student.name=cm.student_name AND class_student.active=1
+      JOIN plans p ON p.group_id=c.group_id AND p.student=cm.student_name AND ${classPlanSubjectSql("p","c","class_student")} AND p.teacher_name=c.teacher_name AND p.active=1
       JOIN teachers teacher ON teacher.group_id=c.group_id AND teacher.name=c.teacher_name AND teacher.active=1
       WHERE cm.classroom_id=${record}.classroom_id AND cm.group_id=${record}.group_id AND cm.student_name=${account}.student_name))`;
 }

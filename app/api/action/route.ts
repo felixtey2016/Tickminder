@@ -1,3 +1,6 @@
+import {readAcademicCatalogue} from "@/lib/academic-catalogue-server";
+import {findCatalogueSubject,findCatalogueSyllabus} from "@/lib/academic-catalogue";
+import {StudentAcademicError,studentProfileInput,allocationSubject,refreshStudentClassifications,studentSyllabusPlanUpdates,studentAcademicSnapshot,studentAcademicGuard} from "@/lib/student-academics";
 import {attendanceAction,attendanceActions} from "@/lib/session-attendance";
 import {ClassSessionError,classSessionAction,classSessionActions,legacyGroupAction} from "@/lib/class-sessions";
 import {LearningEditError} from "@/lib/learning-versions";
@@ -120,13 +123,30 @@ export async function POST(request: Request) {
       await db.insert(audit).values({groupId:actor.groupId!, id: crypto.randomUUID(), lessonId: `teacher:${name}`, actorId: actor.id, action: "saveTeacher", before: before ? JSON.stringify(before) : null, after: JSON.stringify({ name, active }), at: now });
       return NextResponse.json({ ok: true });
     }
+    if (action === "updateStudentProfile") {
+      const name = str(data.name);
+      const before = await db.select().from(students).where(groupWhere(students,actor.groupId,eq(students.name,name))).get();
+      if (!before) return bad("Student not found",404);
+      const [catalogue,snapshot]=await Promise.all([readAcademicCatalogue('student'),studentAcademicSnapshot(groupId,name)]);
+      const profile = await studentProfileInput(data,before,catalogue),guard=studentAcademicGuard(groupId,name,before,catalogue,snapshot),claimId='student-academic:'+crypto.randomUUID(),claim={sql:'EXISTS(SELECT 1 FROM audit WHERE id=? AND group_id=?)',args:[claimId,groupId]};
+      const remappedPlans=await studentSyllabusPlanUpdates(groupId,name,before.syllabusId,profile.syllabusId,catalogue,snapshot,claim);
+      const result=await learningDb().batch([
+        groupStatement(groupId,'INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) SELECT ?,?,?,?,?,?,?,? WHERE '+guard.sql).bind(groupId,claimId,`student:${name}`,actor.id,'updateStudentProfile',JSON.stringify(before),JSON.stringify(profile),now,...guard.args),
+        ...remappedPlans,
+        groupStatement(groupId,'UPDATE students SET syllabus_id=?,grade=?,age=? WHERE name=? AND group_id=? AND '+claim.sql).bind(profile.syllabusId,profile.grade,profile.age,name,groupId,...claim.args),
+      ]);
+      if(!result[0].meta.changes)return bad('学生资料、科目配对或菜单已改变，请刷新后重试',409);
+      if(before.syllabusId!==profile.syllabusId||before.grade!==profile.grade)await refreshStudentClassifications(groupId,name);
+      return NextResponse.json({ok:true});
+    }
     if (action === "saveStudent") {
       const name = str(data.name);
       if (!name || name.length > 80 || name.includes("|")) return bad("Enter a student name up to 80 characters without |");
       const nameKey = studentNameKey(name);
       const before = await db.select().from(students).where(groupWhere(students,actor.groupId,eq(students.nameKey, nameKey))).get();
       if (before) return bad("学生姓名已存在，请从名单选择现有学生");
-      await db.insert(students).values({groupId:actor.groupId!, name, nameKey, active: true, createdAt: now });
+      const profile = await studentProfileInput(data);
+      await db.insert(students).values({groupId:actor.groupId!, name, nameKey, active: true, createdAt: now,...profile });
       await db.insert(audit).values({groupId:actor.groupId!, id: crypto.randomUUID(), lessonId: `student:${name}`, actorId: actor.id, action: "saveStudent", before: null, after: JSON.stringify({ name }), at: now });
       return NextResponse.json({ ok: true });
     }
@@ -140,19 +160,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
     if (action === "savePlan") {
-      const student = str(data.student), subject = str(data.subject), teacherName = str(data.teacherName);
-      const onlineLink = normalizeOnlineLink(data.onlineLink);
-      const duration = Number(data.duration);
-      if (!student || !subject || student.length > 80 || subject.length > 80 || student.includes("|") || subject.includes("|")) return bad("Enter a student and subject up to 80 characters without |");
-      const registeredStudent = await db.select({ active: students.active }).from(students).where(groupWhere(students,actor.groupId,eq(students.name, student))).get();
+      const student = str(data.student), teacherName = str(data.teacherName), editingKey = str(data.editingKey);
+      const onlineLink = normalizeOnlineLink(data.onlineLink), duration = Number(data.duration);
+      if (!student || student.length > 80 || student.includes("|")) return bad("Choose an active student");
+      const registeredStudent = await db.select().from(students).where(groupWhere(students,actor.groupId,eq(students.name, student))).get();
       if (!registeredStudent?.active) return bad("Choose an active student");
       if (!Number.isFinite(duration) || duration <= 0 || duration > 12) return bad("Duration must be between 0 and 12 hours");
       const teacher = await db.select().from(teachers).where(groupWhere(teachers,actor.groupId,eq(teachers.name, teacherName))).get();
       if (!teacher?.active) return bad("Choose an active teacher");
-      const key = `${student}|${subject}`;
-      if (data.editingKey && str(data.editingKey) !== key) return bad("编辑时不能更换学生或科目，请新增绑定");
-      const active = data.active !== false;
-      const before = await db.select().from(plans).where(groupWhere(plans,actor.groupId,eq(plans.key, key))).get();
+      const old = editingKey ? await db.select().from(plans).where(groupWhere(plans,actor.groupId,eq(plans.key,editingKey))).get() : null;
+      if (editingKey && (!old || old.student !== student)) return bad("科目配对不存在，请刷新重试",404);
+      const [catalogue,snapshot]=await Promise.all([readAcademicCatalogue('student'),studentAcademicSnapshot(groupId,student)]);
+      const profile = await studentProfileInput(data,registeredStudent,catalogue),guard=studentAcademicGuard(groupId,student,registeredStudent,catalogue,snapshot),claimId='student-academic:'+crypto.randomUUID(),claim={sql:'EXISTS(SELECT 1 FROM audit WHERE id=? AND group_id=?)',args:[claimId,groupId]};
+      const remappedPlans=await studentSyllabusPlanUpdates(groupId,student,registeredStudent.syllabusId,profile.syllabusId,catalogue,snapshot,claim);
+      const selected = await allocationSubject(profile.syllabusId,str(data.subjectId)||old?.subjectId||str(data.subject)||old?.subject||"",old?.subjectId,catalogue);
+      const priorSubject=old?findCatalogueSubject(findCatalogueSyllabus(catalogue,profile.syllabusId)!,old.subject):undefined;
+      if(old&&old.subjectId&&old.subjectId!==selected.subject.id&&priorSubject?.id!==selected.subject.id)return bad("编辑时不能更换科目，请新增绑定");
+      const subject = old?.subject || selected.subject.name, key = old?.key || `${student}|${subject}`, active=data.active!==false;
+      const before = old || await db.select().from(plans).where(groupWhere(plans,actor.groupId,eq(plans.key,key))).get();
+      if(!old&&before)return bad("此学生已有相同科目的配对，请编辑现有记录",409);
+      if(old){guard.sql+=' AND EXISTS(SELECT 1 FROM plans WHERE key=? AND group_id=? AND student=? AND subject=? AND subject_id IS ? AND teacher_name=? AND duration=? AND active=? AND online_link IS ?)';guard.args.push(old.key,groupId,old.student,old.subject,old.subjectId,old.teacherName,old.duration,old.active?1:0,old.onlineLink);}
+      const duplicate = await first<{key:string}>("SELECT key FROM plans WHERE student=? AND key<>? AND (subject_id=? OR lower(trim(subject))=lower(trim(?)))",student,key,selected.subject.id,selected.subject.name);
+      if (duplicate) return bad("此学生已有相同科目的配对，请编辑现有记录",409);
+      const reassignmentStatements=[];
       if (before && before.teacherName !== teacherName) {
         const all = await db.select().from(lessons).where(groupWhere(lessons,actor.groupId)).all();
         const groupSessions=new Set((await rows<{id:string}>("SELECT id FROM class_sessions WHERE session_type='group'")).map(s=>s.id));
@@ -160,15 +190,22 @@ export async function POST(request: Request) {
         const movingIds = new Set(moving.map(l => l.id));
         const other = all.filter(l => !movingIds.has(l.id));
         for (const lesson of moving) { const slot = { ...lesson, teacherName }; const conflict = findLessonConflict(slot, other); if (conflict) return conflictReply(slot, conflict, actor.role); }
+        if(moving.length){guard.sql+=" AND NOT EXISTS(SELECT 1 FROM json_each(?) expected LEFT JOIN lessons l ON l.id=json_extract(expected.value,'$[0]') AND l.group_id=? WHERE l.id IS NULL OR l.teacher_name<>json_extract(expected.value,'$[1]') OR l.planned_start<>json_extract(expected.value,'$[2]') OR l.planned_end<>json_extract(expected.value,'$[3]') OR l.status<>json_extract(expected.value,'$[4]'))";guard.args.push(JSON.stringify(moving.map(lesson=>[lesson.id,lesson.teacherName,lesson.plannedStart,lesson.plannedEnd,lesson.status])),groupId);}
         for (const lesson of moving) {
-          await db.update(lessons).set({ teacherName, updatedAt: now }).where(groupWhere(lessons,actor.groupId,eq(lessons.id, lesson.id)));
-          await db.update(rescheduleRequests).set({ status: "stale", respondedAt: now }).where(groupWhere(rescheduleRequests,actor.groupId,and(eq(rescheduleRequests.lessonId, lesson.id), eq(rescheduleRequests.status, "pending"))));
-          await db.insert(audit).values({groupId:actor.groupId!, id: crypto.randomUUID(), lessonId: lesson.id, actorId: actor.id, action: "reassignTeacher", before: JSON.stringify(lesson), after: JSON.stringify({ teacherName }), at: now });
+          reassignmentStatements.push(groupStatement(groupId,'UPDATE lessons SET teacher_name=?,updated_at=? WHERE id=? AND group_id=? AND '+claim.sql).bind(teacherName,now,lesson.id,groupId,...claim.args));
+          reassignmentStatements.push(groupStatement(groupId,"UPDATE reschedule_requests SET status='stale',responded_at=? WHERE lesson_id=? AND group_id=? AND status='pending' AND "+claim.sql).bind(now,lesson.id,groupId,...claim.args));
+          reassignmentStatements.push(groupStatement(groupId,"INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) SELECT ?,?,?,?,'reassignTeacher',?,?,? WHERE "+claim.sql).bind(groupId,crypto.randomUUID(),lesson.id,actor.id,JSON.stringify(lesson),JSON.stringify({teacherName}),now,...claim.args));
         }
       }
-      if (before) await db.update(plans).set({ teacherName, duration, active, onlineLink }).where(groupWhere(plans,actor.groupId,eq(plans.key, key)));
-      else await db.insert(plans).values({groupId:actor.groupId!, key, student, subject, teacherName, duration, active, onlineLink, createdAt: now });
-      await db.insert(audit).values({groupId:actor.groupId!, id: crypto.randomUUID(), lessonId: `plan:${key}`, actorId: actor.id, action: "savePlan", before: before ? JSON.stringify(before) : null, after: JSON.stringify({ key, teacherName, duration, active, onlineLink }), at: now });
+      const result=await learningDb().batch([
+        groupStatement(groupId,'INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) SELECT ?,?,?,?,?,?,?,? WHERE '+guard.sql).bind(groupId,claimId,`plan:${key}`,actor.id,'savePlan',before?JSON.stringify(before):null,JSON.stringify({key,teacherName,duration,active,onlineLink,subjectId:selected.subject.id,...profile}),now,...guard.args),
+        ...remappedPlans,
+        ...reassignmentStatements,
+        before?groupStatement(groupId,'UPDATE plans SET teacher_name=?,duration=?,active=?,online_link=?,subject_id=? WHERE key=? AND group_id=? AND '+claim.sql).bind(teacherName,duration,active?1:0,onlineLink,selected.subject.id,key,groupId,...claim.args):groupStatement(groupId,'INSERT INTO plans(group_id,key,student,subject,teacher_name,duration,active,online_link,subject_id,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE '+claim.sql).bind(groupId,key,student,subject,teacherName,duration,active?1:0,onlineLink,selected.subject.id,now,...claim.args),
+        groupStatement(groupId,'UPDATE students SET syllabus_id=?,grade=?,age=? WHERE name=? AND group_id=? AND '+claim.sql).bind(profile.syllabusId,profile.grade,profile.age,student,groupId,...claim.args),
+      ]);
+      if(!result[0].meta.changes)return bad('学生资料、科目配对或菜单已改变，请刷新后重试',409);
+      if(!before||before.subjectId!==selected.subject.id||before.teacherName!==teacherName||before.active!==active||registeredStudent.syllabusId!==profile.syllabusId||registeredStudent.grade!==profile.grade)await refreshStudentClassifications(groupId,student);
       return NextResponse.json({ ok: true });
     }
     if (action === "updateOnlineLink") {
@@ -319,6 +356,7 @@ export async function POST(request: Request) {
     }
     return bad("Unknown action");
   } catch (error) {
+    if(error instanceof StudentAcademicError)return bad(error.message,error.status);
     if(error instanceof ClassSessionError)return NextResponse.json({error:error.message,...(error.conflict?{conflict:error.conflict}:{})},{status:error.status});
     if(error instanceof LearningEditError)return bad(error.message,error.status);
     if(/lesson slot conflict/.test(String(error)))return bad("课程时间冲突，请刷新后重新选择时间",409);

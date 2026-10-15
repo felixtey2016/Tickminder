@@ -5,6 +5,8 @@ import {isOwnerAccount} from '@/lib/owner';
 import {operationHash} from '@/lib/learning-operations';
 import {checkQuiz,QuizError,type QuizContent,type QuizKey,type QuizVisibility} from '@/lib/quiz';
 import {quizBankKind,quizWriteForbidden} from '@/lib/quiz-catalog';
+import {readAcademicCatalogue} from '@/lib/academic-catalogue-server';
+import {checkQuizAcademic} from '@/lib/quiz-academic';
 export const quizHeaders={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'};
 export function quizResponse(data:unknown,status=200){return Response.json(data,{status,headers:quizHeaders});}
 export async function quizActor(allowStudent=false){
@@ -46,7 +48,7 @@ export async function quizCopyReplay(actor:Account,data:Record<string,unknown>,i
 export const quizAuthority=`EXISTS(SELECT 1 FROM accounts a JOIN tuition_groups g ON g.id=? AND g.active=1 WHERE a.id=? AND a.role=? AND a.disabled_at IS NULL AND (a.group_id=? OR ?=1) AND NOT EXISTS(SELECT 1 FROM local_credentials c WHERE c.account_id=a.id AND c.must_change_password=1) AND (a.role='admin' OR EXISTS(SELECT 1 FROM teachers t WHERE t.group_id=g.id AND t.name=a.teacher_name AND t.active=1)))`;
 export function quizAuthorityValues(a:Account){return [a.groupId,a.id,a.role,a.groupId,isOwnerAccount(a)?1:0];}
 const authority=quizAuthority,authorityValues=quizAuthorityValues;
-export async function saveQuiz(actor:Account,data:Record<string,unknown>,copiedFrom?:{versionId:string;request?:QuizCopyRequest},maintenance=false){
+export async function saveQuiz(actor:Account,data:Record<string,unknown>,copiedFrom?:{versionId:string;request?:QuizCopyRequest;legacyMetadata?:QuizContent},maintenance=false){
  const db=learningDb(),group=requireGroup(actor.groupId),operation=mutationId(data.operationId),quizId=mutationId(data.id),revision=data.revision as number;
  if(!Number.isSafeInteger(revision)||revision<0)throw new QuizError('quiz.invalidFields');
  if(maintenance&&!['teacher','admin'].includes(actor.role)||(data.content as {bankKind?:unknown}|null)?.bankKind==='platform'&&(!maintenance||actor.role!=='admin'))throw new QuizError('quiz.maintenanceOnly',403);
@@ -54,11 +56,14 @@ export async function saveQuiz(actor:Account,data:Record<string,unknown>,copiedF
  const previous=await db.prepare('SELECT q.owner_id,q.group_id,q.revision,q.source_key,q.deleted_at,v.content_json FROM quizzes q LEFT JOIN quiz_versions v ON v.quiz_id=q.id AND v.group_id=q.group_id AND v.revision=q.revision WHERE q.id=?').bind(quizId).first<{owner_id:string;group_id:string;revision:number;source_key:string|null;deleted_at:string|null;content_json:string|null}>();
  if(previous?.deleted_at)throw new QuizError('quiz.notFound',404);
  if(previous&&(previous.owner_id!==actor.id||previous.group_id!==group))throw new QuizError('quiz.notFound',404);
+ const academicCatalogue=await readAcademicCatalogue('quiz'),previousContent=previous?.content_json?JSON.parse(previous.content_json) as QuizContent:copiedFrom?.legacyMetadata?{...copiedFrom.legacyMetadata,catalog:null}:null;
+ checked.content=checkQuizAcademic(academicCatalogue,checked.content,previousContent,false);
  const sourceKey=providedSourceKey??previous?.source_key??null,previousKind=previous?.content_json?quizBankKind(JSON.parse(previous.content_json)):undefined;
  if(quizWriteForbidden({administrator:actor.role==='admin',teacher:actor.role==='teacher',maintenance,sourceKey:maintenance?providedSourceKey:sourceKey,bankKind:quizBankKind(checked.content),previous:previous?{sourceKey:previous.source_key,bankKind:previousKind||'creator'}:undefined,copied:Boolean(copiedFrom)}))throw new QuizError('quiz.maintenanceOnly',403);
  const hash=await operationHash(copiedFrom?.request?{id:quizId,duplicate:copiedFrom.request}:{id:quizId,revision,content:checked.content,keys:checked.keys,sourceKey,copiedFrom:copiedFrom?.versionId||null});
  const prior=await db.prepare('SELECT quiz_id,revision,request_hash,actor_id,group_id FROM quiz_versions WHERE operation_id=?').bind(operation).first<{quiz_id:string;revision:number;request_hash:string;actor_id:string;group_id:string}>();
  if(prior){if(prior.actor_id!==actor.id||prior.group_id!==group||prior.request_hash!==hash)throw new QuizError('quiz.conflict',409);return {id:prior.quiz_id,revision:prior.revision,replayed:true};}
+ checked.content=checkQuizAcademic(academicCatalogue,checked.content,previousContent);
  if(previous?.revision!==revision&&!(revision===0&&!previous))throw new QuizError('quiz.conflict',409);
  if(sourceKey&&!previous){const imported=await db.prepare('SELECT id,revision FROM quizzes WHERE group_id=? AND owner_id=? AND source_key=?').bind(group,actor.id,sourceKey).first();if(imported)return {...imported,existingImport:true};}
  // A file must be owned by the editor, granted by a prior saved version, or
@@ -71,7 +76,7 @@ export async function saveQuiz(actor:Account,data:Record<string,unknown>,copiedF
  // Topic + difficulty + Set identifies one platform paper. Check both the
  // current and shared immutable versions inside the write transaction so two
  // concurrent imports cannot create ambiguous duplicate Set 1 entries.
- const catalogGuard=c.bankKind==='platform'?" AND NOT EXISTS(SELECT 1 FROM quizzes other JOIN quiz_versions ov ON ov.quiz_id=other.id AND ov.group_id=other.group_id AND ov.revision IN (other.revision,other.shared_revision) WHERE other.deleted_at IS NULL AND other.id<>? AND other.group_id=? AND json_extract(ov.content_json,'$.bankKind')='platform' AND json_extract(ov.content_json,'$.subject')=? AND json_extract(ov.content_json,'$.difficulty')=? AND json_extract(ov.content_json,'$.catalog.level')=? AND json_extract(ov.content_json,'$.catalog.kind')=? AND json_extract(ov.content_json,'$.catalog.chapterCode')=? AND json_extract(ov.content_json,'$.catalog.subtopicCode')=? AND json_extract(ov.content_json,'$.catalog.setNumber')=?)":'',catalogValues=c.bankKind==='platform'?[quizId,group,c.subject,c.difficulty,c.catalog!.level,c.catalog!.kind,c.catalog!.chapterCode,c.catalog!.subtopicCode,c.catalog!.setNumber]:[];
+ const catalogGuard=c.bankKind==='platform'?" AND NOT EXISTS(SELECT 1 FROM quizzes other JOIN quiz_versions ov ON ov.quiz_id=other.id AND ov.group_id=other.group_id AND ov.revision IN (other.revision,other.shared_revision) WHERE other.deleted_at IS NULL AND other.id<>? AND other.group_id=? AND json_extract(ov.content_json,'$.bankKind')='platform' AND lower(trim(coalesce(json_extract(ov.content_json,'$.exam'),'')))=lower(?) AND lower(trim(json_extract(ov.content_json,'$.subject')))=lower(?) AND json_extract(ov.content_json,'$.difficulty')=? AND json_extract(ov.content_json,'$.catalog.level')=? AND json_extract(ov.content_json,'$.catalog.kind')=? AND json_extract(ov.content_json,'$.catalog.chapterCode')=? AND json_extract(ov.content_json,'$.catalog.subtopicCode')=? AND json_extract(ov.content_json,'$.catalog.setNumber')=?)":'',catalogValues=c.bankKind==='platform'?[quizId,group,c.exam,c.subject,c.difficulty,c.catalog!.level,c.catalog!.kind,c.catalog!.chapterCode,c.catalog!.subtopicCode,c.catalog!.setNumber]:[];
  if(!previous)statements.push(db.prepare(`INSERT INTO quizzes(id,group_id,owner_id,title,source_key,source_version_id,created_at,updated_at) SELECT ?,?,?,?,?,?,?,? WHERE ${authority}${sourceGuard}${maintenanceGuard}${catalogGuard}`).bind(quizId,group,actor.id,c.title,sourceKey,copiedFrom?.versionId||null,now,now,...av,...sourceValues,...maintenanceValues,...catalogValues));
  statements.push(db.prepare(`INSERT INTO quiz_versions(id,group_id,quiz_id,revision,content_json,actor_id,operation_id,request_hash,created_at) SELECT ?,?,?,?, ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM quizzes WHERE id=? AND group_id=? AND owner_id=? AND revision=?) AND ${authority}${sourceGuard}${maintenanceGuard}${catalogGuard}`).bind(versionId,group,quizId,revision+1,JSON.stringify(c),actor.id,operation,hash,now,quizId,group,actor.id,revision,...av,...sourceValues,...maintenanceValues,...catalogValues));
  statements.push(db.prepare('INSERT INTO quiz_answer_keys(version_id,group_id,answers_json) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM quiz_versions WHERE id=?)').bind(versionId,group,JSON.stringify(checked.keys),versionId));

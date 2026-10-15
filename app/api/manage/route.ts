@@ -6,6 +6,7 @@ import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 import { classroomMayManage } from "@/lib/classrooms-server";
 import { deleteUnreferencedFile } from "@/lib/pdf-storage";
 import { hasQuizAccountHistory } from "@/lib/account-merge";
+import {classPlanSubjectSql,planSubjectLabelSql} from "@/lib/academic-subject-match";
 
 
 class DeleteError extends Error { constructor(message: string, public status = 409) { super(message); } }
@@ -46,8 +47,8 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
     } else if (kind === "plan") {
       const plan = await first<{ student: string; subject: string }>("SELECT student,subject FROM plans WHERE key = ?", id);
       if (!plan) throw new DeleteError("记录不存在", 404);
-      if (await first("SELECT 1 AS found FROM lessons WHERE student = ? AND subject = ? AND status = 'scheduled'", plan.student, plan.subject)) throw new DeleteError("仍有已安排的课程，请先取消或删除这些课程");
-      if (await first("SELECT 1 AS found FROM classroom_members m JOIN classrooms c ON c.id = m.classroom_id WHERE m.student_name = ? AND c.subject = ?", plan.student, plan.subject)) throw new DeleteError("此科目仍用于班级，请先移出班级");
+      if (await first(`SELECT 1 AS found FROM lessons l JOIN plans p ON p.student=l.student JOIN students s ON s.name=p.student WHERE p.key=? AND l.status='scheduled' AND ${planSubjectLabelSql('p','s','l.subject')}`,id)) throw new DeleteError("仍有已安排的课程，请先取消或删除这些课程");
+      if (await first(`SELECT 1 AS found FROM classroom_members m JOIN classrooms c ON c.id=m.classroom_id JOIN plans p ON p.student=m.student_name JOIN students s ON s.name=p.student WHERE p.key=? AND ${classPlanSubjectSql()}`,id)) throw new DeleteError("此科目仍用于班级，请先移出班级");
       statements.push(db.prepare("DELETE FROM assignments WHERE (plan_key = ?) AND group_id = ?").bind(id,groupId));
       statements.push(db.prepare("DELETE FROM plans WHERE (key = ?) AND group_id = ?").bind(id,groupId));
     } else if (kind === "lesson") {

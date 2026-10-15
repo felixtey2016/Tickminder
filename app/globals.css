@@ -158,6 +158,18 @@ form textarea { min-height: 85px; }
 .check-row { display: flex !important; flex-direction: row !important; gap: 10px !important; align-items: center; padding: 7px 0; }
 .check-row input { width: 18px; min-height: 18px; }
 fieldset { border: 1px solid #d8e1eb; padding: 12px; border-radius: 10px; }
+.academic-catalogue-admin,.catalogue-editor,.catalogue-controls,.catalogue-controls form{display:grid;gap:16px;min-width:0}
+.academic-catalogue-admin h2,.academic-catalogue-admin p{margin-block:0}
+.catalogue-controls{margin:0;padding:18px;border:1px solid var(--border)}
+.catalogue-controls form+form{border-top:1px solid var(--border);padding-top:16px}
+.catalogue-controls button{justify-self:start}
+.catalogue-list details,.student-promotions{border:1px solid var(--border);border-radius:10px;padding:16px;margin-block:12px;min-width:0}
+.catalogue-list summary,.student-promotions summary{font-weight:600;cursor:pointer;overflow-wrap:anywhere}
+.catalogue-list details[open]>*,.student-promotions[open]>*{margin-block:12px}
+.student-promotions input[type=number]{max-width:180px}
+.promotion-list{list-style:none;padding:0;margin:0;max-height:420px;overflow-y:auto}
+.promotion-list li{padding-block:10px;border-bottom:1px solid var(--border)}
+.promotion-list small{display:block;font-weight:400;overflow-wrap:anywhere}
 legend { padding: 0 5px; font-size: 14px; font-weight: 700; }
 .primary-full { width: 100%; min-height: 44px; background: #0b8179 !important; color: white !important; }
 .lesson-dialog { max-width: 540px; max-height: 90vh; overflow-y: auto; }

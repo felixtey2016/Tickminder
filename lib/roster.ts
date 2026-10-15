@@ -13,9 +13,12 @@ export async function readRoster(account: {groupId:string|null; role: string; te
   ]);
   const activeTeachers = new Set(teacherRows.filter(t => t.active).map(t => t.name));
   const activeStudents = new Set(studentRows.filter(s => s.active).map(s => s.name));
+  const profiles = new Map(studentRows.map(student=>[student.name,student]));
+  const academic = (student:string)=>({syllabusId:profiles.get(student)?.syllabusId||"spm",grade:profiles.get(student)?.grade||null,age:profiles.get(student)?.age??null});
   return {
     teachers: [...activeTeachers].sort(),
     plans: planRows.filter(p => p.active && activeStudents.has(p.student) && activeTeachers.has(p.teacherName)).map(p => ({
+      ...academic(p.student),subjectId:p.subjectId,
       key: p.key,
       student: p.student,
       subject: p.subject,
@@ -26,6 +29,6 @@ export async function readRoster(account: {groupId:string|null; role: string; te
     allTeachers: teacherRows,
     students: [...activeStudents].sort(),
     allStudents: studentRows.sort((a, b) => a.name.localeCompare(b.name)),
-    allPlans: planRows,
+    allPlans: planRows.map(plan=>({...plan,...academic(plan.student)})),
   };
 }

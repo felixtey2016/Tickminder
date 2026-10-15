@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
+import {pathToFileURL} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
 import ts from 'typescript';
 import {drizzle} from 'drizzle-orm/d1';
@@ -19,18 +21,13 @@ let cookieValues={},requestHeaders=new Headers(),googleProfile=null;
 class JsonResponse extends Response {static json(data,options){const r=new JsonResponse(JSON.stringify(data),{...options,headers:{'content-type':'application/json',...options?.headers}});r.cookies={set:(name,value)=>cookieValues[name]=value,delete:name=>delete cookieValues[name]};return r;}}
 const runtime={env:{DB:d1,BUCKET:bucket,GOOGLE_CLIENT_ID:'fixture-client'},cookies:async()=>({get:name=>cookieValues[name]?{value:cookieValues[name]}:undefined}),headers:async()=>requestHeaders,NextResponse:JsonResponse};
 globalThis.__groups=runtime;
-const stub='data:text/javascript;base64,'+Buffer.from('export const {env,cookies,headers,NextResponse}=globalThis.__groups;'+['getDb','currentAccount','currentIdentity','currentBusinessAccount','createSession','hashToken','verifyGoogleCredential'].map(name=>`export const ${name}=(...args)=>globalThis.__groups.${name}(...args);`).join('')).toString('base64');
-const cache=new Map();
-async function load(file){
-  if(cache.has(file))return cache.get(file);
-  let source=fs.readFileSync(new URL('../'+file,import.meta.url),'utf8');
-  for(const [,spec]of [...source.matchAll(/from ["']([^"']+)["']/g)]) {
-    const url=['cloudflare:workers','next/headers','next/server','@/db','@/lib/auth'].includes(spec)?stub:spec.startsWith('@/')?(await load(spec.slice(2)+'.ts')).url:spec.startsWith('.')?(await load(path.posix.normalize(path.posix.join(path.posix.dirname(file),spec))+(spec.endsWith('.ts')?'':'.ts'))).url:import.meta.resolve(spec);
-    source=source.replaceAll('"'+spec+'"','"'+url+'"');
-  }
-  const url='data:text/javascript;base64,'+Buffer.from(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64');
-  const value={url,module:await import(url)};cache.set(file,value);return value;
-}
+const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'tickminder-groups-')),stubPath=path.join(temporary,'runtime.mjs');
+process.once('exit',()=>{const resolved=path.resolve(temporary);if(path.dirname(resolved)===path.resolve(os.tmpdir())&&path.basename(resolved).startsWith('tickminder-groups-'))fs.rmSync(resolved,{recursive:true,force:true});});
+fs.writeFileSync(stubPath,'export const {env,cookies,headers,NextResponse}=globalThis.__groups;'+['getDb','currentAccount','currentIdentity','currentBusinessAccount','createSession','hashToken','verifyGoogleCredential'].map(name=>`export const ${name}=(...args)=>globalThis.__groups.${name}(...args);`).join(''));
+const stub=pathToFileURL(stubPath).href,cache=new Map();
+function compile(file){if(cache.has(file))return cache.get(file);const output=path.join(temporary,file.replace(/\.ts$/,'.mjs')),url=pathToFileURL(output).href;cache.set(file,url);let source=fs.readFileSync(new URL('../'+file,import.meta.url),'utf8');for(const [,spec]of [...source.matchAll(/from ["']([^"']+)["']/g)]){const replacement=['cloudflare:workers','next/headers','next/server','@/db','@/lib/auth'].includes(spec)?stub:spec.startsWith('@/')?compile(spec.slice(2)+'.ts'):spec.startsWith('.')?compile(path.posix.normalize(path.posix.join(path.posix.dirname(file),spec))+(spec.endsWith('.ts')?'':'.ts')):import.meta.resolve(spec);source=source.replaceAll('"'+spec+'"','"'+replacement+'"').replaceAll("'"+spec+"'","'"+replacement+"'");}fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText);return url;}
+async function load(file){const url=compile(file);return{url,module:await import(url)};}
+
 const schema=(await load('db/schema.ts')).module;runtime.getDb=()=>drizzle(d1,{schema});
 const auth=(await load('lib/auth.ts')).module;Object.assign(runtime,auth);runtime.verifyGoogleCredential=async()=>{if(!googleProfile)throw Error('No verified fixture identity');return googleProfile;};
 const pw=(await load('lib/password.ts')).module;
@@ -38,8 +35,8 @@ const now=new Date().toISOString(),password='Fixture-pass-123',passwordHash=awai
 sqlite.prepare("INSERT INTO tuition_groups(id,name,join_code,created_at,updated_at) VALUES('school-b','Test School B','school-b',?,?)").run(now,now);
 for(const group of ['next-genn-edu','school-b']) {
   sqlite.prepare('INSERT INTO teachers(group_id,name,created_at) VALUES(?,?,?)').run(group,'Teacher Same',now);
-  sqlite.prepare('INSERT INTO students(group_id,name,name_key,created_at) VALUES(?,?,?,?)').run(group,'Student Same','studentsame',now);
-  sqlite.prepare('INSERT INTO plans(group_id,key,student,subject,teacher_name,created_at) VALUES(?,?,?,?,?,?)').run(group,'Student Same|Science','Student Same','Science','Teacher Same',now);
+  sqlite.prepare('INSERT INTO students(group_id,name,name_key,created_at,grade) VALUES(?,?,?,?,?)').run(group,'Student Same','studentsame',now,'Form 3');
+  sqlite.prepare('INSERT INTO plans(group_id,key,student,subject,teacher_name,created_at,subject_id) VALUES(?,?,?,?,?,?,?)').run(group,'Student Same|Science','Student Same','Science','Teacher Same',now,'science');
   for(const [suffix,role]of [['admin','admin'],['teacher','teacher'],['student','student'],['pending','pending']]) {
     const id=group+'-'+suffix;
     sqlite.prepare('INSERT INTO accounts(group_id,id,email,name,role,teacher_name,student_name,created_at,name_confirmed_at,activated_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(group,id,id+'@example.test',id,role,role==='teacher'?'Teacher Same':null,role==='student'?'Student Same':null,now,now,role==='pending'?null:now);
@@ -82,12 +79,12 @@ const fixtures={};
 for(const group of ['next-genn-edu','school-b']) {
   await login(group+'-admin');
   const term=await ok('classrooms',{action:'saveTerm',name:'2026 Semester',isCurrent:true});
-  const classroom=await ok('classrooms',{action:'saveClassroom',title:'Science Class',subject:'Science',teacherName:'Teacher Same',students:['Student Same'],termId:term.id});
+  const classroom=await ok('classrooms',{action:'saveClassroom',title:'Science Class',subject:'Science',syllabusId:'spm',subjectId:'science',grade:'Form 3',teacherName:'Teacher Same',students:['Student Same'],termId:term.id});
   const start=new Date(Date.now()+24*3600000).toISOString().slice(0,16),end=new Date(Date.now()+25*3600000).toISOString().slice(0,16);
   await ok('action',{action:'create',student:'Student Same',subject:'Science',teacherName:'Teacher Same',start,end});
   const lesson=sqlite.prepare('SELECT id FROM lessons WHERE group_id=?').get(group).id;
   await login(group+'-teacher');
-  const form=new FormData();form.set('kind','material');form.set('file',new File([Buffer.from('%PDF-1.7\nFixture '+group+'\nstartxref\n0\n%%EOF')],'fixture.pdf',{type:'application/pdf'}));
+  const form=new FormData();form.set('kind','material');form.set('classroomId',classroom.id);form.set('file',new File([Buffer.from('%PDF-1.7\nFixture '+group+'\nstartxref\n0\n%%EOF')],'fixture.pdf',{type:'application/pdf'}));
   let response=await routes.files.POST(new Request('https://test.invalid/api/files',{method:'POST',headers:{origin:'https://test.invalid'},body:form}));
   assert.equal(response.status,200);const file=await response.json();
   const material=await ok('learning',{action:'saveMaterial',title:group+' Material',subject:'Science',fileId:file.id,classroomId:classroom.id});
@@ -101,9 +98,9 @@ const a=fixtures['next-genn-edu'],b=fixtures['school-b'];
 await login('school-b-student');
 const submitForm=new FormData();submitForm.set('kind','submission');submitForm.set('homeworkId',b.homework);submitForm.set('file',new File([Buffer.from('%PDF-1.7\nSubmission\nstartxref\n0\n%%EOF')],'submission.pdf',{type:'application/pdf'}));
 const submitUpload=await routes.files.POST(new Request('https://test.invalid/api/files',{method:'POST',headers:{origin:'https://test.invalid'},body:submitForm}));assert.equal(submitUpload.status,200);const submissionFile=await submitUpload.json();
-await ok('learning',{action:'submitHomework',homeworkId:b.homework,fileId:submissionFile.id});
-await ok('learning',{action:'submitHomework',homeworkId:b.homework,fileId:submissionFile.id});assert.equal(sqlite.prepare('SELECT count(*) n FROM homework_submissions WHERE homework_id=?').get(b.homework).n,1);
-await login('school-b-teacher');await ok('learning',{action:'setHomeworkScore',homeworkId:b.homework,studentName:'Student Same',score:8});
+await ok('learning',{action:'submitHomework',homeworkId:b.homework,fileId:submissionFile.id,revision:1});
+await ok('learning',{action:'submitHomework',homeworkId:b.homework,fileId:submissionFile.id,revision:1});assert.equal(sqlite.prepare('SELECT count(*) n FROM homework_submissions WHERE homework_id=?').get(b.homework).n,1);
+await login('school-b-teacher');await ok('learning',{action:'setHomeworkScore',homeworkId:b.homework,studentName:'Student Same',score:8,revision:1,scoreRevision:1,submissionId:sqlite.prepare('SELECT id FROM homework_submissions WHERE homework_id=?').get(b.homework).id});
 await login('school-b-admin');assert.equal((await ok('state',null,'?scope=learning')).learning.homework[0].scores[0].score,8);
 assert.equal(sqlite.prepare('SELECT count(*) n FROM storage_quota').get().n,2);
 for(const role of ['admin','teacher','student','pending']) {

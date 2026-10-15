@@ -1,4 +1,4 @@
-import { index, integer, real, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { foreignKey, index, integer, real, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const teachers = sqliteTable("teachers", {
   groupId: text("group_id").notNull().default("next-genn-edu"),
@@ -11,6 +11,9 @@ export const students = sqliteTable("students", {
   groupId: text("group_id").notNull().default("next-genn-edu"),
   name: text("name").notNull(),
   nameKey: text("name_key").notNull(),
+  syllabusId: text("syllabus_id").notNull().default("spm"),
+  grade: text("grade"),
+  age: integer("age"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   createdAt: text("created_at").notNull(),
 }, (t) => [primaryKey({columns:[t.groupId,t.name]}),uniqueIndex("students_name_key_unique").on(t.groupId,t.nameKey)]);
@@ -20,6 +23,7 @@ export const plans = sqliteTable("plans", {
   key: text("key").notNull(),
   student: text("student").notNull(),
   subject: text("subject").notNull(),
+  subjectId: text("subject_id"),
   teacherName: text("teacher_name").notNull(),
   duration: real("duration").notNull().default(1),
   onlineLink: text("online_link"),
@@ -196,6 +200,9 @@ export const classrooms = sqliteTable("classrooms", {
   title: text("title").notNull(),
   description: text("description"),
   subject: text("subject").notNull(),
+  syllabusId: text("syllabus_id"),
+  subjectId: text("subject_id"),
+  grade: text("grade"),
   teacherName: text("teacher_name").notNull(),
   createdBy: text("created_by").notNull(),
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
@@ -203,6 +210,26 @@ export const classrooms = sqliteTable("classrooms", {
   updatedAt: text("updated_at").notNull(),
   termId: text("term_id"),
 });
+
+// Platform configuration, intentionally global rather than group-scoped.
+export const academicCatalogues = sqliteTable("academic_catalogues", {
+  scope: text("scope", {enum:["student","quiz"]}).primaryKey(),
+  revision: integer("revision").notNull().default(1),
+  contentJson: text("content_json").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by"),
+});
+
+export const studentGradePromotions = sqliteTable("student_grade_promotions", {
+  groupId: text("group_id").notNull().references(()=>tuitionGroups.id),
+  studentName: text("student_name").notNull(),
+  cycle: integer("cycle").notNull(),
+  syllabusId: text("syllabus_id").notNull(),
+  fromGrade: text("from_grade").notNull(),
+  toGrade: text("to_grade").notNull(),
+  confirmedBy: text("confirmed_by").notNull(),
+  confirmedAt: text("confirmed_at").notNull(),
+},t=>[primaryKey({columns:[t.groupId,t.studentName,t.cycle]}),foreignKey({columns:[t.groupId,t.studentName],foreignColumns:[students.groupId,students.name]}).onDelete("cascade")]);
 
 export const academicTerms = sqliteTable("academic_terms", {
   groupId: text("group_id").notNull().default("next-genn-edu"),

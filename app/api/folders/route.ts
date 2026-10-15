@@ -5,6 +5,8 @@ import { classroomMayRead,classroomMayManage,activeClassroomMemberNames } from "
 import { learningDb,change } from "@/lib/learning-server";
 import { deleteUnreferencedFile } from "@/lib/pdf-storage";
 import { FolderError,folderTree,folderRevision,folderDescendants,validateFolderPosition,folderName,validateContentFolder } from "@/lib/folders-server";
+import {readAcademicCatalogue} from "@/lib/academic-catalogue-server";
+import {findCatalogueSubject,findCatalogueSyllabus} from "@/lib/academic-catalogue";
 
 const str=(value:unknown)=>typeof value==="string"?value.trim():"";
 function failure(error:unknown) {
@@ -66,7 +68,9 @@ export async function POST(request:Request) {
         const owner=await first<{teacherName:string}>("SELECT teacher_name AS teacherName FROM accounts WHERE id=? AND role='teacher'",item.ownerId);
         const recipients=kind==="material"?await rows<{studentName:string;subject:string}>("SELECT student_name AS studentName,subject FROM material_recipients WHERE material_id=?",id):await rows<{studentName:string;subject:string}>("SELECT student_name AS studentName,? AS subject FROM homework_recipients WHERE homework_id=?",item.subject,id);
         const members=await activeClassroomMemberNames(classroomId,groupId);
-        if(owner?.teacherName!==classroom.teacherName || !recipients.length || recipients.some(r=>r.subject!==classroom.subject || !members.includes(r.studentName))) throw new FolderError("班级老师、科目及有效成员必须匹配原分配对象；原提交和分数会保留",409);
+        const catalogue=await readAcademicCatalogue('student'),profiles=await rows<{name:string;syllabusId:string}>('SELECT name,syllabus_id AS syllabusId FROM students');
+        const sameSubject=(recipient:typeof recipients[number])=>{if(recipient.subject===classroom.subject)return true;const syllabus=findCatalogueSyllabus(catalogue,classroom.syllabusId||profiles.find(item=>item.name===recipient.studentName)?.syllabusId||'');const subjectId=syllabus&&findCatalogueSubject(syllabus,recipient.subject)?.id;return Boolean(subjectId&&subjectId===(classroom.subjectId||(syllabus&&findCatalogueSubject(syllabus,classroom.subject)?.id)));};
+        if(owner?.teacherName!==classroom.teacherName || !recipients.length || recipients.some(r=>!sameSubject(r) || !members.includes(r.studentName))) throw new FolderError("班级老师、科目及有效成员必须匹配原分配对象；原提交和分数会保留",409);
       }
       // Keep the same record and recipient rows; moving does not republish or reset scores.
       const result=await db.prepare(`UPDATE ${table} SET classroom_id=?,folder_id=? WHERE id=? AND group_id=? AND ${stateGuard}`).bind(classroomId,folderId,id,groupId,...guardArgs).run();

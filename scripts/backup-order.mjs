@@ -2,7 +2,7 @@
 // applying current publishing rules (an archived class may contain PDFs).
 export const historicalInsertTriggers=['attendance_teaching_conflict','attendance_student_conflict','folder_parent_insert','material_active_class_insert','homework_active_class_insert','material_initial_version','homework_initial_version','class_session_auto_insert','class_session_conflict_insert','class_session_link_insert'];
 export function orderedSnapshotTables(tables) {
- const names=Object.keys(tables),priority=['tuition_groups','teachers','students','plans','accounts','classrooms','classroom_folders','class_sessions','lessons','class_session_participants','pdf_files','teaching_materials','homework','homework_recipients','homework_submissions','homework_resubmission_grants','homework_feedback','push_subscriptions','learning_notifications','learning_notification_deliveries','quizzes','quiz_images','quiz_versions','quiz_answer_keys','quiz_version_images','quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations','quiz_practice_events','quiz_assignment_notifications'];
+ const names=Object.keys(tables),priority=['academic_catalogues','tuition_groups','teachers','students','plans','accounts','classrooms','classroom_folders','class_sessions','lessons','class_session_participants','pdf_files','teaching_materials','homework','homework_recipients','homework_submissions','homework_resubmission_grants','homework_feedback','push_subscriptions','learning_notifications','learning_notification_deliveries','quizzes','quiz_images','quiz_versions','quiz_answer_keys','quiz_version_images','quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations','quiz_practice_events','quiz_assignment_notifications','student_grade_promotions'];
  const ordered=[...priority.filter(name=>names.includes(name)),...names.filter(name=>!priority.includes(name)&&name!=='classroom_content_state'),...(names.includes('classroom_content_state')?['classroom_content_state']:[])];
  return ordered.map(name=>{
   const table=tables[name];if(name!=='classroom_folders')return [name,table];
@@ -12,7 +12,51 @@ export function orderedSnapshotTables(tables) {
   return [name,{...table,rows}];
  });
 }
+export function checkRestoredAcademicStructure(db) {
+ if(!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='academic_catalogues'").get())return;
+ const key=value=>value.normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase();
+ const id=value=>typeof value==='string'&&/^[a-z0-9][a-z0-9-]{0,63}$/.test(value);
+ const label=(value,max=100)=>typeof value==='string'&&value.trim()===value&&value.length>0&&value.length<=max&&!/[\p{Cc}\p{Cf}|]/u.test(value);
+ const fail=()=>{throw Error('Restored academic catalogue or student classification is invalid');};
+ const rows=db.prepare('SELECT * FROM academic_catalogues ORDER BY scope').all();
+ if(rows.map(row=>row.scope).join(',')!=='quiz,student')fail();
+ const catalogues=new Map();
+ for(const row of rows){
+  if(!Number.isSafeInteger(row.revision)||row.revision<1||!Number.isFinite(Date.parse(row.updated_at))||(row.updated_by!==null&&typeof row.updated_by!=='string'))fail();
+  const content=JSON.parse(row.content_json);
+  if(!Array.isArray(content.syllabuses)||content.syllabuses.length<1||content.syllabuses.length>32)fail();
+  const syllabusIds=new Set(),syllabusNames=new Set();
+  for(const syllabus of content.syllabuses){
+   if(!id(syllabus.id)||!label(syllabus.name)||typeof syllabus.active!=='boolean'||syllabusIds.has(syllabus.id)||syllabusNames.has(key(syllabus.name))||!Array.isArray(syllabus.grades)||syllabus.grades.length>32||syllabus.grades.some(value=>!label(value,60))||new Set(syllabus.grades.map(key)).size!==syllabus.grades.length||!Array.isArray(syllabus.subjects)||syllabus.subjects.length>120)fail();
+   syllabusIds.add(syllabus.id);syllabusNames.add(key(syllabus.name));
+   const subjectIds=new Set(),subjectNames=new Map();
+   for(const subject of syllabus.subjects){
+    if(!id(subject.id)||!label(subject.name)||typeof subject.active!=='boolean'||subjectIds.has(subject.id)||!Array.isArray(subject.aliases)||subject.aliases.length>40||subject.aliases.some(value=>!label(value)))fail();
+    subjectIds.add(subject.id);
+    for(const value of [subject.id,subject.name,...subject.aliases].map(key)){if(subjectNames.has(value)&&subjectNames.get(value)!==subject.id)fail();subjectNames.set(value,subject.id);}
+   }
+  }
+  catalogues.set(row.scope,content.syllabuses);
+ }
+ const syllabuses=catalogues.get('student'),getSyllabus=id=>syllabuses.find(syllabus=>syllabus.id===id);
+ for(const student of db.prepare('SELECT syllabus_id,grade,age FROM students').all()){
+  const syllabus=getSyllabus(student.syllabus_id);
+  if(!syllabus||(student.grade!==null&&!syllabus.grades.includes(student.grade))||(student.age!==null&&(!Number.isSafeInteger(student.age)||student.age<0||student.age>100)))fail();
+ }
+ const badPlan=db.prepare('SELECT p.subject_id,s.syllabus_id FROM plans p LEFT JOIN students s ON s.group_id=p.group_id AND s.name=p.student WHERE p.subject_id IS NOT NULL').all();
+ for(const plan of badPlan)if(!getSyllabus(plan.syllabus_id)?.subjects.some(subject=>subject.id===plan.subject_id))fail();
+ for(const classroom of db.prepare('SELECT syllabus_id,subject_id,grade FROM classrooms').all()){
+  if(classroom.syllabus_id===null){if(classroom.subject_id!==null||classroom.grade!==null)fail();continue;}
+  const syllabus=getSyllabus(classroom.syllabus_id);
+  if(!syllabus||(classroom.subject_id!==null&&!syllabus.subjects.some(subject=>subject.id===classroom.subject_id))||(classroom.grade!==null&&!syllabus.grades.includes(classroom.grade)))fail();
+ }
+ for(const promotion of db.prepare('SELECT * FROM student_grade_promotions').all()){
+  const syllabus=getSyllabus(promotion.syllabus_id),from=syllabus?.grades.indexOf(promotion.from_grade);
+  if(!syllabus||!Number.isSafeInteger(promotion.cycle)||promotion.cycle<1||from<0||syllabus.grades[from+1]!==promotion.to_grade||typeof promotion.confirmed_by!=='string'||!promotion.confirmed_by||!Number.isFinite(Date.parse(promotion.confirmed_at)))fail();
+ }
+}
 export function checkRestoredFolderStructure(db) {
+ checkRestoredAcademicStructure(db);
  if(!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='classroom_folders'").get())return;
  const invalid=db.prepare(`SELECT 1 FROM classroom_folders f LEFT JOIN classrooms c ON c.id=f.classroom_id LEFT JOIN classroom_folders p ON p.id=f.parent_id WHERE c.id IS NULL OR c.group_id<>f.group_id OR (f.parent_id IS NOT NULL AND (p.id IS NULL OR p.classroom_id<>f.classroom_id OR p.group_id<>f.group_id)) LIMIT 1`).get();
  if(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='learning_versions'").get()) {
@@ -94,10 +138,10 @@ export function checkRestoredFolderStructure(db) {
  if(invalid||db.prepare('PRAGMA foreign_key_check').all().length)throw Error('Restored folder relationships are invalid');
 }
 
-export function snapshotVersion(data){return Number(data?.format?.match(/^timelyo-d1-v(17|16|15|14|13|12|11|10|[1-9])$/)?.[1]||0);}
+export function snapshotVersion(data){return Number(data?.format?.match(/^timelyo-d1-v(18|17|16|15|14|13|12|11|10|[1-9])$/)?.[1]||0);}
 export function expectedSnapshotTables(version){
  const base=['accounts','assignments','audit','lessons','local_credentials','login_attempts','plans','reschedule_requests','sessions','students','teachers','pdf_files','storage_quota','teaching_materials','material_recipients','homework','homework_recipients','homework_submissions','study_blocks'];
- return [...(version>=9?['tuition_groups']:[]),...base,...(version>=2?['classrooms','classroom_members','classroom_announcements']:[]),...(version>=3?['google_identities']:[]),...(version>=4?['academic_terms']:[]),...(version>=7?['notification_items','notification_deliveries','push_subscriptions','notification_runtime']:[]),...(version>=8?['site_notifications']:[]),...(version>=10?['classroom_folders','classroom_content_state']:[]),...(version>=11?['learning_versions','homework_score_history']:[]),...(version>=12?['homework_resubmission_grants','homework_feedback','learning_notifications','learning_notification_deliveries']:[]),...(version>=13?['class_sessions','class_session_participants']:[]),...(version>=15?['quizzes','quiz_versions','quiz_answer_keys','quiz_images','quiz_version_images']:[]),...(version>=16?['quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations']:[]),...(version>=17?['quiz_practice_events','quiz_assignment_notifications']:[])];
+ return [...(version>=9?['tuition_groups']:[]),...base,...(version>=2?['classrooms','classroom_members','classroom_announcements']:[]),...(version>=3?['google_identities']:[]),...(version>=4?['academic_terms']:[]),...(version>=7?['notification_items','notification_deliveries','push_subscriptions','notification_runtime']:[]),...(version>=8?['site_notifications']:[]),...(version>=10?['classroom_folders','classroom_content_state']:[]),...(version>=11?['learning_versions','homework_score_history']:[]),...(version>=12?['homework_resubmission_grants','homework_feedback','learning_notifications','learning_notification_deliveries']:[]),...(version>=13?['class_sessions','class_session_participants']:[]),...(version>=15?['quizzes','quiz_versions','quiz_answer_keys','quiz_images','quiz_version_images']:[]),...(version>=16?['quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations']:[]),...(version>=17?['quiz_practice_events','quiz_assignment_notifications']:[]),...(version>=18?['academic_catalogues','student_grade_promotions']:[])];
 }
 export function snapshotObjects(database){
  const pdfs=database?.tables?.pdf_files?.rows;if(!Array.isArray(pdfs))throw Error('Database export lacks PDF metadata');

@@ -6,6 +6,7 @@ import { PageState } from "@/components/page-state";
 import { groupFetch } from "@/lib/group-client";
 import { t } from "@/lib/i18n";
 import { readApiJson,showActionToast } from "@/lib/action-feedback";
+import { AcademicCatalogueAdmin } from './academic-catalogue-admin';
 
 type Group={id:string;name:string;joinCode:string;active:boolean|number;admins?:number;teachers?:number;students?:number;classrooms?:number;chiefAdminId?:string|null;adminOptions?:{id:string;name:string}[]};
 async function api(data?:Record<string,unknown>) {
@@ -40,6 +41,7 @@ export function GroupConsole({isOwner,currentGroupId}:{isOwner:boolean;currentGr
   }
   if(!groups)return <PageState kind={error?"error":"loading"} title={error||"正在加载…"} action={error?"重试":undefined} onAction={()=>void load()}/>;
   return <div className="group-console">
+    {isOwner&&<AcademicCatalogueAdmin/>}
     {isOwner&&<form className="panel group-create" onSubmit={save}><h2>{t(editing?"编辑集团名称":"新增补习集团")}</h2><label>{t("集团名称")}<input required maxLength={120} value={name} onChange={e=>setName(e.target.value)}/></label><div className="button-row"><Button disabled={busy}><Plus size={16}/>{t(editing?"保存修改":"创建集团")}</Button>{editing&&<Button type="button" variant="outline" onClick={()=>{setEditing(null);setName("");}}>{t("取消")}</Button>}</div></form>}
     {error&&<div className="error" role="alert">{error}</div>}
     <div className="group-list">{groups.map(group=><section className="panel group-entry" key={group.id}>

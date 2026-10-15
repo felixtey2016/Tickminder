@@ -13,13 +13,14 @@ p=paper(39);rejects(()=>checkQuiz(p.content,p.keys),'quiz.invalidPlatformSet');
 p=paper();p.content.questions[0].difficulty='hard';rejects(()=>checkQuiz(p.content,p.keys),'quiz.invalidPlatformSet');
 p=paper();p.content.difficulty='mixed';rejects(()=>checkQuiz(p.content,p.keys),'quiz.invalidPlatformSet');
 p=paper();p.content.catalog=null;rejects(()=>checkQuiz(p.content,p.keys),'quiz.invalidPlatformSet');
-for(const bad of [{subtopicCode:'2.1'},{subtopicCode:'1.01'},{chapterCode:'01'},{kind:'chapter_overall'},{kind:'level_overall'},{setNumber:1.5},{level:'Form 6'}]){p=paper();p.content.catalog={...catalog,...bad};rejects(()=>checkQuiz(p.content,p.keys),'quiz.invalidCatalog');}
+for(const bad of [{subtopicCode:'2.1'},{subtopicCode:'1.01'},{chapterCode:'01'},{kind:'chapter_overall'},{kind:'level_overall'},{setNumber:1.5},{level:''}]){p=paper();p.content.catalog={...catalog,...bad};rejects(()=>checkQuiz(p.content,p.keys),'quiz.invalidCatalog');}
 for(const c of [{...catalog,kind:'chapter_overall',subtopicCode:'',subtopicTitle:''},{...catalog,kind:'level_overall',chapterCode:'',chapterTitle:'',subtopicCode:'',subtopicTitle:''}]){p=paper();p.content.catalog=c;assert.deepEqual(checkQuiz(p.content,p.keys).content.catalog,c);}
 p=paper(2);delete p.content.bankKind;delete p.content.catalog;p.content.difficulty='mixed';p.content.questions[0].difficulty='hard';assert.equal(checkQuiz(p.content,p.keys).content.bankKind,'creator');
 const item=(id,c=catalog,difficulty='easy')=>({id,subject:'Mathematics',bankKind:'platform',catalog:{...c},difficulty});
 const grouped=groupQuizCatalog([item('set2',{...catalog,setNumber:2}),item('set1'),item('medium',catalog,'medium'),item('other',{...catalog,subtopicCode:'1.10',subtopicTitle:'另一个知识点'}),{...item('creator1'),bankKind:'creator'},{...item('creator2'),bankKind:'creator'}]);
 assert.equal(grouped.length,4);assert.equal(grouped[0].setCount,3);assert.deepEqual(grouped[0].difficulties,{easy:2,medium:1,hard:0});assert.equal(grouped[0].items.at(-1).id,'set2');
 assert.notEqual(quizCatalogGroupKey(item('a')),quizCatalogGroupKey(item('b',{...catalog,subtopicCode:'1.10'})));
+assert.notEqual(quizCatalogGroupKey({...item('a'),exam:'SPM'}),quizCatalogGroupKey({...item('a'),exam:'IGCSE'}));
 const base={administrator:false,maintenance:false,sourceKey:null,bankKind:'creator',copied:false},source='a'.repeat(64);
 assert.equal(quizWriteForbidden(base),false);
 assert.equal(quizWriteForbidden({...base,sourceKey:source}),true);

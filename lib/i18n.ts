@@ -1,4 +1,5 @@
 import {quizManagementEn,quizManagementZh} from './quiz-management-i18n';
+import {academicEn,academicZh} from './academic-i18n';
 import {quizEn,quizZh} from './quiz-i18n';
 import {quizPracticeEn,quizPracticeZh} from './quiz-practice-i18n';
 export type Language = "zh" | "en";
@@ -1477,7 +1478,7 @@ Object.assign(en,{
   "Quiz 有待批改的提交":"Quiz submissions need marking",
   "查看 Quiz":"View Quiz",
   "暂无新通知。课程变更、功课更新、Quiz 安排和批改反馈会显示在这里。":"No new notifications. Lesson changes, homework updates, Quiz assignments and marking feedback will appear here.",
-},quizEn,quizPracticeEn,quizManagementEn);Object.assign(zh,quizZh,quizPracticeZh,quizManagementZh);
+},quizEn,quizPracticeEn,quizManagementEn,academicEn);Object.assign(zh,quizZh,quizPracticeZh,quizManagementZh,academicZh);
 export function translate(value: string, language: Language) {
   const trimmed = value.trim();
   if (!trimmed) return value;

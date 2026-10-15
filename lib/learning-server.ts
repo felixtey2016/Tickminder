@@ -1,3 +1,4 @@
+import {classPlanSubjectSql,planSubjectLabelSql} from "./academic-subject-match";
 import {groupReader,groupStatement} from "@/lib/group-data";
 import { env } from "cloudflare:workers";
 import type { Account } from "@/lib/auth";
@@ -28,8 +29,8 @@ export async function teacherMayAssign(account: Account, student: string, subjec
   const {first,rows}=groupReader(account.groupId);
   if (account.role !== "teacher" || !account.teacherName) return false;
   return Boolean(await first(`SELECT 1 AS allowed FROM plans p
-    JOIN students s ON s.name = p.student JOIN teachers t ON t.name = p.teacher_name
-    WHERE p.student = ? AND p.subject = ? AND p.teacher_name = ? AND p.active = 1 AND s.active = 1 AND t.active = 1`, student, subject, account.teacherName));
+    JOIN students s ON s.name = p.student JOIN teachers t ON t.name = p.teacher_name CROSS JOIN (SELECT ? AS subject) requested
+    WHERE p.student = ? AND ${planSubjectLabelSql()} AND p.teacher_name = ? AND p.active = 1 AND s.active = 1 AND t.active = 1`, subject,student,account.teacherName));
 }
 
 export async function teacherSubjects(account: Account) {
@@ -44,7 +45,7 @@ function activeClassroomAccess(alias: string) {
   return `(${alias}.classroom_id IS NULL OR EXISTS (
     SELECT 1 FROM classroom_members cm
     JOIN classrooms c ON c.id = cm.classroom_id
-    JOIN plans p ON p.student = cm.student_name AND p.subject = c.subject AND p.teacher_name = c.teacher_name AND p.active = 1
+    JOIN plans p ON p.student = cm.student_name AND ${classPlanSubjectSql("p","c","student")} AND p.teacher_name = c.teacher_name AND p.active = 1
     JOIN students student ON student.name = cm.student_name AND student.active = 1
     JOIN teachers teacher ON teacher.name = c.teacher_name AND teacher.active = 1
     WHERE cm.classroom_id = ${alias}.classroom_id AND cm.student_name = ?

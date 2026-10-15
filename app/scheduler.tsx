@@ -67,6 +67,7 @@ type Account = {
     studentName?: string | null;
 };
 type Plan = {
+    subjectId?:string|null;syllabusId?:string;grade?:string|null;age?:number|null;
     key: string;
     student: string;
     subject: string;
@@ -111,7 +112,7 @@ type State = {
     }>;
     teachers?: string[];
     students?: string[];
-    allStudents?: Array<{ name: string; nameKey: string; active: boolean }>;
+    allStudents?: Array<{ name: string; nameKey: string; active: boolean;syllabusId?:string;grade?:string|null;age?:number|null }>;
     allTeachers?: Array<{
         name: string;
         active: boolean;
@@ -279,6 +280,7 @@ export function Scheduler() {
     }, [selectedMonth, auth?.account?.id, ensureScope]);
     useEffect(() => { const refreshAuth = () => { void request("/api/auth").then(setAuth).catch(alertActionFailure); }; window.addEventListener("timelyo:auth-refresh", refreshAuth); return () => window.removeEventListener("timelyo:auth-refresh", refreshAuth); }, []);
     const reload = useCallback(() => refreshState(false), [refreshState]);
+    useEffect(() => { const refresh = () => { void refreshState(true); }; window.addEventListener('tickminder-roster-updated', refresh); return () => window.removeEventListener('tickminder-roster-updated', refresh); }, [refreshState]);
     useEffect(() => {
         if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
         let active = true;
@@ -738,7 +740,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     } else if (activeView === "myAccount") {
         pageContent = <AccountSettings/>;
     } else if (activeView === "classrooms" && role !== "pending") {
-        const classPlans = role === "teacher" ? (state?.plans || []).map(plan => ({ student: plan.student, subject: plan.subject, teacherName: account.teacherName || "", active: true })) : (state?.allPlans || []).map(plan => ({ student: plan.student, subject: plan.subject, teacherName: plan.teacherName, active: plan.active }));
+        const classPlans = role === "teacher" ? (state?.plans || []).map(plan => ({ student: plan.student, subject: plan.subject,subjectId:plan.subjectId,syllabusId:plan.syllabusId,grade:plan.grade, teacherName: account.teacherName || "", active: true })) : (state?.allPlans || []).map(plan => ({ student: plan.student, subject: plan.subject,subjectId:plan.subjectId,syllabusId:plan.syllabusId,grade:plan.grade, teacherName: plan.teacherName, active: plan.active }));
         pageContent = <ClassroomsPage role={role} classes={state?.classrooms || []} terms={state?.terms || []} learning={learning} learningReady={learningReady} learningError={state?.scopeErrors?.learning} loadLearning={force => ensureScope("learning", force)} teacherName={account.teacherName} teachers={role === "teacher" && account.teacherName ? [account.teacherName] : state?.teachers || []} plans={classPlans} mutate={classroomMutate} learningMutate={learningMutate} busy={busy} onCalendar={() => choose("calendar")}/>;
     } else if (role === "admin") {
         if (activeView === "homework" || activeView === "materials") {
@@ -752,7 +754,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
         } else if (activeView === "teachers") {
             pageContent = <Timetable type="teacher" lessons={lessons} students={state?.students || []} teachers={(state?.allTeachers || []).map(row => row.name).sort()} month={selectedMonth} setMonth={setSelectedMonth}/>;
         } else if (activeView === "subjects") {
-            pageContent = <SubjectAdmin students={state?.students || []} teachers={state?.teachers || []} plans={state?.allPlans || []} mutate={mutate} busy={busy}/>;
+            pageContent = <SubjectAdmin studentProfiles={state?.allStudents||[]} students={state?.students || []} teachers={state?.teachers || []} plans={state?.allPlans || []} mutate={mutate} busy={busy}/>;
         } else if (["teacherRoster", "studentRoster", "accounts"].includes(activeView)) {
             const view = activeView === "teacherRoster" ? "teachers" : activeView === "studentRoster" ? "students" : activeView as "binding" | "accounts";
             pageContent = <RosterAdmin account={account} state={state} mutate={mutate} busy={busy} view={view}/>;
