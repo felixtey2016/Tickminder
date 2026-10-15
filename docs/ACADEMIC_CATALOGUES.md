@@ -3,6 +3,7 @@
 ## Scope
 
 - Quiz platform topics, creator lists and topic sets load at most 40 entries per page. “Load more” requests the next page. Topic totals are computed before pagination.
+- Legacy Quiz versions without a syllabus remain under Unclassified; the upgrade does not guess a syllabus or rewrite published question/attempt history.
 - Two independent, globally stored menus live in `academic_catalogues`: `student` and `quiz`. Each has its own revision.
 - Student menus start with SPM, IGCSE, STPM and A-Level. Quiz menus start with SPM and IGCSE.
 - SPM uses Form 1–5; IGCSE tuition uses Year 1–11; STPM uses Semester 1–3; A-Level uses AS Level and A2.

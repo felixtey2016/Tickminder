@@ -1,6 +1,14 @@
 # Tickminder independent Cloudflare recovery
 
-## Current release - Quiz responsiveness and image-heavy publishing
+## Current release - Academic catalogues and Quiz paging
+
+Published on **2026-10-16** as Worker `fdbfd958-cff7-4466-9b54-c41b96a4bddc`, from source commit `3f4ad0e4917e20e094bd0deed25795717b240476` (tree `bcc0d102257100cd50c90e5726dddf799b43a7d6`). Both formal domains, runtime variables and original D1/R2 resources are retained. GitHub `feat/tuition-groups` holds the complete source, including preceding feature commit `5363c02159310506c72d54a6c1f314ec5d0f0a58`.
+
+Only additive migration `0029_academic_catalogues.sql` and an externally reviewed profile/classification plan were applied. Backups use **v18/53 tables** and include `academic_catalogues` plus `student_grade_promotions`. Historical records, original plan keys and raw subject labels remain intact. Restoring an earlier Worker must retain this schema, classifications, promotion history and later user work; do not blanket-apply the restored historical migration list or restore an old database as a code rollback.
+
+Encrypted cutover snapshots before and after both restore locally. Post-release comparison passed 67 preservation checks, including identical bytes for all 10 PDFs and 163 question images. Seven student profiles/pairings/classes are classified, with only the four supplied student grades populated. No real student was promoted and no synthetic production Quiz was created. Formal acceptance passed 35 read-only/security/asset checks with zero FK violations; mobile Chromium passed 21 checks. See [ACADEMIC_CATALOGUES.md](ACADEMIC_CATALOGUES.md) and `work/academic-catalogues-release/` outside public source for evidence.
+
+## Preceding release - Quiz responsiveness and image-heavy publishing
 
 Published on **2026-10-16** as Worker `9f0008a6-90c2-46f8-a90c-92993f59b453` to both formal domains. GitHub source is `47733bdf87f41c0cf16d826be08539dd6efe4c09`, tree `7bc4c4779273e3266b05f47dbeff7d8f6d17c7b9`. Runtime variables and D1/R2 bindings were preserved. This is a code-only release with no database migration; retain v17/51 tables and all later user work when rolling back to Worker `6533355f-fb7f-4dcd-b618-c4d3e1f63a58`.
 
