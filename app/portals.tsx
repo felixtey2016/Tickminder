@@ -50,7 +50,7 @@ export function TeacherPortal({lessons,plans,proposals,mutate,busy,view,onResche
  {view==="attendance"&&<SessionAttendanceBoard sessions={attendanceSessions} role="teacher" mutate={mutate} busy={busy} mode="records"/>}
  {view==="calendar"&&<StudentCalendar role="teacher" onPending={onReschedule} lessons={lessons} proposals={proposals} busy={busy} renderActions={id=>{const l=lessons.find(l=>l.id===id),session=attendanceSessions?.find(s=>s.id===l?.sessionId);return l&&session?<div className="portal-actions"><Button disabled={busy||!mayCheckIn(l.plannedStart,new Date().toISOString())} onClick={()=>setSelected(session)}>{t("登记课次考勤")}</Button>{l.status==="scheduled"&&<Button variant="outline" disabled={busy} onClick={()=>l.sessionType==="group"?onReschedule?.():setRequest(l)}>{t("申请改期")}</Button>}</div>:null;}}/>}
  {view==="reschedule"&&<><GroupSessionBoard sessions={classSessions} requests={classSessionRequests} role="teacher" mutate={mutate} busy={busy}/><ReschedulePanel role="teacher" lessons={lessons} proposals={proposals} mutate={mutate} busy={busy}/></>}
- {view==="students"&&<section className="panel"><h2>{t("负责的学生与科目")}</h2>{plans.map(p=><TeacherPlanLinkEditor key={p.key+":"+p.onlineLink} plan={p} mutate={mutate} busy={busy}/>)}</section>}
+ {view==="students"&&<section className="panel" aria-label={t("负责的学生与科目")}>{plans.map(p=><TeacherPlanLinkEditor key={p.key+":"+p.onlineLink} plan={p} mutate={mutate} busy={busy}/>)}</section>}
  {selected&&<SessionAttendanceDialog session={selected} role="teacher" mutate={mutate} busy={busy} close={()=>setSelected(null)}/>}
  <RescheduleRequestDialog key={request?.id||"closed"} lesson={request} mutate={mutate} busy={busy} close={()=>setRequest(null)}/>
  </div>;

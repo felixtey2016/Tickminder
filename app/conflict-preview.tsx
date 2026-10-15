@@ -46,10 +46,12 @@ export function ConflictPreview({ value, enabled,endpoint="/api/conflicts" }: { 
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [key, enabled,endpoint]);
   if (!enabled) return null;
-  return <p className={`conflict-preview${result.conflict ? " conflict" : ""}`} role={result.conflict ? "alert" : "status"}>
+  return <div className={`conflict-preview${result.conflict ? " conflict" : ""}`}>
+    <p className="conflict-preview-status" role={result.conflict ? "alert" : "status"}>
     {result.checking ? t("正在核对课程时间…") : result.conflict ? conflictDescription(result.conflict) :
       result.error ? `${result.error} · ${t("保存时系统会再检查")}` :
       result.available ? t("目前没有课程冲突的时段；请另外确认老师是否有空") : null}
-    <br/><small>{t("已取消课程不占时段；待确认改期仍按当前已排时间计算。")}</small>
-  </p>;
+    </p>
+    <details className="routine-help"><summary>{t("时间核对规则")}</summary><p>{t("已取消课程不占时段；待确认改期仍按当前已排时间计算。")}</p></details>
+  </div>;
 }

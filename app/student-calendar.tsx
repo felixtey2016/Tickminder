@@ -70,7 +70,6 @@ export function StudentCalendar({ lessons:sourceLessons, proposals, studyBlocks 
   }
 
   return <section className="student-calendar" aria-label={t("课程日历")}>
-    {onAddStudy && <div className="calendar-add-row"><Button size="sm" variant="outline" onClick={() => onAddStudy?.(selectedDay)}><Plus size={18} aria-hidden="true"/>{t("新增学习计划")}</Button></div>}
     {toolbar}
     <div className="student-calendar-layout">
       <div className="student-calendar-month">
@@ -97,7 +96,7 @@ export function StudentCalendar({ lessons:sourceLessons, proposals, studyBlocks 
         <div className="student-calendar-legend"><span><i className="legend-scheduled"/>{t("补习课")}</span><span><i className="legend-completed"/>{t("已上课")}</span>{onAddStudy && <span><i className="legend-study"/>{t("个人学习")}</span>}<span><i className="legend-absent"/>{t("缺席")}</span></div>
       </div>
       <aside className="student-day-panel" aria-live="polite">
-        <div className="student-day-heading"><span>{dateLabel(selectedDay, { weekday: "long" })}</span><h3>{dateLabel(selectedDay, { year: "numeric", month: "long", day: "numeric" })}</h3><p>{selectedLessons.length} {t("堂课")}{onAddStudy && <> · {selectedStudy.length} {t("项学习安排")}</>}</p>{onAddStudy && <Button size="sm" variant="outline" onClick={() => onAddStudy?.(selectedDay)}>{t("添加当日学习计划")}</Button>}</div>
+        <div className="student-day-heading"><span>{dateLabel(selectedDay, { weekday: "long" })}</span><h3>{dateLabel(selectedDay, { year: "numeric", month: "long", day: "numeric" })}</h3><p>{selectedLessons.length} {t("堂课")}{onAddStudy && <> · {selectedStudy.length} {t("项学习安排")}</>}</p>{onAddStudy && <Button size="sm" variant="outline" onClick={() => onAddStudy?.(selectedDay)}><Plus size={18} aria-hidden="true"/>{t("新增学习计划")}</Button>}</div>
         {selectedLessons.map(lesson => <article className={`student-day-lesson lesson-${lesson.status}`} key={lesson.id}>
           <div className="student-day-lesson-top"><strong>{role === "student" ? lesson.subject : `${sessionLessonTitle(lesson)} · ${lesson.subject}`}</strong><span>{t(lesson.attendanceKind === "early_dismissal" ? "提前结束课程" : statusText[lesson.status] || lesson.status)}</span></div>
           <p><Clock3 size={16} aria-hidden="true"/>{time(lesson.plannedStart)}–{time(lesson.plannedEnd)}</p>

@@ -982,3 +982,54 @@ input[type=file]::file-selector-button { border: 0; border-radius: 6px; padding:
 .class-session-controls>label.check-row{display:flex;align-items:center;align-self:end;gap:8px;min-height:46px;line-height:1.5}
 .class-session-controls>.check-row input[type=checkbox]{width:18px;height:18px;flex:none;accent-color:var(--timelyo-purple,#6546ce)}
 @media(max-width:640px){.class-session-controls>label:not(.check-row){flex-basis:100%;max-width:none}.class-session-board select,.class-session-planner select,.class-session-planner input:not([type=checkbox]):not([type=radio]){font-size:16px;min-height:48px}.class-session-controls>label.check-row{min-height:44px}}
+
+/* Round 1: shared hierarchy, readable controls and compact routine guidance. */
+.workspace { --control-border: #a69bb9; }
+.workspace .page-head { align-items: flex-start; gap: 16px; }
+.workspace .page-head > div { min-width: 0; }
+.workspace .page-head h1 { overflow-wrap: anywhere; }
+.workspace :is(.section-head,.learning-section-head) { gap: 12px; flex-wrap: wrap; }
+.workspace :is(.section-head,.learning-section-head) > :is(h2,h3,div) { min-width: 0; }
+.workspace :is(.section-head,.learning-section-head) :is(h2,h3) { overflow-wrap: anywhere; }
+.workspace :is(.section-head,.learning-section-head) > span { font-size: 13px; color: #666079; }
+.workspace :is(.panel,.learning-card) > .muted { line-height: 1.6; }
+.workspace :is(form,.directory-filters,.record-filters,.filter-panel-fields,.class-session-controls,.class-session-planner,.session-attendance-board,.catalogue-controls,.quiz-filters,.folder-class-select) :is(select,input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden]):not([type=color]),textarea) {
+  box-sizing: border-box; max-width: 100%; min-width: 0; min-height: 46px;
+  border: 1px solid var(--control-border); border-radius: 8px;
+  background: #fff; color: var(--timelyo-ink); padding: 10px 12px; line-height: 1.5;
+}
+.workspace :is(form,.directory-filters,.record-filters,.filter-panel-fields,.class-session-controls,.class-session-planner,.session-attendance-board,.catalogue-controls,.quiz-filters,.folder-class-select) select { padding-right: 32px; }
+.workspace :is(select,input,textarea):disabled { background: #f2f0f6; color: #706a80; cursor: not-allowed; }
+.workspace :is(.directory-filters,.record-filters,.filter-panel-fields) label:not(.check-row) { gap: 8px; font-size: 14px; font-weight: 600; }
+.workspace .filter-panel { margin: 16px 0; padding: 0 16px; border: 1px solid var(--timelyo-line); border-radius: 10px; background: #fff; }
+.workspace .filter-panel > summary { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 10px 0; color: var(--timelyo-purple-dark); font-size: 14px; font-weight: 600; cursor: pointer; list-style: none; }
+.workspace .filter-panel > summary::-webkit-details-marker { display: none; }
+.workspace .filter-panel > summary > svg:last-child { margin-left: auto; transition: transform .15s; }
+.workspace .filter-panel[open] > summary > svg:last-child { transform: rotate(180deg); }
+.workspace .filter-panel > summary small { display: inline-block; margin-left: 8px; border-radius: 4px; padding: 2px 6px; background: var(--timelyo-lilac); font-size: 12px; }
+.workspace .filter-panel-fields { padding: 4px 0 16px; }
+.workspace .filter-panel-fields > .directory-filters { margin: 0; }
+:is(.app-shell,[data-slot=dialog-content]) [data-slot=button] { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+:is(.app-shell,[data-slot=dialog-content]) [data-slot=button][data-variant=destructive] { background: #b4233a; border-color: #b4233a; color: #fff; }
+:is(.app-shell,[data-slot=dialog-content]) [data-slot=button][data-variant=destructive]:hover:not(:disabled) { background: #911c2f; border-color: #911c2f; }
+:is(.app-shell,[data-slot=dialog-content]) [data-slot=button]:disabled { cursor: not-allowed; }
+.workspace .danger-action { color: #a3263c !important; border-color: #c88792 !important; }
+.schedule-classroom-field { display: grid; gap: 8px; min-width: 0; }
+.field-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.field-heading label { margin: 0; }
+.field-heading [data-slot=button] { color: var(--timelyo-purple-dark); flex: none; }
+.schedule-classroom-field > .muted { margin: 0; font-size: 13px; }
+.schedule-classroom-field > .notice { margin: 0; }
+.conflict-preview-status { margin: 0; line-height: 1.6; }
+.routine-help { margin-top: 4px; font-size: 13px; font-weight: 400; color: #605674; }
+.routine-help > summary { cursor: pointer; min-height: 40px; display: list-item; padding: 10px 0; }
+.routine-help > p { margin: 0 0 8px; line-height: 1.6; }
+@media(max-width:650px) {
+  .workspace .page-head { margin-bottom: 20px; }
+  .workspace .panel { padding: 18px; }
+  .workspace :is(form,.directory-filters,.record-filters,.filter-panel-fields,.class-session-controls,.class-session-planner,.session-attendance-board,.catalogue-controls,.quiz-filters,.folder-class-select) :is(select,input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=hidden]):not([type=color]),textarea) { min-height: 48px; font-size: 16px; }
+  :is(.app-shell,[data-slot=dialog-content]) [data-slot=button] { min-height: 44px; }
+  .workspace .filter-panel { padding-inline: 12px; }
+  .workspace .filter-panel-fields { gap: 12px; }
+  .routine-help > summary { min-height: 44px; }
+}

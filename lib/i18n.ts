@@ -14,6 +14,16 @@ export function setLanguage(language: Language) {
 export function getLanguage() { return currentLanguage; }
 
 const en: Record<string, string> = {
+  "班级列表": "Classroom list",
+  "发布资料": "Publish material",
+  "选择 PDF 后，点击「提交功课」完成提交。": "Select a PDF, then choose Submit homework.",
+  "未选择文件": "No file selected",
+  "时间核对规则": "Schedule checks",
+  "常规课程": "Standard lesson",
+  "新功课": "New homework",
+  "未登记与缺席": "Missing attendance and absences",
+  "已自动选择对应班级。": "The matching classroom is selected.",
+  "请选择本次课程的班级。": "Choose a classroom for this lesson.",
   "未登记、待复核及待处理缺席": "Missing attendance, pending reviews and absences to resolve",
   "学生累计出席课时": "Total student attendance hours",
   "没有考勤操作权限": "You do not have permission to manage attendance.",
