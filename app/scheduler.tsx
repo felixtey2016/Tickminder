@@ -75,6 +75,7 @@ type Plan = {
     duration: number;
     onlineLink?: string | null;
 };
+type ScheduleClassOption = {id:string;title:string;teacherName:string;subject:string;members:string[];planKeys:string[]};
 type Lesson = SessionLesson & {
     id: string;
     student: string;
@@ -920,30 +921,37 @@ function Schedule({ state, lessons, mutate, open, busy, view }: {
     const [endTime, setEndTime] = useState("");
     const [until, setUntil] = useState("");
     const [replacementFor, setReplacementFor] = useState("");
+    const [classroomId,setClassroomId]=useState(""),[classOptions,setClassOptions]=useState<ScheduleClassOption[]|null>(null),[classError,setClassError]=useState("");
+    const classRequest=useRef(0);
+    async function loadClasses(){const request=++classRequest.current;setClassOptions(null);setClassError("");try{const response=await groupFetch("/api/class-sessions?lang="+getLanguage(),{cache:"no-store"}),data=await readApiJson<{classes:ScheduleClassOption[];error?:string}>(response);if(!response.ok)throw Error(data.error||t("班级名单加载失败，请重试"));if(request===classRequest.current)setClassOptions(data.classes);}catch(error){if(request===classRequest.current)setClassError(error instanceof Error?error.message:t("班级名单加载失败，请重试"));}}
+    useEffect(()=>{if(view==="create")void loadClasses();return()=>{classRequest.current++;};},[view,state?.revision]);
     const subjects = plans.filter(p => p.student === student);
     const chosen = subjects.find(p => p.key === key);
+    const eligibleClasses=chosen?(classOptions||[]).filter(item=>item.teacherName===chosen.teacher&&item.members.includes(student)&&item.planKeys.includes(chosen.key)):[];
+    const selectedClassId=eligibleClasses.length===1?eligibleClasses[0].id:eligibleClasses.some(item=>item.id===classroomId)?classroomId:"";
     const originals = lessons.filter(l => l.student === student && l.subject === chosen?.subject && ["student_absent", "teacher_absent", "cancelled"].includes(l.status));
     async function submit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault();
-        if (!chosen) return;
-        if (await mutate({ action: "create", student, subject: chosen.subject, teacherName: chosen.teacher, kind,
+        if (!chosen||!selectedClassId) return;
+        if (await mutate({ action: "create", student, subject: chosen.subject, teacherName: chosen.teacher, classroomId:selectedClassId, kind,
             start: `${startDate}T${startTime}`, end: `${startDate}T${endTime}`, until, replacementFor })) {
             setStudent(""); setKey(""); setKind("regular"); setStartDate(""); setStartTime("");
-            setEndTime(""); setUntil(""); setReplacementFor("");
+            setEndTime(""); setUntil(""); setReplacementFor("");setClassroomId("");
         }
     }
     return <div className="schedule-layout schedule-single-view">{view==="create"&&<div className="class-session-mode" role="group" aria-label={t("排课方式")}><Button variant={scheduleMode==="one_to_one"?"default":"outline"} onClick={()=>setScheduleMode("one_to_one")}>{t("一对一课程")}</Button><Button variant={scheduleMode==="group"?"default":"outline"} onClick={()=>setScheduleMode("group")}>{t("整班课程")}</Button></div>}{view==="create"&&scheduleMode==="group"&&<GroupSessionPlanner mutate={mutate} busy={busy}/>}<section className="panel create-panel" hidden={view !== "create"||scheduleMode!=="one_to_one"}><p className="eyebrow">{t("安排课程")}</p><h2>{t("安排课程")}</h2>
         <form onSubmit={submit}>
-            <label>{t("学生姓名")}<select required value={student} onChange={e => { setStudent(e.target.value); setKey(""); setReplacementFor(""); }}><option value="">{t("请选择")}</option>{(state?.students || []).map(n => <option key={n} value={n}>{n}</option>)}</select></label>
-            {student && <label>{t("学生科目配对")}<select required value={key} onChange={e => { setKey(e.target.value); setReplacementFor(""); }}><option value="">{t("请选择")}</option>{subjects.map(p => <option value={p.key} key={p.key}>{p.subject}</option>)}</select></label>}
+            <label>{t("学生姓名")}<select required value={student} onChange={e => { setStudent(e.target.value); setKey(""); setReplacementFor("");setClassroomId(""); }}><option value="">{t("请选择")}</option>{(state?.students || []).map(n => <option key={n} value={n}>{n}</option>)}</select></label>
+            {student && <label>{t("学生科目配对")}<select required value={key} onChange={e => { setKey(e.target.value); setReplacementFor("");setClassroomId(""); }}><option value="">{t("请选择")}</option>{subjects.map(p => <option value={p.key} key={p.key}>{p.subject}</option>)}</select></label>}
             {chosen && <p className="assigned-teacher">{t("负责老师")}：<strong>{chosen.teacher}</strong></p>}
+            {chosen&&<><label>{t("所属班级")}<select required data-testid="lesson-classroom-select" value={selectedClassId} disabled={classOptions===null||busy} onChange={event=>setClassroomId(event.target.value)}>{eligibleClasses.length!==1&&<option value="">{t("请选择有效班级")}</option>}{eligibleClasses.map(item=><option key={item.id} value={item.id}>{item.title}</option>)}</select></label>{classOptions===null&&!classError?<p role="status" className="muted">{t("正在加载班级…")}</p>:classError?<p role="alert" className="notice">{classError} <Button type="button" variant="outline" onClick={()=>void loadClasses()}>{t("重试")}</Button></p>:<p className="muted">{t(!eligibleClasses.length?"此学生科目配对暂无有效班级，请刷新名单并检查班级成员。":eligibleClasses.length===1?"已根据学生、科目及负责老师选定班级。":"此学生科目配对属于多个班级，请选择本次课程所属班级。")}</p>}<Button type="button" variant="outline" size="sm" disabled={classOptions===null&&!classError} onClick={()=>void loadClasses()}>{t("刷新班级名单")}</Button></>}
             <div className="schedule-time-fields"><label>{t("上课日期")}<input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)}/></label><label>{t("开始时间")}<input required type="time" value={startTime} onChange={e => setStartTime(e.target.value)}/></label><label>{t("结束时间")}<input required type="time" value={endTime} onChange={e => setEndTime(e.target.value)}/></label></div>
             <p className="muted schedule-date-note">{t("开始和结束时间使用同一天日期。")}</p>
-            <ConflictPreview enabled={Boolean(chosen && startDate && startTime && endTime && startTime < endTime)} value={{ action: "create", student, subject: chosen?.subject, teacherName: chosen?.teacher, start: `${startDate}T${startTime}`, end: `${startDate}T${endTime}`, until }}/>
+            <ConflictPreview enabled={Boolean(chosen && selectedClassId && startDate && startTime && endTime && startTime < endTime)} value={{ action: "create", student, subject: chosen?.subject, teacherName: chosen?.teacher,classroomId:selectedClassId, start: `${startDate}T${startTime}`, end: `${startDate}T${endTime}`, until }}/>
             <label>{t("课程类型")}<select value={kind} onChange={e => setKind(e.target.value)}><option value="regular">{t("常规课程（单次／每周）")}</option><option value="extra">{t("临时加课")}</option><option value="makeup">{t("补课")}</option></select></label>
             {kind === "makeup" && <label>{t("关联原课程")}<select required value={replacementFor} onChange={e => setReplacementFor(e.target.value)}><option value="">{t("请选择")}</option>{originals.map(l => <option key={l.id} value={l.id}>{day(l.plannedStart)} {time(l.plannedStart)} · {t(statusLabel[l.status] || l.status)}</option>)}</select></label>}
             <label>{t("每周重复至（可留空）")}<input type="date" value={until} onChange={e => setUntil(e.target.value)}/></label>
-            <Button disabled={busy || !chosen} className="primary-full">{t("保存排课")}</Button>
+            <Button disabled={busy || !chosen || !selectedClassId || classOptions===null} className="primary-full">{t("保存排课")}</Button>
         </form></section>
         <GroupSessionBoard sessions={state?.classSessions||[]} requests={state?.classSessionRequests||[]} role={state?.account.role==="teacher"?"teacher":"admin"} mutate={mutate} busy={busy} month={state?.month} onAttendance={state?.account.role==="admin"?id=>{const lesson=lessons.find(l=>l.id===id);if(lesson)open({type:"attendance",lesson});}:undefined}/>
         <section className="panel" hidden={view === "create"}><div className="section-head"><div><h2>{t(view === "calendar" ? "课程日历" : "课程列表")}</h2></div><span>{visible.length}{t(" 堂")}</span></div>

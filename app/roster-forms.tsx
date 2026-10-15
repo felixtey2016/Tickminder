@@ -30,7 +30,7 @@ function PlanForm({ students,studentProfiles=[], teachers, mutate, busy, plan, s
     <label>{t("负责老师")}<select required value={teacherName} onChange={e => setTeacherName(e.target.value)}><option value="">{t("请选择")}</option>{[...new Set([...teachers, ...(plan ? [plan.teacherName] : [])])].map(n => <option key={n}>{n}</option>)}</select></label>
     <label>{t("通常时长（小时）")}<input required type="number" min="0.25" max="12" step="0.25" value={duration} onChange={e => setDuration(e.target.value)}/></label>
     <label>{t("线上课堂链接（可选）")}<input type="url" inputMode="url" maxLength={2048} placeholder="https://meet.google.com/..." value={onlineLink} onChange={e => setOnlineLink(e.target.value)}/></label>
-    <label className="check-row"><input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)}/>{t("启用此科目配对")}</label><Button disabled={busy||!catalogue||!selectedSubject}>{t("保存科目配对")}</Button>
+    <label className="check-row"><input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)}/>{t("启用此科目配对")}</label><p className="muted">{t("启用的科目配对会沿用匹配班级；没有匹配班级时，系统会自动建立班级。")}</p><Button disabled={busy||!catalogue||!selectedSubject}>{t("保存科目配对")}</Button>
   </form>;
 }
 export function SubjectAdmin({ students,studentProfiles=[], teachers, plans, mutate, busy }: Props & { plans: Plan[] }) {

@@ -1,3 +1,4 @@
+import {classroomCoverageGuard,classroomRequiredMessage,isClassroomCoverageFailure} from '@/lib/classroom-coverage';
 import {groupReader,groupStatement,requireGroup} from "@/lib/group-data";
 import { NextResponse } from "next/server";
 import { currentBusinessAccount as currentAccount } from "@/lib/auth";
@@ -77,6 +78,8 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
       statements.push(db.prepare("DELETE FROM homework WHERE (id = ?) AND group_id = ?").bind(id,groupId));
     } else {
       if (!await classroomMayManage(actor, id)) throw new DeleteError("班级不存在或无权修改", 404);
+      if(await first("SELECT 1 FROM class_sessions WHERE classroom_id=? LIMIT 1",id))throw new DeleteError("班级已有课程记录，不能永久删除。请保留历史课次并封存班级。");
+      statements.push(groupStatement(groupId,"SELECT CASE WHEN EXISTS(SELECT 1 FROM class_sessions WHERE classroom_id=?) THEN json('classroom_has_sessions') ELSE 1 END AS history_clear").bind(id));
       const fileRows = await rows<{ fileId: string }>("SELECT file_id AS fileId FROM teaching_materials WHERE classroom_id = ? UNION SELECT attachment_file_id AS fileId FROM homework WHERE classroom_id = ? AND attachment_file_id IS NOT NULL UNION SELECT s.file_id AS fileId FROM homework_submissions s JOIN homework h ON h.id = s.homework_id WHERE h.classroom_id = ?", id, id, id);
       files.push(...fileRows.map(f => f.fileId));
       files.push(...(await rows<{fileId:string}>("SELECT file_id AS fileId FROM learning_versions WHERE file_id IS NOT NULL AND ((kind='homework' AND record_id IN(SELECT id FROM homework WHERE classroom_id=?)) OR (kind='material' AND record_id IN(SELECT id FROM teaching_materials WHERE classroom_id=?)))",id,id)).map(f=>f.fileId));
@@ -90,6 +93,7 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
       statements.push(db.prepare("DELETE FROM material_recipients WHERE (material_id IN (SELECT id FROM teaching_materials WHERE classroom_id = ?)) AND group_id = ?").bind(id,groupId));
       for (const table of ["homework", "teaching_materials", "classroom_announcements", "classroom_members", "classroom_folders"]) statements.push(db.prepare(`DELETE FROM ${table} WHERE (classroom_id = ?) AND group_id = ?`).bind(id,groupId));
       statements.push(db.prepare("DELETE FROM classrooms WHERE (id = ?) AND group_id = ?").bind(id,groupId));
+      statements.push(classroomCoverageGuard(groupId));
     }
 
     const snapshots: Snapshot[] = [];
@@ -144,5 +148,5 @@ export async function POST(request: Request) {
     let cleanupPending=false;
     for (const file of new Set(plans.flatMap(p=>p.files))) {try {await deleteUnreferencedFile(file);} catch {cleanupPending=true;}}
     return NextResponse.json({ok:true,deletedCount:entries.length,warning:cleanupPending?"记录已删除，部分文件清理尚未完成，请联系管理员":undefined});
-  } catch (e) {return NextResponse.json({error:e instanceof DeleteError?e.message:"删除未能确认，请刷新列表后再试"},{status:e instanceof DeleteError?e.status:503});}
+  } catch (e) {if(isClassroomCoverageFailure(e))return NextResponse.json({error:classroomRequiredMessage},{status:409});return NextResponse.json({error:e instanceof DeleteError?e.message:"删除未能确认，请刷新列表后再试"},{status:e instanceof DeleteError?e.status:503});}
 }

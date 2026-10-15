@@ -1,3 +1,4 @@
+import {classroomCoverageGuard,classroomRequiredMessage,isClassroomCoverageFailure} from '@/lib/classroom-coverage';
 import {planSubjectLabelSql} from "@/lib/academic-subject-match";
 import {readAcademicCatalogue} from "@/lib/academic-catalogue-server";
 import {resolveCatalogueSelection,catalogueGradeValid,findCatalogueGrade} from "@/lib/academic-catalogue";
@@ -91,6 +92,7 @@ export async function POST(request: Request) {
         groupStatement(groupId,"UPDATE classrooms SET title = ?, description = ?, updated_at = ?, term_id = ? WHERE (id = ?) AND group_id = ?").bind(title, description || null, now, termId, id,groupId),
         ...removed.map(student => groupStatement(groupId,"DELETE FROM classroom_members WHERE (classroom_id = ? AND student_name = ?) AND group_id = ?").bind(id, student,groupId)),
         ...added.map(student => groupStatement(groupId,"INSERT INTO classroom_members (group_id,id,classroom_id,student_name,created_at) VALUES (?,?,?,?,?)").bind(groupId,crypto.randomUUID(), id, student, now)),
+        classroomCoverageGuard(groupId),
       ]);
       // Grant new members the class's existing resources while preserving old submissions and scores.
       for (const student of added) {
@@ -108,7 +110,7 @@ export async function POST(request: Request) {
       const classroom = await classroomMayManage(actor, id);
       if (!classroom) throw new RequestError("班级不存在或无权修改", 404);
       const archived = data.archived === true ? 1 : 0;
-      await groupStatement(groupId,"UPDATE classrooms SET archived = ?, updated_at = ? WHERE (id = ?) AND group_id = ?").bind(archived, now, id,groupId).run();
+      await db.batch([groupStatement(groupId,"UPDATE classrooms SET archived = ?, updated_at = ? WHERE (id = ?) AND group_id = ?").bind(archived, now, id,groupId),classroomCoverageGuard(groupId,archived?undefined:[])]);
       await change(groupId,"archiveClassroom", actor.id, id, { archived: Boolean(archived) });
       return NextResponse.json({ ok: true });
     }
@@ -141,6 +143,6 @@ export async function POST(request: Request) {
     }
     throw new RequestError("未知操作");
   } catch (error) {
-    return fail(error instanceof RequestError ? error : new RequestError("服务器未能确认结果，请刷新班级列表检查后再重试", 503));
+    return fail(isClassroomCoverageFailure(error)?new RequestError(classroomRequiredMessage,409):error instanceof RequestError ? error : new RequestError("服务器未能确认结果，请刷新班级列表检查后再重试", 503));
   }
 }

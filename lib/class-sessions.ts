@@ -25,7 +25,10 @@ export async function classSessionState(actor:Account) {
  ]);
  const classes=actor.role==="teacher"?await rows<{id:string}>("SELECT id FROM classrooms WHERE teacher_name=? AND archived=0",actor.teacherName):[],manageable=new Set(classes.map(c=>c.id));
  const enriched=sessions.map(s=>({...s,canManage:actor.role==="admin"||Boolean(s.classroomId&&manageable.has(s.classroomId)),participants:participants.filter(p=>p.sessionId===s.id)}));
- return {allSessions:enriched,sessions:enriched.filter(s=>s.sessionType==="group"),byId:new Map(enriched.map(s=>[s.id,s]))};
+ // A classroom can contain preserved one-to-one sessions as well as group
+ // sessions. The type still controls rescheduling and participant snapshots;
+ // merely organising a lesson into a classroom must not change those rules.
+ return {allSessions:enriched,classroomSessions:enriched.filter(s=>Boolean(s.classroomId)),sessions:enriched.filter(s=>s.sessionType==="group"),byId:new Map(enriched.map(s=>[s.id,s]))};
 }
 export function malaysiaClassIso(value:unknown) {
  const input=str(value);if(!/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}$/.test(input))throw new ClassSessionError("请选择有效的日期和时间");
@@ -35,11 +38,11 @@ function revision(value:unknown){if(!Number.isSafeInteger(value)||Number(value)<
 export async function classScheduleOptions(actor:Account) {
  if(!["admin","teacher"].includes(actor.role))throw new ClassSessionError("没有整班排课权限",403);
  const {rows}=groupReader(actor.groupId);
- const classes=await rows<{id:string;title:string;teacherName:string;subject:string;updatedAt:string}>("SELECT c.id,c.title,c.teacher_name AS teacherName,c.subject,c.updated_at AS updatedAt FROM classrooms c JOIN teachers t ON t.name=c.teacher_name AND t.active=1 WHERE c.archived=0"+(actor.role==="teacher"?" AND c.teacher_name=?":"")+" ORDER BY c.title",...(actor.role==="teacher"?[actor.teacherName]:[]));
+ const classes=await rows<{id:string;title:string;teacherName:string;subject:string;subjectId:string|null;syllabusId:string|null;grade:string|null;updatedAt:string}>("SELECT c.id,c.title,c.teacher_name AS teacherName,c.subject,c.subject_id AS subjectId,c.syllabus_id AS syllabusId,c.grade,c.updated_at AS updatedAt FROM classrooms c JOIN teachers t ON t.name=c.teacher_name AND t.active=1 WHERE c.archived=0"+(actor.role==="teacher"?" AND c.teacher_name=?":"")+" ORDER BY c.title",...(actor.role==="teacher"?[actor.teacherName]:[]));
  return Promise.all(classes.map(async c=>{
   const members=await activeClassroomMemberNames(c.id,actor.groupId),matched=await rows<{student:string;subject:string;link:string|null;key:string}>(`SELECT p.student,p.subject,p.online_link AS link,p.key FROM plans p JOIN classroom_members m ON m.student_name=p.student JOIN classrooms c ON c.id=m.classroom_id JOIN students s ON s.name=p.student AND s.active=1 WHERE c.id=? AND ${classPlanSubjectSql()} AND p.teacher_name=c.teacher_name AND p.active=1 ORDER BY p.key`,c.id);
   const links=[...new Set(matched.map(plan=>plan.link))];
-  return {...c,members,optionKey:await operationHash([c.id,c.title,c.teacherName,c.subject,c.updatedAt,members]),onlineLink:links.length===1?links[0]:null};
+  return {...c,members,planKeys:[...new Set(matched.map(plan=>plan.key))],optionKey:await operationHash([c.id,c.title,c.teacherName,c.subject,c.updatedAt,members]),onlineLink:links.length===1?links[0]:null};
  }));
 }
 async function session(actor:Account,id:string) {
