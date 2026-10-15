@@ -22,7 +22,7 @@ import { BarChart3, CalendarClock, ContactRound, LibraryBig, ListChecks, UserRou
 import { BRAND_NAME } from "@/lib/brand";
 import { LegalLinks } from "@/components/legal-links";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Bell, BookOpen, CalendarDays, ClipboardCheck, Clock3, FileSpreadsheet, FileText, GraduationCap, History, LayoutDashboard, List, LogOut, Menu, RefreshCw, ShieldCheck, UserRoundPlus, Users, type LucideIcon } from "lucide-react";
+import { AlertCircle, Bell, BookOpen, CalendarDays, ChevronDown, ClipboardCheck, Clock3, FileSpreadsheet, FileText, GraduationCap, History, LayoutDashboard, List, LogOut, Menu, RefreshCw, Settings, ShieldCheck, UserRoundPlus, Users, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LessonCalendar } from "./week-calendar";
@@ -49,6 +49,8 @@ import { NotificationsProvider, NotificationCentre, MenuBadge, detachPushOnLogou
 import { navigationBadges } from "@/lib/navigation-badges";
 import { courseBadgeCount, defaultCourseView, isCourseView, normalizeCourseView } from "@/lib/course-navigation";
 import { CourseNavigation } from "@/components/course-navigation";
+import { ManagementNavigation } from "@/components/management-navigation";
+import { defaultManagementView, managementArea, managementTitle, normalizeManagementView } from "@/lib/management-navigation";
 import { AccountSetup } from "./account-setup";
 import { DeleteButton, DirectoryFilters, PeopleDirectory } from "./directory-tools";
 
@@ -603,7 +605,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
 };
 
 const NAV_GROUPS: Record<NavigationRole, Array<{ label: string; ids: string[] }>> = {
- admin: [{label:"",ids:["groups","home","groupInfo"]},{label:"课程管理",ids:["courses"]},{label:"教学",ids:["classrooms","homework","materials","quizzes","subjects"]},{label:"人员与账号",ids:["teacherRoster","studentRoster","accounts"]},{label:"系统与账号",ids:["notifications","myAccount","sheet","activity"]}],
+ admin: [{label:"",ids:["groups","home"]},{label:"课程管理",ids:["courses"]},{label:"教学",ids:["classrooms","homework","materials","quizzes","subjects"]},{label:"管理与设置",ids:["people","settings"]},{label:"",ids:["notifications"]}],
  teacher: [{label:"",ids:["home"]},{label:"课程管理",ids:["courses"]},{label:"教学",ids:["classrooms","students","homework","materials","quizzes"]},{label:"我的账号",ids:["notifications","myAccount"]}],
  student: [{label:"",ids:["home"]},{label:"学习",ids:["courses"]},{label:"班级与作业",ids:["classrooms","homework","materials","quizzes"]},{label:"我的账号",ids:["notifications","myAccount"]}],
  pending: [{label:"",ids:["home"]},{label:"我的账号",ids:["notifications","myAccount"]}],
@@ -631,19 +633,20 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     changeLanguage: (next: Language) => void;
 }) {
     const role = account.role as NavigationRole;
-    const items = [...(account.isOwner?[{id:"groups",label:"平台总控制台",Icon:Building2}]:[]),...NAV_ITEMS[role],...(role!=="pending"?[{id:"courses",label:"course.nav.title",Icon:CalendarDays}]:[]),...(role==="admin"?[{id:"groupInfo",label:"集团信息",Icon:Building2}]:[]), { id: "notifications", label: "通知中心", Icon: Bell }];
+    const items = [...(account.isOwner?[{id:"groups",label:"平台总控制台",Icon:Building2}]:[]),...NAV_ITEMS[role],...(role!=="pending"?[{id:"courses",label:"course.nav.title",Icon:CalendarDays}]:[]),...(role==="admin"?[{id:"groupInfo",label:"集团信息",Icon:Building2},{id:"people",label:"人员与账号",Icon:UsersRound},{id:"settings",label:"设置",Icon:Settings}]:[]), { id: "notifications", label: "通知中心", Icon: Bell }];
     const [badgeNow,setBadgeNow]=useState(()=>Date.now());
     useEffect(()=>{const timer=window.setInterval(()=>setBadgeNow(Date.now()),30_000);return()=>window.clearInterval(timer);},[]);
     const badgeCounts=navigationBadges(role,account.id || "",lessons,state?.proposals || [],badgeNow);
     const taskCount=badgeCounts.lessons+badgeCounts.reschedule+badgeCounts.attention;
     const [selectedView, setSelectedView] = useState(items[0].id);
     const lastCourseView = useRef<string>(defaultCourseView(role) || "calendar");
+    const lastManagementViews = useRef({ people: defaultManagementView('people'), settings: defaultManagementView('settings') });
     const currentViewRef=useRef(selectedView);currentViewRef.current=selectedView;
     const [menuOpen, setMenuOpen] = useState(false);
     const [desktop, setDesktop] = useState(false);
     useEffect(() => {
         const home = account.isOwner?"groups":NAV_ITEMS[role][0].id;
-        const normalizedView=(view:unknown):string=>typeof view==='string'?normalizeCourseView(role,view):home;
+        const normalizedView=(view:unknown):string=>typeof view==='string'?normalizeManagementView(role,normalizeCourseView(role,view)):home;
         const valid = (view: unknown) => view === "notifications" || (typeof view === "string" && items.some(item => item.id === normalizedView(view)));
         const state = window.history.state || {};
         const url = new URL(window.location.href);
@@ -696,8 +699,10 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     }, [menuOpen, desktop]);
     const activeView = items.some(item => item.id === selectedView) ? selectedView : items[0].id;
     const courseView = isCourseView(role, activeView);
+    const managementView = managementArea(role, activeView);
     if (courseView) lastCourseView.current = activeView;
-    const title = courseView ? "course.nav.title" : items.find(item => item.id === activeView)?.label || items[0].label;
+    if (managementView) lastManagementViews.current[managementView] = activeView as typeof lastManagementViews.current.people;
+    const title = courseView ? "course.nav.title" : managementView ? managementTitle(managementView) : items.find(item => item.id === activeView)?.label || items[0].label;
     const requiredScope: StateScope | null = activeView === "classrooms" ? "classrooms" : activeView === "accounts" ? "accounts" : activeView === "activity" ? "activity" : ["homework","materials", ...(role === "student" ? ["calendar"] : [])].includes(activeView) ? "learning" : null;
     const scopeLoaded = !requiredScope || state?.loadedScopes?.includes(requiredScope) || (!state?.loadedScopes && Boolean(requiredScope === "learning" ? state?.learning : requiredScope === "classrooms" ? state?.classrooms : requiredScope === "accounts" ? state?.users : state?.activity));
     const scopeError = requiredScope ? state?.scopeErrors?.[requiredScope] : undefined;
@@ -726,7 +731,8 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
         else setMenuOpen(open => !open);
     };
     const choose = (requested: string) => {
-        const id = requested === "courses" ? (isCourseView(role,lastCourseView.current) ? lastCourseView.current : defaultCourseView(role)) : normalizeCourseView(role,requested);
+        const managementTarget = role === 'admin' && (requested === 'people' || requested === 'settings') ? lastManagementViews.current[requested] : requested;
+        const id = requested === "courses" ? (isCourseView(role,lastCourseView.current) ? lastCourseView.current : defaultCourseView(role)) : normalizeManagementView(role,normalizeCourseView(role,managementTarget));
         if (!id || !items.some(item => item.id === id)) return;
         if(id!==activeView&&!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;
         if (id !== activeView) {
@@ -801,7 +807,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
             {menuOpen && <aside id="workspace-menu" className="workspace-menu" aria-label={t("功能菜单")}>
                 <SignedInIdentity account={account}/>
                 <nav className="menu-links" aria-label={t("功能菜单")}>
-                    {NAV_GROUPS[role].map(group => <div className="menu-group" key={group.label}>{group.label && <h2 className="menu-group-title">{t(group.label)}</h2>}{group.ids.map(id => items.find(item => item.id === id)!).filter(Boolean).map(item => <button key={item.id} type="button" data-testid={`menu-${item.id}`} className={"menu-link" + (activeView === item.id || item.id === "courses" && courseView ? " active" : "")} aria-current={activeView === item.id || item.id === "courses" && courseView ? "page" : undefined} onClick={() => choose(item.id)}><item.Icon size={19} aria-hidden="true"/><span>{t(item.label)}</span><MenuBadge count={item.id === "courses" ? courseBadgeCount(role,badgeCounts) : badgeCounts[item.id as keyof typeof badgeCounts] || 0} includeUnread={item.id==="notifications"} quizOnly={item.id==="quizzes"}/></button>)}</div>)}
+                    {NAV_GROUPS[role].map(group => <div className="menu-group" key={group.ids.join('-')}>{group.label && <h2 className="menu-group-title">{t(group.label)}</h2>}{group.ids.map(id => items.find(item => item.id === id)!).filter(Boolean).map(item => <button key={item.id} type="button" data-testid={`menu-${item.id}`} className={"menu-link" + (activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? " active" : "")} aria-current={activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? "page" : undefined} onClick={() => choose(item.id)}><item.Icon size={19} aria-hidden="true"/><span>{t(item.label)}</span><MenuBadge count={item.id === "courses" ? courseBadgeCount(role,badgeCounts) : badgeCounts[item.id as keyof typeof badgeCounts] || 0} includeUnread={item.id==="notifications"} quizOnly={item.id==="quizzes"}/></button>)}</div>)}
                 </nav>
                 <div className="menu-utilities">
                     <button type="button" className="menu-link" onClick={reload}><RefreshCw size={19}/><span>{t("刷新")}</span></button>
@@ -814,10 +820,11 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
                     {showMonth && <label className="month-select">{t("统计月份")}<input type="month" value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)}/></label>}
                 </div>
                 {courseView && <CourseNavigation role={role} activeView={activeView} onChoose={choose} badges={badgeCounts}/>}
+                {managementView && <ManagementNavigation area={managementView} activeView={activeView} onChoose={choose}/>}
                 {message && state && !state.error && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("关闭")}>×</button></div>}
 
                 {role === "teacher" && state && !state.error && !(state.plans || []).length && <div className="notice">{t("暂无负责的学生科目。请联系管理员完成课程分配。")}</div>}
-                <FilterScope.Provider value={`${account.id || "anonymous"}:${account.groupId || "none"}`}>{role !== "pending" && activeView !== "quizzes" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "页面加载失败" : "正在加载…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : !scopeLoaded ? <PageState kind={scopeError ? "error" : "loading"} title={scopeError ? "页面加载失败" : "正在加载…"} description={scopeError} action={scopeError ? "重试" : undefined} onAction={() => { if (requiredScope) void ensureScope(requiredScope, true); }}/> : <Suspense fallback={<PageState kind="loading" title="正在加载…"/>}>{courseView ? <div id="course-view-content" data-testid="course-view-content" data-course-leaf={activeView}>{pageContent}</div> : pageContent}</Suspense>}</FilterScope.Provider>
+                <FilterScope.Provider value={`${account.id || "anonymous"}:${account.groupId || "none"}`}>{role !== "pending" && activeView !== "quizzes" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "页面加载失败" : "正在加载…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : !scopeLoaded ? <PageState kind={scopeError ? "error" : "loading"} title={scopeError ? "页面加载失败" : "正在加载…"} description={scopeError} action={scopeError ? "重试" : undefined} onAction={() => { if (requiredScope) void ensureScope(requiredScope, true); }}/> : <Suspense fallback={<PageState kind="loading" title="正在加载…"/>}>{courseView ? <div id="course-view-content" data-testid="course-view-content" data-course-leaf={activeView}>{pageContent}</div> : managementView ? <div id="management-view-content" data-testid="management-view-content" data-management-leaf={activeView}>{pageContent}</div> : pageContent}</Suspense>}</FilterScope.Provider>
             </main>
         </div>
         {modal && ["attendance","review"].includes(modal.type)&&state?.attendanceSessions?.find(s=>s.id===modal.lesson.sessionId)?<SessionAttendanceDialog session={state.attendanceSessions.find(s=>s.id===modal.lesson.sessionId)!} review={modal.type==="review"} role="admin" close={()=>setModal(null)} mutate={mutate} busy={busy}/>:modal&&<LessonDialog modal={modal} close={() => setModal(null)} mutate={mutate} busy={busy}/>}
@@ -872,7 +879,7 @@ function LocalAccountAdmin({ state, mutate, busy }: {
     const [resetUserId, setResetUserId] = useState("");
     const [resetPassword, setResetPassword] = useState("");
     const localUsers = (state?.users || []).filter(u => u.username && !u.disabledAt && u.id !== state?.account.id);
-    return <section className="panel"><p className="muted">{t("创建账号后，请将临时密码交给用户；首次登录须设置新密码。忘记密码时可在下方重置。")}</p>
+    return <section className="panel local-account-admin"><p className="muted">{t("创建账号后，请将临时密码交给用户；首次登录须设置新密码。忘记密码时可在下方重置。")}</p>
     <form onSubmit={async (e) => { e.preventDefault(); if (await mutate({ action: "createLocalAccount", username, name, password, role, teacherName, studentName })) {
         setUsername("");
         setName("");
@@ -887,13 +894,13 @@ function LocalAccountAdmin({ state, mutate, busy }: {
       <label>{t("\u89D2\u8272")}<select value={role} onChange={e => setRole(e.target.value as "teacher" | "student" | "admin")}><option value="teacher">{t("\u8001\u5E08")}</option><option value="student">{t("\u5B66\u751F")}</option><option value="admin">{t("\u7BA1\u7406\u5458")}</option></select></label>
       {role === "teacher" && <label>{t("\u5173\u8054\u8001\u5E08")}<select required value={teacherName} onChange={e => setTeacherName(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{state?.teachers?.map(t => <option key={t}>{t}</option>)}</select></label>}
       {role === "student" && <label>{t("\u5173\u8054\u5B66\u751F")}<select required value={studentName} onChange={e => setStudentName(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{(state?.students || []).map(s => <option key={s}>{s}</option>)}</select></label>}
-      <Button disabled={busy || (role === "teacher" && !teacherName) || (role === "student" && !studentName)}>{t("\u521B\u5EFA\u8D26\u53F7")}</Button>
+      <div className="directory-form-actions"><Button disabled={busy || (role === "teacher" && !teacherName) || (role === "student" && !studentName)}>{t("\u521B\u5EFA\u8D26\u53F7")}</Button></div>
     </form>
-    <h3>{t("\u91CD\u7F6E\u5FD8\u8BB0\u7684\u5BC6\u7801")}</h3><p className="muted">{t("\u91CD\u7F6E\u540E\uFF0C\u8BE5\u8D26\u53F7\u73B0\u6709\u767B\u5F55\u4F1A\u9000\u51FA\uFF0C\u4E0B\u6B21\u767B\u5F55\u5FC5\u987B\u518D\u6B21\u4FEE\u6539\u5BC6\u7801\u3002")}</p>
+    <details className="local-password-reset settings-disclosure"><summary><span>{t("\u91CD\u7F6E\u5FD8\u8BB0\u7684\u5BC6\u7801")}</span><ChevronDown size={18} aria-hidden="true"/></summary><p className="muted">{t("\u91CD\u7F6E\u540E\uFF0C\u8BE5\u8D26\u53F7\u73B0\u6709\u767B\u5F55\u4F1A\u9000\u51FA\uFF0C\u4E0B\u6B21\u767B\u5F55\u5FC5\u987B\u518D\u6B21\u4FEE\u6539\u5BC6\u7801\u3002")}</p>
     <form onSubmit={async (e) => { e.preventDefault(); if (await mutate({ action: "resetLocalPassword", userId: resetUserId, password: resetPassword })) {
         setResetUserId("");
         setResetPassword("");
-    } }}><label>{t("\u9009\u62E9\u8D26\u53F7")}<select required value={resetUserId} onChange={e => setResetUserId(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{localUsers.map(u => <option value={u.id} key={u.id}>{u.username} · {u.name}</option>)}</select></label><label>{t("新的临时密码")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={resetPassword} onChange={e => setResetPassword(e.target.value)}/></label><Button variant="outline" disabled={busy || !resetUserId}>{t("\u91CD\u7F6E\u5BC6\u7801")}</Button></form>
+    } }}><label>{t("\u9009\u62E9\u8D26\u53F7")}<select required value={resetUserId} onChange={e => setResetUserId(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{localUsers.map(u => <option value={u.id} key={u.id}>{u.username} · {u.name}</option>)}</select></label><label>{t("新的临时密码")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={resetPassword} onChange={e => setResetPassword(e.target.value)}/></label><div className="directory-form-actions"><Button variant="outline" disabled={busy || !resetUserId}>{t("\u91CD\u7F6E\u5BC6\u7801")}</Button></div></form></details>
   </section>;
 }
 type Open = (x: {

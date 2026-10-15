@@ -1,6 +1,6 @@
 "use client";
-import { useCallback,useEffect,useState } from "react";
-import { Building2,ArrowRight,Copy,Plus } from "lucide-react";
+import { useCallback,useEffect,useRef,useState } from "react";
+import { Building2,ArrowRight,Copy,Plus,ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageState } from "@/components/page-state";
 import { groupFetch } from "@/lib/group-client";
@@ -15,14 +15,28 @@ async function api(data?:Record<string,unknown>) {
   if(!response.ok)throw new Error(t(result.error||"请求失败"));
   return result;
 }
+function focusGroupControl(element:HTMLElement|null) {
+  requestAnimationFrame(()=>{
+    if(!element?.isConnected)return;
+    element.focus({preventScroll:true});
+    const bounds=element.getBoundingClientRect(),top=Math.max(0,document.querySelector(".topbar")?.getBoundingClientRect().bottom||0)+12;
+    if(bounds.top<top||bounds.bottom>window.innerHeight-12)window.scrollTo({top:Math.max(0,window.scrollY+bounds.top-top),behavior:"smooth"});
+  });
+}
 export function GroupConsole({isOwner,currentGroupId}:{isOwner:boolean;currentGroupId?:string|null}) {
   const [groups,setGroups]=useState<Group[]|null>(null),[error,setError]=useState(""),[busy,setBusy]=useState(false),[name,setName]=useState(""),[editing,setEditing]=useState<string|null>(null);
+  const [createOpen,setCreateOpen]=useState(false);
+  const createSummary=useRef<HTMLElement>(null),createForm=useRef<HTMLFormElement>(null),nameInput=useRef<HTMLInputElement>(null);
+  function closeCreate(restoreFocus=createForm.current?.contains(document.activeElement)) {
+    setCreateOpen(false);
+    if(restoreFocus)focusGroupControl(createSummary.current);
+  }
   const [origin,setOrigin]=useState("");useEffect(()=>setOrigin(window.location.origin),[]);
   const load=useCallback(async()=>{try{setError("");const result=await api();setGroups(result.groups||[]);}catch(e){setError((e as Error).message);}},[]);
   useEffect(()=>{void load();},[load]);
   async function save(event:React.FormEvent) {
-    event.preventDefault();if(busy)return;setBusy(true);setError("");
-    try{const old=groups?.find(g=>g.id===editing);await api({action:editing?"update":"create",id:editing,name,active:old?Boolean(old.active):true});setName("");setEditing(null);await load();showActionToast("success","集团设置已保存");}catch(e){setError((e as Error).message);}finally{setBusy(false);}
+    event.preventDefault();if(busy)return;const restoreFocus=createForm.current?.contains(document.activeElement);setBusy(true);setError("");
+    try{const old=groups?.find(g=>g.id===editing);await api({action:editing?"update":"create",id:editing,name,active:old?Boolean(old.active):true});setName("");setEditing(null);closeCreate(restoreFocus);await load();showActionToast("success","集团设置已保存");}catch(e){setError((e as Error).message);}finally{setBusy(false);}
   }
   async function enter(group:Group) {
     if(busy)return;setBusy(true);setError("");
@@ -41,16 +55,15 @@ export function GroupConsole({isOwner,currentGroupId}:{isOwner:boolean;currentGr
   }
   if(!groups)return <PageState kind={error?"error":"loading"} title={error||"正在加载…"} action={error?"重试":undefined} onAction={()=>void load()}/>;
   return <div className="group-console">
-    {isOwner&&<AcademicCatalogueAdmin/>}
-    {isOwner&&<form className="panel group-create" onSubmit={save}><h2>{t(editing?"编辑集团名称":"新增补习集团")}</h2><label>{t("集团名称")}<input required maxLength={120} value={name} onChange={e=>setName(e.target.value)}/></label><div className="button-row"><Button disabled={busy}><Plus size={16}/>{t(editing?"保存修改":"创建集团")}</Button>{editing&&<Button type="button" variant="outline" onClick={()=>{setEditing(null);setName("");}}>{t("取消")}</Button>}</div></form>}
+    {isOwner&&<details className="panel group-create-disclosure settings-disclosure" open={createOpen} onToggle={event=>setCreateOpen(event.currentTarget.open)}><summary ref={createSummary}><span>{t(editing?"编辑集团名称":"新增补习集团")}</span><ChevronDown size={18} aria-hidden="true"/></summary><form ref={createForm} className="group-create" onSubmit={save}><label>{t("集团名称")}<input ref={nameInput} required maxLength={120} value={name} onChange={e=>setName(e.target.value)}/></label><div className="button-row settings-actions"><Button disabled={busy}><Plus size={16}/>{t(editing?"保存修改":"创建集团")}</Button>{editing&&<Button type="button" variant="outline" onClick={()=>{setEditing(null);setName("");closeCreate();}}>{t("取消")}</Button>}</div></form></details>}
     {error&&<div className="error" role="alert">{error}</div>}
     <div className="group-list">{groups.map(group=><section className="panel group-entry" key={group.id}>
-      <div className="group-heading"><Building2 size={24} aria-hidden="true"/><div><h2>{group.name}</h2><p>{t(group.active?"已启用":"已停用")}{group.id===currentGroupId&&` · ${t("当前集团")}`}</p></div></div>
+      <div className="group-heading"><Building2 size={24} aria-hidden="true"/><div className="group-heading-copy"><h2>{group.name}</h2><p>{t(group.active?"已启用":"已停用")}{group.id===currentGroupId&&` · ${t("当前集团")}`}</p></div></div>
       {isOwner&&<dl className="group-counts"><div><dt>{t("管理员")}</dt><dd>{group.admins||0}</dd></div><div><dt>{t("老师")}</dt><dd>{group.teachers||0}</dd></div><div><dt>{t("学生")}</dt><dd>{group.students||0}</dd></div><div><dt>{t("班级")}</dt><dd>{group.classrooms||0}</dd></div></dl>}
-      {isOwner&&<label>{t('quiz.chiefAdmin')}<select aria-label={t('quiz.chiefAdmin')+' · '+group.name} disabled={busy} value={group.chiefAdminId||''} onChange={event=>void setChief(group,event.target.value)}><option value="">{t('quiz.noChiefAdmin')}</option>{group.chiefAdminId&&!group.adminOptions?.some(a=>a.id===group.chiefAdminId)&&<option value={group.chiefAdminId}>{t('quiz.chiefUnavailable')}</option>}{group.adminOptions?.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select><span className="field-hint">{t('quiz.chiefScope')}</span></label>}
-      <label>{t("新用户邀请链接")}<input readOnly value={origin?`${origin}/?group=${group.joinCode}`:""}/></label>
-      <p className="field-hint">{t("新用户通过此链接使用 Google 注册后，归入此集团并等待管理员分配角色。已有账号所属集团不变。")}</p>
-      <div className="button-row"><Button variant="outline" disabled={busy} onClick={()=>void copy(group)}><Copy size={16}/>{t("复制注册链接")}</Button>{isOwner&&<><Button disabled={busy} onClick={()=>void enter(group)}>{t("管理此集团")}<ArrowRight size={16}/></Button><Button variant="outline" disabled={busy} onClick={()=>{setEditing(group.id);setName(group.name);window.scrollTo({top:0,behavior:"smooth"});}}>{t("修改名称")}</Button><Button variant="outline" disabled={busy} onClick={()=>void toggle(group)}>{t(group.active?"停用集团":"启用集团")}</Button></>}</div>
+      {isOwner&&<div className="group-entry-primary settings-actions"><Button disabled={busy} onClick={()=>void enter(group)}>{t("管理此集团")}<ArrowRight size={16}/></Button></div>}
+      <div className="group-invitation"><label>{t("新用户邀请链接")}<input readOnly value={origin?`${origin}/?group=${group.joinCode}`:""}/></label><p className="field-hint">{t("新用户通过此链接使用 Google 注册后，归入此集团并等待管理员分配角色。已有账号所属集团不变。")}</p><div className="settings-actions"><Button variant="outline" disabled={busy} onClick={()=>void copy(group)}><Copy size={16}/>{t("复制注册链接")}</Button></div></div>
+      {isOwner&&<details className="group-entry-management settings-disclosure"><summary><span>{t("更多操作")}</span><ChevronDown size={18} aria-hidden="true"/></summary><div className="group-management-content"><label>{t('quiz.chiefAdmin')}<select aria-label={t('quiz.chiefAdmin')+' · '+group.name} disabled={busy} value={group.chiefAdminId||''} onChange={event=>void setChief(group,event.target.value)}><option value="">{t('quiz.noChiefAdmin')}</option>{group.chiefAdminId&&!group.adminOptions?.some(a=>a.id===group.chiefAdminId)&&<option value={group.chiefAdminId}>{t('quiz.chiefUnavailable')}</option>}{group.adminOptions?.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select><span className="field-hint">{t('quiz.chiefScope')}</span></label><div className="button-row settings-actions"><Button variant="outline" disabled={busy} onClick={()=>{setEditing(group.id);setName(group.name);setCreateOpen(true);focusGroupControl(nameInput.current);}}>{t("修改名称")}</Button><Button variant="outline" disabled={busy} onClick={()=>void toggle(group)}>{t(group.active?"停用集团":"启用集团")}</Button></div></div></details>}
     </section>)}</div>
+    {isOwner&&<AcademicCatalogueAdmin/>}
   </div>;
 }

@@ -1,0 +1,103 @@
+/* Personnel and settings use the same spacing rhythm as teaching pages. */
+.management-navigation { display: flex; flex-wrap: nowrap; gap: 8px; max-width: 100%; min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; scroll-padding-inline: 8px; margin: 0 0 24px; padding: 8px; background: #fff; border: 1px solid var(--border); border-radius: 8px; }
+.management-navigation > button { flex: 0 0 auto; min-height: 44px; padding: 10px 16px; border: 1px solid transparent; border-radius: 6px; color: #605a75; font-size: 14px; font-weight: 600; white-space: nowrap; }
+.management-navigation > button[aria-current=page] { color: #4e329c; background: #f0ebfc; border-color: #d3c8ed; }
+.management-navigation > button:focus-visible { outline: 2px solid #6245bd; outline-offset: 2px; }
+#management-view-content { min-width: 0; }
+.directory-panel { min-width: 0; }
+.directory-panel .directory-section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.directory-panel .directory-section-head > h2 { margin: 0; }
+.directory-panel .directory-toolbar,.directory-filter-actions,.directory-person-actions,.directory-form-actions,.directory-notice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-width: 0; }
+.directory-panel .directory-toolbar { margin-block: 20px; }
+.directory-panel .directory-maintenance { margin-top: 0; }
+.directory-toolbar .student-promotions { max-width: 100%; margin-block: 0; }
+.directory-filter-actions,.directory-form-actions { grid-column: 1 / -1; }
+.directory-filter-actions .check-row { margin: 0; }
+.directory-form-actions { margin-top: 4px; }
+.directory-panel .directory-person-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(160px,auto); align-items: start; gap: 20px; padding-block: 20px; }
+.directory-panel .directory-person-identity { display: grid; gap: 6px; min-width: 0; }
+.directory-person-identity > :is(strong,small) { margin: 0; min-width: 0; overflow-wrap: anywhere; line-height: 1.6; }
+.directory-panel .directory-person-actions { justify-content: flex-end; max-width: 420px; }
+.directory-panel :is(.directory-toolbar,.directory-section-head,.directory-person-actions) > button,.directory-form-actions > button { min-width: 0; max-width: 100%; min-height: 44px; height: auto; white-space: normal; line-height: 1.5; }
+.directory-create { border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 24px; min-width: 0; }
+.directory-create > summary { min-height: 44px; padding: 10px 4px; color: #4e329c; font-size: 15px; font-weight: 600; cursor: pointer; }
+.directory-create > form { margin-top: 16px; }
+.directory-dialog-identity { display: grid; gap: 6px; margin-bottom: 20px; min-width: 0; overflow-wrap: anywhere; }
+.directory-notice-actions > span { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+.directory-notice-actions > button { margin: 0; }
+.directory-dialog .local-account-admin { padding: 0; border: 0; box-shadow: none; background: transparent; min-width: 0; }
+.local-account-admin > .muted { margin: 0 0 20px; }
+.local-password-reset { border-top: 1px solid var(--border); margin-top: 24px; padding-top: 16px; }
+.local-password-reset > p { margin-block: 16px; }
+.local-password-reset form { margin-top: 16px; }
+.account-settings { min-width: 0; }
+.account-settings > h2 { margin-bottom: 20px; }
+.account-summary { display: grid; gap: 16px; min-width: 0; }
+.account-summary-name { font-size: 18px; overflow-wrap: anywhere; }
+.account-summary-fields { display: grid; gap: 12px; margin: 0; font-size: 14px; line-height: 1.6; }
+.account-summary-fields > div { display: grid; grid-template-columns: minmax(110px,1fr) minmax(0,3fr); gap: 12px; min-width: 0; }
+.account-summary-fields dt { color: var(--muted-foreground); }
+.account-summary-fields dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.account-settings .account-security-section { display: grid; gap: 16px; max-width: min(100%,34rem); margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); min-width: 0; }
+.account-security-section label { display: grid; gap: 8px; min-width: 0; }
+.account-security-section input { width: 100%; max-width: 100%; min-width: 0; min-height: 44px; border: 1px solid #d9d6ea; border-radius: 6px; padding: 10px 12px; background: #fff; color: var(--foreground); font: inherit; font-size: 16px; line-height: 1.5; }
+.account-security-section input:focus-visible { outline: 2px solid #795bc5; outline-offset: 2px; }
+.settings-section-heading { display: grid; gap: 8px; min-width: 0; }
+.settings-section-heading :is(h3,p) { margin: 0; overflow-wrap: anywhere; }
+.settings-section-heading h3 { font-size: 16px; line-height: 1.5; font-weight: 600; }
+.settings-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-width: 0; }
+.settings-actions > :is(button,label) { min-height: 44px; max-width: 100%; height: auto; white-space: normal; line-height: 1.5; }
+.group-console { gap: 24px; min-width: 0; }
+.group-heading { gap: 12px; }
+.group-heading > svg { flex: none; }
+.group-heading-copy { min-width: 0; overflow-wrap: anywhere; }
+.group-heading-copy :is(h2,p) { overflow-wrap: anywhere; }
+.group-console .group-counts { gap: 12px; }
+.group-entry { min-width: 0; }
+.group-console .group-invitation { display: grid; gap: 12px; border-top: 1px solid var(--border); padding-top: 16px; min-width: 0; }
+.group-invitation input { min-width: 0; max-width: 100%; }
+.group-console :is(.group-create,.group-management-content) { display: grid; gap: 16px; min-width: 0; }
+.group-console .button-row { gap: 12px; }
+.settings-disclosure { min-width: 0; }
+.settings-disclosure > summary { display: flex; align-items: center; gap: 12px; min-height: 44px; font-weight: 600; cursor: pointer; list-style: none; }
+.settings-disclosure > summary::-webkit-details-marker { display: none; }
+.settings-disclosure > summary > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.settings-disclosure > summary > svg:last-child { flex: none; margin-left: auto; transition: transform .15s; }
+.settings-disclosure[open] > summary > svg:last-child { transform: rotate(180deg); }
+.settings-disclosure > summary:focus-visible { outline: 2px solid #6245bd; outline-offset: 3px; }
+.settings-disclosure[open] > summary { margin-bottom: 16px; }
+.group-entry-management { border-top: 1px solid var(--border); padding-top: 12px; }
+.catalogue-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 20px; }
+.catalogue-meta > p { flex: 1 1 240px; margin: 0; }
+.catalogue-version { font-size: 13px; color: var(--muted-foreground); }
+.academic-catalogue-admin > .button-row { display: flex; flex-wrap: wrap; gap: 12px; margin-block: 20px; }
+.academic-catalogue-admin .catalogue-list { display: grid; gap: 12px; }
+.academic-catalogue-admin .catalogue-list > details { margin: 0; }
+.academic-catalogue-admin .catalogue-list details[open] > * { margin-block: 0; }
+.academic-catalogue-admin .catalogue-list details[open] > summary { margin-bottom: 16px; }
+.catalogue-syllabus-meta { color: var(--muted-foreground); font-size: 13px; }
+.catalogue-syllabus-content { display: grid; gap: 16px; min-width: 0; }
+.catalogue-syllabus-content > .field-hint { margin: 0; }
+.catalogue-subject-row { display: flex; flex-wrap: wrap; align-items: start; gap: 12px; min-width: 0; }
+.catalogue-subject-copy { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+.catalogue-subject-copy > small { margin-top: 6px; }
+.catalogue-subject-row > button { min-height: 44px; }
+.catalogue-additions { display: grid; gap: 12px; margin-top: 24px; }
+.catalogue-addition { border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.catalogue-addition .catalogue-controls { border: 0; padding: 0; }
+.catalogue-addition :is(fieldset,form) { min-width: 0; }
+.catalogue-addition form { gap: 16px; }
+.sheet-sync-panel { min-width: 0; gap: 20px; }
+.sheet-sync-preview { gap: 20px; }
+.activity-item summary { display: flex; flex-wrap: wrap; gap: 8px 16px; min-height: 44px; }
+.activity-item summary > * { min-width: 0; overflow-wrap: anywhere; }
+[data-slot=dialog-content] > [data-slot=dialog-close] { display: inline-flex; align-items: center; justify-content: center; top: 12px; right: 12px; width: 44px; height: 44px; }
+[data-slot=dialog-content]:has(> [data-slot=dialog-close]) > :is([data-slot=dialog-title],[data-slot=dialog-header]) { padding-right: 48px; }
+@media(max-width:700px) {
+ .directory-panel .directory-person-row { grid-template-columns: minmax(0,1fr); gap: 16px; }
+ .directory-panel .directory-person-actions { justify-content: flex-start; max-width: 100%; }
+ .account-summary-fields > div { grid-template-columns: minmax(0,1fr); gap: 4px; }
+ .group-console .group-counts { grid-template-columns: repeat(2,minmax(0,1fr)); }
+ .settings-actions > button { min-width: 0; }
+ .directory-create { padding: 12px 16px; }
+}

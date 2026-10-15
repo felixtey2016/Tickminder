@@ -14,6 +14,10 @@ export function setLanguage(language: Language) {
 export function getLanguage() { return currentLanguage; }
 
 const en: Record<string, string> = {
+  "设置": "Settings",
+  "管理与设置": "Administration",
+  "登录与安全": "Sign-in & security",
+  "课程体系": "Syllabus",
   "班级管理": "Manage classroom",
   "course.nav.title": "Courses",
   "course.nav.calendar": "Calendar",
