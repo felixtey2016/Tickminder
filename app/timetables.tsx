@@ -39,7 +39,7 @@ export function Timetable({ type, lessons, students, teachers, month, setMonth }
       <label>{t("月份")}<input type="month" value={month} onChange={e => setMonth(e.target.value)}/></label>
       {type === "teacher" && <label>{t("学生姓名（可选）")}<select value={studentFilter} disabled={!name} onChange={e => setStudentFilter(e.target.value)}><option value="">{t("所有学生")}</option>{teacherStudents.map(n => <option key={n} value={n}>{n}</option>)}</select></label>}
     </div>
-    <Button type="button" size="sm" variant="outline" onClick={()=>{setName("");setStudentFilter("");}}>{t("重置筛选")}</Button>
+    <div className="timetable-actions"><Button type="button" size="sm" variant="outline" onClick={()=>{setName("");setStudentFilter("");}}>{t("重置筛选")}</Button></div>
     {name ? <><div className="timetable-summary"><strong>{rows.length} {t("堂课")}</strong><span>{t("课程总时长")} · {hours.toFixed(2)} h</span><span>{completed.length} {t("堂已完成")}</span></div>
       <p className="muted">{t("已完成按实际时长，其余按安排时长计算。")}</p>
       <div className="timetable-list">{rows.length ? rows.map(l => {

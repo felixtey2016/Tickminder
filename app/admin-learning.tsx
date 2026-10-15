@@ -33,8 +33,8 @@ export function AdminLearning({ learning, view, inClassroom = false,onChanged }:
   const visibleCount = view === "materials" ? materials.length : homework.length;
   const filtered = Boolean(teacher || subject);
 
-  return <section className="panel learning-admin">
-    {!inClassroom && classError && records.some(item=>!item.classroomId) && <p className="notice" role="alert">{classError} <Button variant="outline" onClick={()=>void loadClasses()}>{t("重试")}</Button></p>}
+  return <section className={`panel learning-admin${inClassroom ? " learning-content-surface" : ""}`}>
+    {!inClassroom && classError && records.some(item=>!item.classroomId) && <div className="notice teaching-notice-actions" role="alert"><span>{classError}</span><Button variant="outline" onClick={()=>void loadClasses()}>{t("重试")}</Button></div>}
     {!inClassroom && records.length > 0 && <FilterPanel active={filtered}>
       <label>{t("老师")}<select value={teacher} onChange={event => setTeacher(event.target.value)}><option value="">{t("所有老师")}</option>{teachers.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
       <label>{t("科目")}<select value={subject} onChange={event => setSubject(event.target.value)}><option value="">{t("全部科目")}</option>{subjects.map(name => <option key={name}>{name}</option>)}</select></label>
@@ -42,24 +42,24 @@ export function AdminLearning({ learning, view, inClassroom = false,onChanged }:
     </FilterPanel>}
     <div className="learning-list">
       {view === "materials" && materials.map(item => <article className="learning-card" key={item.id}>
-        <div>{!inClassroom && !item.classroomId && <div className="legacy-label">{t("待整理")} <LegacyOrganizer item={item} kind="material" classes={classes} onChanged={()=>onChanged?.()}/></div>}<strong>{item.title}</strong><small>{item.teacherName} · {subjectOf(item)}{item.classroomTitle ? ` · ${item.classroomTitle}` : ""}</small>
+        <div className="learning-record-content">{!inClassroom && !item.classroomId && <div className="legacy-label"><span>{t("待整理")}</span><LegacyOrganizer item={item} kind="material" classes={classes} onChanged={()=>onChanged?.()}/></div>}<header className="learning-record-head"><strong>{item.title}</strong><small>{item.teacherName} · {subjectOf(item)}{item.classroomTitle ? ` · ${item.classroomTitle}` : ""}</small></header>
           {item.description && <p>{item.description}</p>}
           <p><span className="muted">{t("分配给学生")} · </span>{item.recipients?.map(recipient => recipient.studentName).join("、")}</p>
-          <FileLinks fileId={item.fileId}/><ContentActions kind="material" id={item.id}/>
         </div>
+        <div className="learning-action-row"><FileLinks fileId={item.fileId}/><ContentActions kind="material" id={item.id}/></div>
       </article>)}
       {view === "homework" && homework.map(item => <article className="learning-card" key={item.id}>
-        <div>{!inClassroom && !item.classroomId && <div className="legacy-label">{t("待整理")} <LegacyOrganizer item={item} kind="homework" classes={classes} onChanged={()=>onChanged?.()}/></div>}<strong>{item.title}</strong><small>{item.teacherName} · {item.subject}{item.classroomTitle ? ` · ${item.classroomTitle}` : ""}</small>
-          <small>{t("开始")} · {readable(item.startsAt)}<br/>{t("截止")} · {readable(item.dueAt)}</small>
+        <div className="learning-record-content">{!inClassroom && !item.classroomId && <div className="legacy-label"><span>{t("待整理")}</span><LegacyOrganizer item={item} kind="homework" classes={classes} onChanged={()=>onChanged?.()}/></div>}<header className="learning-record-head"><strong>{item.title}</strong><small>{item.teacherName} · {item.subject}{item.classroomTitle ? ` · ${item.classroomTitle}` : ""}</small></header>
+          <div className="learning-record-meta"><small>{t("开始")} · {readable(item.startsAt)}</small><small>{t("截止")} · {readable(item.dueAt)}</small></div>
           {item.description && <p>{item.description}</p>}
           {item.maxScore != null && <span>{t("满分")} · {item.maxScore}</span>}
-          {item.attachmentFileId && <FileLinks fileId={item.attachmentFileId}/>}<ContentActions kind="homework" id={item.id}/>
         </div>
+        <div className="learning-action-row">{item.attachmentFileId && <FileLinks fileId={item.attachmentFileId}/>}<ContentActions kind="homework" id={item.id}/></div>
         <div className="learning-recipient-status">{item.recipients?.map(student => {
           const history = learning.submissions.filter(submission => submission.homeworkId === item.id && submission.studentName === student).sort((a, b) => (b.attempt||0)-(a.attempt||0)||b.submittedAt.localeCompare(a.submittedAt)||b.id.localeCompare(a.id));
           const latest = history[0];
           const score = item.scores?.find(row => row.studentName === student)?.score;
-          return <div key={student}><strong>{student}</strong><span>{latest ? `${t("已提交")} · ${readable(latest.submittedAt)}${latest.late ? ` · ${t("迟交")}` : ""}` : t("未提交")}</span>
+          return <div className="learning-recipient-row" key={student}><header className="learning-recipient-head"><strong>{student}</strong><span>{latest ? `${t("已提交")} · ${readable(latest.submittedAt)}${latest.late ? ` · ${t("迟交")}` : ""}` : t("未提交")}</span></header>
             {latest && <><FileLinks fileId={latest.fileId}/><SubmissionVersion revision={latest.homeworkRevision} dueAt={latest.dueAtSubmission}/></>}
             {score != null && <span>{t("得分")} · {score} / {item.maxScore}</span>}
             {latest&&<HomeworkReview homeworkId={item.id} studentName={student}/ >}{history.length > 1 && <details><summary>{t("查看提交记录")} ({history.length})</summary>{history.map(submission => <div className="learning-admin-submission" key={submission.id}><small>{readable(submission.submittedAt)}{submission.late ? ` · ${t("迟交")}` : ""}</small><FileLinks fileId={submission.fileId}/><SubmissionVersion revision={submission.homeworkRevision} dueAt={submission.dueAtSubmission}/></div>)}</details>}

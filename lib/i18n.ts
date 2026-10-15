@@ -14,6 +14,7 @@ export function setLanguage(language: Language) {
 export function getLanguage() { return currentLanguage; }
 
 const en: Record<string, string> = {
+  "班级管理": "Manage classroom",
   "course.nav.title": "Courses",
   "course.nav.calendar": "Calendar",
   "列表": "List",
