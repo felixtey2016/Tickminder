@@ -1,6 +1,14 @@
 # Tickminder independent Cloudflare recovery
 
-## Current release - Part 17 Quiz publishing and marking
+## Current release - Quiz responsiveness and image-heavy publishing
+
+Published on **2026-10-16** as Worker `9f0008a6-90c2-46f8-a90c-92993f59b453` to both formal domains. GitHub source is `47733bdf87f41c0cf16d826be08539dd6efe4c09`, tree `7bc4c4779273e3266b05f47dbeff7d8f6d17c7b9`. Runtime variables and D1/R2 bindings were preserved. This is a code-only release with no database migration; retain v17/51 tables and all later user work when rolling back to Worker `6533355f-fb7f-4dcd-b618-c4d3e1f63a58`.
+
+The release fixes local navigation blocked by autosave, serial image uploads, redundant Quiz reads, full question transfers for library cards and refresh of inactive page scopes. A 40-question/40-picture import/save/publication passed against an isolated real Worker. All 30 final browser checks and 30 production boundary/asset/integrity checks passed. Encrypted pre/post backup and restore checks accompany this release. No public test site or synthetic production fixture was used. See [QUIZ_PERFORMANCE.md](QUIZ_PERFORMANCE.md).
+
+The earlier GitHub source gap is resolved: commit `81065b83a01f98517b16e1477816828e1dd0644c` preserves the deployed source through Part 17 before this optimization; the performance commit follows it on `feat/tuition-groups`. Historical notes below retain what was backed up at each earlier publication. Uploads, records and credentials remain in independent encrypted backups, outside public source.
+
+## Preceding release - Part 17 Quiz publishing and marking
 
 Published on **2026-10-15** as Worker `6533355f-fb7f-4dcd-b618-c4d3e1f63a58` to both formal domains, retaining runtime configuration and D1/R2 bindings. Initial Part 17 publication was `c346754e-8d42-4728-8910-d8dbf312a0d0`; final follow-up clarifies feedback wording. See [QUIZ_PUBLISHING.md](QUIZ_PUBLISHING.md).
 

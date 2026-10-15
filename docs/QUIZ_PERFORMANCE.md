@@ -69,3 +69,10 @@ checkpoint. The deployed source through Part 17 is backed up on GitHub at commit
 Rollback to the preceding Worker requires no database restore or migration
 reversal. Database/file backups are retained independently from public source;
 never overwrite current user work merely to reverse a code-only release.
+
+Published on 2026-10-16 as Worker
+`9f0008a6-90c2-46f8-a90c-92993f59b453`, using source commit
+`47733bdf87f41c0cf16d826be08539dd6efe4c09`. Final browser and production acceptance
+each passed 30 checks. The prior Worker is
+`6533355f-fb7f-4dcd-b618-c4d3e1f63a58`. Deployment metadata is recorded in a follow-up
+documentation commit; it does not change the runtime build.
