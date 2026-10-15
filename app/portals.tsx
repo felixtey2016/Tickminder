@@ -1,4 +1,9 @@
 "use client";
+import {SessionAttendanceBoard,SessionAttendanceDialog} from "./session-attendance";
+import type {AttendanceSession} from "@/lib/attendance-types";
+import type {SessionLesson} from "@/lib/class-session-display";
+import {ClassSessionLabel} from "@/components/class-session-label";
+import {GroupSessionBoard,type GroupSession,type GroupSessionRequest} from "./class-session-schedule";
 import { LessonMore } from "@/components/lesson-more";
 import { t } from "@/lib/i18n";
 import { useDialogState } from "@/lib/use-dialog-state";
@@ -14,7 +19,7 @@ import { OnlineLessonLink } from "./online-lesson-link";
 import { LessonHistory } from "./lesson-history";
 import { ReschedulePanel, RescheduleRequestDialog, type RescheduleProposal } from "./reschedule-panel";
 import { ConflictPreview } from "./conflict-preview";
-type Lesson = {
+type Lesson = SessionLesson & {
     id: string;
     student: string;
     subject: string;
@@ -38,66 +43,17 @@ function TeacherPlanLinkEditor({ plan, mutate, busy }: { plan: { key: string; st
     const [link, setLink] = useState(plan.onlineLink || "");
     return <form className="teacher-plan-link" onSubmit={async event => { event.preventDefault(); await mutate({ action: "updateOnlineLink", key: plan.key, onlineLink: link }); }}><strong>{plan.student} · {plan.subject}</strong><OnlineLessonLink href={plan.onlineLink}/><label>{t("线上课堂链接（可选）")}<input type="url" inputMode="url" maxLength={2048} placeholder="https://meet.google.com/..." value={link} onChange={event => setLink(event.target.value)}/></label><Button size="sm" disabled={busy || link === (plan.onlineLink || "")}>{t("保存课堂链接")}</Button></form>;
 }
-export function TeacherPortal({ lessons, plans, proposals, mutate, busy, view, onReschedule }: {
-    lessons: Lesson[];
-    plans: Array<{
-        key: string;
-        student: string;
-        subject: string;
-        onlineLink?: string | null;
-    }>;
-    proposals: Proposal[];
-    mutate: Mutate;
-    busy: boolean;
-    view: "calendar" | "lessons" | "attendance" | "students" | "reschedule";
-    onReschedule?: () => void;
-}) {
-    const [selected, setSelected] = useDialogState<{
-        lesson: Lesson;
-        mode: "present" | "other";
-    } | null>("teacher-attendance", null);
-    const [other, setOther] = useState("early_dismissal");
-    const [actualStart, setActualStart] = useState("");
-    const [totalHours, setTotalHours] = useState("");
-    const [newStart, setNewStart] = useState("");
-    const [newEnd, setNewEnd] = useState("");
-    const [note, setNote] = useState("");
-    const now = new Date().toISOString();
-    const today = local(now).slice(0, 10);
-    const sorted = [...lessons].sort((a, b) => a.plannedStart.localeCompare(b.plannedStart));
-    const todayRows = sorted.filter(l => local(l.plannedStart).slice(0, 10) === today && l.status === "scheduled");
-    const overdue = sorted.filter(l => l.status === "scheduled" && l.plannedStart < now && local(l.plannedStart).slice(0, 10) !== today);
-    const upcoming = sorted.filter(l => l.status === "scheduled" && l.plannedStart > now && local(l.plannedStart).slice(0, 10) !== today);
-    function open(lesson: Lesson, mode: "present" | "other") {
-        setSelected({ lesson, mode });
-        setOther("early_dismissal");
-        setActualStart(local(lesson.plannedStart));
-        setTotalHours(String((Date.parse(lesson.plannedEnd) - Date.parse(lesson.plannedStart)) / 3600000));
-        setNewStart(local(lesson.plannedStart));
-        setNewEnd(local(lesson.plannedEnd));
-        setNote("");
-    }
-    async function submit(event: React.FormEvent) {
-        event.preventDefault();
-        if (!selected)
-            return;
-        const { lesson, mode } = selected;
-        const action = mode === "other" && other === "reschedule" ? "proposeReschedule" : "attendance";
-        const ok = await mutate(action === "proposeReschedule"
-            ? { action, id: lesson.id, start: newStart, end: newEnd, note }
-            : { action, id: lesson.id, status: mode === "present" ? "completed" : other, actualStart, totalHours: Number(totalHours), note });
-        if (ok)
-            setSelected(null);
-    }
-    function cards(rows: Lesson[]) {
-        return rows.length ? rows.map(l => {
-            const ready = mayCheckIn(l.plannedStart, now);
-            const pending = proposals.find(p => p.lessonId === l.id && p.status === "pending");
-            return <article className="portal-card" key={l.id}><div><strong>{l.student} · {l.subject}</strong><span className="course-time">{label(l.plannedStart)}–{local(l.plannedEnd).slice(11)} · {l.teacherName}</span><OnlineLessonLink href={l.onlineLink}/>{pending && <small>{t(pending.requestedRole === "student" ? "待你确认改期" : "等待学生确认") + "："}{label(pending.proposedStart)}–{local(pending.proposedEnd).slice(11)}</small>}</div><div className="portal-actions"><Button size="sm" disabled={!ready || busy} onClick={() => open(l, "present")}>{t("记录正常出席…")}</Button><LessonMore><Button size="sm" variant="outline" disabled={busy} onClick={() => open(l, "other")}>{t("其他出席／改期…")}</Button></LessonMore></div>{!ready && <small>{t("上课当天起可记录出席；改期可提前申请。")}</small>}<LessonHistory lessonId={l.id}/></article>;
-        }) : <p className="muted">{t("\u6CA1\u6709\u8BFE\u7A0B\u3002")}</p>;
-    }
-    return <div className="portal-layout portal-single-view">{view === "calendar" && <StudentCalendar role="teacher" onPending={onReschedule} lessons={lessons} proposals={proposals} busy={busy} renderActions={id => { const lesson = lessons.find(item => item.id === id)!; return lesson.status === "scheduled" ? <div className="portal-actions"><Button size="sm" disabled={busy || !mayCheckIn(lesson.plannedStart, now)} onClick={() => open(lesson, "present")}>{t("记录出席")}</Button><Button size="sm" variant="outline" disabled={busy || proposals.some(p => p.lessonId === id && p.status === "pending")} onClick={() => { open(lesson, "other"); setOther("reschedule"); }}>{t("申请改期")}</Button></div> : null; }}/>} {view === "reschedule" && <ReschedulePanel role="teacher" lessons={lessons} proposals={proposals} mutate={mutate} busy={busy}/>}<div hidden={view !== "lessons"}><section className="panel"><h2>{t("\u4ECA\u5929\u7684\u8BFE")}</h2>{cards(todayRows)}</section><section className="panel"><h2>{t("待记录出席")}</h2>{cards(overdue)}</section><section className="panel"><h2>{t("\u63A5\u4E0B\u6765\u7684\u8BFE")}</h2>{cards(upcoming)}</section></div><aside><section className="panel" hidden={view !== "attendance"}><h2>{t("出席记录")}</h2>{sorted.filter(l => l.status !== "scheduled" && l.status !== "cancelled").reverse().map(l => <div className="portal-record" key={l.id}><strong>{l.student} · {l.subject}</strong><span>{label(l.actualStart || l.plannedStart)} · {l.attendanceKind === "early_dismissal" ? t("\u63D0\u524D\u7ED3\u675F\u8BFE\u7A0B") : t(statusText[l.status] || l.status)}</span>{l.actualStart && l.actualEnd && <small>{((Date.parse(l.actualEnd) - Date.parse(l.actualStart)) / 3600000).toFixed(2)}{t(" \u5C0F\u65F6")}</small>}<LessonHistory lessonId={l.id}/></div>)}</section><section className="panel" hidden={view !== "students"}><h2>{t("\u8D1F\u8D23\u7684\u5B66\u751F\u4E0E\u79D1\u76EE")}</h2>{plans.map(p => <TeacherPlanLinkEditor key={`${p.key}:${p.onlineLink || ""}`} plan={p} mutate={mutate} busy={busy}/>)}</section></aside><Dialog open={Boolean(selected)} onOpenChange={open => { if (!open)
-        setSelected(null); }}><DialogContent className="lesson-dialog"><DialogHeader><DialogTitle>{selected?.mode === "present" ? t("记录出席") : t("其他出席／改期")}</DialogTitle></DialogHeader>{selected && <form onSubmit={submit}><p className="dialog-sub">{selected.lesson.student} · {selected.lesson.subject}<br />{label(selected.lesson.plannedStart)}</p>{selected.mode === "other" && <label>{t("\u5904\u7406\u65B9\u5F0F")}<select value={other} onChange={e => setOther(e.target.value)}><option value="early_dismissal">{t("\u63D0\u524D\u7ED3\u675F\u8BFE\u7A0B")}</option><option value="student_absent">{t("\u5B66\u751F\u7F3A\u5E2D")}</option><option value="teacher_absent">{t("\u8001\u5E08\u7F3A\u5E2D")}</option><option value="reschedule">{t("\u7533\u8BF7\u6539\u671F")}</option></select></label>}{selected.mode === "other" && other === "reschedule" ? <div className="form-pair"><label>{t("\u65B0\u5F00\u59CB\u65F6\u95F4")}<input type="datetime-local" required value={newStart} onChange={e => setNewStart(e.target.value)}/></label><label>{t("\u65B0\u7ED3\u675F\u65F6\u95F4")}<input type="datetime-local" required value={newEnd} onChange={e => setNewEnd(e.target.value)}/></label><ConflictPreview enabled={Boolean(newStart && newEnd && newStart < newEnd)} value={{ action: "proposeReschedule", id: selected.lesson.id, start: newStart, end: newEnd }}/></div> : (selected.mode === "present" || other === "early_dismissal") && <div className="form-pair"><label>{t("\u5B9E\u9645\u5F00\u59CB\u65F6\u95F4")}<input type="datetime-local" required value={actualStart} onChange={e => setActualStart(e.target.value)}/></label><label>{t("实际授课时长（小时）")}<input type="number" min="0.01" max="12" step="0.01" required value={totalHours} onChange={e => setTotalHours(e.target.value)}/></label></div>}<label>{t("\u5907\u6CE8\uFF08\u53EF\u9009\uFF09")}<textarea maxLength={500} value={note} onChange={e => setNote(e.target.value)}/></label><Button className="primary-full" disabled={busy || (other !== "reschedule" && !mayCheckIn(selected.lesson.plannedStart, now))}>{other === "reschedule" && selected.mode === "other" ? t("提交改期申请") : t("保存出席记录")}</Button></form>}</DialogContent></Dialog></div>;
+export function TeacherPortal({lessons,plans,proposals,mutate,busy,view,onReschedule,classSessions=[],classSessionRequests=[],attendanceSessions}:{lessons:Lesson[];plans:Array<{key:string;student:string;subject:string;onlineLink?:string|null}>;proposals:Proposal[];mutate:Mutate;busy:boolean;view:"calendar"|"lessons"|"attendance"|"students"|"reschedule";onReschedule?:()=>void;classSessions?:GroupSession[];classSessionRequests?:GroupSessionRequest[];attendanceSessions?:AttendanceSession[]}){
+ const [selected,setSelected]=useState<AttendanceSession|null>(null),[request,setRequest]=useState<Lesson|null>(null);
+ return <div className="portal-layout portal-single-view">
+ {view==="lessons"&&<SessionAttendanceBoard sessions={attendanceSessions} role="teacher" mutate={mutate} busy={busy}/>}
+ {view==="attendance"&&<SessionAttendanceBoard sessions={attendanceSessions} role="teacher" mutate={mutate} busy={busy} mode="records"/>}
+ {view==="calendar"&&<StudentCalendar role="teacher" onPending={onReschedule} lessons={lessons} proposals={proposals} busy={busy} renderActions={id=>{const l=lessons.find(l=>l.id===id),session=attendanceSessions?.find(s=>s.id===l?.sessionId);return l&&session?<div className="portal-actions"><Button disabled={busy||!mayCheckIn(l.plannedStart,new Date().toISOString())} onClick={()=>setSelected(session)}>{t("登记课次考勤")}</Button>{l.status==="scheduled"&&<Button variant="outline" disabled={busy} onClick={()=>l.sessionType==="group"?onReschedule?.():setRequest(l)}>{t("申请改期")}</Button>}</div>:null;}}/>}
+ {view==="reschedule"&&<><GroupSessionBoard sessions={classSessions} requests={classSessionRequests} role="teacher" mutate={mutate} busy={busy}/><ReschedulePanel role="teacher" lessons={lessons} proposals={proposals} mutate={mutate} busy={busy}/></>}
+ {view==="students"&&<section className="panel"><h2>{t("负责的学生与科目")}</h2>{plans.map(p=><TeacherPlanLinkEditor key={p.key+":"+p.onlineLink} plan={p} mutate={mutate} busy={busy}/>)}</section>}
+ {selected&&<SessionAttendanceDialog session={selected} role="teacher" mutate={mutate} busy={busy} close={()=>setSelected(null)}/>}
+ <RescheduleRequestDialog key={request?.id||"closed"} lesson={request} mutate={mutate} busy={busy} close={()=>setRequest(null)}/>
+ </div>;
 }
 export function StudentPortal({ lessons, proposals, mutate, learningMutate, learning, busy, view, onCalendar }: {
     lessons: Lesson[];

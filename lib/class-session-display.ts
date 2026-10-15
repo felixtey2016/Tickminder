@@ -1,0 +1,5 @@
+export type SessionLesson = {id:string;student?:string;sessionId?:string|null;sessionType?:string;classroomTitle?:string|null;participantCount?:number;sessionRevision?:number;sessionStatus?:string;teachingStatus?:string;teachingStart?:string|null;teachingEnd?:string|null;teachingView?:boolean;personalAttendance?:string;participantNames?:string[]};
+export function uniqueSessionLessons<T extends SessionLesson>(lessons:readonly T[]) {
+ const seen=new Set<string>();return lessons.filter(l=>{const key=l.sessionType==='group'&&l.sessionId?l.sessionId:l.id;if(seen.has(key))return false;seen.add(key);return true;}).map(l=>({...l,teachingView:true,...(l.teachingStatus&&l.teachingStatus!=="pending"?{status:l.teachingStatus==="taught"?"completed":l.teachingStatus==="teacher_absent"?"teacher_absent":"student_absent",actualStart:l.teachingStart??null,actualEnd:l.teachingEnd??null}:l.sessionType==="group"&&l.sessionStatus?{status:l.sessionStatus}:{})}));
+}
+export function sessionLessonTitle(lesson:SessionLesson) {return lesson.sessionType==='group'?lesson.classroomTitle||lesson.student||"":lesson.student||"";}

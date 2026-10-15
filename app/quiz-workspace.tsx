@@ -1,0 +1,167 @@
+'use client';
+
+import {lazy,Suspense,useEffect,useId,useMemo,useRef,useState,type ReactNode} from 'react';
+import {ArrowLeft,ArrowRight,BookOpen,Copy,Eye,Play,Plus,Search,SquarePen,Trash2,Upload,UsersRound} from 'lucide-react';
+import {Button} from '@/components/ui/button';
+import {Dialog,DialogContent,DialogDescription,DialogTitle} from '@/components/ui/dialog';
+import {t,type Language} from '@/lib/i18n';
+import {groupFetch} from '@/lib/group-client';
+import {readApiJson} from '@/lib/action-feedback';
+import {emptyQuiz,newQuestion,type QuizContent} from '@/lib/quiz';
+import type {LocalQuiz} from './quiz-editor';
+import QuizPracticePanel,{QuizAllocateDialog,QuizPracticeStart,type PracticeSource} from './quiz-practice-panel';
+import './quiz.css';
+
+const QuizEditor=lazy(()=>import('./quiz-editor'));
+const QuizPlayer=lazy(()=>import('@/components/quiz-player'));
+const QuizPracticePlayer=lazy(()=>import('@/components/quiz-practice-player'));
+
+type Catalog={kind:'subtopic'|'chapter_overall'|'level_overall';level:string;chapterCode:string;chapterTitle:string;subtopicCode:string;subtopicTitle:string;setNumber:number};
+type Item={id:string;title:string;subject:string;exam:string;difficulty:string;questionCount:number;totalScore:number;visibility:string;creator:string;organisation:string;canEdit:boolean|number;canDelete?:boolean|number;revision?:number;sharedRevision:number|null;bankKind?:'platform'|'creator';catalog?:Catalog|null;updatedAt?:string;createdAt?:string};
+type Topic={key:string;bankKind:'platform';subject:string;catalog:Omit<Catalog,'setNumber'>;difficulties:{easy:number;medium:number;hard:number};setCount:number;updatedAt?:string;latestAt?:string};
+type Facets={subjects:string[];levels:string[];chapters:{code:string;title:string;level:string;subject:string}[];maintenanceImport?:boolean;manageQuizzes?:boolean};
+type Reply={items?:Item[];topics?:Topic[];hasMore?:boolean;facets?:Facets;error?:string};
+type Filters={search:string;subject:string;level:string;chapterCode:string;sort:'latest'|'oldest'|'title'};
+type CopyOperation={id:string;operationId:string;sourceId:string;bank:boolean;title:string;resultId?:string};
+const EMPTY_FILTERS:Filters={search:'',subject:'',level:'',chapterCode:'',sort:'latest'};
+const EMPTY_FACETS:Facets={subjects:[],levels:[],chapters:[]};
+const DIFFICULTIES=['easy','medium','hard'] as const;
+type SelectedDifficulty=typeof DIFFICULTIES[number];
+
+function errorCode(error:unknown){return error instanceof Error&&error.message.startsWith('quiz.')?error.message:error instanceof TypeError?'quiz.network':'quiz.unavailable';}
+async function api<T extends {error?:string}>(url:string,init?:RequestInit){const response=await groupFetch(url,init);const data=await readApiJson<T>(response);if(!response.ok)throw new Error(data.error||'quiz.unavailable');return data;}
+function query(filters:Filters,bank:boolean,extra:Record<string,string>={}){const params=new URLSearchParams({bank:bank?'1':'0',...extra});for(const [name,value] of Object.entries(filters))if(value)params.set(name,value);return '/api/quizzes?'+params.toString();}
+function mergeFacets(values:(Facets|undefined)[]):Facets{
+ const chapters=new Map<string,Facets['chapters'][number]>();for(const value of values)for(const chapter of value?.chapters||[])chapters.set(JSON.stringify([chapter.subject,chapter.level,chapter.code]),chapter);
+ return {maintenanceImport:values.some(value=>value?.maintenanceImport===true),manageQuizzes:values.some(value=>value?.manageQuizzes===true),subjects:[...new Set(values.flatMap(value=>value?.subjects||[]))].sort((a,b)=>a.localeCompare(b)),levels:[...new Set(values.flatMap(value=>value?.levels||[]))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})),chapters:[...chapters.values()].sort((a,b)=>a.code.localeCompare(b.code,undefined,{numeric:true}))};
+}
+function topicTitle(topic:Topic){const c=topic.catalog;if(c.kind==='level_overall')return c.level+' · '+t('quiz.levelOverall');if(c.kind==='chapter_overall')return [c.chapterCode,t('quiz.chapterOverall')].filter(Boolean).join(' · ');return [c.subtopicCode,c.subtopicTitle].filter(Boolean).join(' · ');}
+function topicContext(topic:Topic){return [topic.subject,topic.catalog.level,topic.catalog.kind==='level_overall'?'':topic.catalog.chapterTitle||topic.catalog.chapterCode].filter(Boolean).join(' · ');}
+function FilterField({label,children,className=''}:{label:string;children:(id:string)=>ReactNode;className?:string}){const id=useId();return <div className={'quiz-field '+className}><label htmlFor={id}>{label}</label>{children(id)}</div>;}
+
+export default function QuizWorkspace({view,language,role='teacher'}:{view:'quizzes'|'quizBank';language:Language;role?:'student'|'teacher'|'admin'}){
+ const author=role!=='student';
+ const [tab,setTab]=useState<'bank'|'mine'|'assigned'|'history'|'manage'>('bank');
+ const [source,setSource]=useState<'all'|'platform'|'creator'>('all');
+ const [filters,setFilters]=useState<Filters>(EMPTY_FILTERS),[searchInput,setSearchInput]=useState('');
+ const [facets,setFacets]=useState<Facets>(EMPTY_FACETS),[items,setItems]=useState<Item[]>([]),[topics,setTopics]=useState<Topic[]>([]);
+ const [selectedTopic,setSelectedTopic]=useState<Topic|null>(null),[selectedDifficulty,setSelectedDifficulty]=useState<SelectedDifficulty|null>(null),[sets,setSets]=useState<Item[]>([]);
+ const [loading,setLoading]=useState(true),[setsLoading,setSetsLoading]=useState(false),[busy,setBusy]=useState(false),[more,setMore]=useState(false),[setsMore,setSetsMore]=useState(false);
+ const [loadError,setLoadError]=useState(''),[setsError,setSetsError]=useState(''),[actionError,setActionError]=useState(''),[actionRetry,setActionRetry]=useState<(()=>void)|null>(null);
+ const [importStatus,setImportStatus]=useState(''),[importDetail,setImportDetail]=useState('');
+ const [editor,setEditor]=useState<LocalQuiz|null>(null),[preview,setPreview]=useState<QuizContent|null>(null),[reload,setReload]=useState(0);
+ const [practiceSource,setPracticeSource]=useState<PracticeSource|null>(null),[allocation,setAllocation]=useState<PracticeSource|null>(null),[attemptId,setAttemptId]=useState<string|null>(null);
+ const [deleting,setDeleting]=useState<Item|null>(null),deleteOperation=useRef<{id:string;operationId:string}|null>(null);
+ const generation=useRef(0),setGeneration=useRef(0),copyOperations=useRef(new Map<string,CopyOperation>()),importInput=useRef<HTMLInputElement>(null);
+ const dateFormatter=useMemo(()=>new Intl.DateTimeFormat(language==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),[language]);
+ function dateLabel(value:string|undefined){if(!value||!Number.isFinite(Date.parse(value)))return null;return <time dateTime={value}>{t('quiz.updatedAt')} {dateFormatter.format(new Date(value))} GMT+8</time>;}
+ const bank=tab==='bank',catalogTab=bank||tab==='mine'||tab==='manage';
+ const tabs:typeof tab[]=author?['bank','mine','assigned','history',...(facets.manageQuizzes?['manage' as const]:[])]:['bank','assigned','history'];
+ const chapters=useMemo(()=>facets.chapters.filter(chapter=>chapter.subject===filters.subject&&(!filters.level||chapter.level===filters.level)),[facets.chapters,filters.subject,filters.level]);
+ const hasFilters=Boolean(filters.search||filters.subject||filters.level||filters.chapterCode);
+
+ // Both legacy menu IDs resolve to this single hub.
+ useEffect(()=>{setTab('bank');setSelectedTopic(null);setSelectedDifficulty(null);},[view]);
+ useEffect(()=>{
+  const timer=window.setTimeout(()=>setFilters(old=>old.search===searchInput.trim()?old:{...old,search:searchInput.trim()}),300);return()=>window.clearTimeout(timer);
+ },[searchInput]);
+ useEffect(()=>{setSelectedTopic(null);setSelectedDifficulty(null);setSets([]);setSetsError('');},[tab,source,filters]);
+
+ async function load(offset=0){
+  if(!catalogTab)return;
+  const gen=++generation.current;setLoading(true);setLoadError('');if(!offset){setItems([]);setTopics([]);setMore(false);}
+  try{
+   const creatorRequest=!bank||source!=='platform'?api<Reply>(query(filters,bank,{facets:'1',offset:String(offset),...(bank?{bankKind:'creator'}:{}),...(tab==='manage'?{manage:'1'}:{})})):null;
+   const topicRequest=bank&&source!=='creator'&&!offset?api<Reply>(query(filters,true,{topics:'1',bankKind:'platform',facets:'1'})):null;
+   const [listReply,topicReply]=await Promise.all([creatorRequest,topicRequest]);
+   if(gen!==generation.current)return;
+   if(listReply){setItems(old=>offset?[...old,...(listReply.items||[])].filter((item,index,all)=>all.findIndex(other=>other.id===item.id)===index):listReply.items||[]);setMore(Boolean(listReply.hasMore));}
+   if(!offset){setTopics(topicReply?.topics||[]);setFacets(mergeFacets([listReply?.facets,topicReply?.facets]));}
+  }catch(error){if(gen===generation.current)setLoadError(errorCode(error));}finally{if(gen===generation.current)setLoading(false);}
+ }
+ useEffect(()=>{void load();return()=>{generation.current++;};},[tab,source,filters,reload]);
+
+ async function loadSets(offset=0){
+  if(!selectedTopic||!selectedDifficulty)return;const gen=++setGeneration.current;setSetsLoading(true);setSetsError('');if(!offset){setSets([]);setSetsMore(false);}
+  try{
+   const c=selectedTopic.catalog,data=await api<Reply>(query({search:filters.search,subject:selectedTopic.subject,level:c.level,chapterCode:c.chapterCode,sort:filters.sort},true,{bankKind:'platform',catalogKind:c.kind,subtopicCode:c.subtopicCode,difficulty:selectedDifficulty,offset:String(offset)}));
+   if(gen!==setGeneration.current)return;setSets(old=>offset?[...old,...(data.items||[])].filter((item,index,all)=>all.findIndex(other=>other.id===item.id)===index):data.items||[]);setSetsMore(Boolean(data.hasMore));
+  }catch(error){if(gen===setGeneration.current)setSetsError(errorCode(error));}finally{if(gen===setGeneration.current)setSetsLoading(false);}
+ }
+ useEffect(()=>{if(selectedTopic&&selectedDifficulty)void loadSets();return()=>{setGeneration.current++;};},[selectedTopic,selectedDifficulty,reload]);
+
+ function clearFilters(){setSearchInput('');setFilters({...EMPTY_FILTERS});}
+ function changeTab(next:typeof tab){setTab(next);setActionError('');setActionRetry(null);setImportDetail('');}
+ function chooseTopic(topic:Topic){setSelectedTopic(topic);setSelectedDifficulty(null);setSets([]);setSetsError('');setActionError('');setActionRetry(null);}
+ async function open(item:Item,previewOnly=false){
+  if(busy)return;setBusy(true);setActionError('');setActionRetry(null);
+  try{const data=await api<LocalQuiz&{error?:string}>('/api/quizzes?id='+encodeURIComponent(item.id)+(bank?'&bank=1':'')+(previewOnly?'&preview=1':''));if(previewOnly)setPreview(data.content);else setEditor({...data,bank:false,maintenanceImport:Boolean(facets.maintenanceImport&&data.sourceKey)});}
+  catch(error){setActionError(errorCode(error));setActionRetry(()=>()=>{void open(item,previewOnly);});}finally{setBusy(false);}
+ }
+ async function duplicate(item:Item){
+  if(busy)return;setBusy(true);setActionError('');setActionRetry(null);const operationKey=(bank?'bank:':'mine:')+item.id;
+  let operation=copyOperations.current.get(operationKey);
+  if(!operation){operation={id:crypto.randomUUID(),operationId:crypto.randomUUID(),sourceId:item.id,bank,title:(item.title+' · '+(language==='zh'?'副本':'Copy')).slice(0,160)};copyOperations.current.set(operationKey,operation);}
+  try{
+   if(!operation.resultId){const data=await api<{id:string;error?:string}>('/api/quizzes',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'duplicate',...operation})});operation.resultId=data.id;}
+   const draft=await api<LocalQuiz&{error?:string}>('/api/quizzes?id='+encodeURIComponent(operation.resultId));copyOperations.current.delete(operationKey);setTab('mine');setEditor({...draft,bank:false});setReload(value=>value+1);
+  }catch(error){setActionError(errorCode(error));setActionRetry(()=>()=>{void duplicate(item);});}finally{setBusy(false);}
+ }
+ async function importFile(file:File|undefined){
+  if(!file||!facets.maintenanceImport||busy)return;setBusy(true);setActionError('');setActionRetry(null);setImportDetail('');setImportStatus('quiz.importing');
+  try{if(file.size>20*1024*1024)throw new Error('ZIP maximum: 20 MB');const {importQuizZip}=await import('@/lib/quiz-import'),result=await importQuizZip(new Uint8Array(await file.arrayBuffer()),file.name);setTab('mine');clearFilters();setEditor({id:crypto.randomUUID(),revision:0,visibility:'private',sharedRevision:null,canEdit:true,maintenanceImport:true,content:result.content,keys:result.keys,sourceKey:result.sourceKey,pendingImages:result.images,importWarnings:result.warnings});}
+  catch(error){setActionError('quiz.importFailed');setImportDetail(error instanceof Error?error.message:'');}finally{setImportStatus('');setBusy(false);}
+ }
+ function create(){setImportDetail('');const next=newQuestion(),content=emptyQuiz();content.primaryLanguage=language==='zh'?'zh':'en';content.questions=[next.question];setTab('mine');clearFilters();setActionError('');setActionRetry(null);setEditor({id:crypto.randomUUID(),revision:0,visibility:'private',sharedRevision:null,canEdit:true,content,keys:[next.key]});}
+ async function deleteQuiz(){if(!deleting||busy)return;setBusy(true);setActionError('');if(!deleteOperation.current)deleteOperation.current={id:deleting.id,operationId:crypto.randomUUID()};try{await api<{ok:boolean;error?:string}>('/api/quizzes',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'delete',...deleteOperation.current,...(deleting.revision?{revision:deleting.revision}:{})})});setDeleting(null);deleteOperation.current=null;setReload(value=>value+1);}catch(error){setActionError(errorCode(error));}finally{setBusy(false);}}
+ function itemCard(item:Item,isSet=false){const source:PracticeSource={id:item.id,title:item.title,subject:item.subject,bank};return <article className="quiz-library-item" key={item.id} data-testid={isSet?'quiz-set-card':'quiz-library-card'}><div><span className="quiz-visibility">{t('quiz.'+item.visibility)}</span><h3>{isSet&&item.catalog?t('quiz.setLabel')+' '+item.catalog.setNumber:item.title}</h3>{isSet&&<p>{item.title}</p>}<p>{[item.subject,item.exam].filter(Boolean).join(' · ')}</p>{dateLabel(item.updatedAt||item.createdAt)&&<p className="quiz-card-date">{dateLabel(item.updatedAt||item.createdAt)}</p>}<p>{item.questionCount} {t('quiz.questions')} · {item.totalScore} {t('quiz.pointsUnit')} · {t('quiz.'+item.difficulty)}</p>{(tab==='manage'||bank&&item.bankKind!=='platform')&&<p>{[item.creator,item.organisation].filter(Boolean).join(' · ')}</p>}</div><div className="quiz-item-actions">{tab!=='manage'&&<><Button disabled={busy} onClick={()=>setPracticeSource(source)}><Play size={17}/>{t('quiz.practice')}</Button>{author&&<><Button variant="outline" disabled={busy} onClick={()=>setAllocation(source)}><UsersRound size={17}/>{t('quiz.assign')}</Button>{!bank&&Boolean(item.canEdit)&&<Button variant="outline" disabled={busy} onClick={()=>void open(item)}><SquarePen size={17}/>{t('quiz.edit')}</Button>}<Button variant="outline" disabled={busy} onClick={()=>void open(item,true)}><Eye size={17}/>{t('quiz.previewQuiz')}</Button><Button variant="outline" disabled={busy} onClick={()=>void duplicate(item)}><Copy size={17}/>{t('quiz.copyEdit')}</Button></>}</>}{author&&Boolean(item.canDelete)&&<Button variant="outline" disabled={busy} onClick={()=>{setDeleting(item);deleteOperation.current=null;setActionError('');}}><Trash2 size={17}/>{t('quiz.deleteQuiz')}</Button>}</div></article>;}
+ function loadingState(){return <div className="quiz-loading" role="status"><p>{t('quiz.loading')}</p><div/><div/><div/></div>;}
+ function emptyState(message:string){return <section className="quiz-empty"><h3>{t(message)}</h3>{hasFilters&&<div className="quiz-empty-actions"><Button variant="outline" onClick={clearFilters}>{t('quiz.clearFilters')}</Button></div>}</section>;}
+
+ if(editor)return <Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizEditor key={editor.id} initial={editor} onBack={()=>{setEditor(null);setReload(value=>value+1);}} onSaved={()=>setReload(value=>value+1)}/></Suspense>;
+ return <div className="quiz-workspace" data-testid="quiz-hub">
+  {author&&<div className="quiz-workspace-head"><h2 className="sr-only">{t('quiz.hubTitle')}</h2><div>{facets.maintenanceImport&&<Button variant="outline" data-testid="quiz-import" disabled={busy} onClick={()=>importInput.current?.click()}><Upload size={17}/>{t('quiz.import')}</Button>}<Button className="quiz-create-button" data-testid="quiz-create" disabled={busy} onClick={create}><Plus size={17}/>{t('quiz.createQuiz')}</Button></div></div>}
+  {author&&facets.maintenanceImport&&<input ref={importInput} className="sr-only" tabIndex={-1} type="file" accept=".zip,application/zip" aria-label={t('quiz.import')} onChange={event=>{void importFile(event.target.files?.[0]);event.target.value='';}}/>}
+  <div className="quiz-hub-tabs" role="tablist" aria-label={t('quiz.hubTitle')} onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const index=tabs.indexOf(tab),next=event.key==='Home'?tabs[0]:event.key==='End'?tabs[tabs.length-1]:tabs[(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length];changeTab(next);document.getElementById('quiz-tab-'+next)?.focus();}}>{tabs.map(value=><button type="button" role="tab" key={value} className="quiz-hub-tab" id={'quiz-tab-'+value} data-testid={'quiz-tab-'+value} aria-selected={tab===value} tabIndex={tab===value?0:-1} aria-controls="quiz-hub-panel" onClick={()=>changeTab(value)}>{t(value==='bank'?'quiz.catalogTab':value==='mine'?'quiz.mineTab':value==='assigned'?'quiz.assignedTab':value==='manage'?'quiz.manageTab':'quiz.historyTab')}</button>)}</div>
+  <section id="quiz-hub-panel" role="tabpanel" aria-labelledby={'quiz-tab-'+tab}>
+   {!catalogTab?<QuizPracticePanel mode={tab==='assigned'?'assigned':'history'} role={role} language={language} reload={reload} onOpen={setAttemptId} onStart={setPracticeSource}/>:<>
+   {!selectedTopic&&<>
+    {bank&&<div className="quiz-source-tabs" role="group" aria-label={t('quiz.source')} data-testid="quiz-source-filter">{(['all','platform','creator'] as const).map(value=><button className="quiz-source-tab" type="button" key={value} aria-pressed={source===value} onClick={()=>{setSource(value);setActionError('');setActionRetry(null);}}>{t(value==='all'?'quiz.allBanks':value==='platform'?'quiz.platformBank':'quiz.creatorBank')}</button>)}</div>}
+    <form className="quiz-catalog-filters" onSubmit={event=>{event.preventDefault();setFilters(old=>({...old,search:searchInput.trim()}));}}>
+     <FilterField label={t('quiz.search')} className="quiz-catalog-search">{id=><div className="quiz-search-input"><Search size={17} aria-hidden="true"/><input id={id} value={searchInput} maxLength={100} placeholder={t('quiz.searchPlaceholder')} onChange={event=>setSearchInput(event.target.value)}/></div>}</FilterField>
+     <FilterField label={t('quiz.subject')}>{id=><select id={id} data-testid="quiz-subject-filter" value={filters.subject} onChange={event=>setFilters(old=>({...old,subject:event.target.value,level:'',chapterCode:''}))}><option value="">{t('quiz.allSubjects')}</option>{facets.subjects.map(subject=><option key={subject} value={subject}>{subject}</option>)}</select>}</FilterField>
+     {filters.subject&&facets.levels.length>0&&<FilterField label={t('quiz.catalogLevel')}>{id=><select id={id} data-testid="quiz-level-filter" value={filters.level} onChange={event=>setFilters(old=>({...old,level:event.target.value,chapterCode:''}))}><option value="">{t('quiz.allLevels')}</option>{facets.levels.map(level=><option value={level} key={level}>{level}</option>)}</select>}</FilterField>}
+     {filters.subject&&chapters.length>0&&<FilterField label={t('quiz.catalogChapter')}>{id=><select id={id} data-testid="quiz-chapter-filter" value={filters.chapterCode?JSON.stringify([filters.level,filters.chapterCode]):''} onChange={event=>{const chapter=chapters.find(item=>JSON.stringify([item.level,item.code])===event.target.value);setFilters(old=>({...old,chapterCode:chapter?.code||'',level:chapter?.level||old.level}));}}><option value="">{t('quiz.allChapters')}</option>{chapters.map(chapter=><option value={JSON.stringify([chapter.level,chapter.code])} key={chapter.level+':'+chapter.code}>{[chapter.code,chapter.title,!filters.level?chapter.level:''].filter(Boolean).join(' · ')}</option>)}</select>}</FilterField>}
+     <FilterField label={t('quiz.sort')}>{id=><select id={id} data-testid="quiz-sort-filter" value={filters.sort} onChange={event=>setFilters(old=>({...old,sort:event.target.value as Filters['sort']}))}><option value="latest">{t('quiz.sortLatest')}</option><option value="oldest">{t('quiz.sortOldest')}</option><option value="title">{t('quiz.sortTitle')}</option></select>}</FilterField>
+    </form>
+   </>}
+   {actionError&&<div className="quiz-error" role="alert"><span>{t(actionError)}</span>{actionRetry&&<Button variant="outline" disabled={busy} onClick={actionRetry}>{t('quiz.retry')}</Button>}</div>}
+   {importDetail&&<p className="quiz-error-detail" role="alert">{importDetail}</p>}{importStatus&&<p role="status">{t(importStatus)}</p>}
+   {selectedTopic?<div className="quiz-catalog-detail">
+    <Button className="quiz-catalog-back" variant="ghost" onClick={()=>{if(selectedDifficulty){setSelectedDifficulty(null);setSetsError('');}else setSelectedTopic(null);setActionError('');setActionRetry(null);}}><ArrowLeft size={17}/>{t(selectedDifficulty?'quiz.backToDifficulty':'quiz.backToTopics')}</Button>
+    <div className="quiz-catalog-path"><p>{topicContext(selectedTopic)}</p><h3>{topicTitle(selectedTopic)}</h3></div>
+    {!selectedDifficulty?<><h4 className="quiz-difficulty-heading">{t('quiz.chooseDifficulty')}</h4><div className="quiz-difficulty-grid">{DIFFICULTIES.map(difficulty=><button className="quiz-difficulty-card" type="button" key={difficulty} data-testid={'quiz-difficulty-'+difficulty} disabled={!selectedTopic.difficulties[difficulty]} onClick={()=>setSelectedDifficulty(difficulty)}><strong>{t('quiz.'+difficulty)}</strong><span>{selectedTopic.difficulties[difficulty]?selectedTopic.difficulties[difficulty]+' '+t('quiz.sets'):t('quiz.noDifficultySets')}</span><ArrowRight size={18} aria-hidden="true"/></button>)}</div></>:<>
+     <h4 className="quiz-difficulty-heading">{t('quiz.'+selectedDifficulty)}</h4>
+     {setsError&&<div className="quiz-error" role="alert"><span>{t(setsError)}</span><Button variant="outline" onClick={()=>void loadSets()}>{t('quiz.retry')}</Button></div>}
+     {setsLoading&&loadingState()}
+     {!setsLoading&&!setsError&&!sets.length&&emptyState('quiz.noDifficultySets')}
+     <div className="quiz-list">{sets.map(item=>itemCard(item,true))}</div>{setsMore&&!setsLoading&&<Button variant="outline" disabled={busy} onClick={()=>void loadSets(sets.length)}>{t('quiz.more')}</Button>}
+    </>}
+   </div>:<>
+    {loadError&&<div className="quiz-error" role="alert"><span>{t(loadError)}</span><Button variant="outline" onClick={()=>void load()}>{t('quiz.retry')}</Button></div>}
+    {loading&&loadingState()}
+    {!loading&&!loadError&&!items.length&&!topics.length&&emptyState(hasFilters?'quiz.noMatches':!bank?'quiz.noDrafts':source==='platform'?'quiz.noPlatform':'quiz.noCreators')}
+    {bank&&topics.length>0&&<section className="quiz-catalog-section" aria-label={t('quiz.platformBank')}><h3>{t('quiz.platformBank')}</h3><div className="quiz-topic-grid">{topics.map(topic=><button type="button" className="quiz-topic-card" data-testid="quiz-topic-card" key={topic.key} onClick={()=>chooseTopic(topic)}><BookOpen size={22} aria-hidden="true"/><span className="quiz-topic-content"><strong>{topicTitle(topic)}</strong><span>{topicContext(topic)}</span>{dateLabel(topic.updatedAt||topic.latestAt)&&<span className="quiz-card-date">{dateLabel(topic.updatedAt||topic.latestAt)}</span>}<span className="quiz-topic-count">{topic.setCount} {t('quiz.sets')}</span></span><ArrowRight size={18} aria-hidden="true"/></button>)}</div></section>}
+    {bank&&items.length>0&&<h3 className="quiz-catalog-section-title">{t('quiz.creatorBank')}</h3>}
+    <div className="quiz-list">{items.map(item=>itemCard(item))}</div>{more&&!loading&&<Button variant="outline" disabled={busy} onClick={()=>void load(items.length)}>{t('quiz.more')}</Button>}
+   </>}
+   </>}
+  </section>
+  {preview&&<Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizPlayer content={preview} onClose={()=>setPreview(null)}/></Suspense>}
+  {practiceSource&&<QuizPracticeStart source={practiceSource} onClose={()=>setPracticeSource(null)} onOpen={id=>{setPracticeSource(null);setAttemptId(id);setReload(value=>value+1);}}/>}
+  {allocation&&<QuizAllocateDialog source={allocation} onClose={()=>setAllocation(null)} onAssigned={()=>{setAllocation(null);setTab('assigned');setReload(value=>value+1);}}/>}
+  {attemptId&&<Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizPracticePlayer attemptId={attemptId} language={language} onClose={()=>{setAttemptId(null);setReload(value=>value+1);}} onChanged={()=>setReload(value=>value+1)}/></Suspense>}
+  <Dialog open={Boolean(deleting)} onOpenChange={open=>{if(!open&&!busy){setDeleting(null);deleteOperation.current=null;}}}><DialogContent className="quiz-confirm-dialog"><DialogTitle>{t('quiz.deleteQuiz')}</DialogTitle><DialogDescription>{t('quiz.deleteQuizConfirm').replace('{title}',deleting?.title||'')}</DialogDescription>{actionError&&deleting&&<p className="quiz-error" role="alert">{t(actionError)}</p>}<div className="quiz-confirm-actions"><Button variant="outline" disabled={busy} onClick={()=>{setDeleting(null);deleteOperation.current=null;}}>{t('quiz.cancel')}</Button><Button variant="destructive" disabled={busy} onClick={()=>void deleteQuiz()}>{t('quiz.removeConfirm')}</Button></div></DialogContent></Dialog>
+ </div>;
+}
+

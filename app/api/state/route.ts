@@ -1,3 +1,4 @@
+import {classSessionState} from "@/lib/class-sessions";
 import {groupRows} from "@/lib/group-data";
 import { groupWhere } from "@/lib/group-data";
 import { NextResponse } from "next/server";
@@ -37,30 +38,35 @@ const json = (body: unknown, status = 200) => NextResponse.json(body, { status, 
 async function coreState(account: Account, selected: string) {
   const db = getDb();
   const lessonFilter = account.role === "teacher" ? eq(lessons.teacherName, account.teacherName || "") : account.role === "student" ? eq(lessons.student, account.studentName || "") : undefined;
-  const [revision, roster, allLessons, allRequests] = await Promise.all([
+  const [revision, roster, allLessons, allRequests, sessionData] = await Promise.all([
     readRevision(account.groupId), readRoster(account), db.select().from(lessons).where(groupWhere(lessons,account.groupId,lessonFilter)).all(),
     lessonFilter ? db.select({request: rescheduleRequests}).from(rescheduleRequests).innerJoin(lessons, eq(lessons.id, rescheduleRequests.lessonId)).where(groupWhere(rescheduleRequests,account.groupId,lessonFilter)).all().then(items => items.map(item => item.request)) : db.select().from(rescheduleRequests).where(groupWhere(rescheduleRequests,account.groupId)).all(),
+    classSessionState(account),
   ]);
+  const groupIds=new Set(sessionData.sessions.map(s=>s.id)),legacyRequests=allRequests.filter(r=>!r.sessionId||!groupIds.has(r.sessionId));
+  const classSessionRequests=account.role==="student"?[]:allRequests.filter(r=>r.sessionId&&groupIds.has(r.sessionId));
   const linkByPlan = new Map(roster.allPlans.map(plan => [plan.key, plan]));
   const withOnlineLink = (lesson: typeof lessons.$inferSelect) => {
     const plan = linkByPlan.get(`${lesson.student}|${lesson.subject}`);
-    return { ...lesson, onlineLink: plan?.teacherName === lesson.teacherName ? plan.onlineLink : null };
+    const session=lesson.sessionId?sessionData.byId.get(lesson.sessionId):null;
+    const participant=session?.participants.find(p=>p.lessonId===lesson.id);
+    return { ...lesson,teachingStatus:session?.teachingStatus,teachingStart:session?.actualStart,teachingEnd:session?.actualEnd,personalAttendance:participant?.attendanceStatus, onlineLink:session?.sessionType==="group"?session.onlineLink:plan?.teacherName===lesson.teacherName?plan.onlineLink:session?.onlineLink||null,sessionType:session?.sessionType||"one_to_one",classroomTitle:session?.classroomTitle,participantCount:session?.participantCount||1,sessionRevision:session?.revision,sessionStatus:session?.status,...(account.role!=="student"?{participantNames:session?.participants.map(p=>p.studentName)}:{}) };
   };
-  const base = { revision, month: selected };
+  const base = { revision, month: selected,...(account.role!=="student"?{attendanceSessions:sessionData.allSessions}:{}),classSessions:sessionData.sessions,classSessionRequests };
   if (account.role === "student") {
     const visible = allLessons.filter(l => l.status !== "cancelled");
     const ids = new Set(visible.map(l => l.id));
-    return {...base, lessons: visible.map(withOnlineLink), proposals: allRequests.filter(r => ids.has(r.lessonId))};
+    return {...base, lessons: visible.map(withOnlineLink), proposals: legacyRequests.filter(r => ids.has(r.lessonId))};
   }
   const plans = roster.plans.filter(p => p.teacher === account.teacherName);
   const keys = new Set(plans.map(p => p.key));
-  const visible = account.role === "teacher" ? allLessons.filter(l => teacherMaySeeLesson(account, l, keys)) : allLessons;
+  const visible = account.role === "teacher" ? allLessons.filter(l => teacherMaySeeLesson(account, l, keys)||Boolean(l.sessionId&&groupIds.has(l.sessionId)&&l.teacherName===account.teacherName)) : allLessons;
   const ids = new Set(visible.map(l => l.id));
   const records = visible.filter(l => l.actualStart && inMonth(l.actualStart, selected) && approvedActualHours(l) > 0).sort((a,b) => a.actualStart!.localeCompare(b.actualStart!));
-  const checkins = visible.filter(l => checkinInMonth(l, selected)).sort((a,b) => (a.actualStart || a.plannedStart).localeCompare(b.actualStart || b.plannedStart));
-  if (account.role === "teacher") return {...base, plans, lessons: visible.map(withOnlineLink), proposals: allRequests.filter(r => ids.has(r.lessonId)), records, checkins, summary: monthlySummary(plans, visible, selected)};
+  const checkins = visible.filter(l => checkinInMonth(l, selected)).sort((a,b) => (a.actualStart || a.plannedStart).localeCompare(b.actualStart || b.plannedStart)).map(withOnlineLink);
+  if (account.role === "teacher") return {...base, plans, lessons: visible.map(withOnlineLink), proposals: legacyRequests.filter(r => ids.has(r.lessonId)), records, checkins, summary: monthlySummary(plans, visible, selected)};
   return {...base, plans: roster.plans, allPlans: roster.allPlans, students: roster.students, allStudents: roster.allStudents, teachers: roster.teachers, allTeachers: roster.allTeachers,
-    lessons: visible.map(withOnlineLink), proposals: allRequests, records, checkins, summary: monthlySummary(roster.allPlans, visible, selected)};
+    lessons: visible.map(withOnlineLink), proposals: legacyRequests, records, checkins, summary: monthlySummary(roster.allPlans, visible, selected)};
 }
 
 async function extraState(account: Account, scope: Exclude<Scope, "core">) {

@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import {orderedSnapshotTables,historicalInsertTriggers,checkRestoredFolderStructure,snapshotVersion,expectedSnapshotTables,snapshotObjects} from './backup-order.mjs';
 
 const command = process.argv[2];
 const option = process.argv[3];
@@ -47,19 +48,20 @@ function dpapi(mode, value) {
 }
 
 function validateExport(data) {
-  const version=Number(data?.format?.match(/^timelyo-d1-v([1-9])$/)?.[1] || 0);
-  const expectedTables=[...(version>=9?['tuition_groups']:[]),...baseTables,...(version>=2?classroomTables:[]),...(version>=3?['google_identities']:[]),...(version>=4?['academic_terms']:[]),...(version>=7?['notification_items','notification_deliveries','push_subscriptions','notification_runtime']:[]),...(version>=8?['site_notifications']:[])];
+  const version=snapshotVersion(data);
+  const expectedTables=expectedSnapshotTables(version);
   if (!data || !version || !data.tables ||
       Object.keys(data.tables).sort().join('|') !== expectedTables.slice().sort().join('|')) {
     throw new Error('Incomplete database export');
   }
   for (const name of expectedTables) {
     const table = data.tables[name];
-    if (!Array.isArray(table.columns) || !Array.isArray(table.rows)) throw new Error(`Invalid ${name} table`);
+    if (!Array.isArray(table.columns) || !Array.isArray(table.rows) || new Set(table.columns).size!==table.columns.length || table.columns.some(c=>typeof c!=='string'||!/^[a-z][a-z0-9_]*$/.test(c))) throw new Error(`Invalid ${name} table`);
     for (const row of table.rows) {
-      if (table.columns.some((column) => !Object.hasOwn(row, column))) throw new Error(`Incomplete ${name} row`);
+      if (!row || Object.keys(row).sort().join('|')!==table.columns.slice().sort().join('|')) throw new Error(`Incomplete ${name} row`);
     }
   }
+  snapshotObjects(data);
   return expectedTables;
 }
 
@@ -70,16 +72,19 @@ function restoreInMemory(data) {
   const version=Number(data.format.slice('timelyo-d1-v'.length));
   const db = new DatabaseSync(':memory:');
   try {
-    for (const prefix of [...baseMigrations,...Array.from({length:Math.max(0,version-1)},(_,index)=>String(10+index).padStart(4,'0'))]) {
+    for (const prefix of [...baseMigrations,...Array.from({length:Math.min(8,Math.max(0,version-1))},(_,index)=>String(10+index).padStart(4,'0')),...(version>=10?['0019']:[]),...(version>=11?['0020']:[]),...(version>=12?['0021']:[]),...(version>=13?['0022']:[]),...(version>=14?['0023']:[]),...(version>=15?['0024']:[]),...(version>=16?['0025','0026']:[]),...(version>=17?['0027','0028']:[])]) {
       const file = readdirSync(resolve(projectRoot, 'drizzle')).find((name) => name.startsWith(prefix + '_') && name.endsWith('.sql'));
       if (!file) throw new Error(`Missing migration ${prefix}`);
       db.exec(readFileSync(resolve(projectRoot, 'drizzle', file), 'utf8'));
     }
     if(version>=9)db.exec('DELETE FROM tuition_groups');
+    const triggers=historicalInsertTriggers.map(name=>db.prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND name=?").get(name)).filter(Boolean);
     db.exec('BEGIN');
     try {
-      for (const name of expectedTables) {
-        const { columns, rows } = data.tables[name];
+      for(const trigger of triggers)db.exec(`DROP TRIGGER "${trigger.name}"`);
+      for (const [name,table] of orderedSnapshotTables(data.tables)) {
+        const { columns, rows } = table;
+        if(name==='classroom_content_state')db.exec('DELETE FROM classroom_content_state');
         const dbColumns = db.prepare(`PRAGMA table_info("${name}")`).all().map((column) => column.name);
         if (columns.slice().sort().join('|') !== dbColumns.slice().sort().join('|')) {
           throw new Error(`Schema mismatch for ${name}`);
@@ -89,6 +94,8 @@ function restoreInMemory(data) {
         const insert = db.prepare(`INSERT INTO "${name}" (${names}) VALUES (${placeholders})`);
         for (const row of rows) insert.run(...columns.map((column) => row[column]));
       }
+      for(const trigger of triggers)db.exec(trigger.sql);
+      checkRestoredFolderStructure(db);
       db.exec('COMMIT');
     } catch (error) { db.exec('ROLLBACK'); throw error; }
     for (const name of expectedTables) {

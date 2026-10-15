@@ -8,6 +8,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync, readdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
+import {snapshotVersion,expectedSnapshotTables,snapshotObjects,backupObjectName,validObjectSignature,matchManifestObjects} from './backup-order.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const args = process.argv.slice(2);
@@ -73,10 +74,11 @@ function validateSnapshot(path, recovery = null) {
     key = open(Buffer.from(manifest.recovery.encrypted, 'base64'), recovery, manifest.recovery.iv, manifest.recovery.tag);
   } else key = dpapi('unprotect', Buffer.from(manifest.wrappedKey, 'base64'));
   try {
-    let counts;
+    let counts, database;
     if (manifest.format === 'timelyo-full-backup-v2') {
       const plain = open(readFileSync(join(path, 'database.json.aes')), key, manifest.database.iv, manifest.database.tag);
       if (sha(plain) !== manifest.database.sha256) throw new Error('Portable database checksum mismatch');
+      database = JSON.parse(plain.toString('utf8'));
       counts = checkPortableDatabase(plain);
       plain.fill(0);
     } else {
@@ -85,17 +87,21 @@ function validateSnapshot(path, recovery = null) {
       });
       if (db.status !== 0) throw new Error(`Database restore check failed: ${db.stderr.trim()}`);
       counts = JSON.parse(db.stdout.trim()).counts;
+      const document = JSON.parse(readFileSync(join(path,'database.json.dpapi'),'utf8'));
+      const databaseKey = dpapi('unprotect',Buffer.from(document.wrappedKey,'base64'));
+      let databaseBytes;
+      try { databaseBytes=open(Buffer.from(document.ciphertext,'base64'),databaseKey,document.iv,document.tag);database=JSON.parse(databaseBytes.toString('utf8')); }
+      finally { databaseKey.fill(0);databaseBytes?.fill(0); }
     }
-    for (const file of manifest.files) {
-      if (!/^[a-zA-Z0-9_-]{1,128}$/.test(file.id) || !/^[a-f0-9]{64}$/.test(file.sha256)) throw new Error('Invalid PDF manifest entry');
-      const data = open(readFileSync(join(path, `${file.id}.pdf.dpapi`)), key, file.iv, file.tag);
-      if (data.length !== file.bytes || sha(data) !== file.sha256 || data.subarray(0, 5).toString() !== '%PDF-') {
-        throw new Error(`PDF restore check failed for ${file.id}`);
-      }
-      data.fill(0);
+    const objects=matchManifestObjects(database,manifest.files);
+    for (const {row,metadata} of objects) {
+      const data = open(readFileSync(join(path, backupObjectName(row))), key, metadata.iv, metadata.tag);
+      try { if (data.length !== metadata.bytes || sha(data) !== metadata.sha256 || !validObjectSignature(data,row.mime)) throw new Error(`Object restore check failed for ${row.kind}`); }
+      finally { data.fill(0); }
     }
-    if (counts.pdf_files !== manifest.files.length) throw new Error('PDF object count does not match restored database');
-    return { databaseTables: Object.keys(counts).length, pdfCount: manifest.files.length, pdfBytes: manifest.files.reduce((n, f) => n + f.bytes, 0), restore: 'memory-and-files-ok' };
+    const pdfs=objects.filter(x=>x.row.kind==='pdf'),images=objects.filter(x=>x.row.kind==='quiz-image');
+    if (counts.pdf_files !== pdfs.length) throw new Error('PDF object count does not match restored database');
+    return { databaseTables: Object.keys(counts).length, pdfCount: pdfs.length, pdfBytes: pdfs.reduce((n,x)=>n+x.row.bytes,0), quizImageCount:images.length,quizImageBytes:images.reduce((n,x)=>n+x.row.bytes,0),restore: 'memory-and-files-ok' };
   } finally { key.fill(0); }
 }
 async function fetchExport(url, token) {
@@ -139,14 +145,8 @@ async function main() {
     const dbBytes = Buffer.from(await dbResponse.arrayBuffer());
     if (dbBytes.length > 20 * 1024 * 1024) throw new Error('Database export exceeds expected size');
     const database = JSON.parse(dbBytes.toString('utf8'));
-    const expectedTables = ['accounts','assignments','audit','lessons','local_credentials','login_attempts','plans','reschedule_requests','sessions','students','teachers','pdf_files','storage_quota','teaching_materials','material_recipients','homework','homework_recipients','homework_submissions','study_blocks'];
-    if (['timelyo-d1-v2','timelyo-d1-v3','timelyo-d1-v4','timelyo-d1-v5','timelyo-d1-v6','timelyo-d1-v7','timelyo-d1-v8','timelyo-d1-v9'].includes(database.format)) expectedTables.push('classrooms','classroom_members','classroom_announcements');
-    if (['timelyo-d1-v3','timelyo-d1-v4','timelyo-d1-v5','timelyo-d1-v6','timelyo-d1-v7','timelyo-d1-v8','timelyo-d1-v9'].includes(database.format)) expectedTables.push('google_identities');
-    if (['timelyo-d1-v4','timelyo-d1-v5','timelyo-d1-v6','timelyo-d1-v7','timelyo-d1-v8','timelyo-d1-v9'].includes(database.format)) expectedTables.push('academic_terms');
-    if (['timelyo-d1-v7','timelyo-d1-v8','timelyo-d1-v9'].includes(database.format)) expectedTables.push('notification_items','notification_deliveries','push_subscriptions','notification_runtime');
-    if (['timelyo-d1-v8','timelyo-d1-v9'].includes(database.format)) expectedTables.push('site_notifications');
-    if (database.format === "timelyo-d1-v9") expectedTables.push("tuition_groups");
-    if (!['timelyo-d1-v1','timelyo-d1-v2','timelyo-d1-v3','timelyo-d1-v4','timelyo-d1-v5','timelyo-d1-v6','timelyo-d1-v7','timelyo-d1-v8','timelyo-d1-v9'].includes(database.format) || JSON.stringify(Object.keys(database.tables || {}).sort()) !== JSON.stringify(expectedTables.sort())) {
+    const version=snapshotVersion(database),expectedTables=expectedSnapshotTables(version);
+    if (!version || JSON.stringify(Object.keys(database.tables || {}).sort()) !== JSON.stringify(expectedTables.sort())) {
       throw new Error(`Unexpected database export format=${String(database.format)} tables=${Object.keys(database.tables || {}).join(',')}`);
     }
     for (const name of expectedTables) {
@@ -157,8 +157,7 @@ async function main() {
         if (missing.length) throw new Error(`Incomplete export row: ${name} missing ${missing.join(',')}`);
       }
     }
-    const fileRows = database?.tables?.pdf_files?.rows;
-    if (!Array.isArray(fileRows)) throw new Error('Database export lacks PDF metadata');
+    const fileRows = snapshotObjects(database);
     const recovery = args.includes('--recovery-file') ? recoverySecret(option('--recovery-file')) : null;
     const key = randomBytes(32);
     const manifest = { format: recovery ? 'timelyo-full-backup-v2' : 'timelyo-full-backup-v1', createdAt: new Date().toISOString(), site: site.origin,
@@ -182,15 +181,17 @@ async function main() {
       const seen = new Set();
       for (const row of fileRows) {
         const id = String(row.id);
-        if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id) || seen.has(id)) throw new Error('Invalid or duplicate PDF ID');
-        seen.add(id);
-        const response = await fetchExport(new URL(`/api/backup-export?file=${encodeURIComponent(id)}`, site), token);
+        const identity=row.kind+':'+id;
+        if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id) || seen.has(identity)) throw new Error('Invalid or duplicate object ID');
+        seen.add(identity);
+        const response = await fetchExport(new URL(`/api/backup-export?${row.kind==='quiz-image'?'image':'file'}=${encodeURIComponent(id)}`, site), token);
         const bytes = Buffer.from(await response.arrayBuffer());
-        if (bytes.length !== Number(row.bytes) || bytes.subarray(0, 5).toString() !== '%PDF-') throw new Error(`PDF size or signature mismatch for ${id}`);
-        const sealed = seal(bytes, key);
-        writeFileSync(join(stage, `${id}.pdf.dpapi`), sealed.encrypted, { flag: 'wx', mode: 0o600 });
-        manifest.files.push({ id, bytes: bytes.length, sha256: sha(bytes), iv: sealed.iv, tag: sealed.tag });
-        bytes.fill(0);
+        try {
+          if (bytes.length !== Number(row.bytes) || !validObjectSignature(bytes,row.mime) || row.sha256&&sha(bytes)!==row.sha256) throw new Error(`Object size, signature or checksum mismatch for ${row.kind}`);
+          const sealed = seal(bytes, key);
+          writeFileSync(join(stage, backupObjectName(row)), sealed.encrypted, { flag: 'wx', mode: 0o600 });
+          manifest.files.push({ id, ...(row.kind==='quiz-image'?{kind:row.kind,objectKey:row.object_key,mime:row.mime}:{}),bytes: bytes.length, sha256: sha(bytes), iv: sealed.iv, tag: sealed.tag });
+        } finally { bytes.fill(0); }
       }
       writeFileSync(join(stage, 'manifest.json'), JSON.stringify(manifest), { flag: 'wx', mode: 0o600 });
     } finally { key.fill(0); }

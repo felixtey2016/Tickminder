@@ -1,6 +1,18 @@
 import type { Account } from "@/lib/auth";
 import { first, learningDb } from "@/lib/learning-server";
 
+// Account IDs are globally unique. Check every organisation because shared
+// versions and historical practice can outlive an account's group membership.
+export async function hasQuizAccountHistory(accountId: string) {
+  return Boolean(await first(`SELECT 1 AS found FROM quizzes WHERE owner_id=?
+    UNION ALL SELECT 1 FROM quiz_images WHERE owner_id=?
+    UNION ALL SELECT 1 FROM quiz_versions WHERE actor_id=?
+    UNION ALL SELECT 1 FROM quiz_practice_assignments WHERE created_by=?
+    UNION ALL SELECT 1 FROM quiz_practice_attempts WHERE account_id=?
+    UNION ALL SELECT 1 FROM quiz_practice_operations WHERE actor_id=? LIMIT 1`,
+    accountId,accountId,accountId,accountId,accountId,accountId));
+}
+
 // Only called after the signed-in user's current password AND the Google credential
 // have both been verified. A second explicit confirmation is required for a merge.
 export async function prepareAccountMerge(actor: Account, duplicateId: string, confirmed: boolean) {
@@ -11,6 +23,7 @@ export async function prepareAccountMerge(actor: Account, duplicateId: string, c
   const same = duplicate.role === actor.role && (actor.role === "teacher" ? Boolean(actor.teacherName) && duplicate.teacher_name === actor.teacherName : actor.role === "student" && Boolean(actor.studentName) && duplicate.student_name === actor.studentName);
   if (duplicate.role !== "pending" && !same) return { error: "两个账号的身份不同，请联系管理员核对后再连接", statements: [] };
   if (await first("SELECT 1 AS found FROM local_credentials WHERE account_id = ?", duplicate.id)) return { error: "Google 已连接另一个密码账号，请联系管理员", statements: [] };
+  if (await hasQuizAccountHistory(duplicate.id)) return {error:"account.quizHistoryMergeBlocked",statements:[]};
   if (!confirmed) return { mergeName: duplicate.name, error: "发现已有 Google 账号，确认后会合并登录方式并保留资料", statements: [] };
   const statements = [];
   statements.push(db.prepare("INSERT INTO site_notifications (group_id,id,account_id,event_id,lesson_id,kind,created_at,read_at) SELECT group_id,lower(hex(randomblob(16))),?,event_id,lesson_id,kind,created_at,read_at FROM site_notifications WHERE account_id=? ON CONFLICT(account_id,event_id) DO UPDATE SET read_at=coalesce(site_notifications.read_at,excluded.read_at)").bind(actor.id,duplicate.id));

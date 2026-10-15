@@ -1,4 +1,5 @@
-export type TimetableLesson = {
+import {uniqueSessionLessons,type SessionLesson} from "./class-session-display";
+export type TimetableLesson = SessionLesson & {
   id: string;
   student: string;
   subject: string;
@@ -16,13 +17,15 @@ export function malaysiaMonth(iso: string) {
 
 export function timetableLessons<T extends TimetableLesson>(rows: readonly T[], month: string, type: "student" | "teacher", name: string, studentFilter = "") {
   if (!name || !/^\d{4}-\d{2}$/.test(month)) return [];
-  return rows.filter(l => l.status !== "cancelled" && malaysiaMonth(l.plannedStart) === month &&
+  const filtered=rows.filter(l => l.status !== "cancelled" && malaysiaMonth(l.plannedStart) === month &&
     (type === "student" ? l.student === name : l.teacherName === name && (!studentFilter || l.student === studentFilter)))
     .sort((a, b) => a.plannedStart.localeCompare(b.plannedStart));
+  return type==="teacher"?uniqueSessionLessons(filtered):filtered;
 }
 
 export function timetableHours(rows: readonly TimetableLesson[]) {
   return rows.reduce((sum, l) => {
+    if(l.teachingView&&l.teachingStatus&&!["pending","taught"].includes(l.teachingStatus))return sum;
     const checkedIn = l.status === "completed" && l.actualStart && l.actualEnd;
     const start = checkedIn ? l.actualStart! : l.plannedStart;
     const end = checkedIn ? l.actualEnd! : l.plannedEnd;

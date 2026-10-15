@@ -1,4 +1,6 @@
 "use client";
+import {ClassSessionLabel} from "@/components/class-session-label";
+import {sessionLessonTitle} from "@/lib/class-session-display";
 import { useFilterPreference } from "@/lib/filter-preferences";
 import { Button } from "@/components/ui/button";
 import { getLanguage, t } from "@/lib/i18n";
@@ -44,7 +46,7 @@ export function Timetable({ type, lessons, students, teachers, month, setMonth }
         const checkedIn = l.status === "completed" && Boolean(l.actualStart && l.actualEnd);
         return <article className="timetable-row" key={l.id}>
           <div className="timetable-date"><strong>{date(l.plannedStart)}</strong><span>{clock(l.plannedStart)}–{clock(l.plannedEnd)}</span></div>
-          <div className="timetable-lesson"><strong>{type === "student" ? l.subject : `${l.student} · ${l.subject}`}</strong><small>{type === "student" ? l.teacherName : studentFilter ? l.subject : l.student}{l.status === "student_absent" ? ` · ${t("学生缺席")}` : l.status === "teacher_absent" ? ` · ${t("老师缺席")}` : ""}</small>{checkedIn && l.actualStart && l.actualEnd && (l.actualStart !== l.plannedStart || l.actualEnd !== l.plannedEnd) && <small>{t("实际时间")} {clock(l.actualStart)}–{clock(l.actualEnd)}</small>}</div>
+          <div className="timetable-lesson"><ClassSessionLabel lesson={l}/><strong>{type === "student" ? l.subject : `${sessionLessonTitle(l)} · ${l.subject}`}</strong><small>{type === "student" ? l.teacherName : studentFilter ? l.subject : l.student}{l.status === "student_absent" ? ` · ${t("学生缺席")}` : l.status === "teacher_absent" ? ` · ${t("老师缺席")}` : ""}</small>{checkedIn && l.actualStart && l.actualEnd && (l.actualStart !== l.plannedStart || l.actualEnd !== l.plannedEnd) && <small>{t("实际时间")} {clock(l.actualStart)}–{clock(l.actualEnd)}</small>}</div>
           {checkedIn && <span className="timetable-check" aria-label={t("已记录出席")} title={t("已记录出席")}>√</span>}
         </article>;
       }) : <div className="empty">{t("所选月份没有课程")}</div>}</div></> : <div className="empty">{type === "student" ? t("请选择学生查看时间表") : t("请选择老师查看时间表")}</div>}

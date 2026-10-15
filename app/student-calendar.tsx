@@ -1,4 +1,8 @@
 "use client";
+import {attendanceLabels} from "@/lib/attendance-types";
+import type {SessionLesson} from "@/lib/class-session-display";
+import {uniqueSessionLessons,sessionLessonTitle} from "@/lib/class-session-display";
+import {ClassSessionLabel} from "@/components/class-session-label";
 
 import { useMemo, useState, type ReactNode } from "react";
 import { CalendarDays, Plus, ChevronLeft, ChevronRight, Clock3 } from "lucide-react";
@@ -9,7 +13,7 @@ import type { StudyBlock } from "./learning-portal";
 import { OnlineLessonLink } from "./online-lesson-link";
 import { LessonHistory } from "./lesson-history";
 
-type Lesson = {
+type Lesson = SessionLesson & {
   id: string;
   subject: string;
   student?: string;
@@ -38,9 +42,10 @@ const dateLabel = (day: string, options: Intl.DateTimeFormatOptions) => {
   return formatter.format(new Date(`${day}T00:00:00Z`));
 };
 
-export function StudentCalendar({ lessons, proposals, studyBlocks = [], onAddStudy, onEditStudy, onRequestReschedule, busy, role = "student", toolbar, renderActions, onPending, selectedDate, onDateChange }: { lessons: Lesson[]; proposals: Proposal[]; studyBlocks?: StudyBlock[]; onAddStudy?: (day: string) => void; onEditStudy?: (block: StudyBlock) => void; onRequestReschedule?: (id: string) => void; busy?: boolean; role?: "student" | "teacher" | "admin"; toolbar?: ReactNode; renderActions?: (id: string) => ReactNode; onPending?: (id: string) => void; selectedDate?: string; onDateChange?: (day: string) => void }) {
+export function StudentCalendar({ lessons:sourceLessons, proposals, studyBlocks = [], onAddStudy, onEditStudy, onRequestReschedule, busy, role = "student", toolbar, renderActions, onPending, selectedDate, onDateChange }: { lessons: Lesson[]; proposals: Proposal[]; studyBlocks?: StudyBlock[]; onAddStudy?: (day: string) => void; onEditStudy?: (block: StudyBlock) => void; onRequestReschedule?: (id: string) => void; busy?: boolean; role?: "student" | "teacher" | "admin"; toolbar?: ReactNode; renderActions?: (id: string) => ReactNode; onPending?: (id: string) => void; selectedDate?: string; onDateChange?: (day: string) => void }) {
   const today = malaysiaDay(new Date().toISOString());
   const [localDay, setSelectedDay] = useState(today);
+  const lessons=role==="student"?sourceLessons:uniqueSessionLessons(sourceLessons);
   const selectedDay = selectedDate || localDay;
   const [localMonth, setVisibleMonth] = useState(today.slice(0, 7));
   const visibleMonth = selectedDate?.slice(0, 7) || localMonth;
@@ -94,12 +99,12 @@ export function StudentCalendar({ lessons, proposals, studyBlocks = [], onAddStu
       <aside className="student-day-panel" aria-live="polite">
         <div className="student-day-heading"><span>{dateLabel(selectedDay, { weekday: "long" })}</span><h3>{dateLabel(selectedDay, { year: "numeric", month: "long", day: "numeric" })}</h3><p>{selectedLessons.length} {t("堂课")}{onAddStudy && <> · {selectedStudy.length} {t("项学习安排")}</>}</p>{onAddStudy && <Button size="sm" variant="outline" onClick={() => onAddStudy?.(selectedDay)}>{t("添加当日学习计划")}</Button>}</div>
         {selectedLessons.map(lesson => <article className={`student-day-lesson lesson-${lesson.status}`} key={lesson.id}>
-          <div className="student-day-lesson-top"><strong>{role === "student" ? lesson.subject : `${lesson.student} · ${lesson.subject}`}</strong><span>{t(lesson.attendanceKind === "early_dismissal" ? "提前结束课程" : statusText[lesson.status] || lesson.status)}</span></div>
+          <div className="student-day-lesson-top"><strong>{role === "student" ? lesson.subject : `${sessionLessonTitle(lesson)} · ${lesson.subject}`}</strong><span>{t(lesson.attendanceKind === "early_dismissal" ? "提前结束课程" : statusText[lesson.status] || lesson.status)}</span></div>
           <p><Clock3 size={16} aria-hidden="true"/>{time(lesson.plannedStart)}–{time(lesson.plannedEnd)}</p>
           <p><span className="student-teacher-avatar" aria-hidden="true">{lesson.teacherName.charAt(0).toUpperCase()}</span>{lesson.teacherName}</p>
-          <OnlineLessonLink href={lesson.onlineLink}/>
+          <ClassSessionLabel lesson={lesson}/>{lesson.personalAttendance&&lesson.personalAttendance!=="pending"&&<small>{t("个人出席")} · {t(attendanceLabels[lesson.personalAttendance]||lesson.personalAttendance)}</small>}<OnlineLessonLink href={lesson.onlineLink}/>
           {lesson.actualStart && lesson.actualEnd && <small>{t("实际时间")}：{time(lesson.actualStart)}–{time(lesson.actualEnd)}</small>}
-          {onRequestReschedule && lesson.status === "scheduled" && !pending.has(lesson.id) && <Button size="sm" variant="outline" disabled={busy} onClick={() => onRequestReschedule?.(lesson.id)}>{t("申请改期")}</Button>}
+          {onRequestReschedule && lesson.sessionType!=="group" && lesson.status === "scheduled" && !pending.has(lesson.id) && <Button size="sm" variant="outline" disabled={busy} onClick={() => onRequestReschedule?.(lesson.id)}>{t("申请改期")}</Button>}
           {renderActions?.(lesson.id)}
           <LessonHistory lessonId={lesson.id}/>
           {pending.has(lesson.id) && <a className="student-lesson-pending" href="#student-reschedule" onClick={event => { if (onPending) { event.preventDefault(); onPending(lesson.id); } }}>{t(role === "admin" ? "待确认改期" : pending.get(lesson.id)!.requestedRole === role ? (role === "teacher" ? "等待学生确认" : "等待老师确认") : "待你确认改期")} · {dateLabel(malaysiaDay(pending.get(lesson.id)!.proposedStart), { month: "short", day: "numeric" })} {time(pending.get(lesson.id)!.proposedStart)} →</a>}

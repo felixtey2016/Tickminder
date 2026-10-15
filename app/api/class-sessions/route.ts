@@ -1,0 +1,7 @@
+import {currentBusinessAccount} from "@/lib/auth";
+import {classScheduleOptions,ClassSessionError,classSessionPreview} from "@/lib/class-sessions";
+import {translate} from "@/lib/i18n";
+const headers={"Cache-Control":"private, no-store"};
+function failure(request:Request,error:unknown){const lang=new URL(request.url).searchParams.get("lang")==="en"?"en":"zh";return Response.json({error:translate(error instanceof ClassSessionError?error.message:"班级课次操作未能确认，请重新载入",lang),...(error instanceof ClassSessionError&&error.conflict?{conflict:error.conflict}:{})},{status:error instanceof ClassSessionError?error.status:503,headers});}
+export async function GET(request:Request){try{const actor=await currentBusinessAccount();if(!actor)throw new ClassSessionError("请先登录",401);return Response.json({classes:await classScheduleOptions(actor)},{headers});}catch(error){return failure(request,error);}}
+export async function POST(request:Request){try{if(request.headers.get("origin")!==new URL(request.url).origin)throw new ClassSessionError("Origin mismatch",403);const actor=await currentBusinessAccount();if(!actor)throw new ClassSessionError("请先登录",401);return Response.json(await classSessionPreview(actor,await request.json()),{headers});}catch(error){if(error instanceof ClassSessionError&&error.conflict)return Response.json({available:false,conflict:error.conflict},{headers});return failure(request,error);}}

@@ -48,7 +48,7 @@ const groupSource=readFileSync(new URL('../lib/group-data.ts',import.meta.url),'
 Object.assign(harness,await import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(groupSource,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64')));
 const merge = await load('lib/account-merge.ts');
 const link = (await load('app/api/account-link/route.ts', merge.url)).module;
-const manage = (await load('app/api/manage/route.ts')).module;
+const manage = (await load('app/api/manage/route.ts', merge.url)).module;
 const now = new Date().toISOString();
 function account(id, role, teacher = null, email = '') { db.prepare('INSERT INTO accounts (id,email,name,role,teacher_name,created_at) VALUES (?,?,?,?,?,?)').run(id,email,id,role,teacher,now); }
 account('local:teacher','teacher','Teacher'); account('duplicate','teacher','Teacher','teacher@example.test'); account('other','teacher','Other'); account('admin','admin'); account('owner','admin',null,'owner@example.test');
@@ -133,5 +133,28 @@ assert.equal((await classes.POST(request({action:'createTerm',name:'Rename',id:i
 actor={groupId:'next-genn-edu',id:'unbound',role:'teacher',teacherName:null};assert.equal((await classes.POST(request({action:'createTerm',name:'No'}))).status,403);
 actor={groupId:'next-genn-edu',id:'student',role:'student'};assert.equal((await classes.POST(request({action:'createTerm',name:'No'}))).status,403);
 actor={groupId:'next-genn-edu',id:'admin',role:'admin'};assert.equal((await classes.POST(request({action:'createTerm',name:'2027 Term 3'}))).status,200);
+// Quiz/practice references block account deletion and automatic Google merges
+// before either operation constructs destructive statements. Every reference
+// path is exercised through the actual management route and merge helper.
+const historyGroup='next-genn-edu',historyQuiz='history-fixture-quiz',historyVersion='history-fixture-version';
+db.prepare('INSERT INTO quizzes(id,group_id,owner_id,title,revision,created_at,updated_at) VALUES(?,?,?,?,1,?,?)').run(historyQuiz,historyGroup,'admin','历史测验',now,now);
+db.prepare('INSERT INTO quiz_versions(id,group_id,quiz_id,revision,content_json,actor_id,operation_id,request_hash,created_at) VALUES(?,?,?,1,?,?,?,?,?)').run(historyVersion,historyGroup,historyQuiz,'{}','admin',crypto.randomUUID(),'fixture',now);
+const references=[
+ ['quizzes',id=>db.prepare('INSERT INTO quizzes(id,group_id,owner_id,title,created_at,updated_at) VALUES(?,?,?,?,?,?)').run('quiz-'+id,historyGroup,id,'保留的测验',now,now)],
+ ['quiz_images',id=>db.prepare("INSERT INTO quiz_images(id,group_id,owner_id,object_key,filename,mime,bytes,sha256,status,created_at) VALUES(?,?,?,?,?,'image/png',1,?,'ready',?)").run('image-'+id,historyGroup,id,'key-'+id,'test.png',id.padEnd(64,'a'),now)],
+ ['quiz_versions',id=>db.prepare('INSERT INTO quiz_versions(id,group_id,quiz_id,revision,content_json,actor_id,operation_id,request_hash,created_at) VALUES(?,?,?,2,?,?,?,?,?)').run('version-'+id,historyGroup,historyQuiz,'{}',id,crypto.randomUUID(),'fixture',now)],
+ ['quiz_practice_assignments',id=>db.prepare('INSERT INTO quiz_practice_assignments(id,group_id,quiz_id,version_id,created_by,title,subject,created_at,operation_id,request_hash) VALUES(?,?,?,?,?,?,?,?,?,?)').run('assignment-'+id,historyGroup,historyQuiz,historyVersion,id,'练习','Science',now,crypto.randomUUID(),'fixture')],
+ ['quiz_practice_attempts',id=>db.prepare('INSERT INTO quiz_practice_attempts(id,group_id,account_id,quiz_id,version_id,immediate,order_json,started_at,updated_at,total_score,operation_id,request_hash) VALUES(?,?,?,?,?,0,?,?,?,?,?,?)').run('attempt-'+id,historyGroup,id,historyQuiz,historyVersion,'{}',now,now,0,crypto.randomUUID(),'fixture')],
+ ['quiz_practice_operations',id=>db.prepare('INSERT INTO quiz_practice_operations(id,group_id,actor_id,record_id,kind,request_hash,created_at) VALUES(?,?,?,?,?,?,?)').run('operation-'+id,historyGroup,id,'retained-record','start','fixture',now)],
+];
+const mergingActor={groupId:historyGroup,id:'local:teacher',role:'teacher',teacherName:'Teacher',email:''};
+for(const [table,seed] of references){const target='history-'+table;account(target,'teacher','Teacher');seed(target);actor={groupId:historyGroup,id:'admin',role:'admin',email:''};
+ const blockedDelete=await manage.POST(request({kind:'account',id:target,confirm:true}));assert.equal(blockedDelete.status,409,table);assert.equal((await blockedDelete.json()).error,'account.quizHistoryDeleteBlocked',table);
+ const preview=await (await manage.POST(request({action:'previewDelete',entries:[{kind:'account',id:target}]}))).json();assert.equal(preview.items.length,0,table);assert.equal(preview.blocked[0].error,'account.quizHistoryDeleteBlocked',table);
+ for(const confirmed of [false,true]){const blockedMerge=await merge.module.prepareAccountMerge(mergingActor,target,confirmed);assert.equal(blockedMerge.error,'account.quizHistoryMergeBlocked',table);assert.equal(blockedMerge.statements.length,0,table);assert.equal(blockedMerge.mergeName,undefined,table);}
+ assert.ok(db.prepare('SELECT id FROM accounts WHERE id=?').get(target),table+' account is retained');
+}
+account('without-quiz-history','teacher','Unused');actor={groupId:historyGroup,id:'admin',role:'admin',email:''};assert.equal((await manage.POST(request({kind:'account',id:'without-quiz-history',confirm:true}))).status,200);assert.equal(db.prepare('SELECT id FROM accounts WHERE id=?').get('without-quiz-history'),undefined);
+for(const table of ['quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations'])assert.ok(harness.GROUP_TABLES.includes(table),table+' is group scoped');
 delete globalThis.__accountTest; db.close();
 console.log('Account proof, explicit merge, rollback, deletion permissions and shared PDF preservation passed');

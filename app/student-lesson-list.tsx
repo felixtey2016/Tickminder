@@ -1,4 +1,7 @@
 "use client";
+import {attendanceLabels} from "@/lib/attendance-types";
+import type {SessionLesson} from "@/lib/class-session-display";
+import {ClassSessionLabel} from "@/components/class-session-label";
 import { getLanguage, t } from "@/lib/i18n";
 import { malaysiaDay } from "@/lib/student-calendar";
 import { OnlineLessonLink } from "./online-lesson-link";
@@ -6,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import type { RescheduleProposal } from "./reschedule-panel";
 import { LessonHistory } from "./lesson-history";
 
-type Lesson = {
+type Lesson = SessionLesson & {
   id: string; subject: string; teacherName: string; plannedStart: string; plannedEnd: string;
   status: string; actualStart: string | null; actualEnd: string | null;
   attendanceKind?: string | null; onlineLink?: string | null;
@@ -29,9 +32,9 @@ export function StudentLessonList({ lessons, proposals = [], onRequestReschedule
       <div><strong>{lesson.subject}</strong><span>{date(lesson.plannedStart)} · {time(lesson.plannedStart)}–{time(lesson.plannedEnd)}</span><span>{t("负责老师")}：{lesson.teacherName}</span>
         <span>{t(lesson.attendanceKind === "early_dismissal" ? "提前结束课程" : statusText[lesson.status] || lesson.status)}</span>
         {lesson.actualStart && lesson.actualEnd && <small>{t("实际时间")}：{time(lesson.actualStart)}–{time(lesson.actualEnd)}</small>}
-        <OnlineLessonLink href={lesson.onlineLink}/>
+        <ClassSessionLabel lesson={lesson}/>{lesson.personalAttendance&&lesson.personalAttendance!=="pending"&&<small>{t("个人出席")} · {t(attendanceLabels[lesson.personalAttendance]||lesson.personalAttendance)}</small>}<OnlineLessonLink href={lesson.onlineLink}/>
       </div>
-      {lesson.status === "scheduled" && (proposals.some(p => p.lessonId === lesson.id && p.status === "pending") ? <small>{t(proposals.find(p => p.lessonId === lesson.id && p.status === "pending")?.requestedRole === "student" ? "等待老师确认" : "待你确认改期")}</small> : <Button size="sm" variant="outline" disabled={busy} onClick={() => onRequestReschedule?.(lesson.id)}>{t("申请改期")}</Button>)}
+      {lesson.sessionType!=="group" && lesson.status === "scheduled" && (proposals.some(p => p.lessonId === lesson.id && p.status === "pending") ? <small>{t(proposals.find(p => p.lessonId === lesson.id && p.status === "pending")?.requestedRole === "student" ? "等待老师确认" : "待你确认改期")}</small> : <Button size="sm" variant="outline" disabled={busy} onClick={() => onRequestReschedule?.(lesson.id)}>{t("申请改期")}</Button>)}
       <LessonHistory lessonId={lesson.id}/>
     </article>) : <p className="muted">{t("没有课程。")}</p>}
   </section>)}</div>;

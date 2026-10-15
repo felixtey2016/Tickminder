@@ -1,3 +1,6 @@
+import {attendanceAction,attendanceActions} from "@/lib/session-attendance";
+import {ClassSessionError,classSessionAction,classSessionActions,legacyGroupAction} from "@/lib/class-sessions";
+import {LearningEditError} from "@/lib/learning-versions";
 import {groupReader,groupStatement,requireGroup} from "@/lib/group-data";
 import { groupWhere } from "@/lib/group-data";
 import { NextResponse } from "next/server";
@@ -8,7 +11,7 @@ import { accounts, assignments, audit, lessons, localCredentials, loginAttempts,
 import { hashPassword, normalizeUsername, validPassword, validUsername } from "@/lib/password";
 import { findLessonConflict, generateWeekly, hoursBetween, lessonConflictReason, malaysiaDate, mayCheckIn, type LessonSlot } from "@/lib/lesson-rules";
 import { readRoster } from "@/lib/roster";
-import { recordLessonChange } from "@/lib/inbox-server";
+import { recordLessonChange,lessonChangeStatements } from "@/lib/inbox-server";
 import { teacherMaySeeLesson, mayRequestReschedule, mayRespondReschedule } from "@/lib/access";
 import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 import { studentNameKey } from "@/lib/student-names";
@@ -39,11 +42,13 @@ export async function POST(request: Request) {
   let data: Body;
   try { data = await request.json(); } catch { return bad("Invalid request"); }
   const action = str(data.action);
-  if (actor.role === "teacher" && !["create", "attendance", "proposeReschedule", "respondReschedule", "updateOnlineLink"].includes(action)) return bad("Administrator access required", 403);
+  if (actor.role === "teacher" && !["create", "attendance", "proposeReschedule", "respondReschedule", "updateOnlineLink",...classSessionActions,...attendanceActions].includes(action)) return bad("Administrator access required", 403);
   if (actor.role === "student" && !["respondReschedule", "proposeReschedule"].includes(action)) return bad("Student access only", 403);
   const db = getDb();
   const now = new Date().toISOString();
   try {
+    if(attendanceActions.includes(action))return NextResponse.json(await attendanceAction(actor,data));
+    if(classSessionActions.includes(action))return NextResponse.json(await classSessionAction(actor,data));
     if (action === "createLocalAccount") {
       if (actor.role !== "admin") return bad("Administrator access required", 403);
       const username = normalizeUsername(data.username);
@@ -150,7 +155,8 @@ export async function POST(request: Request) {
       const before = await db.select().from(plans).where(groupWhere(plans,actor.groupId,eq(plans.key, key))).get();
       if (before && before.teacherName !== teacherName) {
         const all = await db.select().from(lessons).where(groupWhere(lessons,actor.groupId)).all();
-        const moving = all.filter(l => l.student === student && l.subject === subject && l.teacherName === before.teacherName && l.status === "scheduled");
+        const groupSessions=new Set((await rows<{id:string}>("SELECT id FROM class_sessions WHERE session_type='group'")).map(s=>s.id));
+        const moving = all.filter(l => !groupSessions.has(l.sessionId||"") && l.student === student && l.subject === subject && l.teacherName === before.teacherName && l.status === "scheduled");
         const movingIds = new Set(moving.map(l => l.id));
         const other = all.filter(l => !movingIds.has(l.id));
         for (const lesson of moving) { const slot = { ...lesson, teacherName }; const conflict = findLessonConflict(slot, other); if (conflict) return conflictReply(slot, conflict, actor.role); }
@@ -231,6 +237,7 @@ export async function POST(request: Request) {
     const id = str(data.id);
     const existing = id ? await db.select().from(lessons).where(groupWhere(lessons,actor.groupId,eq(lessons.id, id))).get() : null;
     if (!existing) return bad("Lesson not found", 404);
+    if(existing.sessionId&&["edit","cancel","proposeReschedule","respondReschedule"].includes(action)&&await first("SELECT 1 FROM class_sessions WHERE id=? AND session_type='group'",existing.sessionId))return NextResponse.json(await legacyGroupAction(actor,data,existing.sessionId));
     if (action === "proposeReschedule") {
       const roster = await readRoster(actor);
       if (!mayRequestReschedule(actor, existing, roster.plans)) return bad("This lesson is not assigned to you", 403);
@@ -271,45 +278,19 @@ export async function POST(request: Request) {
       await recordLessonChange({ groupId:actor.groupId!, lessonId: id, actorId: actor.id, action: decision === "accept" ? "acceptReschedule" : "rejectReschedule", before: proposal, after: update, at: now });
       return NextResponse.json({ ok: true });
     }
-    if (action === "attendance") {
-      if (actor.role === "teacher") {
-        const roster = await readRoster(actor);
-        if (!teacherMaySeeLesson(actor, existing, new Set(roster.plans.filter(p => p.teacher === actor.teacherName).map(p => p.key)))) return bad("Student is no longer active or assigned", 403);
-      }
-      if (existing.status === "cancelled" || (existing.status !== "scheduled" && actor.role !== "admin")) return bad("This lesson is closed");
-      if (actor.role === "teacher" && !mayCheckIn(existing.plannedStart, now)) return bad("课程当天才可以打卡");
-      const attendanceKind = str(data.status);
-      if (!["completed", "early_dismissal", "student_absent", "teacher_absent"].includes(attendanceKind)) return bad("Invalid attendance status");
-      const status = attendanceKind === "early_dismissal" ? "completed" : attendanceKind;
-      const actualStart = status === "completed" ? malaysiaIso(data.actualStart) : null;
-      const totalHours = actor.role === "admin" && data.totalHours === undefined && status === "completed"
-        ? hoursBetween(actualStart!, malaysiaIso(data.actualEnd)) : Number(data.totalHours);
-      if (status === "completed" && (!Number.isFinite(totalHours) || totalHours <= 0 || totalHours > 12)) return bad("Enter total taught hours between 0 and 12");
-      const actualEnd = actualStart ? new Date(Date.parse(actualStart) + totalHours * 3600000).toISOString() : null;
-      if (actualStart && actualEnd) {
-        hoursBetween(actualStart, actualEnd);
-        if (malaysiaDate(actualStart) > malaysiaDate(now)) return bad("Actual class date cannot be in the future");
-      }
-      const update = { status, attendanceKind, actualStart, actualEnd, note: str(data.note).slice(0, 500) || null, chargeable: status === "completed", reviewedAt: now, reviewedBy: actor.id, updatedAt: now };
-      await db.update(lessons).set(update).where(groupWhere(lessons,actor.groupId,eq(lessons.id, id)));
-      await db.update(rescheduleRequests).set({ status: "stale", respondedAt: now }).where(groupWhere(rescheduleRequests,actor.groupId,and(eq(rescheduleRequests.lessonId, id), eq(rescheduleRequests.status, "pending"))));
-      await db.insert(audit).values({groupId:actor.groupId!, id: crypto.randomUUID(), lessonId: id, actorId: actor.id, action: "attendance", before: JSON.stringify(existing), after: JSON.stringify(update), at: now });
-      return NextResponse.json({ ok: true });
+    if (action === "attendance" || action === "review") {
+      if(!existing.sessionId)return bad("课次不存在或无权访问",409);
+      const current=(await import("@/lib/class-sessions")).classSessionState;
+      const session=(await current(actor)).allSessions.find(s=>s.id===existing.sessionId);
+      if(!session)return bad("课次不存在或无权访问",404);
+      if(session.sessionType==="group")return bad("整班考勤请在班级课次中统一登记",409);
+      const legacyStatus=str(data.status),completed=["completed","early_dismissal"].includes(legacyStatus);
+      const start=completed?malaysiaIso(data.actualStart):null;
+      const end=completed?(data.actualEnd?malaysiaIso(data.actualEnd):new Date(Date.parse(start!)+Number(data.totalHours)*3600000).toISOString()):null;
+      const local=(value:string|null)=>value?new Date(Date.parse(value)+8*3600_000).toISOString().slice(0,16):"";
+      return NextResponse.json(await attendanceAction(actor,{action:action==="review"?"reviewSessionAttendance":"saveSessionAttendance",sessionId:session.id,revision:data.sessionRevision,operationId:data.operationId,teachingStatus:completed?"taught":legacyStatus==="teacher_absent"?"teacher_absent":"not_taught",actualStart:local(start),actualEnd:local(end),note:data.note,participants:[{lessonId:existing.id,status:completed?"present":"absent",note:data.note,chargeable:action==="review"?data.chargeable:completed}]}));
     }
     if (actor.role !== "admin") return bad("Administrator access required", 403);
-    if (action === "review") {
-      if (!["completed", "student_absent", "teacher_absent"].includes(existing.status)) return bad("Attendance must be recorded first");
-      if (existing.status === "completed" && (!existing.actualStart || !existing.actualEnd)) return bad("Actual times are required");
-      const chargeable = existing.status === "teacher_absent" ? false : data.chargeable === true;
-      if (chargeable) {
-        const makeup = await db.select().from(lessons).where(groupWhere(lessons,actor.groupId,eq(lessons.replacementFor, id))).all();
-        if (makeup.some(l => l.status !== "cancelled")) return bad("This lesson has an active makeup; it cannot also be billed");
-      }
-      const update = { chargeable, reviewedAt: now, reviewedBy: actor.id, updatedAt: now };
-      await db.update(lessons).set(update).where(groupWhere(lessons,actor.groupId,eq(lessons.id, id)));
-      await db.insert(audit).values({groupId:actor.groupId!, id: crypto.randomUUID(), lessonId: id, actorId: actor.id, action: "review", before: JSON.stringify(existing), after: JSON.stringify(update), at: now });
-      return NextResponse.json({ ok: true });
-    }
     if (action === "cancel" || action === "edit") {
       const future = data.scope === "future";
       if (future && !existing.seriesId) return bad("This lesson is not recurring");
@@ -325,16 +306,24 @@ export async function POST(request: Request) {
         const other = (await db.select().from(lessons).where(groupWhere(lessons,actor.groupId)).all()).filter(l => !candidateIds.has(l.id));
         for (const [index, slot] of slots.entries()) { const conflict = findLessonConflict(slot, [...other, ...slots.filter((_, i) => i !== index)]); if (conflict) return conflictReply(slot, conflict, actor.role); }
       }
+      const mutations=[],rawDb=learningDb();
+      if(future)mutations.push(rawDb.prepare("UPDATE lessons SET status='cancelled' WHERE group_id=? AND id IN(SELECT value FROM json_each(?))").bind(groupId,JSON.stringify(candidates.map(l=>l.id))));
       for (const row of candidates) {
         const update = action === "cancel" ? { status: "cancelled", reviewedAt: null, reviewedBy: null, chargeable: null, updatedAt: now } : { plannedStart: new Date(Date.parse(row.plannedStart) + shift).toISOString(), plannedEnd: future ? new Date(Date.parse(row.plannedStart) + shift + Date.parse(newEnd) - Date.parse(newStart)).toISOString() : newEnd, reviewedAt: null, reviewedBy: null, chargeable: null, updatedAt: now };
-        await db.update(lessons).set(update).where(groupWhere(lessons,actor.groupId,eq(lessons.id, row.id)));
-        await db.update(rescheduleRequests).set({ status: "stale", respondedAt: now }).where(groupWhere(rescheduleRequests,actor.groupId,and(eq(rescheduleRequests.lessonId, row.id), eq(rescheduleRequests.status, "pending"))));
-        await recordLessonChange({ groupId:actor.groupId!, lessonId: row.id, actorId: actor.id, action: action === "edit" ? "reschedule" : "cancel", before: row, after: update, at: now });
+        mutations.push(rawDb.prepare("UPDATE lessons SET planned_start=?,planned_end=?,status=?,reviewed_at=NULL,reviewed_by=NULL,chargeable=NULL,updated_at=? WHERE id=? AND group_id=?").bind(update.plannedStart||row.plannedStart,update.plannedEnd||row.plannedEnd,action==="cancel"?"cancelled":row.status,now,row.id,groupId));
+        mutations.push(rawDb.prepare("UPDATE reschedule_requests SET status='stale',responded_at=? WHERE lesson_id=? AND group_id=? AND status='pending'").bind(now,row.id,groupId));
+        mutations.push(...lessonChangeStatements({ groupId:actor.groupId!, lessonId: row.id, actorId: actor.id, action: action === "edit" ? "reschedule" : "cancel", before: row, after: update, at: now }));
       }
+      await rawDb.batch(mutations);
       return NextResponse.json({ ok: true, count: candidates.length });
     }
     return bad("Unknown action");
   } catch (error) {
+    if(error instanceof ClassSessionError)return NextResponse.json({error:error.message,...(error.conflict?{conflict:error.conflict}:{})},{status:error.status});
+    if(error instanceof LearningEditError)return bad(error.message,error.status);
+    if(/lesson slot conflict/.test(String(error)))return bad("课程时间冲突，请刷新后重新选择时间",409);
+    if(/group session must change together|invalid class session link/.test(String(error)))return bad("整班课次必须一起修改，请重新载入",409);
+    if(/UNIQUE constraint/.test(String(error))&&classSessionActions.includes(action))return bad("操作正在处理或已完成，请重新载入检查",409);
     const message = error instanceof Error ? error.message : "";
     if (/^(Lesson time must be|Enter a Malaysia date and time|Invalid date and time|Invalid recurring lesson time|Recurring range is too long|End date precedes first lesson|请输入有效的网课链接|网课链接不能超过|网课链接必须是完整的)/.test(message)) return bad(message);
     return bad("服务器未能确认结果，请刷新列表检查是否已保存，再决定是否重试", 503);

@@ -1,3 +1,4 @@
+import {groupReader} from "@/lib/group-data";
 import { groupWhere } from "@/lib/group-data";
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
@@ -23,16 +24,16 @@ export async function GET(request: Request) {
   if (actor.role === "teacher") {
     const roster = await readRoster(actor);
     const active = new Set(roster.plans.filter(p => p.teacher === actor.teacherName).map(p => p.key));
-    if (!teacherMaySeeLesson(actor, lesson, active)) return bad("You cannot view this lesson", 403);
+    if (!teacherMaySeeLesson(actor, lesson, active)&&!await groupReader(actor.groupId).first("SELECT 1 FROM class_sessions WHERE id=? AND session_type='group' AND teacher_name=?",lesson.sessionId,actor.teacherName)) return bad("You cannot view this lesson", 403);
   }
   if (!["admin", "student", "teacher"].includes(actor.role)) return bad("You cannot view this lesson", 403);
 
   const [requests, changes] = await Promise.all([
-    db.select().from(rescheduleRequests).where(groupWhere(rescheduleRequests,actor.groupId,eq(rescheduleRequests.lessonId, id))).all(),
+    groupReader(actor.groupId).rows<typeof rescheduleRequests.$inferSelect & {originalStart:string;originalEnd:string;proposedStart:string;proposedEnd:string;requestedBy:string;requestedAt:string;respondedBy:string|null;respondedAt:string|null}>("SELECT id,original_start AS originalStart,original_end AS originalEnd,proposed_start AS proposedStart,proposed_end AS proposedEnd,status,requested_by AS requestedBy,requested_at AS requestedAt,responded_by AS respondedBy,responded_at AS respondedAt FROM reschedule_requests WHERE lesson_id=? OR (session_id=? AND EXISTS(SELECT 1 FROM class_sessions WHERE id=? AND session_type='group'))",id,lesson.sessionId,lesson.sessionId),
     db.select().from(audit).where(groupWhere(audit,actor.groupId,eq(audit.lessonId, id))).all(),
   ]);
   const relevant = changes.filter(change => change.action === "reschedule");
-  const actorIds = new Set([...requests.flatMap(row => [row.requestedBy, row.respondedBy]), ...relevant.map(row => row.actorId)].filter(Boolean));
+  const actorIds = new Set([...requests.flatMap(row => [row.requestedBy, row.respondedBy]), ...changes.map(row => row.actorId)].filter(Boolean));
   const names = new Map((await db.select({ id: accounts.id, name: accounts.name }).from(accounts).where(groupWhere(accounts,actor.groupId)).all())
     .filter(row => actorIds.has(row.id)).map(row => [row.id, row.name]));
   const mergedNames = await mergedAccountNames(actor.groupId);
@@ -58,5 +59,6 @@ export async function GET(request: Request) {
       } catch { return []; }
     }),
   ].sort((a, b) => b.requestedAt.localeCompare(a.requestedAt) || b.id.localeCompare(a.id));
-  return NextResponse.json({ currentStart: lesson.plannedStart, currentEnd: lesson.plannedEnd, entries });
+  const attendanceEntries=changes.filter(c=>['saveSessionAttendance','reviewSessionAttendance','attendance','review'].includes(c.action)).map(c=>{let before={},after={};try{before=JSON.parse(c.before||'{}');after=JSON.parse(c.after||'{}');}catch{}return {id:c.id,action:c.action,at:c.at,actor:nameOf(c.actorId),before,after};}).sort((a,b)=>b.at.localeCompare(a.at)||b.id.localeCompare(a.id));
+  return NextResponse.json({attendanceEntries, currentStart: lesson.plannedStart, currentEnd: lesson.plannedEnd, entries });
 }

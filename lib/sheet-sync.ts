@@ -21,6 +21,8 @@ export function serializeSheetPayload(payload: Record<string, unknown>): string 
     `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`);
 }
 
+/** Session attendance atomically mirrors each student presence interval to lessons.
+ * Sheet pairs remain student-subject hours; never replace these with deduplicated teacher hours. */
 /** Use the website's registered student-subject pairs, including pairs with zero hours this month. */
 export function monthlySheetPairs(plans: readonly Plan[], lessons: readonly Lesson[], month: string, mode: SyncMode): SyncPair[] {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("Invalid lesson month");

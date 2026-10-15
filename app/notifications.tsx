@@ -9,8 +9,8 @@ import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-f
 import { useDialogState } from "@/lib/use-dialog-state";
 import { t, type Language } from "@/lib/i18n";
 
-type Item={id:string;kind?:string;minutes?:number;dueAt:string;readAt:string|null;subject:string;teacherName:string;plannedStart:string;plannedEnd:string;previousStart?:string};
-type State={groupId?:string;accountId?:string;unreadCount:number;items:Item[];configured:boolean;publicKey:string|null;schedulerReady:boolean;lastDispatchAt:string|null};
+type Item={id:string;contentKind?:"material"|"homework"|"quiz";recordId?:string;title?:string;kind?:string;minutes?:number;dueAt:string;readAt:string|null;subject:string;teacherName:string;plannedStart:string;plannedEnd:string;previousStart?:string};
+type State={groupId?:string;accountId?:string;unreadCount:number;unreadQuizCount?:number;items:Item[];configured:boolean;publicKey:string|null;schedulerReady:boolean;lastDispatchAt:string|null};
 type Device={accountId:string;id:string};
 const DEVICE_KEY="tickminder-push-device";
 // A dismissal is intentionally not persisted: a full new entry offers again.
@@ -54,10 +54,11 @@ function applicationKey(key:string) {const raw=atob(key.replace(/-/g,"+").replac
 type ContextValue={state:State|null;loadError:string;deviceId:string|null;enabled:boolean;busy:boolean;enable:()=>Promise<void>;disable:()=>Promise<void>;test:()=>Promise<void>;refresh:()=>Promise<void>;read:(id?:string)=>Promise<void>;showHelp:()=>void};
 const Context=createContext<ContextValue|null>(null);
 
-export function MenuBadge({count=0,includeUnread=false,header=false}:{count?:number;includeUnread?:boolean;header?:boolean}) {
+export function MenuBadge({count=0,includeUnread=false,quizOnly=false,header=false}:{count?:number;includeUnread?:boolean;quizOnly?:boolean;header?:boolean}) {
   const context=useContext(Context);
   const unread=context?.state?.unreadCount ?? context?.state?.items.filter(item=>!item.readAt).length ?? 0;
-  const total=count+(includeUnread?unread:0);
+  const quizUnread=context?.state?.unreadQuizCount ?? context?.state?.items.filter(item=>item.contentKind==='quiz'&&!item.readAt).length ?? 0;
+  const total=count+(quizOnly?quizUnread:includeUnread?unread:0);
   if(total<=0)return null;
   return <span className={"menu-count"+(header?" menu-count-header":"")} aria-label={`${total} ${t("项待查看或处理")}`}>{total>99?"99+":total}</span>;
 }
@@ -146,15 +147,15 @@ export function NotificationsProvider({accountId,groupId,language,children}:{acc
     </DialogContent></Dialog>
   </Context.Provider>;
 }
-export function NotificationCentre({onLesson,language}:{onLesson:()=>void;language:Language}) {
+export function NotificationCentre({onLesson,onLearning,onQuiz,language}:{onLesson:()=>void;onLearning?:(kind:"material"|"homework")=>void;onQuiz?:()=>void;language:Language}) {
   const value=useContext(Context);if(!value)return null;
   const {state,loadError,enabled,busy,enable,disable,test,refresh,read,showHelp}=value;
   const date=(input:string)=>new Intl.DateTimeFormat(language==="en"?"en-GB":"zh-CN",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(input));
-  const messageTitle=(item:Item)=>item.kind==="cancel"?"课程已取消":item.kind==="rejectReschedule"?"改期申请已被拒绝":item.kind==="reschedule"||item.kind==="acceptReschedule"?"课程时间已变更":item.minutes===0?"课程时间已到":item.minutes===5?"课前 5 分钟提醒":"课前 30 分钟提醒";
+  const messageTitle=(item:Item)=>item.kind==="quiz_assigned"?"收到新的 Quiz 安排":item.kind==="quiz_updated"?"Quiz 安排已更新":item.kind==="quiz_retake_granted"?"Quiz 作答权限已更新":item.kind==="quiz_pending_marking"?"Quiz 有待批改的提交":item.kind==="group_reschedule_requested"?"老师申请整班改期":item.kind==="feedback_published"?"老师已发布批改反馈":item.kind==="resubmission_granted"?"老师已授予一次重交权限":item.kind==="homework_updated"?"功课已更新":item.kind==="material_updated"?"教学资料已更新":item.kind==="cancel"?"课程已取消":item.kind==="rejectReschedule"?"改期申请已被拒绝":item.kind==="reschedule"||item.kind==="acceptReschedule"?"课程时间已变更":item.minutes===0?"课程时间已到":item.minutes===5?"课前 5 分钟提醒":"课前 30 分钟提醒";
   return <div className="notification-page"><section className="panel notification-settings"><div className="notification-heading"><Bell size={22}/><h2>{t("上课提醒")}</h2></div><p>{t("在上课前 30 分钟、5 分钟及开始时接收提醒。")}</p><p className="notification-status">{enabled?<Check size={18}/>:<BellOff size={18}/>} {t(enabled?"此设备已开启通知":"此设备尚未开启通知")}</p>
     <div className="notification-actions">{enabled?<><Button variant="outline" onClick={()=>void test()} disabled={busy}>{t("发送测试通知")}</Button><Button variant="outline" onClick={()=>void disable()} disabled={busy}>{t("关闭此设备通知")}</Button></>:<Button onClick={()=>void enable()} disabled={busy||!state?.configured}>{t("开启此设备通知")}</Button>}<Button variant="outline" onClick={showHelp}>{t("通知开启指南")}</Button></div>
     {!state?.schedulerReady&&<p className="notice">{t("自动提醒服务暂不可用。你仍可查看通知中心，请以课表时间为准。")}</p>}<p className="notification-muted">{t("每个设备需要分别开启。提醒可能受网络或系统设置影响，请以课程时间为准。")}</p></section>
     <section className="panel"><div className="notification-list-heading"><h2>{t("通知中心")}</h2><Button variant="outline" disabled={busy||!state?.items.some(item=>!item.readAt)} onClick={()=>void read()}>{t("全部标为已读")}</Button></div>
-      {loadError?<div className="error" role="alert">{loadError}<Button variant="outline" onClick={()=>void refresh().catch(alertActionFailure)}>{t("重试")}</Button></div>:!state?<p>{t("正在加载…")}</p>:!state.items.length?<p className="empty">{t("暂无新通知。上课提醒和课程变更会显示在这里。")}</p>:<div className="notification-list">{state.items.map(item=><article key={item.id} className={"notification-item"+(item.readAt?"":" unread")}><div><span className="notification-kicker">{t(messageTitle(item))}</span><h3>{item.subject}</h3>{(item.kind==="reschedule"||item.kind==="acceptReschedule")&&item.previousStart&&<p>{t("原时间：")}{date(item.previousStart)}</p>}<p>{(item.kind==="reschedule"||item.kind==="acceptReschedule")?t("新时间："):""}{date(item.plannedStart)} · {item.teacherName}</p></div><div className="notification-actions"><Button variant="outline" onClick={onLesson}>{t("前往课表")}</Button>{!item.readAt&&<Button variant="outline" disabled={busy} onClick={()=>void read(item.id)}>{t("标为已读")}</Button>}</div></article>)}</div>}
+      {loadError?<div className="error" role="alert">{loadError}<Button variant="outline" onClick={()=>void refresh().catch(alertActionFailure)}>{t("重试")}</Button></div>:!state?<p>{t("正在加载…")}</p>:!state.items.length?<p className="empty">{t("暂无新通知。课程变更、功课更新、Quiz 安排和批改反馈会显示在这里。")}</p>:<div className="notification-list">{state.items.map(item=><article key={item.id} className={"notification-item"+(item.readAt?"":" unread")}><div><span className="notification-kicker">{t(messageTitle(item))}</span><h3>{item.title||item.subject}</h3>{item.contentKind&&<p>{item.subject} · {date(item.dueAt)}</p>}{(item.kind==="reschedule"||item.kind==="acceptReschedule")&&item.previousStart&&<p>{t("原时间：")}{date(item.previousStart)}</p>}{!item.contentKind&&<p>{(item.kind==="reschedule"||item.kind==="acceptReschedule")?t("新时间："):""}{date(item.plannedStart)} · {item.teacherName}</p>}</div><div className="notification-actions">{item.contentKind?<Button variant="outline" onClick={()=>{void read(item.id);if(item.contentKind==="quiz")onQuiz?.();else onLearning?.(item.contentKind!);}}>{t(item.contentKind==="quiz"?"查看 Quiz":item.contentKind==="homework"?"查看功课":"查看教学资料")}</Button>:<Button variant="outline" onClick={onLesson}>{t("前往课表")}</Button>}{!item.readAt&&<Button variant="outline" disabled={busy} onClick={()=>void read(item.id)}>{t("标为已读")}</Button>}</div></article>)}</div>}
     </section></div>;
 }

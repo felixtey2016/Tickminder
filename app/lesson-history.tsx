@@ -1,4 +1,5 @@
 "use client";
+import {attendanceLabels} from "@/lib/attendance-types";
 import {groupFetch} from "@/lib/group-client";
 
 
@@ -11,7 +12,8 @@ type Entry = {
   proposedStart: string; proposedEnd: string; status: string;
   requestedBy: string | null; requestedAt: string; respondedBy: string | null; respondedAt: string | null;
 };
-type History = { currentStart: string; currentEnd: string; entries: Entry[] };
+type AttendanceEntry={id:string;action:string;at:string;actor:string|null;before:Record<string,unknown>;after:Record<string,unknown>};
+type History = {attendanceEntries?:AttendanceEntry[]; currentStart: string; currentEnd: string; entries: Entry[] };
 const dateTime = (iso: string) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", {
   timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric",
   hour: "2-digit", minute: "2-digit", hour12: false,
@@ -43,7 +45,7 @@ export function LessonHistory({ lessonId }: { lessonId: string }) {
     setOpen(next);
     if (next) void load();
   }}>
-    <summary>{t("课程时间变更记录")}</summary>
+    <summary>{t("课程与考勤变更记录")}</summary>
     {open && <div className="lesson-history-body">
       {loading && <p>{t("正在加载…")}</p>}
       {error && <p role="alert">{error} <button type="button" onClick={() => void load()}>{t("重试")}</button></p>}
@@ -54,6 +56,7 @@ export function LessonHistory({ lessonId }: { lessonId: string }) {
           <small>{entry.type === "direct" ? t("管理员直接修改") : t("申请人")}：{t(entry.requestedBy || "已删除账号")} · {dateTime(entry.requestedAt)}</small>
           {entry.respondedAt && <small>{t("处理人")}：{t(entry.respondedBy || "系统")} · {dateTime(entry.respondedAt)}</small>}
         </li>)}</ol> : <p>{t("暂无改期记录")}</p>}
+        {history.attendanceEntries?.length? <section className="attendance-history"><h3>{t("考勤变更历史")}</h3><ol>{history.attendanceEntries.map(entry=><li key={entry.id}><strong>{t(entry.action.includes("review")?"复核考勤":"登记考勤")} · {entry.actor||t("已删除账号")}</strong><small>{dateTime(entry.at)}</small>{[entry.before,entry.after].map((value,index)=><div key={index}><b>{t(index?"变更后":"变更前")}</b><span>{t(attendanceLabels[String(value.status||"")]||String(value.status||"—"))}</span>{typeof value.actualStart==="string"&&typeof value.actualEnd==="string"&&<small>{t("老师授课时间")} · {span(value.actualStart,value.actualEnd)}</small>}{typeof value.arrivedAt==="string"&&typeof value.leftAt==="string"&&<small>{t("个人出席时间")} · {span(value.arrivedAt,value.leftAt)}</small>}{typeof value.note==="string"&&<p>{value.note}</p>}{typeof value.teachingNote==="string"&&<p>{t("课次授课备注")} · {value.teachingNote}</p>}{(typeof value.chargeable==="boolean"||typeof value.chargeable==="number")&&<small>{t("标记为收费")} · {t(value.chargeable?"是":"否")}</small>}</div>)}</li>)}</ol></section>:null}
       </>}
     </div>}
   </details>;

@@ -1,3 +1,5 @@
+import {classSessionPreview,ClassSessionError} from "@/lib/class-sessions";
+import { groupReader } from "@/lib/group-data";
 import { groupWhere } from "@/lib/group-data";
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
@@ -49,6 +51,7 @@ export async function POST(request: Request) {
       const id = str(body.id);
       const lesson = existing.find(row => row.id === id);
       if (!lesson) return bad("Lesson not found", 404);
+      if(lesson.sessionId&&await groupReader(actor.groupId).first("SELECT 1 FROM class_sessions WHERE id=? AND session_type='group'",lesson.sessionId))return NextResponse.json(await classSessionPreview(actor,{...body,sessionId:lesson.sessionId,action:action==="edit"?"editClassSession":"proposeClassReschedule"}));
       if (action === "proposeReschedule") {
         const roster = await readRoster(actor);
         if (!mayRequestReschedule(actor, lesson, roster.plans)) return bad("No permission to check this lesson", 403);
@@ -76,6 +79,7 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ available: true });
   } catch (error) {
+    if(error instanceof ClassSessionError)return error.conflict?NextResponse.json({available:false,conflict:error.conflict}):bad(error.message,error.status);
     if (error instanceof Error && /Lesson time|Enter a Malaysia|Invalid date|Recurring range|End date precedes/.test(error.message)) return bad(error.message);
     return bad("Could not check this time. Try again.");
   }

@@ -22,13 +22,14 @@ export async function GET(request:Request) {
   }
   const account=await currentBusinessAccount();
   if(!account) return json({error:"请先完成账号设置"},403);
-  const result=await learningDb().prepare(`SELECT g.id,g.name,g.join_code AS joinCode,g.active,
+  const result=await learningDb().prepare(`SELECT g.id,g.name,g.join_code AS joinCode,g.active,g.chief_admin_id AS chiefAdminId,
     (SELECT count(*) FROM accounts a WHERE a.group_id=g.id AND a.role='admin' AND a.disabled_at IS NULL) AS admins,
     (SELECT count(*) FROM teachers t WHERE t.group_id=g.id AND t.active=1) AS teachers,
     (SELECT count(*) FROM students s WHERE s.group_id=g.id AND s.active=1) AS students,
     (SELECT count(*) FROM classrooms c WHERE c.group_id=g.id AND c.archived=0) AS classrooms
     FROM tuition_groups g ORDER BY g.created_at,g.id`).all();
-  return json({groups:result.results,isOwner:true,currentGroupId:account.groupId});
+  const administrators=await learningDb().prepare("SELECT id,name,group_id AS groupId FROM accounts WHERE role='admin' AND disabled_at IS NULL AND group_id IS NOT NULL ORDER BY name,id").all<{id:string;name:string;groupId:string}>();
+  return json({groups:result.results.map(group=>({...group,adminOptions:administrators.results.filter(a=>a.groupId===group.id).map(({id,name})=>({id,name}))})),isOwner:true,currentGroupId:account.groupId});
 }
 export async function POST(request:Request) {
   if(request.headers.get("origin")!==new URL(request.url).origin) return json({error:"没有权限执行此操作"},403);
@@ -37,6 +38,17 @@ export async function POST(request:Request) {
   try {
     const data=await request.json() as Record<string,unknown>;
     const db=getDb(),now=new Date().toISOString();
+    if(data.action==='setChief'){
+      if(typeof data.id!=='string'||data.id.length>128||data.chiefAdminId!==null&&(typeof data.chiefAdminId!=='string'||data.chiefAdminId.length>128))return json({error:'quiz.invalidFields'},400);
+      const raw=learningDb(),group=await raw.prepare('SELECT id,chief_admin_id FROM tuition_groups WHERE id=?').bind(data.id).first<{id:string;chief_admin_id:string|null}>();
+      if(!group)return json({error:'quiz.notFound'},404);
+      if(group.chief_admin_id===data.chiefAdminId)return json({ok:true});
+      const result=await raw.batch([
+        raw.prepare("UPDATE tuition_groups SET chief_admin_id=?,updated_at=? WHERE id=? AND chief_admin_id IS ? AND (? IS NULL OR EXISTS(SELECT 1 FROM accounts a WHERE a.id=? AND a.group_id=tuition_groups.id AND a.role='admin' AND a.disabled_at IS NULL)) AND EXISTS(SELECT 1 FROM accounts o WHERE o.id=? AND o.role='admin' AND o.disabled_at IS NULL AND lower(trim(o.email))=? AND substr(o.id,1,6)<>'local:')").bind(data.chiefAdminId,now,group.id,group.chief_admin_id,data.chiefAdminId,data.chiefAdminId,account.id,account.email.trim().toLowerCase()),
+        raw.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) SELECT ?,?,?,?,'group.setChief',?,?,? WHERE changes()=1").bind(group.id,crypto.randomUUID(),'group:'+group.id,account.id,JSON.stringify({chiefAdminId:group.chief_admin_id}),JSON.stringify({chiefAdminId:data.chiefAdminId}),now),
+      ]);
+      return result[0].meta.changes?json({ok:true}):json({error:'quiz.chiefInvalid'},409);
+    }
     if(data.action==="switch") {
       const group=typeof data.id==="string"?await db.select().from(tuitionGroups).where(eq(tuitionGroups.id,data.id)).get():null;
       if(!group)return json({error:"补习集团不存在"},404);

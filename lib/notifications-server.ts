@@ -40,6 +40,7 @@ export async function removeSubscription(id:string, accountId:string) {
   const db=learningDb();
   await db.batch([
     db.prepare("DELETE FROM notification_deliveries WHERE subscription_id IN (SELECT id FROM push_subscriptions WHERE id=? AND account_id=?)").bind(id,accountId),
+    db.prepare("DELETE FROM learning_notification_deliveries WHERE subscription_id IN(SELECT id FROM push_subscriptions WHERE id=? AND account_id=?)").bind(id,accountId),
     db.prepare("DELETE FROM push_subscriptions WHERE id=? AND account_id=?").bind(id,accountId),
   ]);
 }
@@ -63,7 +64,7 @@ export async function generateReminders(nowMs=Date.now(), onlyAccount?:string) {
   const db=learningDb(), now=new Date(nowMs).toISOString();
   const courses=await rows<{id:string;account_id:string;planned_start:string}>(`SELECT l.id,l.planned_start,a.id AS account_id
     FROM lessons l JOIN accounts a ON ${participantSql}
-    WHERE l.status='scheduled' AND l.planned_start>=? AND l.planned_start<=? ${onlyAccount?"AND a.id=?":""}`,
+    WHERE l.status='scheduled' AND (a.role<>'teacher' OR l.session_id IS NULL OR l.id=(SELECT min(id) FROM lessons WHERE session_id=l.session_id)) AND l.planned_start>=? AND l.planned_start<=? ${onlyAccount?"AND a.id=?":""}`,
     new Date(nowMs-GRACE_MS).toISOString(),new Date(nowMs+30*60_000).toISOString(),...(onlyAccount?[onlyAccount]:[]));
   const statements=[];
   for (const lesson of courses) for (const minutes of REMINDER_OFFSETS) {
@@ -91,7 +92,7 @@ export async function notificationState(account:Account) {
     first<{last_dispatch_at:string}>("SELECT last_dispatch_at FROM notification_runtime WHERE id=1"),
   ]);
   const items=[...reminders.map(({unreadTotal:_,...item})=>({...item,kind:"reminder"})),...inbox.items].sort((a,b)=>Number(!b.readAt)-Number(!a.readAt)||b.dueAt.localeCompare(a.dueAt));
-  return {items,accountId:account.id,groupId:account.groupId,unreadCount:Number(reminders[0]?.unreadTotal || 0)+inbox.unreadCount,configured:pushConfigured(),publicKey:pushConfigured()?env.VAPID_PUBLIC_KEY:null,
+  return {items,accountId:account.id,groupId:account.groupId,unreadCount:Number(reminders[0]?.unreadTotal || 0)+inbox.unreadCount,unreadQuizCount:inbox.unreadQuizCount,configured:pushConfigured(),publicKey:pushConfigured()?env.VAPID_PUBLIC_KEY:null,
     schedulerReady:Boolean(health && Date.now()-Date.parse(health.last_dispatch_at)<10*60_000),lastDispatchAt:health?.last_dispatch_at || null};
 }
 
@@ -165,6 +166,7 @@ export async function dispatchReminders(nowMs=Date.now()) {
     db.prepare("DELETE FROM notification_deliveries WHERE item_id IN (SELECT id FROM notification_items WHERE created_at<? OR NOT EXISTS (SELECT 1 FROM lessons l WHERE l.id=notification_items.lesson_id)) OR NOT EXISTS (SELECT 1 FROM push_subscriptions s WHERE s.id=notification_deliveries.subscription_id)").bind(new Date(nowMs-90*86400_000).toISOString()),
     db.prepare("DELETE FROM notification_items WHERE created_at<? OR NOT EXISTS (SELECT 1 FROM lessons l WHERE l.id=notification_items.lesson_id)").bind(new Date(nowMs-90*86400_000).toISOString()),
     db.prepare("DELETE FROM site_notifications WHERE created_at<? OR NOT EXISTS (SELECT 1 FROM lessons l WHERE l.id=site_notifications.lesson_id)").bind(new Date(nowMs-90*86400_000).toISOString()),
+    db.prepare("DELETE FROM quiz_assignment_notifications WHERE created_at<? OR NOT EXISTS(SELECT 1 FROM accounts a WHERE a.id=quiz_assignment_notifications.account_id)").bind(new Date(nowMs-90*86400_000).toISOString()),
     db.prepare("INSERT INTO notification_runtime (id,last_dispatch_at) VALUES (1,?) ON CONFLICT(id) DO UPDATE SET last_dispatch_at=excluded.last_dispatch_at").bind(now),
   ]);
   return {sent,expired,failed,at:now};
