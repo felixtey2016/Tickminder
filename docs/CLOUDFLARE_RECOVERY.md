@@ -1,6 +1,18 @@
 # Tickminder independent Cloudflare recovery
 
-## Current release - Complete-only Quiz submission and automatic self-practice
+## Current release - Student classrooms and course completion filters
+
+Formal domains run Worker `708952ab-59e3-44d8-9094-05dd4e0d2e9d` from source `cb0ded5f4bb100257582afd6f216318c1453b774`, tree `b33455556ba968f050481c3950ba69727e9bc6b7`; classroom integration is preserved in source `6c028b78493813c89b445a622596bf80e255f028`. No schema migration. Runtime secrets, domains and v19/53 tables retained.
+
+A reviewed atomic association batch linked all7 materials,9 unbound homework and58 individual sessions, reusing7 active classrooms and adding5 archived historical classrooms. Final counts are12 classrooms,7 materials,10 homework and58 sessions, with no unlinked content/course rows or FK violations. Every original record/field is retained apart from intended class metadata and triggered content revisions; all173 file checksums match. 197 encrypted-snapshot preservation checks and135 active-student access decisions passed.
+
+Active pairings automatically obtain classrooms. Individual course semantics and history remain intact; the class details schedule includes both types. Class membership changes cannot leave active pairings uncovered, and classes with course history must be archived instead of permanently deleted. New members inherit old class materials/homework without inheriting others' submissions or scores. All course lists offer bordered completion selectors. See [STUDENT_CLASSROOMS.md](STUDENT_CLASSROOMS.md).
+
+Provisioning62, session47, coverage23, completion50 and academic99 checks passed, plus group integration. Actual isolated mobile/API acceptance passed38 classroom and28 filter checks; final formal-domain/security/assets/integrity40 passed. Pre/post backups restore v19/53 tables with10 PDFs and163 Quiz images. Existing8 test quizzes remain unclassified. No production fixture or public test site was used. A disposable empty database independently confirmed REST batch rollback and was deleted. Evidence remains outside public source in `work/student-classroom-release/` and `work/course-status-filter-release/`.
+
+Rollback keeps all current class associations, archive rooms, original history, Quiz discard protection and later user work. The preceding UI Worker can read the added metadata; reverting code does not justify restoring an older business database.
+
+## Preceding release - Complete-only Quiz submission and automatic self-practice
 
 Both formal domains run Worker `e9c38aca-e16b-45e6-9d1c-522f5384cd2e` from runtime source `0aff48c77c0923b7a0c6316df75bcab8688af084` (tree `27fb8b50c87c9667c08247cd6401dc990f1a592f`). No migration; v19/53 tables, runtime settings and original bindings retained. Only local isolated testing preceded production publication.
 
