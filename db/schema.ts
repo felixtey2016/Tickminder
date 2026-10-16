@@ -350,6 +350,17 @@ export const tuitionGroups = sqliteTable("tuition_groups", {
  chiefAdminId:text("chief_admin_id"),id:text("id").primaryKey(),name:text("name").notNull(),joinCode:text("join_code").notNull().unique(),active:integer("active",{mode:"boolean"}).notNull().default(true),createdAt:text("created_at").notNull(),updatedAt:text("updated_at").notNull(),
 });
 
+export const adminPermissionProfiles=sqliteTable('admin_permission_profiles',{
+ groupId:text('group_id').notNull().references(()=>tuitionGroups.id,{onDelete:'cascade'}),
+ accountId:text('account_id').notNull().references(()=>accounts.id,{onDelete:'cascade'}),
+ revision:integer('revision').notNull().default(1),
+ grantsJson:text('grants_json').notNull().default('[]'),
+ draftGrantsJson:text('draft_grants_json'),
+ origin:text('origin').notNull(),
+ updatedBy:text('updated_by'),
+ updatedAt:text('updated_at').notNull(),
+},table=>[primaryKey({columns:[table.groupId,table.accountId]}),index('admin_permission_profiles_account_idx').on(table.accountId)]);
+
 export const learningVersions=sqliteTable("learning_versions",{id:text("id").primaryKey(),groupId:text("group_id").notNull(),kind:text("kind").notNull(),recordId:text("record_id").notNull(),revision:integer("revision").notNull(),fileId:text("file_id"),snapshotJson:text("snapshot_json").notNull(),actorId:text("actor_id").notNull(),changedAt:text("changed_at").notNull(),reason:text("reason").notNull()});
 export const homeworkScoreHistory=sqliteTable("homework_score_history",{id:text("id").primaryKey(),groupId:text("group_id").notNull(),homeworkId:text("homework_id").notNull(),studentName:text("student_name").notNull(),submissionId:text("submission_id"),homeworkRevision:integer("homework_revision"),score:real("score"),previousScore:real("previous_score"),maxScore:real("max_score"),actorId:text("actor_id"),changedAt:text("changed_at").notNull(),reason:text("reason").notNull()});
 

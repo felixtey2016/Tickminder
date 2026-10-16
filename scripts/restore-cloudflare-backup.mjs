@@ -80,7 +80,7 @@ try {
   const database = JSON.parse(plain.toString('utf8'));
   const legacyOwnerEmail=String(expected.legacyOwnerEmail||'').trim().toLowerCase();
   if(database.tables?.accounts&&!database.tables.accounts.columns.includes('group_id')&&!legacyOwnerEmail)throw new Error('Legacy restore requires legacyOwnerEmail in the private expected-target file');
-  if (!['timelyo-d1-v7','timelyo-d1-v8','timelyo-d1-v9','timelyo-d1-v10','timelyo-d1-v11','timelyo-d1-v12','timelyo-d1-v13','timelyo-d1-v14','timelyo-d1-v15','timelyo-d1-v16','timelyo-d1-v17','timelyo-d1-v18','timelyo-d1-v19','timelyo-d1-v20'].includes(database.format)) throw new Error('Recovery branch requires a v7–v20 database snapshot');
+  if (!['timelyo-d1-v7','timelyo-d1-v8','timelyo-d1-v9','timelyo-d1-v10','timelyo-d1-v11','timelyo-d1-v12','timelyo-d1-v13','timelyo-d1-v14','timelyo-d1-v15','timelyo-d1-v16','timelyo-d1-v17','timelyo-d1-v18','timelyo-d1-v19','timelyo-d1-v20','timelyo-d1-v21'].includes(database.format)) throw new Error('Recovery branch requires a v7–v21 database snapshot');
   const tables = orderedSnapshotTables(database.tables);
   const schema = readdirSync(join(root, 'drizzle')).filter(name => /^\d{4}_.*\.sql$/.test(name)).sort()
     .map(name => readFileSync(join(root, 'drizzle', name), 'utf8')).join('\n');
@@ -114,6 +114,14 @@ try {
   }
   if(Number(database.format.slice('timelyo-d1-v'.length))<13){const migration=readFileSync(join(root,'drizzle/0022_class_sessions.sql'),'utf8');sqlParts.push(migration.slice(migration.indexOf('-- No legacy'),migration.indexOf('CREATE TRIGGER class_session_link_insert')));}
   if(Number(database.format.slice('timelyo-d1-v'.length))<14){const migration=readFileSync(join(root,'drizzle/0023_session_attendance.sql'),'utf8');sqlParts.push(migration.slice(migration.indexOf('-- Preserve legacy'),migration.indexOf('CREATE INDEX teaching_month')));}
+  if(Number(database.format.slice('timelyo-d1-v'.length))<21){
+    // Older snapshots predate permission profiles. Materialise the frozen
+    // legacy baseline only after their administrator identities are replayed.
+    const migration=readFileSync(join(root,'drizzle/0032_admin_permissions.sql'),'utf8');
+    const seed=migration.match(/INSERT INTO admin_permission_profiles\b[\s\S]*?;/)?.[0];
+    if(!seed)throw new Error('Permission migration lacks its legacy baseline');
+    sqlParts.push(seed);
+  }
   sqlParts.push(`DROP TABLE "${chunkTable}";`,...triggers.map(t=>t.sql+';'));
   const sql = sqlParts.join('\n');
   const local = new DatabaseSync(':memory:');

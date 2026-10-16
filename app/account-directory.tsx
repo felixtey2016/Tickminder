@@ -1,12 +1,15 @@
 "use client";
 import { useFilterPreference } from "@/lib/filter-preferences";
 import { BulkDeleteTool } from "./bulk-delete";
-import { useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useDialogState } from "@/lib/use-dialog-state";
 import { t } from "@/lib/i18n";
+import { showActionToast } from "@/lib/action-feedback";
 import { DeleteButton, type Mutate } from "./directory-tools";
+
+const AdminPermissionEditor = lazy(() => import("./admin-permission-editor").then(module => ({default: module.AdminPermissionEditor})));
 
 type User = { id: string; name: string; role: string; username?: string | null; email?: string; disabledAt?: string | null; teacherName?: string | null; studentName?: string | null; assignmentStatus?: string; pendingExpiresAt?: string | null; isOwner?: boolean; isGroupChief?: boolean };
 type Actor = { id?: string; isOwner?: boolean; isGroupChief?: boolean; canManageAdministrators?: boolean };
@@ -15,8 +18,16 @@ export function AccountDirectory({ users, actor, teachers, students, mutate, bus
   const [search, setSearch] = useFilterPreference<string>("accounts-search", ""), [removed, setRemoved] = useFilterPreference<boolean>("accounts-removed", false);
   const [editing, setEditing] = useDialogState<User | null>("account-edit", null);
   const [create, setCreate] = useDialogState<boolean | null>("account-create", null);
+  const [permissionTarget, setPermissionTarget] = useState<User | null>(null);
+  const [permissionUnavailable, setPermissionUnavailable] = useState(false);
+  const closePermissions = useCallback(() => setPermissionTarget(null), []);
+  const permissionAuthorityLost = useCallback(() => { setPermissionUnavailable(true); setPermissionTarget(null); showActionToast("error", "permissions.authorityLost"); }, []);
   const [role, setRole] = useState("teacher"), [identity, setIdentity] = useState("");
   const canManageAdministrators = actor.canManageAdministrators === true;
+  const permissionManager = !permissionUnavailable && canManageAdministrators && (actor.isOwner === true || actor.isGroupChief === true);
+  const currentPermissionTarget = users.find(user => user.id === permissionTarget?.id);
+  const permissionTargetAllowed = Boolean(permissionManager && currentPermissionTarget?.role === "admin" && currentPermissionTarget.id !== actor.id && !currentPermissionTarget.isOwner && !currentPermissionTarget.isGroupChief);
+  useEffect(() => { if (permissionTarget && !permissionTargetAllowed) { closePermissions(); showActionToast("error", "permissions.authorityLost"); } }, [permissionTarget, permissionTargetAllowed, closePermissions]);
   const selectedRole = role === "admin" && !canManageAdministrators ? "teacher" : role;
   const visible = users.filter(u => Boolean(u.disabledAt) === removed && `${u.name} ${u.email || ""} ${u.username || ""} ${u.teacherName || ""} ${u.studentName || ""}`.toLowerCase().includes(search.toLowerCase()));
   function canManage(u: User) { return u.id !== actor.id && !u.isOwner && !u.isGroupChief && (u.role !== "admin" || canManageAdministrators); }
@@ -37,6 +48,7 @@ export function AccountDirectory({ users, actor, teachers, students, mutate, bus
           {actor.isOwner && u.isGroupChief && <small className="field-hint">{t("admin.chiefAccountProtected")}</small>}
         </div>
         {canManage(u) && <div className="user-actions directory-person-actions">
+          {permissionManager && u.role === "admin" && <Button disabled={busy} size="sm" variant="outline" onClick={() => setPermissionTarget(u)}>{t("permissions.title")}</Button>}
           {!u.disabledAt && <>{u.assignmentStatus === "PENDING_ASSIGNMENT" && <Button disabled={busy} size="sm" variant="outline" onClick={() => void mutate({ action: "activateAccount", userId: u.id })}>{t("保留并启用账号")}</Button>}<Button disabled={busy} size="sm" variant="outline" onClick={() => edit(u)}>{t("分配角色与身份")}</Button></>}
           <Button disabled={busy} size="sm" variant="outline" onClick={() => { if (u.disabledAt || window.confirm(t("确定停用此账号？停用后无法登录，可稍后恢复启用。"))) void mutate({ action: u.disabledAt ? "restoreAccount" : "deleteAccount", userId: u.id }); }}>{t(u.disabledAt ? "恢复启用" : "停用账号")}</Button>
           <DeleteButton kind="account" id={u.id} mutate={mutate} busy={busy} message="永久删除此账号、登录方式及个人学习计划？历史课程记录保留；名下仍有功课或教学资料时，请先处理后再删除。"/>
@@ -44,6 +56,7 @@ export function AccountDirectory({ users, actor, teachers, students, mutate, bus
       </article>)}
     </details>)}
     {!visible.length && <p className="empty">{t("没有符合条件的记录")}</p>}
+    {permissionTarget && permissionTargetAllowed && <Suspense fallback={<Dialog open onOpenChange={open => { if (!open) closePermissions(); }}><DialogContent className="admin-permission-dialog" overlayClassName="admin-permission-overlay"><DialogHeader><DialogTitle>{t("permissions.title")}</DialogTitle></DialogHeader><p role="status">{t("permissions.loading")}</p><div className="settings-actions"><Button variant="outline" onClick={closePermissions}>{t("permissions.cancel")}</Button></div></DialogContent></Dialog>}><AdminPermissionEditor accountId={permissionTarget.id} accountName={currentPermissionTarget?.name || permissionTarget.name} onClose={closePermissions} onAuthorityLost={permissionAuthorityLost}/></Suspense>}
     <Dialog open={Boolean(create)} onOpenChange={open => setCreate(open ? true : null)}><DialogContent className="lesson-dialog directory-dialog"><DialogHeader><DialogTitle>{t("创建登录账号")}</DialogTitle></DialogHeader>{createForm}</DialogContent></Dialog>
     <Dialog open={Boolean(editing)} onOpenChange={open => { if (!open) setEditing(null); }}><DialogContent className="lesson-dialog"><DialogHeader><DialogTitle>{t("分配角色与身份")}</DialogTitle></DialogHeader><div className="directory-dialog-identity"><strong>{editing?.name}</strong><span className="muted">{editing?.email || editing?.username}</span></div>
       <form onSubmit={async e => { e.preventDefault(); const current = users.find(user => user.id === editing?.id); if (!current || !canManage(current)) { setEditing(null); return; } if (await mutate({ action: "bind", userId: current.id, role: selectedRole, teacherName: selectedRole === "teacher" ? identity : "", studentName: selectedRole === "student" ? identity : "" })) setEditing(null); }}>

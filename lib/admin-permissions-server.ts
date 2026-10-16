@@ -1,0 +1,143 @@
+import type { Account } from "@/lib/auth";
+import { adminActorGuard, adminAuthority, authorityGuard, isAdminAuthorityFailure } from "@/lib/admin-authority";
+import { learningDb } from "@/lib/learning-server";
+import { requireGroup } from "@/lib/group-data";
+import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
+import { ADMIN_PERMISSION_CATALOG, ADMIN_PERMISSION_TEMPLATES, ADMIN_PERMISSIONS_ROLLOUT, LEGACY_ADMIN_GRANTS, AdminPermissionValidationError, hasAdminGrant, normalizeAdminGrants, type AdminGrantKey, type AdminPermissionProfile, type AdminPermissionsResponse } from "@/lib/admin-permissions";
+
+type Predicate = {sql: string; args: unknown[]};
+type ProfileRow = {accountId: string; groupId: string; revision: number; grantsJson: string; draftGrantsJson: string | null; origin: "legacy" | "new"; updatedBy: string | null; updatedAt: string};
+type ManagedTarget = {id: string; name: string; disabledAt: string | null};
+export class AdminPermissionsError extends Error {
+  constructor(message: string, public status = 400) { super(message); }
+}
+const ownerSql = (alias: string) => `${alias}.role='admin' AND lower(trim(${alias}.email))=? AND substr(${alias}.id,1,6)<>'local:'`;
+
+// Statement-local live identity predicate. Owner keeps selected-group access;
+// everyone else must still belong to an active group and hold its designation.
+function managementActorPredicate(actor: Account): Predicate {
+  return {
+    sql: `EXISTS(SELECT 1 FROM accounts permission_actor JOIN tuition_groups permission_group ON permission_group.id=?
+      WHERE permission_actor.id=? AND permission_actor.role='admin' AND permission_actor.disabled_at IS NULL
+      AND NOT EXISTS(SELECT 1 FROM local_credentials c WHERE c.account_id=permission_actor.id AND c.must_change_password=1)
+      AND ((${ownerSql("permission_actor")}) OR (permission_actor.group_id=permission_group.id AND permission_group.active=1 AND permission_group.chief_admin_id=permission_actor.id)))`,
+    args: [requireGroup(actor.groupId), actor.id, OWNER_EMAIL],
+  };
+}
+
+function targetPredicate(actor: Account, accountId: string): Predicate {
+  return {
+    sql: `EXISTS(SELECT 1 FROM accounts permission_target JOIN tuition_groups permission_group ON permission_group.id=permission_target.group_id
+      WHERE permission_target.id=? AND permission_target.group_id=? AND permission_target.role='admin' AND permission_target.id<>?
+      AND NOT(${ownerSql("permission_target")}) AND permission_group.chief_admin_id IS NOT permission_target.id)`,
+    args: [accountId, requireGroup(actor.groupId), actor.id, OWNER_EMAIL],
+  };
+}
+
+// Prepared for round 2 integration only. No business route calls this helper in
+// preparation. Missing profiles and unknown/future grant keys deny by default;
+// configuring an ordinary admin can never elevate it above existing ceilings.
+export function configuredAdminGrantPredicate(actor: Account, key: string): Predicate {
+  if (!hasAdminGrant(LEGACY_ADMIN_GRANTS, key)) return {sql: "0", args: []};
+  const known = ADMIN_PERMISSION_CATALOG.flatMap(module => module.actions.map(action => action.key));
+  const required = normalizeAdminGrants([key]);
+  const profileArray = "CASE WHEN json_valid(p.grants_json) AND json_type(p.grants_json)='array' THEN p.grants_json ELSE '[]' END";
+  return {
+    sql: `EXISTS(SELECT 1 FROM accounts permission_actor JOIN tuition_groups permission_group ON permission_group.id=?
+      WHERE permission_actor.id=? AND permission_actor.role='admin' AND permission_actor.disabled_at IS NULL
+      AND NOT EXISTS(SELECT 1 FROM local_credentials c WHERE c.account_id=permission_actor.id AND c.must_change_password=1)
+      AND ((${ownerSql("permission_actor")}) OR (permission_actor.group_id=permission_group.id AND permission_group.active=1 AND
+        (permission_group.chief_admin_id=permission_actor.id OR EXISTS(SELECT 1 FROM admin_permission_profiles p
+          WHERE p.group_id=permission_group.id AND p.account_id=permission_actor.id
+          AND NOT EXISTS(SELECT 1 FROM json_each(${profileArray}) invalid_key WHERE invalid_key.type<>'text' OR NOT EXISTS(SELECT 1 FROM json_each(?) supported_key WHERE supported_key.value=invalid_key.value))
+          AND NOT EXISTS(SELECT 1 FROM json_each(?) required_key WHERE NOT EXISTS(SELECT 1 FROM json_each(${profileArray}) grant_key WHERE grant_key.type='text' AND grant_key.value=required_key.value)))))))`,
+    args: [requireGroup(actor.groupId), actor.id, OWNER_EMAIL, JSON.stringify(known), JSON.stringify(required)],
+  };
+}
+export function configuredAdminGrantGuard(actor: Account, key: string) {
+  return authorityGuard(configuredAdminGrantPredicate(actor, key), "admin_permissions_authority_changed");
+}
+
+async function managedTarget(actor: Account, accountId: string): Promise<ManagedTarget> {
+  if (actor.role !== "admin" || !(await adminAuthority(actor)).canManageAdministrators) throw new AdminPermissionsError("permissions.forbidden", 403);
+  const row = await learningDb().prepare("SELECT a.id,a.email,a.role,a.name,a.disabled_at AS disabledAt,g.chief_admin_id AS chiefAdminId FROM accounts a JOIN tuition_groups g ON g.id=a.group_id WHERE a.id=? AND a.group_id=?")
+    .bind(accountId, requireGroup(actor.groupId)).first<{id: string; email: string; role: string; name: string; disabledAt: string | null; chiefAdminId: string | null}>();
+  if (!row) throw new AdminPermissionsError("permissions.targetNotFound", 404);
+  if (row.id === actor.id || isOwnerAccount(row) || row.id === row.chiefAdminId) throw new AdminPermissionsError("permissions.targetProtected", 403);
+  if (row.role !== "admin") throw new AdminPermissionsError("permissions.targetNotFound", 404);
+  // Recheck actor and target in the statement that projects its permitted name.
+  const manager = managementActorPredicate(actor), target = targetPredicate(actor, accountId);
+  const allowed = await learningDb().prepare(`SELECT id,name,disabled_at AS disabledAt FROM accounts WHERE id=? AND ${manager.sql} AND ${target.sql}`)
+    .bind(accountId, ...manager.args, ...target.args).first<ManagedTarget>();
+  if (!allowed) throw new AdminPermissionsError("permissions.authorityChanged", 409);
+  return allowed;
+}
+
+function parsedGrants(value: string): AdminGrantKey[] {
+  try { return normalizeAdminGrants(JSON.parse(value)); }
+  catch { throw new AdminPermissionsError("permissions.profileInvalid", 503); }
+}
+function profileResponse(groupId: string, accountId: string, row: ProfileRow | null): AdminPermissionProfile {
+  if (!row) return {groupId, accountId, revision: 0, origin: "new", grants: [], draftGrants: null, updatedBy: null, updatedAt: null};
+  if (!Number.isSafeInteger(row.revision) || row.revision < 1 || !["legacy", "new"].includes(row.origin)) throw new AdminPermissionsError("permissions.profileInvalid", 503);
+  return {groupId, accountId, revision: row.revision, origin: row.origin, grants: parsedGrants(row.grantsJson), draftGrants: row.draftGrantsJson === null ? null : parsedGrants(row.draftGrantsJson), updatedBy: row.updatedBy, updatedAt: row.updatedAt};
+}
+async function profileRow(actor: Account, accountId: string): Promise<ProfileRow | null> {
+  // Profile reads use the same live guard as target reads; a late handover must
+  // not return a permission configuration to a former chief administrator.
+  const manager = managementActorPredicate(actor), target = targetPredicate(actor, accountId);
+  const db = learningDb();
+  const result = await db.batch([
+    authorityGuard(manager), authorityGuard(target, "admin_permissions_target_changed"),
+    db.prepare(`SELECT group_id AS groupId,account_id AS accountId,revision,grants_json AS grantsJson,draft_grants_json AS draftGrantsJson,origin,updated_by AS updatedBy,updated_at AS updatedAt FROM admin_permission_profiles WHERE group_id=? AND account_id=?`).bind(requireGroup(actor.groupId), accountId),
+  ]);
+  return (result[2].results[0] as unknown as ProfileRow | undefined) || null;
+}
+function response(target: ManagedTarget, profile: AdminPermissionProfile): AdminPermissionsResponse {
+  return {rollout: ADMIN_PERMISSIONS_ROLLOUT, status: "pending", runtimeEnforcement: false, currentAccess: "legacy", target, profile, catalog: ADMIN_PERMISSION_CATALOG, templates: ADMIN_PERMISSION_TEMPLATES, effectiveGrants: [...LEGACY_ADMIN_GRANTS], configuredGrants: [...profile.grants]};
+}
+export async function readAdminPermissions(actor: Account, accountId: string): Promise<AdminPermissionsResponse> {
+  const target = await managedTarget(actor, accountId);
+  return response(target, profileResponse(requireGroup(actor.groupId), accountId, await profileRow(actor, accountId)));
+}
+
+export async function saveAdminPermissionDraft(actor: Account, accountId: string, expectedRevision: number, input: unknown): Promise<AdminPermissionsResponse> {
+  const grants = normalizeAdminGrants(input), target = await managedTarget(actor, accountId), groupId = requireGroup(actor.groupId);
+  const previous = await profileRow(actor, accountId), before = profileResponse(groupId, accountId, previous);
+  if (before.revision !== expectedRevision) throw new AdminPermissionsError("permissions.revisionChanged", 409);
+  const db = learningDb(), now = new Date().toISOString(), next: AdminPermissionProfile = {...before, revision: before.revision + 1, draftGrants: grants, updatedBy: actor.id, updatedAt: now};
+  const currentTarget = targetPredicate(actor, accountId);
+  const revision: Predicate = previous ? {
+    sql: "EXISTS(SELECT 1 FROM admin_permission_profiles WHERE group_id=? AND account_id=? AND revision=? AND grants_json=? AND draft_grants_json IS ? AND origin=?)",
+    args: [groupId, accountId, expectedRevision, previous.grantsJson, previous.draftGrantsJson, previous.origin],
+  } : {sql: "NOT EXISTS(SELECT 1 FROM admin_permission_profiles WHERE group_id=? AND account_id=?)", args: [groupId, accountId]};
+  if (before.draftGrants !== null && JSON.stringify(before.draftGrants) === JSON.stringify(grants)) {
+    await db.batch([
+      adminActorGuard(actor, true),
+      authorityGuard(currentTarget, "admin_permissions_target_changed"),
+      authorityGuard(revision, "admin_permissions_revision_changed"),
+    ]);
+    return response(target, before);
+  }
+  await db.batch([
+    // The existing Part 02 guard is the authority source for management writes.
+    adminActorGuard(actor, true),
+    authorityGuard(currentTarget, "admin_permissions_target_changed"),
+    authorityGuard(revision, "admin_permissions_revision_changed"),
+    previous
+      ? db.prepare("UPDATE admin_permission_profiles SET draft_grants_json=?,revision=revision+1,updated_by=?,updated_at=? WHERE group_id=? AND account_id=? AND revision=?").bind(JSON.stringify(grants), actor.id, now, groupId, accountId, expectedRevision)
+      : db.prepare("INSERT INTO admin_permission_profiles(group_id,account_id,revision,grants_json,draft_grants_json,origin,updated_by,updated_at) VALUES(?,?,1,'[]',?,'new',?,?)").bind(groupId, accountId, JSON.stringify(grants), actor.id, now),
+    authorityGuard({sql: "changes()=1", args: []}, "admin_permissions_revision_changed"),
+    db.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) VALUES(?,?,?,?,'adminPermissions.saveDraft',?,?,?)")
+      .bind(groupId, crypto.randomUUID(), `admin-permissions:${accountId}`, actor.id, JSON.stringify({rollout: ADMIN_PERMISSIONS_ROLLOUT, profile: before}), JSON.stringify({rollout: ADMIN_PERMISSIONS_ROLLOUT, profile: next}), now),
+  ]);
+  return response(target, next);
+}
+
+export function adminPermissionsFailure(error: unknown): {error: string; status: number} {
+  if (error instanceof AdminPermissionsError) return {error: error.message, status: error.status};
+  if (error instanceof AdminPermissionValidationError) return {error: error.message, status: 400};
+  if (/admin_permissions_revision_changed/.test(String(error))) return {error: "permissions.revisionChanged", status: 409};
+  if (isAdminAuthorityFailure(error) || /admin_permissions_(authority|target)_changed/.test(String(error))) return {error: "permissions.authorityChanged", status: 409};
+  return {error: "permissions.unavailable", status: 503};
+}

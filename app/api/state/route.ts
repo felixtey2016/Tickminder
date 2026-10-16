@@ -2,11 +2,11 @@ import {classSessionState} from "@/lib/class-sessions";
 import {groupRows} from "@/lib/group-data";
 import { groupWhere } from "@/lib/group-data";
 import { NextResponse } from "next/server";
-import { desc, eq, inArray,notLike } from "drizzle-orm";
+import { and, desc, eq, inArray,notLike,or } from "drizzle-orm";
 import {isOwnerAccount} from '@/lib/owner';
 import { currentBusinessAccount as currentAccount, type Account } from "@/lib/auth";
 import { lifecycleView } from "@/lib/account-lifecycle";
-import { adminAuthority } from "@/lib/admin-authority";
+import { adminAuthority,adminManagementReadCondition } from "@/lib/admin-authority";
 import { readRoster } from "@/lib/roster";
 import { getDb } from "@/db";
 import { accounts, audit, lessons, localCredentials, rescheduleRequests } from "@/db/schema";
@@ -88,7 +88,8 @@ async function extraState(account: Account, scope: Exclude<Scope, "core">) {
     const byId = new Map(credentials.map(c => [c.accountId, c]));
     return {users: users.map(u => ({...u, ...lifecycleView(u), isOwner:isOwnerAccount(u), isGroupChief:u.role==='admin'&&!u.disabledAt&&u.id===hierarchy.chiefAdminId, username: byId.get(u.id)?.username || null, mustChangePassword: byId.get(u.id)?.mustChangePassword || false}))};
   }
-  const [changes, mergedNames] = await Promise.all([db.select().from(audit).where(groupWhere(audit,account.groupId,isOwnerAccount(account)?undefined:notLike(audit.action,'billing.%'))).orderBy(desc(audit.at)).limit(30).all(), mergedAccountNames(account.groupId)]);
+  const activityVisibility=and(isOwnerAccount(account)?undefined:notLike(audit.action,'billing.%'),or(notLike(audit.action,'adminPermissions.%'),adminManagementReadCondition(account)));
+  const [changes, mergedNames] = await Promise.all([db.select().from(audit).where(groupWhere(audit,account.groupId,activityVisibility)).orderBy(desc(audit.at)).limit(30).all(), mergedAccountNames(account.groupId)]);
   const changedLessons = changes.length ? await db.select({id: lessons.id, student: lessons.student, subject: lessons.subject}).from(lessons).where(groupWhere(lessons,account.groupId,inArray(lessons.id, changes.map(c => c.lessonId)))).all() : [];
   const byId = new Map(changedLessons.map(l => [l.id, `${l.student} · ${l.subject}`]));
   return {activity: changes.map(c => ({...c, actorName: (c.actorId===account.id?account.name:users.find(u => u.id === c.actorId)?.name) || mergedNames.get(c.actorId) || c.actorId, lessonName: byId.get(c.lessonId) || c.lessonId}))};

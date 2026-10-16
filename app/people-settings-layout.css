@@ -121,3 +121,70 @@
  .group-chief-review > div { grid-template-columns: minmax(0,1fr); gap: 4px; }
  .group-chief-confirmation .settings-actions > button { flex: 1 1 140px; }
 }
+
+/* Permission drafts use one bounded dialog for editing and confirmations. */
+/* Match the content editor layer above the sticky topbar (80) and mobile menu (92). */
+[data-slot=dialog-overlay].admin-permission-overlay { z-index: 101; }
+[data-slot=dialog-content].admin-permission-dialog { z-index: 102; }
+[data-slot=dialog-content].admin-permission-dialog { display: flex; flex-direction: column; gap: 16px; width: min(920px,calc(100vw - 32px)); max-width: min(920px,calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 24px; overflow: hidden; border-color: var(--border); border-radius: 12px; }
+.admin-permission-dialog > [data-slot=dialog-header] { flex: 0 0 auto; gap: 8px; min-width: 0; text-align: left; }
+.admin-permission-dialog [data-slot=dialog-title] { line-height: 1.5; overflow-wrap: anywhere; }
+.admin-permission-dialog [data-slot=dialog-description] { line-height: 1.6; overflow-wrap: anywhere; }
+.admin-permission-body { display: flex; flex: 1 1 auto; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding: 0 4px 4px 0; }
+.admin-permission-body :is(p,h3,ul) { margin: 0; overflow-wrap: anywhere; }
+.admin-permission-body h3 { font-size: 15px; line-height: 1.6; font-weight: 600; }
+.admin-permission-body p { line-height: 1.7; }
+.permission-stage-badge { align-self: flex-start; padding: 6px 10px; border-radius: 6px; border: 1px solid #e4cb8e; color: #735010; background: #fff8e6; font-size: 13px; font-weight: 600; }
+.permission-stage-notice,.permission-notice,.permission-conflict { padding: 12px 16px; border: 1px solid #d3c8ed; border-radius: 8px; background: #f6f3fc; color: #4e329c; }
+.permission-stage-notice { color: #60501f; background: #fffbf0; border-color: #ead8a8; }
+.permission-status { display: grid; gap: 12px; min-width: 0; }
+.permission-status:empty { display: none; }
+.permission-status:focus { outline: 2px solid #795bc5; outline-offset: 2px; }
+.permission-conflict { display: grid; gap: 12px; background: #fff6ed; color: #854b18; border-color: #eec6a4; }
+.permission-conflict > button { justify-self: start; }
+.permission-comparison { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; min-width: 0; }
+.permission-summary-card { display: grid; align-content: start; gap: 8px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+.permission-summary-card > strong { color: #4e329c; font-size: 16px; overflow-wrap: anywhere; }
+.permission-summary-card > :is(p,span) { color: var(--muted-foreground); font-size: 13px; line-height: 1.7; }
+.permission-summary-card details { border-top: 1px solid var(--border); padding-top: 8px; min-width: 0; }
+.permission-summary-card summary { min-height: 44px; padding: 10px 0; font-size: 14px; color: #4e329c; cursor: pointer; line-height: 1.6; overflow-wrap: anywhere; }
+.permission-rule-list { display: grid; gap: 12px; list-style: none; padding: 0; min-width: 0; }
+.permission-rule-list > li { display: grid; gap: 4px; min-width: 0; line-height: 1.7; font-size: 13px; overflow-wrap: anywhere; }
+.permission-rule-list > li > span { color: var(--muted-foreground); }
+.permission-starting-point { color: var(--muted-foreground); font-size: 14px; }
+.permission-template { display: grid; gap: 12px; min-width: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding-block: 16px; }
+.permission-template > label { font-weight: 600; font-size: 15px; }
+.permission-template-controls { display: flex; flex-wrap: wrap; align-items: start; gap: 12px; min-width: 0; }
+.permission-template-controls > select { flex: 1 1 280px; width: 100%; max-width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid #d9d6ea; border-radius: 6px; background: #fff; color: var(--foreground); font-size: 16px; line-height: 1.5; }
+.permission-template-controls > button { flex: 0 1 auto; }
+.permission-modules { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); align-items: start; gap: 16px; min-width: 0; }
+.permission-module { min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 0 16px 12px; }
+.permission-module > summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; min-height: 56px; padding-block: 12px; cursor: pointer; list-style: none; line-height: 1.6; }
+.permission-module > summary::-webkit-details-marker { display: none; }
+.permission-module > summary::after { content: "+"; flex: 0 0 auto; font-size: 20px; color: #605a75; }
+.permission-module[open] > summary::after { content: "−"; }
+.permission-module > summary > span { flex: 1 1 120px; min-width: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.permission-module > summary > small { max-width: 100%; color: var(--muted-foreground); font-size: 12px; overflow-wrap: anywhere; }
+.permission-module-description { padding-bottom: 12px; color: var(--muted-foreground); font-size: 13px; line-height: 1.7; }
+.permission-action-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; min-width: 0; }
+.admin-permission-dialog .permission-check { display: flex; align-items: flex-start; gap: 8px; min-width: 0; min-height: 44px; padding: 10px 8px; border: 1px solid #e7e1f1; border-radius: 6px; cursor: pointer; line-height: 1.6; font-size: 14px; font-weight: 400; }
+.admin-permission-dialog .permission-check input[type=checkbox] { flex: 0 0 20px; width: 20px; min-width: 20px; height: 20px; min-height: 20px; margin: 1px 0 0; padding: 0; accent-color: #6245b5; }
+.permission-check > span { min-width: 0; overflow-wrap: anywhere; }
+.admin-permission-dialog .permission-check:has(input:checked) { background: #f3effc; border-color: #d3c8ed; }
+.admin-permission-dialog .permission-check:has(input:disabled) { cursor: default; color: var(--muted-foreground); background: #f6f5f8; }
+.admin-permission-dialog :is(input,select,summary):focus-visible { outline: 2px solid #795bc5; outline-offset: 2px; }
+.permission-review { display: grid; gap: 20px; min-width: 0; }
+.permission-review > section { display: grid; gap: 12px; padding-top: 16px; border-top: 1px solid var(--border); }
+.permission-diff-counts { display: flex; flex-wrap: wrap; gap: 12px; }
+.permission-diff-counts > span { padding: 8px 12px; background: #f4f1fb; border: 1px solid #e0d8ef; border-radius: 6px; color: #4e329c; line-height: 1.6; }
+.admin-permission-footer { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 12px; border-top: 1px solid var(--border); padding-top: 16px; min-width: 0; }
+.admin-permission-dialog :is(button,[data-slot=button]) { min-width: 0; max-width: 100%; min-height: 44px; height: auto; white-space: normal; overflow-wrap: anywhere; line-height: 1.5; }
+@media(max-width:700px) {
+ [data-slot=dialog-content].admin-permission-dialog { gap: 12px; width: calc(100vw - 24px); max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); padding: 16px; }
+ .admin-permission-body { gap: 16px; }
+ .permission-comparison,.permission-modules { grid-template-columns: minmax(0,1fr); }
+ .permission-summary-card,.permission-module { padding-inline: 12px; }
+ .permission-template-controls > :is(select,button) { flex: 1 1 100%; }
+ .admin-permission-footer > button { flex: 1 1 140px; }
+ .permission-stage-notice,.permission-notice,.permission-conflict { padding: 12px; }
+}

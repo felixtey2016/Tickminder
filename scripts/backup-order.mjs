@@ -1,8 +1,15 @@
+import {readFileSync} from 'node:fs';
+import {stripTypeScriptTypes} from 'node:module';
+// The source catalogue is self-contained. Reuse its strict parser so restored
+// settings cannot admit unknown actions, future modules or missing dependencies.
+const permissionSource=stripTypeScriptTypes(readFileSync(new URL('../lib/admin-permissions.ts',import.meta.url),'utf8'));
+const {normalizeAdminGrants:normalizeRestoredAdminGrants}=await import('data:text/javascript;base64,'+Buffer.from(permissionSource).toString('base64'));
+
 // Restore structural parents before content. Replay historical rows without
 // applying current publishing rules (an archived class may contain PDFs).
 export const historicalInsertTriggers=['attendance_teaching_conflict','attendance_student_conflict','folder_parent_insert','material_active_class_insert','homework_active_class_insert','material_initial_version','homework_initial_version','class_session_auto_insert','class_session_conflict_insert','class_session_link_insert','billing_student_identity_insert','billing_subject_identity_insert'];
 export function orderedSnapshotTables(tables) {
- const names=Object.keys(tables),priority=['academic_catalogues','tuition_groups','teachers','students','plans','accounts','classrooms','classroom_folders','class_sessions','lessons','class_session_participants','pdf_files','teaching_materials','homework','homework_recipients','homework_submissions','homework_resubmission_grants','homework_feedback','push_subscriptions','learning_notifications','learning_notification_deliveries','quizzes','quiz_images','quiz_versions','quiz_answer_keys','quiz_version_images','quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations','quiz_practice_events','quiz_assignment_notifications','student_grade_promotions','billing_students','billing_subjects','billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments'];
+ const names=Object.keys(tables),priority=['academic_catalogues','tuition_groups','teachers','students','plans','accounts','classrooms','classroom_folders','class_sessions','lessons','class_session_participants','pdf_files','teaching_materials','homework','homework_recipients','homework_submissions','homework_resubmission_grants','homework_feedback','push_subscriptions','learning_notifications','learning_notification_deliveries','quizzes','quiz_images','quiz_versions','quiz_answer_keys','quiz_version_images','quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations','quiz_practice_events','quiz_assignment_notifications','student_grade_promotions','billing_students','billing_subjects','billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments','admin_permission_profiles'];
  const ordered=[...priority.filter(name=>names.includes(name)),...names.filter(name=>!priority.includes(name)&&name!=='classroom_content_state'),...(names.includes('classroom_content_state')?['classroom_content_state']:[])];
  return ordered.map(name=>{
   const table=tables[name];if(name!=='classroom_folders')return [name,table];
@@ -92,7 +99,22 @@ export function checkRestoredBillingStructure(db) {
  for(const row of db.prepare('SELECT * FROM billing_adjustments').all())if(!identifier(row.id)||!/^20\d\d-(?:0[1-9]|1[0-2])$/.test(row.month)||!text(row.line_id,512)||!integer(row.revision,1)||(row.amount_cents!==null&&!integer(row.amount_cents,0,100000000))||typeof row.basis_hash!=='string'||!/^[a-f0-9]{64}$/.test(row.basis_hash)||!text(row.reason,1000)||!text(row.actor_id,160)||!instant(row.created_at))fail();
  if(db.prepare('PRAGMA foreign_key_check').all().length)fail();
 }
+export function checkRestoredAdminPermissionsStructure(db) {
+ if(!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='admin_permission_profiles'").get())return;
+ const fail=()=>{throw Error('Restored administrator permission settings are invalid');};
+ if(db.prepare(`SELECT 1 FROM admin_permission_profiles p
+   LEFT JOIN accounts a ON a.id=p.account_id AND a.group_id=p.group_id
+   LEFT JOIN tuition_groups g ON g.id=p.group_id WHERE a.id IS NULL OR g.id IS NULL LIMIT 1`).get())fail();
+ for(const row of db.prepare('SELECT * FROM admin_permission_profiles').all()){
+  if(!Number.isSafeInteger(row.revision)||row.revision<1||!['legacy','new'].includes(row.origin)||typeof row.updated_at!=='string'||!Number.isFinite(Date.parse(row.updated_at))||(row.updated_by!==null&&(typeof row.updated_by!=='string'||!row.updated_by||row.updated_by.length>160)))fail();
+  for(const field of ['grants_json','draft_grants_json']){
+   if(field==='draft_grants_json'&&row[field]===null)continue;
+   try{const grants=JSON.parse(row[field]);if(JSON.stringify(normalizeRestoredAdminGrants(grants))!==JSON.stringify(grants))fail();}catch{fail();}
+  }
+ }
+}
 export function checkRestoredFolderStructure(db) {
+ checkRestoredAdminPermissionsStructure(db);
  checkRestoredBillingStructure(db);
  checkRestoredAcademicStructure(db);
  if(!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='classroom_folders'").get())return;
@@ -177,10 +199,10 @@ export function checkRestoredFolderStructure(db) {
  if(invalid||db.prepare('PRAGMA foreign_key_check').all().length)throw Error('Restored folder relationships are invalid');
 }
 
-export function snapshotVersion(data){return Number(data?.format?.match(/^timelyo-d1-v(20|19|18|17|16|15|14|13|12|11|10|[1-9])$/)?.[1]||0);}
+export function snapshotVersion(data){return Number(data?.format?.match(/^timelyo-d1-v(21|20|19|18|17|16|15|14|13|12|11|10|[1-9])$/)?.[1]||0);}
 export function expectedSnapshotTables(version){
  const base=['accounts','assignments','audit','lessons','local_credentials','login_attempts','plans','reschedule_requests','sessions','students','teachers','pdf_files','storage_quota','teaching_materials','material_recipients','homework','homework_recipients','homework_submissions','study_blocks'];
- return [...(version>=9?['tuition_groups']:[]),...base,...(version>=2?['classrooms','classroom_members','classroom_announcements']:[]),...(version>=3?['google_identities']:[]),...(version>=4?['academic_terms']:[]),...(version>=7?['notification_items','notification_deliveries','push_subscriptions','notification_runtime']:[]),...(version>=8?['site_notifications']:[]),...(version>=10?['classroom_folders','classroom_content_state']:[]),...(version>=11?['learning_versions','homework_score_history']:[]),...(version>=12?['homework_resubmission_grants','homework_feedback','learning_notifications','learning_notification_deliveries']:[]),...(version>=13?['class_sessions','class_session_participants']:[]),...(version>=15?['quizzes','quiz_versions','quiz_answer_keys','quiz_images','quiz_version_images']:[]),...(version>=16?['quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations']:[]),...(version>=17?['quiz_practice_events','quiz_assignment_notifications']:[]),...(version>=18?['academic_catalogues','student_grade_promotions']:[]),...(version>=20?['billing_students','billing_subjects','billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments']:[])];
+ return [...(version>=9?['tuition_groups']:[]),...base,...(version>=2?['classrooms','classroom_members','classroom_announcements']:[]),...(version>=3?['google_identities']:[]),...(version>=4?['academic_terms']:[]),...(version>=7?['notification_items','notification_deliveries','push_subscriptions','notification_runtime']:[]),...(version>=8?['site_notifications']:[]),...(version>=10?['classroom_folders','classroom_content_state']:[]),...(version>=11?['learning_versions','homework_score_history']:[]),...(version>=12?['homework_resubmission_grants','homework_feedback','learning_notifications','learning_notification_deliveries']:[]),...(version>=13?['class_sessions','class_session_participants']:[]),...(version>=15?['quizzes','quiz_versions','quiz_answer_keys','quiz_images','quiz_version_images']:[]),...(version>=16?['quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations']:[]),...(version>=17?['quiz_practice_events','quiz_assignment_notifications']:[]),...(version>=18?['academic_catalogues','student_grade_promotions']:[]),...(version>=20?['billing_students','billing_subjects','billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments']:[]),...(version>=21?['admin_permission_profiles']:[])];
 }
 export function snapshotObjects(database){
  const pdfs=database?.tables?.pdf_files?.rows;if(!Array.isArray(pdfs))throw Error('Database export lacks PDF metadata');

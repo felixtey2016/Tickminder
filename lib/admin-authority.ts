@@ -2,6 +2,7 @@ import type { Account } from "@/lib/auth";
 import { learningDb } from "@/lib/learning-server";
 import { OWNER_EMAIL } from "@/lib/owner";
 import { requireGroup } from "@/lib/group-data";
+import { sql } from "drizzle-orm";
 
 type Predicate = { sql: string; args: unknown[] };
 export type AccountManagementAction = "resetLocalPassword" | "activateAccount" | "bind" | "deleteAccount" | "restoreAccount" | "permanentDelete";
@@ -35,6 +36,13 @@ export function adminActorGuard(actor: Account, administrators = false, ownerOnl
 }
 export function ownerAuthorityGuard(actor: Account, groupId: string) {
   return authorityGuard(actorPredicate(actor, requireGroup(groupId), false, true));
+}
+// Keep private configuration history protected in the query that reads it,
+// including when a chief handover occurs after the request authenticated.
+export function adminManagementReadCondition(actor: Account) {
+  const predicate=actorPredicate(actor,requireGroup(actor.groupId),true),parts=predicate.sql.split('?');
+  if(parts.length!==predicate.args.length+1)throw new Error('Invalid administrator authority predicate');
+  return sql.join(parts.flatMap((part,index)=>index<predicate.args.length?[sql.raw(part),sql`${predicate.args[index]}`]:[sql.raw(part)]),sql.raw(''));
 }
 
 export async function adminAuthority(actor: Account, groupId = actor.groupId) {

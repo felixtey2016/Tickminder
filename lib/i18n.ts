@@ -4,6 +4,7 @@ import {quizEn,quizZh} from './quiz-i18n';
 import {quizPracticeEn,quizPracticeZh} from './quiz-practice-i18n';
 import {billingEn} from './billing-i18n';
 import {adminHierarchyEn,adminHierarchyZh} from './admin-hierarchy-i18n';
+
 export type Language = "zh" | "en";
 export const LANGUAGE_KEY = "timelyo-language";
 let currentLanguage: Language = "zh";
@@ -1532,6 +1533,22 @@ Object.assign(en,{
   "查看 Quiz":"View Quiz",
   "暂无新通知。课程变更、功课更新、Quiz 安排和批改反馈会显示在这里。":"No new notifications. Lesson changes, homework updates, Quiz assignments and marking feedback will appear here.",
 },quizEn,quizPracticeEn,quizManagementEn,academicEn,billingEn,adminHierarchyEn);Object.assign(zh,quizZh,quizPracticeZh,quizManagementZh,academicZh,adminHierarchyZh);
+// Optional feature chunks register their own labels only when opened.
+export function registerTranslations(zhEntries: Record<string, string>, enEntries: Record<string, string>) {
+  Object.assign(zh, zhEntries);
+  Object.assign(en, enEntries);
+}
+registerTranslations({
+  "permissions.title": "权限设置",
+  "permissions.loading": "正在载入权限配置…",
+  "permissions.cancel": "取消",
+  "permissions.authorityLost": "账号或管理权限已变化，权限设置已关闭。请刷新页面。",
+}, {
+  "permissions.title": "Permission settings",
+  "permissions.loading": "Loading permission settings…",
+  "permissions.cancel": "Cancel",
+  "permissions.authorityLost": "The account or your management access changed. Permission settings were closed. Refresh the page.",
+});
 export function translate(value: string, language: Language) {
   const trimmed = value.trim();
   if (!trimmed) return value;
