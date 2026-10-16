@@ -1,5 +1,7 @@
 /** Interface copy for the invoice workspace; document wording lives with the renderer. */
 export const invoiceZh: Record<string,string> = {
+  "invoice.deleteDraft":"删除草稿","invoice.deleting":"正在删除…","invoice.deleted":"账单草稿已删除","invoice.deleteConfirm":"确定删除这份账单草稿及未保存的修改？课程、考勤和收费设置会保留。之后可以重新生成草稿。",
+  "invoice.settings.uploadFile":"从文件选择 PNG","invoice.settings.uploadPhoto":"从相册选择","invoice.settings.fileHint":"若相册无法选择透明 PNG，请先存到手机的「文件」，再用「从文件选择 PNG」上传。",
   'invoice.nav.finance':'财务','invoice.nav.tuition':'学费核算','invoice.nav.invoices':'账单','invoice.nav.settings':'机构与模板',
   'invoice.list.title':'学生账单','invoice.list.description':'按学生和月份核对学费，保存草稿后正式开单。',
   'invoice.month':'收费月份','invoice.status':'状态','invoice.status.all':'全部状态','invoice.status.draft':'草稿','invoice.status.issued':'已开单',
@@ -46,6 +48,9 @@ export const invoiceZh: Record<string,string> = {
 };
 
 export const invoiceEn: Record<string,string> = {
+  "invoice.deleteDraft":"Delete draft","invoice.deleting":"Deleting…","invoice.deleted":"Invoice draft deleted","invoice.deleteConfirm":"Delete this invoice draft and any unsaved edits? Lessons, attendance and fee settings will remain. A new draft can be generated later.",
+  "正式账单不能删除，只能删除草稿":"Issued invoices cannot be deleted. Only drafts can be deleted.",
+  "invoice.settings.uploadFile":"Choose PNG from files","invoice.settings.uploadPhoto":"Choose from photos","invoice.settings.fileHint":"If Photos cannot select the transparent PNG, save it to Files first, then use Choose PNG from files.",
   '附加收费及折扣最多可添加 50 项':'You can add up to 50 charges and discounts.',
   '收费项目格式无效':'The charge item format is invalid.',
   '请填写有效收费项目、金额及调整原因':'Enter a valid item description, amount and reason.',

@@ -17,6 +17,10 @@ export function setLanguage(language: Language) {
 export function getLanguage() { return currentLanguage; }
 
 const en: Record<string, string> = {
+  "返回": "Back",
+  "返回上一页": "Go back",
+  "请检查必填内容": "Check the required fields.",
+  "页面出现问题，请刷新后重试": "Something went wrong. Refresh the page and try again.",
   "保存并确认考勤": "Save and confirm attendance",
   "考勤已经确认，请联系管理员更正": "Attendance is confirmed. Contact an administrator for corrections.",
   "保存后考勤自动确认，无需管理员再次复核。": "Saving confirms attendance. No further administrator review is needed.",

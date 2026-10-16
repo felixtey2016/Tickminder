@@ -65,7 +65,7 @@ export async function uploadInvoiceLogo(actor:Account,file:File,expectedValue:un
  const groupId=await requireBillingManager(actor),expected=revision(expectedValue);
  if(!env.BUCKET)throw new InvoiceSettingsError('本站尚未启用 Logo 文件储存，仍可使用不含 Logo 的账单模板。',503);
  if(!file.size||file.size>INVOICE_LOGO_MAX_BYTES)throw new InvoiceSettingsError('Logo 须为 2 MB 以内的透明背景 PNG。',413);
- if(!/\.png$/i.test(file.name)||file.type&&file.type!=='image/png')throw new InvoiceSettingsError('Logo 只接受透明背景 PNG。');
+ if(!/\.png$/i.test(file.name))throw new InvoiceSettingsError('Logo 只接受透明背景 PNG。');
  const bytes=new Uint8Array(await file.arrayBuffer());let dimensions:{width:number;height:number};try{dimensions=inspectInvoiceLogo(bytes);}catch(error){if(error instanceof InvoiceLogoError)throw new InvoiceSettingsError(error.message);throw error;}
  const old=await invoiceSettingsSnapshot(actor);if(old.revision!==expected)throw new InvoiceSettingsError('设置已改变，请刷新后重试',409);
  const id=crypto.randomUUID(),objectKey=`invoice-brand/${groupId}/${id}.png`,now=new Date().toISOString(),settings={...old,revision:expected+1,logoAssetId:id},bucket=env.BUCKET;

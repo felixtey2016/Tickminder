@@ -12,6 +12,12 @@ Open Finance (财务), then Tuition, Invoices, or Institution & templates. Only 
 4. Issue after unresolved and upcoming lessons have been settled. Drafts and running tuition totals remain available before month end; there is no fixed month-end date gate when the month is already complete.
 5. Use Print / Save as PDF to open the secured A4 document and the browser's print dialog. PDF saving uses the browser; no server-side browser service is required.
 
+Drafts can be deleted by administrators with invoices.edit, after confirmation. Deletion is revision checked and replayable; it removes the draft and its items while preserving lessons, attendance, fee settings and audit history. A draft may then be generated again. Issued invoices cannot be deleted.
+
+Cancelled lessons remain in operational history and the frozen billing basis, but do not appear as pending attendance or extra zero-value entries on the printed invoice. The totals remain unchanged.
+
+Logo uploads provide separate generic Files and Photos selectors. A generic MIME type from a mobile Files picker is accepted only when the file has a PNG name and passes the actual PNG signature, transparency, dimensions, checksum and size checks.
+
 ## Issued originals and locks
 
 Saving complete attendance confirms it under the recording teacher or administrator. A second administrator review is not required for billing or invoice issuance. Administrators can correct confirmed attendance until an issued invoice locks its financial sources. Teachers must contact an administrator to correct a confirmed record.

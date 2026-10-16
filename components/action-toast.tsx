@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import { ACTION_TOAST_EVENT, clearActionToastDedup, type ActionToast } from "@/lib/action-feedback";
 import { t } from "@/lib/i18n";
+import {installErrorDialogs} from "@/lib/error-dialogs";
 
 export function ActionToastHost() {
   const [toast, setToast] = useState<ActionToast | null>(null);
+  useEffect(()=>installErrorDialogs(),[]);
   useEffect(() => {
-    const receive = (event: Event) => setToast((event as CustomEvent<ActionToast>).detail);
+    const receive = (event: Event) => {const next=(event as CustomEvent<ActionToast>).detail;if(next.kind==='success')setToast(next);};
     window.addEventListener(ACTION_TOAST_EVENT, receive);
     return () => window.removeEventListener(ACTION_TOAST_EVENT, receive);
   }, []);

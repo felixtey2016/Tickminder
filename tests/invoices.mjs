@@ -69,5 +69,29 @@ beforeBatch=()=>sqlite.prepare('DELETE FROM sessions WHERE token_hash=?').run('f
 const settingsService=(await load('lib/invoice-settings.ts')).module,currentInstitution=await settingsService.invoiceSettingsSnapshot(owner);await settingsService.saveInvoiceSettings(owner,{...currentInstitution,institutionName:'Renamed Fictional Institution',revision:currentInstitution.revision});
 const currentRate=await billing.billingRateSettings(owner,'Alpha-science');await billing.saveBilling(owner,{action:'saveRate',studentId:first,subjectKey:currentRate.context.subjectKey,revision:currentRate.context.revision,mode:'hour',amount:'50.00',effectiveFrom:'2032-07-01',operationId:op()});
 const afterInstitutionAndRateChange=expect(await get({id}),200,'historic institution and fee snapshot');check(()=>assert.equal(JSON.stringify(afterInstitutionAndRateChange.invoice),frozen,'later student, institution and rate edits preserve original invoice bytes'));
+// Draft deletion is scoped, revision-checked, atomic and replayable.
+expect(await post({action:'delete',invoiceId:id,revision:official.revision,operationId:op()}),409,'issued invoice cannot delete');
+expect(await post({action:'delete',invoiceId:monthlyGenerated.invoiceId,revision:1,operationId:op()},teacher),403,'teacher cannot delete drafts');
+expect(await post({action:'delete',invoiceId:monthlyGenerated.invoiceId,revision:1,operationId:op()},outsider),403,'foreign administrator cannot delete drafts');
+sqlite.prepare('UPDATE admin_permission_profiles SET grants_json=? WHERE account_id=?').run(JSON.stringify(['invoices.view']),admin.id);
+expect(await post({action:'delete',invoiceId:monthlyGenerated.invoiceId,revision:1,operationId:op()}),403,'view-only administrator cannot delete drafts');
+sqlite.prepare('UPDATE admin_permission_profiles SET grants_json=? WHERE account_id=?').run(JSON.stringify(['invoices.view','invoices.create','invoices.edit','invoices.issue']),admin.id);
+beforeBatch=()=>sqlite.prepare("UPDATE invoices SET revision=revision+1,document_json=json_set(document_json,'$.revision',revision+1) WHERE id=?").run(monthlyGenerated.invoiceId);
+expect(await post({action:'delete',invoiceId:monthlyGenerated.invoiceId,revision:1,operationId:op()}),409,'concurrent draft edit prevents stale deletion');
+check(()=>assert(sqlite.prepare('SELECT 1 FROM invoices WHERE id=?').get(monthlyGenerated.invoiceId)));
+const toDelete=expect(await get({id:monthlyGenerated.invoiceId}),200,'current delete revision').invoice;
+const sourceCounts=Object.fromEntries(['lessons','class_sessions','class_session_participants','billing_rates','billing_rate_versions','invoice_sequences'].map(t=>[t,sqlite.prepare('SELECT count(*) n FROM '+t).get().n]));
+check(()=>assert(sqlite.prepare('SELECT count(*) n FROM invoice_items WHERE invoice_id=?').get(toDelete.id).n>0));
+const deleteBody={action:'delete',invoiceId:toDelete.id,revision:toDelete.revision,operationId:op()};
+expect(await post(deleteBody),200,'delete draft');
+expect(await post(deleteBody),200,'delete replay remains successful after the draft is gone');
+check(()=>assert.equal(sqlite.prepare('SELECT count(*) n FROM invoices WHERE id=?').get(toDelete.id).n,0));
+check(()=>assert.equal(sqlite.prepare('SELECT count(*) n FROM invoice_items WHERE invoice_id=?').get(toDelete.id).n,0));
+for(const [table,count]of Object.entries(sourceCounts))check(()=>assert.equal(sqlite.prepare('SELECT count(*) n FROM '+table).get().n,count,table+' preserved by draft deletion'));
+check(()=>assert.equal(sqlite.prepare("SELECT count(*) n FROM audit WHERE action='invoice.delete' AND lesson_id=?").get('invoice:'+toDelete.id).n,1));
+const regenerated=expect(await post({action:'generate',studentId:monthlyStudent,month,operationId:op()}),200,'can generate a fresh draft after deletion');
+check(()=>assert.notEqual(regenerated.invoiceId,toDelete.id));
+
+
 check(()=>assert.equal(sqlite.prepare('PRAGMA foreign_key_check').all().length,0));check(()=>assert.throws(()=>pure.invoiceTotals([], [{kind:'discount',amountCents:100}]),/折扣/));
 console.log(JSON.stringify({ok:true,checks,scope:'local in-memory SQLite invoice lifecycle, fee equality, replay, concurrent-source/permission guards, immutable originals and attendance locks'}));

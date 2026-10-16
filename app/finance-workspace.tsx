@@ -1,4 +1,6 @@
 "use client";
+import {usePageHistoryState} from '@/lib/page-history';
+
 import {lazy,Suspense,useEffect,useState} from 'react';
 import {Button} from '@/components/ui/button';
 import {canAdminAction,type AdminPermissionAccount} from '@/lib/admin-permission-client';
@@ -11,7 +13,7 @@ function changeAllowed(){return window.dispatchEvent(new Event('tickminder-navig
 type FinanceAccount=AdminPermissionAccount&{isGroupChief?:boolean};
 export default function FinanceWorkspace({account,students,onCourses}:{account:FinanceAccount;students:string[];onCourses:()=>void}){
  const canFees=canAdminAction(account,'fees.view'),canInvoices=canAdminAction(account,'invoices.view'),canManage=Boolean(account.isOwner||account.isGroupChief);
- const [view,setView]=useState<'tuition'|'invoices'|'settings'>(canFees?'tuition':'invoices');
+ const [view,setView]=usePageHistoryState<'tuition'|'invoices'|'settings'>('finance.view',canFees?'tuition':'invoices');
  const [context,setContext]=useState<{studentId:string;month:string;studentName?:string}|null>(null);
  useEffect(()=>{if(view==='tuition'&&!canFees)setView('invoices');if(view==='invoices'&&!canInvoices&&canFees)setView('tuition');if(view==='settings'&&!canManage)setView(canFees?'tuition':'invoices');},[view,canFees,canInvoices,canManage]);
  const openInvoice=(studentId:string,month:string,studentName?:string)=>{if(!changeAllowed())return;setContext({studentId,month,studentName});setView('invoices');};

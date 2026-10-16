@@ -33,4 +33,12 @@ for(const template of ['standard','centered','brand']){
  check(()=>assert(issued.includes('object-fit:contain')&&issued.includes('data:image/png;base64,')));
 }
 check(()=>assert.equal(render.invoiceEscape('"<>&\''),'&quot;&lt;&gt;&amp;&#39;'));
+const sample=render.sampleInvoiceDocument(settings),cancelled={...sample.sourceLines[0],id:'cancelled-source',lessonId:'cancelled-lesson',lessonStatus:'cancelled',sessionStatus:'cancelled',attendanceStatus:'pending',date:'2026-09-01',subject:'Cancelled-only label',amountCents:0,durationSeconds:0,displayDurationSeconds:0,status:'exempt'};
+const withCancelled={...sample,sourceLines:[cancelled,...sample.sourceLines]},rendered=render.renderInvoiceHtml(withCancelled,{lang:'en',lessons:true});
+check(()=>assert(!rendered.includes('Cancelled-only label'),'cancelled records are excluded from invoice lesson details'));
+const invoicePure=(await load('lib/invoice.ts')).module;
+check(()=>assert.deepEqual(invoicePure.invoicePrintLines([cancelled,...sample.sourceLines]),invoicePure.invoicePrintLines(sample.sourceLines),'cancelled records create no spurious zero-value summary lines'));
+check(()=>assert.equal(withCancelled.totalCents,sample.totalCents,'excluding cancelled presentation leaves the document amount unchanged'));
+
+
 console.log(`Invoice PNG and template risk checks passed: ${checks}`);

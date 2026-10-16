@@ -1,4 +1,6 @@
 'use client';
+import {usePageHistoryState} from '@/lib/page-history';
+
 import { useAdminAction } from "./admin-permission-context";
 
 import {lazy,Suspense,useEffect,useId,useMemo,useRef,useState,type ReactNode} from 'react';
@@ -49,7 +51,7 @@ export default function QuizWorkspace({view,language,role='teacher'}:{view:'quiz
  const author=role!=='student';
  const catalogueAllowed=can('quizzes.view'),assignmentsAllowed=can('quizAssignments.view');
  const {catalogue,loading:catalogueLoading,error:catalogueError,reload:reloadCatalogue}=useAcademicCatalogue('quiz');
- const [tab,setTab]=useState<'bank'|'mine'|'assigned'|'history'|'manage'>('bank');
+ const [tab,setTab]=usePageHistoryState<'bank'|'mine'|'assigned'|'history'|'manage'>('quiz.tab','bank');
  const [source,setSource]=useState<'all'|'platform'|'creator'>('all');
  const [filters,setFilters]=useState<Filters>(EMPTY_FILTERS),[searchInput,setSearchInput]=useState('');
  const [facets,setFacets]=useState<Facets>(EMPTY_FACETS),[items,setItems]=useState<Item[]>([]),[topics,setTopics]=useState<Topic[]>([]);
@@ -77,7 +79,7 @@ export default function QuizWorkspace({view,language,role='teacher'}:{view:'quiz
  const hasFilters=Boolean(filters.search||filters.syllabus||filters.subject||filters.level||filters.chapterCode);
 
  // Both legacy menu IDs resolve to this single hub.
- useEffect(()=>{setTab('bank');setSelectedTopic(null);setSelectedDifficulty(null);},[view]);
+ useEffect(()=>{setSelectedTopic(null);setSelectedDifficulty(null);},[view]);
  useEffect(()=>{
   const timer=window.setTimeout(()=>setFilters(old=>old.search===searchInput.trim()?old:{...old,search:searchInput.trim()}),300);return()=>window.clearTimeout(timer);
  },[searchInput]);

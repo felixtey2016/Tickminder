@@ -1,4 +1,6 @@
 "use client";
+import {usePageHistoryState} from '@/lib/page-history';
+
 import {useEffect,useRef,useState} from 'react';
 import {Button} from '@/components/ui/button';
 import {groupFetch} from '@/lib/group-client';
@@ -50,7 +52,7 @@ function FeeLine({line,month,onChanged,canManageFees}:{line:BillingLine;month:st
 export default function BillingWorkspace({students,onCourses,canManageFees=false,onInvoice}:{students:string[];onCourses:()=>void;canManageFees?:boolean;onInvoice?:(studentId:string,month:string,studentName?:string)=>void}){
  const [month,setMonth]=useState(today().slice(0,7)),[student,setStudent]=useState(''),[page,setPage]=useState(1),[revision,setRevision]=useState(0);
  const [preview,setPreview]=useState<BillingPreview|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
- const [studentId,setStudentId]=useState(''),[detail,setDetail]=useState<BillingPreview['detail']>(),[detailLoading,setDetailLoading]=useState(false),[detailError,setDetailError]=useState('');
+ const [studentId,setStudentId]=usePageHistoryState('billing.student',''),[detail,setDetail]=useState<BillingPreview['detail']>(),[detailLoading,setDetailLoading]=useState(false),[detailError,setDetailError]=useState('');
  const [policyDate,setPolicyDate]=useState(today().slice(0,7)+'-01'),[policyBusy,setPolicyBusy]=useState(false),[policyError,setPolicyError]=useState('');
  const detailSection=useRef<HTMLElement>(null),policyOperation=useRef<Operation>(null),previewKey=useRef(''),detailKey=useRef('');
  useEffect(()=>{let last=0;const refresh=()=>{if(document.visibilityState!=='visible'||policyBusy||document.querySelector('.billing-adjustment')||Date.now()-last<5000)return;last=Date.now();setRevision(x=>x+1);};const visible=()=>{if(document.visibilityState==='visible')refresh();};window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',visible);const timer=window.setInterval(refresh,60000);return()=>{window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',visible);window.clearInterval(timer);};},[policyBusy]);

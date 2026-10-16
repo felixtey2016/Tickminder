@@ -17,6 +17,7 @@ export type InvoiceDetail = {invoice:InvoiceDocument;review:InvoiceReview};
 export type InvoiceList = {items:InvoiceSummary[];total:number;page:number;pageSize:number;pages:number};
 export class InvoiceError extends Error {constructor(message:string,readonly status=400){super(message);}}
 export const INVOICE_MAX_CENTS=100_000_000;
+export function invoiceLessonCancelled(line:BillingLine){return line.lessonStatus==='cancelled'||line.sessionStatus==='cancelled'||line.attendanceStatus==='cancelled';}
 
 export function invoiceAdditions(value:unknown):InvoiceAddition[]{
  if(!Array.isArray(value)||value.length>50)throw new InvoiceError('附加收费及折扣最多可添加 50 项');
@@ -43,7 +44,7 @@ export function invoiceLessonDuration(line:BillingLine){
 export function invoicePrintLines(lines:BillingLine[]):InvoicePrintLine[]{
  const result=new Map<string,InvoicePrintLine>();
  for(const line of lines){
-  if(line.status==='pending')continue;
+  if(line.status==='pending'||invoiceLessonCancelled(line))continue;
   const key=JSON.stringify([line.subjectKey,line.mode,line.unitAmountCents,line.rateVersionId]),row=result.get(key)||{id:key,subject:line.subject,description:'',lessonCount:0,durationSeconds:0,mode:line.mode,unitAmountCents:line.unitAmountCents,amountCents:0};
   // Monthly fees include their lessons once; the monthly charge itself has no lesson ID.
   if(line.lessonId&&line.lessonStatus!=='cancelled'&&line.sessionStatus!=='cancelled'&&!['cancelled','absent','student_absent','teacher_absent','pending','scheduled'].includes(line.attendanceStatus)){

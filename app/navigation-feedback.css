@@ -1,0 +1,7 @@
+/* The back control stays below the pinned header and reserves its own space. */
+.workspace-backbar{position:sticky;top:calc(72px + env(safe-area-inset-top,0px));z-index:40;display:flex;align-items:center;gap:12px;margin:0 0 18px;max-width:100%;pointer-events:none}
+.workspace-backbar .workspace-back-button{pointer-events:auto;display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:10px 16px;background:#fff;color:#3d268a;border:1px solid #b6a9d4;border-radius:10px;box-shadow:0 3px 12px #29204118;font-size:14px;line-height:1.4;white-space:nowrap}
+.workspace-backbar .workspace-back-button:disabled{opacity:1;background:#f2eff8;color:#817b91;box-shadow:none}
+.workspace-backbar .workspace-back-button:focus-visible{outline:3px solid #9f8ade;outline-offset:3px}
+@media(max-width:650px){.workspace-backbar{margin-bottom:16px}.workspace-backbar .workspace-back-button{min-height:46px}}
+

@@ -1,4 +1,6 @@
 "use client";
+import {usePageHistoryState} from '@/lib/page-history';
+
 import { useAdminAction } from "./admin-permission-context";
 
 import { FilterPanel } from "@/components/filter-panel";
@@ -38,13 +40,13 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
   teachers: string[]; plans: Plan[]; mutate: ClassMutate; learningMutate: LearningMutate; busy: boolean; onCalendar: () => void;
 }) {
   const can=useAdminAction();
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = usePageHistoryState("classroom.selected","");
   const [directoryOpen, setDirectoryOpen] = useState(role === "admin");
   const {catalogue,error:catalogueError,reload:reloadCatalogue}=useAcademicCatalogue('student');
   const [syllabusId,setSyllabusId]=useState(''),[grade,setGrade]=useState('');
   const [filterSyllabus,setFilterSyllabus]=useFilterPreference<string>('classes-syllabus',''),[filterGrade,setFilterGrade]=useFilterPreference<string>('classes-grade',''),[filterSubject,setFilterSubject]=useFilterPreference<string>('classes-subject','');
   const [creating, setCreating] = useState(false);
-  const [tab, setTab] = useState<ClassroomTab>("announcements");
+  const [tab, setTab] = usePageHistoryState<ClassroomTab>("classroom.tab","announcements");
   const tabListId = useId();
   const tabListRef = useRef<HTMLDivElement>(null);
   const directorySummaryRef = useRef<HTMLElement>(null);

@@ -8,6 +8,7 @@ import "./people-settings-layout.css";
 import "./billing-layout.css";
 import "./invoice-layout.css";
 import "./finance-workspace.css";
+import "./navigation-feedback.css";
 import { ActionToastHost } from "@/components/action-toast";
 
 export const metadata: Metadata = {

@@ -1,4 +1,6 @@
 "use client";
+import {usePageHistoryState} from '@/lib/page-history';
+
 import { useAdminAction } from "./admin-permission-context";
 import { useCallback,useEffect,useRef,useState,type ReactNode } from "react";
 import { ArrowLeft,Folder,FolderPlus,ChevronRight,MoreHorizontal } from "lucide-react";
@@ -32,7 +34,7 @@ export function FolderWorkspace({classroom,role,learning,view,onChanged,children
   const can=useAdminAction();
   const canRead=can("folders.view");
   const [tree,setTree]=useState<Node[]>([]),[revision,setRevision]=useState(0),[ready,setReady]=useState(false),[error,setError]=useState("");
-  const [current,setCurrent]=useState(""),[editor,setEditor]=useState<Editor|null>(null),[name,setName]=useState(""),[target,setTarget]=useState(""),[preview,setPreview]=useState<Preview|null>(null),[working,setWorking]=useState(false),[editError,setEditError]=useState("");
+  const [current,setCurrent]=usePageHistoryState("folder.current:"+classroom.id,""),[editor,setEditor]=useState<Editor|null>(null),[name,setName]=useState(""),[target,setTarget]=useState(""),[preview,setPreview]=useState<Preview|null>(null),[working,setWorking]=useState(false),[editError,setEditError]=useState("");
   const latestLoad=useRef(0),[editorRevision,setEditorRevision]=useState(0);
   const canManage=role!=="student" && !classroom.archived;
   const load=useCallback(async()=>{

@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LessonCalendar } from "./week-calendar";
 import { LessonHistory } from "./lesson-history";
+import {FloatingBackButton} from "@/components/floating-back-button";
 import { ConflictPreview, conflictDescription, type ConflictDetail } from "./conflict-preview";
 import { ActivityLog } from "./activity-log";
 import { useLessonWebMcp } from "./webmcp";
@@ -854,7 +855,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
                 </div>
                 <LegalLinks language={language} className="menu-legal"/>
             </aside>}
-            <main className="workspace"><div className="group-context" aria-label={t("当前集团")}><Building2 size={16} aria-hidden="true"/><span>{account.groupName}</span></div>
+            <main className="workspace"><FloatingBackButton context={`${account.id}:${role}:${account.groupId}`} isHome={activeView===(account.isOwner?"groups":"home")} onHome={()=>choose(account.isOwner?"groups":"home")}/><div className="group-context" aria-label={t("当前集团")}><Building2 size={16} aria-hidden="true"/><span>{account.groupName}</span></div>
                 <div className="page-head"><div><p className="eyebrow">{t(role === "admin" ? "管理员工作台" : role === "student" ? "学生工作台" : role === "pending" ? "待分配账号" : "老师工作台")}</p><h1>{t(title)}</h1></div>
                     {showMonth && <label className="month-select">{t("统计月份")}<input type="month" value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)}/></label>}
                 </div>

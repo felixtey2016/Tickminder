@@ -27,7 +27,7 @@ export function actionFailureMessage(error: unknown, fallback = "操作失败，
   return t(message || fallback);
 }
 
-// Kept for existing callers: failures now use the shared non-blocking, persistent toast.
+// Kept for existing callers: failures use the shared error dialog host.
 export function alertActionFailure(error: unknown, fallback?: string) {
   const message = actionFailureMessage(error, fallback);
   showActionToast("error", message);

@@ -56,11 +56,21 @@ function audit(actor:Account,action:string,id:string,data:unknown,now:string,gua
 export async function saveInvoice(actor:Account,data:Record<string,unknown>){
  const action=str(data.action),key:Grant=action==='generate'?'invoices.create':action==='issue'?'invoices.issue':'invoices.edit',gid=await requireInvoicePermission(actor,key);
  if('groupId'in data&&data.groupId!==gid)throw new InvoiceError('没有权限修改其他集团的账单',403);
- if(!['generate','refresh','save','issue'].includes(action))throw new InvoiceError('未知账单操作');
+ if(!['generate','refresh','save','issue','delete'].includes(action))throw new InvoiceError('未知账单操作');
  const operation=operationId(data.operationId),requestHash=await digest(data),old=await replay(actor,key,operation,requestHash);if(old)return old;
  const db=learningDb(),now=new Date().toISOString(),execution=crypto.randomUUID(),authority=invoiceAuthority(actor,key),guard=operationGuard(gid,operation,execution);
- let result:{ok:true;invoiceId:string;revision:number;number?:string},statements:D1PreparedStatement[];
- if(action==='generate'){
+ let result:{ok:true;invoiceId:string;revision:number;number?:string;deleted?:boolean},statements:D1PreparedStatement[];
+ if(action==='delete'){
+  const id=str(data.invoiceId),item=await stored(actor,id,key),expected=revision(data.revision);
+  if(item.status!=='draft')throw new InvoiceError('正式账单不能删除，只能删除草稿',409);
+  if(item.revision!==expected)throw new InvoiceError('账单已被其他管理员更新，请刷新后重试',409);
+  result={ok:true,invoiceId:id,revision:expected,deleted:true};
+  statements=[
+   db.prepare(`INSERT OR IGNORE INTO invoice_operations(group_id,operation_id,actor_id,action,request_hash,execution_id,result_json,created_at) SELECT ?,?,?,?,?,?,?,? WHERE ${authority.sql} AND EXISTS(SELECT 1 FROM invoices WHERE group_id=? AND id=? AND status='draft' AND revision=?)`).bind(gid,operation,actor.id,action,requestHash,execution,JSON.stringify(result),now,...authority.args,gid,id,expected),
+   audit(actor,action,id,{studentId:item.studentId,month:item.month,revision:expected,deleted:true},now,guard),
+   db.prepare(`DELETE FROM invoices WHERE group_id=? AND id=? AND status='draft' AND revision=? AND ${guard.sql}`).bind(gid,id,expected,...guard.args),
+  ];
+ }else if(action==='generate'){
   const studentId=str(data.studentId),month=billingMonth(data.month);if(!studentId||studentId.length>100)throw new InvoiceError('请选择学生');
   const existing=(await read<Stored>(actor,key,`SELECT ${columns} FROM invoices WHERE group_id=? AND student_id=? AND month=?`,gid,studentId,month))[0];
   if(existing)return{ok:true,invoiceId:existing.id,revision:existing.revision};
