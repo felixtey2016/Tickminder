@@ -134,7 +134,7 @@ try {
   const files = matchManifestObjects(database,manifest.files);
   const pdfCount=files.filter(f=>f.row.kind==='pdf').length,imageCount=files.length-pdfCount;
   for (const {row:file} of files) {
-    if (!/^[a-zA-Z0-9_-]+$/.test(file.id) || !(file.kind==='quiz-image'?/^quiz\/[a-zA-Z0-9_-]{1,128}$/:/^pdf\/[a-zA-Z0-9_-]{1,128}$/).test(file.object_key)) throw new Error('Unexpected backup object key');
+    if (!/^[a-zA-Z0-9_-]+$/.test(file.id) || !(file.kind==='quiz-image'?/^quiz\/[a-zA-Z0-9_-]{1,128}$/:file.kind==='invoice-logo'?/^invoice-brand\/[a-z0-9-]{1,64}\/[a-zA-Z0-9_-]{1,128}\.png$/:/^pdf\/[a-zA-Z0-9_-]{1,128}$/).test(file.object_key)) throw new Error('Unexpected backup object key');
   }
   if (!args.includes('--apply')) {
     console.log(JSON.stringify({verified: true, tables: tables.length, pdfs: pdfCount,quizImages:imageCount, mode: 'local-dry-run', createdAt: manifest.createdAt}));

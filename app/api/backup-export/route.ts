@@ -10,6 +10,7 @@ const baseTables = [
 ] as const;
 const classroomTables = ["classrooms", "classroom_members", "classroom_announcements"] as const;
 const billingTables = ["billing_students", "billing_subjects", "billing_policies", "billing_policy_versions", "billing_rates", "billing_rate_versions", "billing_operations", "billing_adjustments"] as const;
+const invoiceTables = ["invoice_brand_assets","invoice_brand_settings","invoices","invoice_items","invoice_operations","invoice_sequences","invoice_source_locks"];
 const noStore = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" };
 
 async function authorized(request: Request): Promise<boolean> {
@@ -38,6 +39,14 @@ export async function GET(request: Request) {
       if (!object || object.size !== image.bytes) return new Response(null, { status: 503, headers: noStore });
       return new Response(object.body, { headers: { ...noStore, "Content-Type": image.mime,
         "Content-Disposition": "attachment; filename=backup.image", "Content-Length": String(object.size) } });
+    }
+    const logoId=url.searchParams.get('logo');
+    if(logoId!==null){
+      if(!/^[a-zA-Z0-9_-]{1,128}$/.test(logoId))return new Response(null,{status:400,headers:noStore});
+      const logo=await db.prepare('SELECT object_key AS objectKey,bytes FROM invoice_brand_assets WHERE id=?').bind(logoId).first<{objectKey:string;bytes:number}>();
+      if(!logo)return new Response(null,{status:404,headers:noStore});
+      const object=await pdfBucket().get(logo.objectKey);if(!object||object.size!==logo.bytes)return new Response(null,{status:503,headers:noStore});
+      return new Response(object.body,{headers:{...noStore,'Content-Type':'image/png','Content-Disposition':'attachment; filename=invoice-logo.png','Content-Length':String(object.size)}});
     }
     const fileId = url.searchParams.get("file");
     if (fileId !== null) {
@@ -114,6 +123,10 @@ export async function GET(request: Request) {
       if(!hasBilling)throw new Error("Administrator permission schema lacks required foundation tables");
       (names as string[]).push('admin_permission_profiles');
     }
+    const invoiceSchema=await db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name IN ("+invoiceTables.map(()=>'?').join(',')+")").bind(...invoiceTables).first<{n:number}>();
+    if(invoiceSchema?.n&&invoiceSchema.n!==invoiceTables.length)throw new Error('Incomplete invoice schema');
+    const hasInvoices=invoiceSchema?.n===invoiceTables.length;
+    if(hasInvoices){if(!hasAdminPermissions)throw new Error('Invoice foundation missing');(names as string[]).push(...invoiceTables);}
     const tables: Record<string, { columns: string[]; rows: Record<string, unknown>[] }> = {};
     for (const name of names) {
       const info = await db.prepare(`PRAGMA table_info("${name}")`).all<{ name: string }>();
@@ -124,7 +137,7 @@ export async function GET(request: Request) {
     if(hasBilling&&!tables.quiz_practice_attempts.columns.includes("discarded_at"))throw new Error("Billing schema lacks required practice history");
     const contents=await db.batch<Record<string,unknown>>(names.map(name=>db.prepare(`SELECT * FROM "${name}"`)));
     names.forEach((name,index)=>{tables[name].rows=contents[index].results;});
-    return Response.json({ format: hasAdminPermissions ? "timelyo-d1-v21" : hasBilling ? "timelyo-d1-v20" : hasAcademicCatalogues && tables.quiz_practice_attempts.columns.includes("discarded_at") ? "timelyo-d1-v19" : hasAcademicCatalogues ? "timelyo-d1-v18" : hasFormalPractice ? "timelyo-d1-v17" : hasPractice ? "timelyo-d1-v16" : hasQuizzes ? "timelyo-d1-v15" : hasClassSessions&&tables.class_sessions.columns.includes("teaching_status") ? "timelyo-d1-v14" : hasClassSessions ? "timelyo-d1-v13" : hasReview ? "timelyo-d1-v12" : hasVersions ? "timelyo-d1-v11" : hasFolders ? "timelyo-d1-v10" : hasGroups ? "timelyo-d1-v9" : hasInbox ? "timelyo-d1-v8" : hasNotifications ? "timelyo-d1-v7" : tables.accounts.columns.includes("pending_expires_at") ? "timelyo-d1-v6" : tables.reschedule_requests.columns.includes("requested_role") ? "timelyo-d1-v5" : hasTerms ? "timelyo-d1-v4" : hasIdentities ? "timelyo-d1-v3" : hasClassrooms ? "timelyo-d1-v2" : "timelyo-d1-v1", tables }, { headers: noStore });
+    return Response.json({ format: hasInvoices ? "timelyo-d1-v22" : hasAdminPermissions ? "timelyo-d1-v21" : hasBilling ? "timelyo-d1-v20" : hasAcademicCatalogues && tables.quiz_practice_attempts.columns.includes("discarded_at") ? "timelyo-d1-v19" : hasAcademicCatalogues ? "timelyo-d1-v18" : hasFormalPractice ? "timelyo-d1-v17" : hasPractice ? "timelyo-d1-v16" : hasQuizzes ? "timelyo-d1-v15" : hasClassSessions&&tables.class_sessions.columns.includes("teaching_status") ? "timelyo-d1-v14" : hasClassSessions ? "timelyo-d1-v13" : hasReview ? "timelyo-d1-v12" : hasVersions ? "timelyo-d1-v11" : hasFolders ? "timelyo-d1-v10" : hasGroups ? "timelyo-d1-v9" : hasInbox ? "timelyo-d1-v8" : hasNotifications ? "timelyo-d1-v7" : tables.accounts.columns.includes("pending_expires_at") ? "timelyo-d1-v6" : tables.reschedule_requests.columns.includes("requested_role") ? "timelyo-d1-v5" : hasTerms ? "timelyo-d1-v4" : hasIdentities ? "timelyo-d1-v3" : hasClassrooms ? "timelyo-d1-v2" : "timelyo-d1-v1", tables }, { headers: noStore });
   } catch {
     return Response.json({ error: "Backup export unavailable" }, { status: 503, headers: noStore });
   }

@@ -99,9 +99,9 @@ function validateSnapshot(path, recovery = null) {
       try { if (data.length !== metadata.bytes || sha(data) !== metadata.sha256 || !validObjectSignature(data,row.mime)) throw new Error(`Object restore check failed for ${row.kind}`); }
       finally { data.fill(0); }
     }
-    const pdfs=objects.filter(x=>x.row.kind==='pdf'),images=objects.filter(x=>x.row.kind==='quiz-image');
+    const pdfs=objects.filter(x=>x.row.kind==='pdf'),images=objects.filter(x=>x.row.kind==='quiz-image'),logos=objects.filter(x=>x.row.kind==='invoice-logo');
     if (counts.pdf_files !== pdfs.length) throw new Error('PDF object count does not match restored database');
-    return { databaseTables: Object.keys(counts).length, pdfCount: pdfs.length, pdfBytes: pdfs.reduce((n,x)=>n+x.row.bytes,0), quizImageCount:images.length,quizImageBytes:images.reduce((n,x)=>n+x.row.bytes,0),restore: 'memory-and-files-ok' };
+    return { databaseTables: Object.keys(counts).length, pdfCount: pdfs.length, pdfBytes: pdfs.reduce((n,x)=>n+x.row.bytes,0), invoiceLogoCount:logos.length,invoiceLogoBytes:logos.reduce((n,x)=>n+x.row.bytes,0),quizImageCount:images.length,quizImageBytes:images.reduce((n,x)=>n+x.row.bytes,0),restore: 'memory-and-files-ok' };
   } finally { key.fill(0); }
 }
 async function fetchExport(url, token) {
@@ -184,13 +184,13 @@ async function main() {
         const identity=row.kind+':'+id;
         if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id) || seen.has(identity)) throw new Error('Invalid or duplicate object ID');
         seen.add(identity);
-        const response = await fetchExport(new URL(`/api/backup-export?${row.kind==='quiz-image'?'image':'file'}=${encodeURIComponent(id)}`, site), token);
+        const response = await fetchExport(new URL(`/api/backup-export?${row.kind==='quiz-image'?'image':row.kind==='invoice-logo'?'logo':'file'}=${encodeURIComponent(id)}`, site), token);
         const bytes = Buffer.from(await response.arrayBuffer());
         try {
           if (bytes.length !== Number(row.bytes) || !validObjectSignature(bytes,row.mime) || row.sha256&&sha(bytes)!==row.sha256) throw new Error(`Object size, signature or checksum mismatch for ${row.kind}`);
           const sealed = seal(bytes, key);
           writeFileSync(join(stage, backupObjectName(row)), sealed.encrypted, { flag: 'wx', mode: 0o600 });
-          manifest.files.push({ id, ...(row.kind==='quiz-image'?{kind:row.kind,objectKey:row.object_key,mime:row.mime}:{}),bytes: bytes.length, sha256: sha(bytes), iv: sealed.iv, tag: sealed.tag });
+          manifest.files.push({ id, ...(row.kind!=='pdf'?{kind:row.kind,objectKey:row.object_key,mime:row.mime}:{}),bytes: bytes.length, sha256: sha(bytes), iv: sealed.iv, tag: sealed.tag });
         } finally { bytes.fill(0); }
       }
       writeFileSync(join(stage, 'manifest.json'), JSON.stringify(manifest), { flag: 'wx', mode: 0o600 });

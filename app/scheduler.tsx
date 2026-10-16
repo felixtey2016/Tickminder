@@ -39,7 +39,7 @@ const GroupConsole=lazy(()=>import("./group-console").then(m=>({default:m.GroupC
 const TeacherLearning = lazy(() => import("./learning-portal").then(module => ({default: module.TeacherLearning})));
 const AdminLearning = lazy(() => import("./admin-learning").then(module => ({default: module.AdminLearning})));
 const QuizWorkspace=lazy(()=>import('./quiz-workspace'));
-const BillingWorkspace=lazy(()=>import('./billing-workspace'));
+const FinanceWorkspace=lazy(()=>import('./finance-workspace'));
 import type { Classroom } from "./classrooms-page";
 const ClassroomsPage = lazy(() => import("./classrooms-page").then(module => ({default: module.ClassroomsPage})));
 import { Timetable } from "./timetables";
@@ -665,7 +665,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     changeLanguage: (next: Language) => void;
 }) {
     const role = account.role as NavigationRole;
-    const items = [...(account.isOwner?[{id:"groups",label:"平台总控制台",Icon:Building2}]:[]),...(role==="admin"?[{id:'billing',label:'学费核算',Icon:FileText}]:[]),...NAV_ITEMS[role],...(role!=="pending"?[{id:"courses",label:"course.nav.title",Icon:CalendarDays}]:[]),...(role==="admin"?[{id:"groupInfo",label:"集团信息",Icon:Building2},{id:"people",label:"人员与账号",Icon:UsersRound},{id:"settings",label:"设置",Icon:Settings}]:[]), { id: "notifications", label: "通知中心", Icon: Bell }].filter(item=>canAdminView(account,item.id));
+    const items = [...(account.isOwner?[{id:"groups",label:"平台总控制台",Icon:Building2}]:[]),...(role==="admin"?[{id:'billing',label:'财务',Icon:FileText}]:[]),...NAV_ITEMS[role],...(role!=="pending"?[{id:"courses",label:"course.nav.title",Icon:CalendarDays}]:[]),...(role==="admin"?[{id:"groupInfo",label:"集团信息",Icon:Building2},{id:"people",label:"人员与账号",Icon:UsersRound},{id:"settings",label:"设置",Icon:Settings}]:[]), { id: "notifications", label: "通知中心", Icon: Bell }].filter(item=>canAdminView(account,item.id));
     const permissionSignature=JSON.stringify(account.adminPermissions);
     const canView=(view:string)=>items.some(item=>item.id===view);
     const [badgeNow,setBadgeNow]=useState(()=>Date.now());
@@ -811,7 +811,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
         } else if (activeView === "subjects") {
             pageContent = <SubjectAdmin studentProfiles={(canAdminAction(account,"students.view")?state?.allStudents:state?.studentOptions)||[]} students={state?.students || []} teachers={state?.teachers || []} plans={state?.allPlans || []} mutate={mutate} busy={busy} canFinance={Boolean(account.isOwner||account.isGroupChief)} onPreview={()=>choose('billing')}/>;
         } else if (activeView==='billing'&&role==='admin'&&canAdminView(account,'billing')) {
-            pageContent=<BillingWorkspace key={account.groupId} students={(state?.allStudents?.length?state.allStudents:state?.studentOptions||[]).map(student=>student.name)} canManageFees={Boolean(account.isOwner||account.isGroupChief)} onCourses={()=>choose('subjects')}/>;
+            pageContent=<FinanceWorkspace account={account} key={account.groupId} students={(state?.allStudents?.length?state.allStudents:state?.studentOptions||[]).map(student=>student.name)} onCourses={()=>choose('subjects')}/>;
         } else if (["teacherRoster", "studentRoster", "accounts"].includes(activeView)) {
             const view = activeView === "teacherRoster" ? "teachers" : activeView === "studentRoster" ? "students" : activeView as "binding" | "accounts";
             pageContent = <RosterAdmin account={account} state={state} mutate={mutate} busy={busy} view={view}/>;

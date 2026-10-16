@@ -24,9 +24,10 @@ const currentModules = [
   { id: "sheetSync", actions: ["view", "preview", "commit"] },
   { id: "audit", actions: ["view"] },
   { id: "fees", actions: ["view"] },
+  { id: "invoices", actions: ["view", "create", "edit", "issue"] },
 ] as const;
 
-const reservedModules = ["finance", "invoices", "parents", "resources", "progress", "publicModeration", "exports", "adminIdentity", "groups", "academicCatalogues", "backup"] as const;
+const reservedModules = ["finance", "parents", "resources", "progress", "publicModeration", "exports", "adminIdentity", "groups", "academicCatalogues", "backup"] as const;
 type GrantOf<T> = T extends { id: infer I extends string; actions: readonly (infer A extends string)[] } ? `${I}.${A}` : never;
 export type AdminGrantKey = GrantOf<typeof currentModules[number]>;
 export type AdminPermissionModuleId = typeof currentModules[number]["id"] | typeof reservedModules[number];
@@ -44,6 +45,7 @@ const extraDependencies: Partial<Record<AdminGrantKey, AdminGrantKey[]>> = {
   // one content kind must not expose the other kind's learning records.
   "quizAssignments.assign": ["quizzes.view"],
   "sheetSync.commit": ["sheetSync.preview"],
+  "invoices.issue": ["invoices.view"],
 };
 
 export const ADMIN_PERMISSION_CATALOG: AdminPermissionModule[] = [

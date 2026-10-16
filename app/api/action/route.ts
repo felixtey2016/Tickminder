@@ -1,3 +1,4 @@
+import {isInvoiceLocked,invoiceLockedMessage} from '@/lib/invoice-locks';
 import {readAcademicCatalogue} from "@/lib/academic-catalogue-server";
 import {findCatalogueSubject,findCatalogueSyllabus} from "@/lib/academic-catalogue";
 import {StudentAcademicError,studentProfileInput,allocationSubject,refreshStudentClassifications,studentSyllabusPlanUpdates,studentAcademicSnapshot,studentAcademicGuard} from "@/lib/student-academics";
@@ -437,6 +438,7 @@ export async function POST(request: Request) {
     }
     return bad("Unknown action");
   } catch (error) {
+    if(isInvoiceLocked(error))return bad(invoiceLockedMessage,409);
     const permissionFailure=adminPermissionFailure(error);if(permissionFailure)return bad(permissionFailure.error,permissionFailure.status);
     if(error instanceof AdminAuthorityError)return bad(error.message,error.status);
     if(isAdminAuthorityFailure(error))return bad('admin.authorityChanged',409);

@@ -80,7 +80,7 @@ async function extraState(account: Account, scope: Exclude<Scope, "core">, acces
     const byId = new Map(credentials.map(c => [c.accountId, c]));
     return {users: users.map(u => ({...u, ...lifecycleView(u), isOwner:isOwnerAccount(u), isGroupChief:u.role==='admin'&&!u.disabledAt&&u.id===hierarchy.chiefAdminId, username: byId.get(u.id)?.username || null, mustChangePassword: byId.get(u.id)?.mustChangePassword || false}))};
   }
-  const activityVisibility=and(adminPermissionReadCondition(account,"audit.view"),isOwnerAccount(account)?undefined:notLike(audit.action,'billing.%'),or(notLike(audit.action,'adminPermissions.%'),adminManagementReadCondition(account)));
+  const activityVisibility=and(adminPermissionReadCondition(account,"audit.view"),isOwnerAccount(account)?undefined:notLike(audit.action,'billing.%'),or(notLike(audit.action,'invoice.%'),adminPermissionReadCondition(account,'invoices.view')),or(notLike(audit.action,'adminPermissions.%'),adminManagementReadCondition(account)));
   const [changes, mergedNames] = await Promise.all([db.select().from(audit).where(groupWhere(audit,account.groupId,activityVisibility)).orderBy(desc(audit.at)).limit(30).all(), mergedAccountNames(account.groupId)]);
   const changedLessons = changes.length ? await db.select({id: lessons.id, student: lessons.student, subject: lessons.subject}).from(lessons).where(groupWhere(lessons,account.groupId,inArray(lessons.id, changes.map(c => c.lessonId)))).all() : [];
   const byId = new Map(changedLessons.map(l => [l.id, `${l.student} · ${l.subject}`]));

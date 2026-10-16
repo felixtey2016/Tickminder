@@ -17,6 +17,9 @@ export function setLanguage(language: Language) {
 export function getLanguage() { return currentLanguage; }
 
 const en: Record<string, string> = {
+  "财务":"Finance",
+  "关联资料已正式开单，考勤及计费依据已锁定。请通过账单调整流程更正。":"An invoice has been issued for these records. Attendance and billing sources are locked. Corrections require an invoice adjustment.",
+  "生成账单草稿":"Create invoice draft",
   "全部学生": "All students",
   "没有符合条件的学生": "No students match the filters",
   "未来已安排": "Scheduled ahead",

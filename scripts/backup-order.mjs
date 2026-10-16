@@ -7,9 +7,9 @@ const {normalizeAdminGrants:normalizeRestoredAdminGrants}=await import('data:tex
 
 // Restore structural parents before content. Replay historical rows without
 // applying current publishing rules (an archived class may contain PDFs).
-export const historicalInsertTriggers=['attendance_teaching_conflict','attendance_student_conflict','folder_parent_insert','material_active_class_insert','homework_active_class_insert','material_initial_version','homework_initial_version','class_session_auto_insert','class_session_conflict_insert','class_session_link_insert','billing_student_identity_insert','billing_subject_identity_insert'];
+export const historicalInsertTriggers=['attendance_teaching_conflict','attendance_student_conflict','folder_parent_insert','material_active_class_insert','homework_active_class_insert','material_initial_version','homework_initial_version','class_session_auto_insert','class_session_conflict_insert','class_session_link_insert','billing_student_identity_insert','billing_subject_identity_insert','invoice_issued_item_insert'];
 export function orderedSnapshotTables(tables) {
- const names=Object.keys(tables),priority=['academic_catalogues','tuition_groups','teachers','students','plans','accounts','classrooms','classroom_folders','class_sessions','lessons','class_session_participants','pdf_files','teaching_materials','homework','homework_recipients','homework_submissions','homework_resubmission_grants','homework_feedback','push_subscriptions','learning_notifications','learning_notification_deliveries','quizzes','quiz_images','quiz_versions','quiz_answer_keys','quiz_version_images','quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations','quiz_practice_events','quiz_assignment_notifications','student_grade_promotions','billing_students','billing_subjects','billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments','admin_permission_profiles'];
+ const names=Object.keys(tables),priority=['academic_catalogues','tuition_groups','teachers','students','plans','accounts','classrooms','classroom_folders','class_sessions','lessons','class_session_participants','pdf_files','teaching_materials','homework','homework_recipients','homework_submissions','homework_resubmission_grants','homework_feedback','push_subscriptions','learning_notifications','learning_notification_deliveries','quizzes','quiz_images','quiz_versions','quiz_answer_keys','quiz_version_images','quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations','quiz_practice_events','quiz_assignment_notifications','student_grade_promotions','billing_students','billing_subjects','billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments','admin_permission_profiles','invoice_brand_assets','invoice_brand_settings','invoices','invoice_items','invoice_operations','invoice_sequences','invoice_source_locks'];
  const ordered=[...priority.filter(name=>names.includes(name)),...names.filter(name=>!priority.includes(name)&&name!=='classroom_content_state'),...(names.includes('classroom_content_state')?['classroom_content_state']:[])];
  return ordered.map(name=>{
   const table=tables[name];if(name!=='classroom_folders')return [name,table];
@@ -116,6 +116,7 @@ export function checkRestoredAdminPermissionsStructure(db) {
 export function checkRestoredFolderStructure(db) {
  checkRestoredAdminPermissionsStructure(db);
  checkRestoredBillingStructure(db);
+ checkRestoredInvoiceStructure(db);
  checkRestoredAcademicStructure(db);
  if(!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='classroom_folders'").get())return;
  const invalid=db.prepare(`SELECT 1 FROM classroom_folders f LEFT JOIN classrooms c ON c.id=f.classroom_id LEFT JOIN classroom_folders p ON p.id=f.parent_id WHERE c.id IS NULL OR c.group_id<>f.group_id OR (f.parent_id IS NOT NULL AND (p.id IS NULL OR p.classroom_id<>f.classroom_id OR p.group_id<>f.group_id)) LIMIT 1`).get();
@@ -199,25 +200,30 @@ export function checkRestoredFolderStructure(db) {
  if(invalid||db.prepare('PRAGMA foreign_key_check').all().length)throw Error('Restored folder relationships are invalid');
 }
 
-export function snapshotVersion(data){return Number(data?.format?.match(/^timelyo-d1-v(21|20|19|18|17|16|15|14|13|12|11|10|[1-9])$/)?.[1]||0);}
+export function snapshotVersion(data){return Number(data?.format?.match(/^timelyo-d1-v(22|21|20|19|18|17|16|15|14|13|12|11|10|[1-9])$/)?.[1]||0);}
 export function expectedSnapshotTables(version){
  const base=['accounts','assignments','audit','lessons','local_credentials','login_attempts','plans','reschedule_requests','sessions','students','teachers','pdf_files','storage_quota','teaching_materials','material_recipients','homework','homework_recipients','homework_submissions','study_blocks'];
- return [...(version>=9?['tuition_groups']:[]),...base,...(version>=2?['classrooms','classroom_members','classroom_announcements']:[]),...(version>=3?['google_identities']:[]),...(version>=4?['academic_terms']:[]),...(version>=7?['notification_items','notification_deliveries','push_subscriptions','notification_runtime']:[]),...(version>=8?['site_notifications']:[]),...(version>=10?['classroom_folders','classroom_content_state']:[]),...(version>=11?['learning_versions','homework_score_history']:[]),...(version>=12?['homework_resubmission_grants','homework_feedback','learning_notifications','learning_notification_deliveries']:[]),...(version>=13?['class_sessions','class_session_participants']:[]),...(version>=15?['quizzes','quiz_versions','quiz_answer_keys','quiz_images','quiz_version_images']:[]),...(version>=16?['quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations']:[]),...(version>=17?['quiz_practice_events','quiz_assignment_notifications']:[]),...(version>=18?['academic_catalogues','student_grade_promotions']:[]),...(version>=20?['billing_students','billing_subjects','billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments']:[]),...(version>=21?['admin_permission_profiles']:[])];
+ return [...(version>=9?['tuition_groups']:[]),...base,...(version>=2?['classrooms','classroom_members','classroom_announcements']:[]),...(version>=3?['google_identities']:[]),...(version>=4?['academic_terms']:[]),...(version>=7?['notification_items','notification_deliveries','push_subscriptions','notification_runtime']:[]),...(version>=8?['site_notifications']:[]),...(version>=10?['classroom_folders','classroom_content_state']:[]),...(version>=11?['learning_versions','homework_score_history']:[]),...(version>=12?['homework_resubmission_grants','homework_feedback','learning_notifications','learning_notification_deliveries']:[]),...(version>=13?['class_sessions','class_session_participants']:[]),...(version>=15?['quizzes','quiz_versions','quiz_answer_keys','quiz_images','quiz_version_images']:[]),...(version>=16?['quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations']:[]),...(version>=17?['quiz_practice_events','quiz_assignment_notifications']:[]),...(version>=18?['academic_catalogues','student_grade_promotions']:[]),...(version>=20?['billing_students','billing_subjects','billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments']:[]),...(version>=21?['admin_permission_profiles']:[]),...(version>=22?['invoice_brand_assets','invoice_brand_settings','invoices','invoice_items','invoice_operations','invoice_sequences','invoice_source_locks']:[])];
 }
 export function snapshotObjects(database){
  const pdfs=database?.tables?.pdf_files?.rows;if(!Array.isArray(pdfs))throw Error('Database export lacks PDF metadata');
  const objects=pdfs.map(row=>({...row,kind:'pdf',mime:'application/pdf'}));
  if(snapshotVersion(database)>=15){
-  const rows=database.tables.quiz_images.rows;
-  for(const row of rows){
+  for(const row of database.tables.quiz_images.rows){
    if(!/^[a-zA-Z0-9_-]{1,128}$/.test(row.id)||!/^quiz\/[a-zA-Z0-9_-]{1,128}$/.test(row.object_key)||!['image/png','image/jpeg','image/webp'].includes(row.mime)||!Number.isSafeInteger(row.bytes)||row.bytes<1||row.bytes>5242880||!/^[a-f0-9]{64}$/.test(row.sha256)||!['uploading','ready'].includes(row.status)||typeof row.filename!=='string'||!row.filename||row.filename.length>240||typeof row.group_id!=='string'||typeof row.owner_id!=='string'||!Number.isFinite(Date.parse(row.created_at)))throw Error('Invalid quiz image metadata');
    if(row.status==='ready')objects.push({...row,kind:'quiz-image'});
+  }
+ }
+ if(snapshotVersion(database)>=22){
+  for(const row of database.tables.invoice_brand_assets.rows){
+   if(!/^[a-zA-Z0-9_-]{1,128}$/.test(row.id)||!/^[-a-z0-9]{1,64}$/.test(row.group_id)||row.object_key!=='invoice-brand/'+row.group_id+'/'+row.id+'.png'||!Number.isSafeInteger(row.bytes)||row.bytes<1||row.bytes>2097152||!Number.isSafeInteger(row.width)||row.width<1||row.width>2048||!Number.isSafeInteger(row.height)||row.height<1||row.height>2048||typeof row.created_by!=='string'||!Number.isFinite(Date.parse(row.created_at)))throw Error('Invalid invoice logo metadata');
+   objects.push({...row,kind:'invoice-logo',mime:'image/png'});
   }
  }
  const seen=new Set();for(const row of objects){const identity=row.kind+':'+row.id;if(seen.has(identity)||!/^[a-zA-Z0-9_-]{1,128}$/.test(row.id)||!Number.isSafeInteger(row.bytes)||row.bytes<1)throw Error('Invalid or duplicate backup object');seen.add(identity);}
  return objects;
 }
-export function backupObjectName(file){return `${file.id}.${file.kind==='quiz-image'?'image':'pdf'}.dpapi`;}
+export function backupObjectName(file){return file.id+'.'+(file.kind==='quiz-image'?'image':file.kind==='invoice-logo'?'logo':'pdf')+'.dpapi';}
 export function validObjectSignature(bytes,mime){
  if(mime==='application/pdf')return bytes.subarray(0,5).toString()==='%PDF-';
  if(mime==='image/png')return bytes.length>=33&&bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))&&bytes.toString('ascii',12,16)==='IHDR'&&bytes.readUInt32BE(16)>0&&bytes.readUInt32BE(20)>0;
@@ -227,6 +233,21 @@ export function validObjectSignature(bytes,mime){
 }
 export function matchManifestObjects(database,files){
  const objects=snapshotObjects(database);if(!Array.isArray(files)||files.length!==objects.length)throw Error('Backup object count does not match restored database');
- const actual=new Map();for(const file of files){const kind=file.kind??'pdf',identity=kind+':'+file.id;if(!['pdf','quiz-image'].includes(kind)||actual.has(identity)||!/^[a-zA-Z0-9_-]{1,128}$/.test(file.id)||!/^[a-f0-9]{64}$/.test(file.sha256)||!Number.isSafeInteger(file.bytes)||file.bytes<1||typeof file.iv!=='string'||typeof file.tag!=='string')throw Error('Invalid backup manifest entry');actual.set(identity,file);}
- return objects.map(row=>{const metadata=actual.get(row.kind+':'+row.id);if(!metadata||metadata.bytes!==row.bytes||(row.sha256&&metadata.sha256!==row.sha256)||(row.kind==='quiz-image'&&(metadata.objectKey!==row.object_key||metadata.mime!==row.mime)))throw Error('Backup object metadata does not match database');return {row,metadata};});
+ const actual=new Map();for(const file of files){const kind=file.kind??'pdf',identity=kind+':'+file.id;if(!['pdf','quiz-image','invoice-logo'].includes(kind)||actual.has(identity)||!/^[a-zA-Z0-9_-]{1,128}$/.test(file.id)||!/^[a-f0-9]{64}$/.test(file.sha256)||!Number.isSafeInteger(file.bytes)||file.bytes<1||typeof file.iv!=='string'||typeof file.tag!=='string')throw Error('Invalid backup manifest entry');actual.set(identity,file);}
+ return objects.map(row=>{const metadata=actual.get(row.kind+':'+row.id);if(!metadata||metadata.bytes!==row.bytes||(row.sha256&&metadata.sha256!==row.sha256)||(row.kind!=='pdf'&&(metadata.objectKey!==row.object_key||metadata.mime!==row.mime)))throw Error('Backup object metadata does not match database');return {row,metadata};});
+}
+export function checkRestoredInvoiceStructure(db){
+ const tables=['invoice_brand_assets','invoice_brand_settings','invoices','invoice_items','invoice_operations','invoice_sequences','invoice_source_locks'];
+ const count=db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name IN ("+tables.map(()=>'?').join(',')+")").get(...tables).n;if(!count)return;
+ const fail=()=>{throw Error('Restored invoice snapshot, source locks or brand metadata is invalid');};if(count!==tables.length)fail();
+ for(const row of db.prepare('SELECT * FROM invoices').all()){
+  let doc;try{doc=JSON.parse(row.document_json);}catch{fail();}
+  if(!doc||doc.id!==row.id||doc.groupId!==row.group_id||doc.studentId!==row.student_id||doc.month!==row.month||doc.status!==row.status||doc.revision!==row.revision||doc.number!==row.number||doc.issuedAt!==row.issued_at||doc.totalCents!==row.total_cents||doc.currency!=='MYR'||!Array.isArray(doc.sourceLines)||!Array.isArray(doc.additions)||!Array.isArray(doc.lines)||!doc.institution)fail();
+  const items=db.prepare('SELECT * FROM invoice_items WHERE group_id=? AND invoice_id=? ORDER BY position').all(row.group_id,row.id);
+  if(items.reduce((sum,x)=>sum+x.amount_cents,0)!==row.total_cents)fail();
+  const locks=db.prepare('SELECT * FROM invoice_source_locks WHERE group_id=? AND invoice_id=?').all(row.group_id,row.id);
+  if(row.status==='draft'&&locks.length||row.status==='issued'&&!locks.some(x=>x.source_type==='student_month'&&x.student_id===row.student_id&&x.source_id===row.student_id&&x.month===row.month))fail();
+  if(doc.institution.logoAssetId&&!db.prepare('SELECT 1 FROM invoice_brand_assets WHERE id=? AND group_id=?').get(doc.institution.logoAssetId,row.group_id))fail();
+ }
+ if(db.prepare('PRAGMA foreign_key_check').all().length)fail();
 }

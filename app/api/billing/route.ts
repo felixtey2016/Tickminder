@@ -1,8 +1,9 @@
+import {isInvoiceLocked,invoiceLockedMessage} from '@/lib/invoice-locks';
 import {NextResponse} from 'next/server';
 import {currentBusinessAccount} from '@/lib/auth';
 import {BillingError} from '@/lib/billing';
 import {billingRateSettings,billingPreview,saveBilling} from '@/lib/billing-server';
 const json=(value:unknown,status=200)=>NextResponse.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie, x-tickminder-group'}});
-function failure(error:unknown){return error instanceof BillingError?json({error:error.message},error.status):json({error:'财务资料暂时无法处理，请刷新后重试'},503);}
+function failure(error:unknown){if(isInvoiceLocked(error))return json({error:invoiceLockedMessage},409);return error instanceof BillingError?json({error:error.message},error.status):json({error:'财务资料暂时无法处理，请刷新后重试'},503);}
 export async function GET(request:Request){const actor=await currentBusinessAccount();if(!actor)return json({error:'请先登录'},401);try{const url=new URL(request.url);if(url.searchParams.get('view')==='rates')return json(await billingRateSettings(actor,url.searchParams.get('planKey')||''));return json(await billingPreview(actor,url.searchParams.get('month')||'',Number(url.searchParams.get('page')||1),Number(url.searchParams.get('pageSize')||20),url.searchParams.get('studentId')||undefined,url.searchParams.get('student')||undefined));}catch(error){return failure(error);}}
 export async function POST(request:Request){if(request.headers.get('origin')!==new URL(request.url).origin)return json({error:'没有权限执行此操作'},403);const actor=await currentBusinessAccount();if(!actor)return json({error:'请先登录'},401);try{if(Number(request.headers.get('content-length')||0)>16384)throw new BillingError('请求内容过大',413);const body=await request.text();if(body.length>16384)throw new BillingError('请求内容过大',413);let value:unknown;try{value=JSON.parse(body);}catch{throw new BillingError('财务请求格式无效');}if(!value||typeof value!=='object'||Array.isArray(value))throw new BillingError('财务请求格式无效');return json(await saveBilling(actor,value as Record<string,unknown>));}catch(error){return failure(error);}}

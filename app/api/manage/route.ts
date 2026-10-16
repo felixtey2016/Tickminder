@@ -1,3 +1,4 @@
+import {isInvoiceLocked,invoiceLockedMessage} from '@/lib/invoice-locks';
 import {classroomCoverageGuard,classroomRequiredMessage,isClassroomCoverageFailure} from '@/lib/classroom-coverage';
 import {groupReader,groupStatement,requireGroup} from "@/lib/group-data";
 import { NextResponse } from "next/server";
@@ -19,7 +20,7 @@ const deletionPermission:Record<string,string>={account:'accounts.delete',teache
 const financialHistoryMessage="此记录已有收费或费用调整历史，不能永久删除。请改为停用，以保留核算依据。";
 const studentFinancialHistory=`SELECT 1 AS found FROM billing_students b WHERE b.group_id=? AND b.student_name=? AND (
  EXISTS(SELECT 1 FROM billing_rates r JOIN billing_rate_versions v ON v.group_id=r.group_id AND v.rate_id=r.id WHERE r.group_id=b.group_id AND r.student_id=b.id)
- OR EXISTS(SELECT 1 FROM billing_adjustments a WHERE a.group_id=b.group_id AND a.student_id=b.id)) LIMIT 1`;
+ OR EXISTS(SELECT 1 FROM billing_adjustments a WHERE a.group_id=b.group_id AND a.student_id=b.id) OR EXISTS(SELECT 1 FROM invoices i WHERE i.group_id=b.group_id AND i.student_id=b.id)) LIMIT 1`;
 const planFinancialHistory=`SELECT 1 AS found FROM plans p JOIN students s ON s.group_id=p.group_id AND s.name=p.student
  JOIN billing_students b ON b.group_id=p.group_id AND b.student_name=p.student
  JOIN billing_subjects bs ON bs.group_id=b.group_id AND bs.student_id=b.id AND bs.subject_key=CASE WHEN p.subject_id IS NOT NULL THEN 'id:'||s.syllabus_id||':'||p.subject_id ELSE 'label:'||lower(trim(p.subject)) END
@@ -173,5 +174,5 @@ export async function POST(request: Request) {
     let cleanupPending=false;
     for (const file of new Set(plans.flatMap(p=>p.files))) {try {await deleteUnreferencedFile(file);} catch {cleanupPending=true;}}
     return NextResponse.json({ok:true,deletedCount:entries.length,warning:cleanupPending?"记录已删除，部分文件清理尚未完成，请联系管理员":undefined});
-  } catch (e) {const permissionFailure=adminPermissionFailure(e);if(permissionFailure)return NextResponse.json({error:permissionFailure.error},{status:permissionFailure.status});if(e instanceof AdminAuthorityError)return NextResponse.json({error:e.message},{status:e.status});if(isAdminAuthorityFailure(e))return NextResponse.json({error:'admin.authorityChanged'},{status:409});if(isClassroomCoverageFailure(e))return NextResponse.json({error:classroomRequiredMessage},{status:409});if(e instanceof Error&&/financial history/i.test(e.message))return NextResponse.json({error:financialHistoryMessage},{status:409});return NextResponse.json({error:e instanceof DeleteError?e.message:"删除未能确认，请刷新列表后再试"},{status:e instanceof DeleteError?e.status:503});}
+  } catch (e) {if(isInvoiceLocked(e))return NextResponse.json({error:invoiceLockedMessage},{status:409});const permissionFailure=adminPermissionFailure(e);if(permissionFailure)return NextResponse.json({error:permissionFailure.error},{status:permissionFailure.status});if(e instanceof AdminAuthorityError)return NextResponse.json({error:e.message},{status:e.status});if(isAdminAuthorityFailure(e))return NextResponse.json({error:'admin.authorityChanged'},{status:409});if(isClassroomCoverageFailure(e))return NextResponse.json({error:classroomRequiredMessage},{status:409});if(e instanceof Error&&/financial history/i.test(e.message))return NextResponse.json({error:financialHistoryMessage},{status:409});return NextResponse.json({error:e instanceof DeleteError?e.message:"删除未能确认，请刷新列表后再试"},{status:e instanceof DeleteError?e.status:503});}
 }
