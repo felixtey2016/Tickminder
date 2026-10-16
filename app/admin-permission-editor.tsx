@@ -135,22 +135,23 @@ export function AdminPermissionEditor({accountId, accountName, groupId, onClose,
     if (savingGuard.current) return;
     if (dirty) setStep("discard"); else onClose();
   }
-  function toggleGrant(key: AdminGrantKey, checked: boolean) {
+  function toggleGrants(keys: AdminGrantKey[], checked: boolean) {
     if (!data || conflict || savingGuard.current) return;
+    const requested = new Set(keys);
     setError("");
     if (checked) {
-      const next = withDependencies([...draft, key], data.catalog);
-      const automatic = next.filter(item => item !== key && !draft.includes(item));
+      const next = withDependencies([...draft, ...keys], data.catalog);
+      const automatic = next.filter(item => !requested.has(item) && !draft.includes(item));
       setDraft(next); setNotice(automatic.length ? `${t("permissions.dependenciesAdded")} ${automatic.map(item => grantLabel(item, data.catalog)).join("; ")}` : "");
     } else {
-      const selected = new Set(draft.filter(item => item !== key));
+      const selected = new Set(draft.filter(item => !requested.has(item)));
       const actions = currentActions(data.catalog);
       let removed = true;
       while (removed) {
         removed = false;
         for (const action of actions) if (selected.has(action.key) && action.requires.some(dependency => !selected.has(dependency))) { selected.delete(action.key); removed = true; }
       }
-      const automatic = draft.filter(item => item !== key && !selected.has(item));
+      const automatic = draft.filter(item => !requested.has(item) && !selected.has(item));
       setDraft(actions.filter(action => selected.has(action.key)).map(action => action.key));
       setNotice(automatic.length ? `${t("permissions.dependentsRemoved")} ${automatic.map(item => grantLabel(item, data.catalog)).join("; ")}` : "");
     }
@@ -206,7 +207,8 @@ export function AdminPermissionEditor({accountId, accountName, groupId, onClose,
           <section className="permission-modules" aria-label={t("permissions.modules")}>{data.catalog.map(module => {
             const reserved = module.availability === "reserved", actions = module.actions.filter(action => module.supportedActions.includes(action.id));
             const selected = actions.filter(action => draft.includes(action.key)).length;
-            return <details className="permission-module" key={module.id} open={reserved ? undefined : selected > 0 || undefined}><summary><span>{t(module.labelKey)}</span><small>{reserved ? t("permissions.reserved") : `${t("permissions.selected")} ${selected} / ${actions.length}`}</small></summary><p className="permission-module-description">{t(module.descriptionKey)}</p>{reserved ? <label className="permission-check permission-reserved"><input type="checkbox" disabled checked={false} readOnly/><span>{t("permissions.reservedHint")}</span></label> : <div className="permission-action-grid">{actions.map(action => <label className="permission-check" key={action.key}><input type="checkbox" data-permission-key={action.key} checked={draft.includes(action.key)} disabled={locked} onChange={event => toggleGrant(action.key, event.target.checked)}/><span>{t(action.labelKey)}</span></label>)}</div>}</details>;
+            const allSelected = actions.length > 0 && selected === actions.length;
+            return <details className="permission-module" key={module.id} open={reserved ? undefined : selected > 0 || undefined}><summary><span>{t(module.labelKey)}</span><small>{reserved ? t("permissions.reserved") : `${t("permissions.selected")} ${selected} / ${actions.length}`}</small></summary><p className="permission-module-description">{t(module.descriptionKey)}</p>{reserved ? <label className="permission-check permission-reserved"><input type="checkbox" disabled checked={false} readOnly/><span>{t("permissions.reservedHint")}</span></label> : <>{actions.length > 0 && <label className="permission-check permission-module-select-all"><input type="checkbox" data-permission-module-all={module.id} checked={allSelected} aria-checked={selected > 0 && !allSelected ? "mixed" : allSelected} aria-label={`${t(module.labelKey)} · ${t(allSelected ? "permissions.clearAll" : "permissions.selectAll")}`} ref={input => { if (input) input.indeterminate = selected > 0 && !allSelected; }} disabled={locked} onChange={event => toggleGrants(actions.map(action => action.key), event.target.checked)}/><span>{t(allSelected ? "permissions.clearAll" : "permissions.selectAll")}</span></label>}<div className="permission-action-grid">{actions.map(action => <label className="permission-check" key={action.key}><input type="checkbox" data-permission-key={action.key} checked={draft.includes(action.key)} disabled={locked} onChange={event => toggleGrants([action.key], event.target.checked)}/><span>{t(action.labelKey)}</span></label>)}</div></>}</details>;
           })}</section>
         </>}
       </>}

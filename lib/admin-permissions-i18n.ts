@@ -174,6 +174,8 @@ export const adminPermissionsEn: Record<string, string> = {
 
 /* This entire map is loaded with the permission editor, not the initial page. */
 const permissionCatalogueLabels: Record<string, [string, string]> = {
+  "permissions.selectAll": ["全选", "Select all"],
+  "permissions.clearAll": ["取消全选", "Deselect all"],
   "permissions.reviewFirstDraft": ["以下变更按当前配置计算。确认后将保存一份权限草稿，当前访问规则保持不变。", "Changes are compared with the current configuration. Confirmation saves a permission draft and leaves current access unchanged."],
   "permissions.configuredBasis": ["未保存时的配置起点", "Starting configuration before a draft is saved"],
   "permissions.dependenciesAdded": ["已自动补选依赖的权限。", "Required permissions were selected automatically."],

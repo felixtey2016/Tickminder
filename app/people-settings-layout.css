@@ -169,6 +169,7 @@
 .permission-module > summary > small { max-width: 100%; color: var(--muted-foreground); font-size: 12px; overflow-wrap: anywhere; }
 .permission-module-description { padding-bottom: 12px; color: var(--muted-foreground); font-size: 13px; line-height: 1.7; }
 .permission-action-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; min-width: 0; }
+.permission-module-select-all { margin-bottom: 12px; }
 .admin-permission-dialog .permission-check { display: flex; align-items: flex-start; gap: 8px; min-width: 0; min-height: 44px; padding: 10px 8px; border: 1px solid #e7e1f1; border-radius: 6px; cursor: pointer; line-height: 1.6; font-size: 14px; font-weight: 400; }
 .admin-permission-dialog .permission-check input[type=checkbox] { flex: 0 0 20px; width: 20px; min-width: 20px; height: 20px; min-height: 20px; margin: 1px 0 0; padding: 0; accent-color: #6245b5; }
 .permission-check > span { min-width: 0; overflow-wrap: anywhere; }
