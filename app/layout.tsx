@@ -5,6 +5,7 @@ import "./ui-refresh.css";
 import "./course-navigation.css";
 import "./teaching-layout.css";
 import "./people-settings-layout.css";
+import "./billing-layout.css";
 import { ActionToastHost } from "@/components/action-toast";
 
 export const metadata: Metadata = {

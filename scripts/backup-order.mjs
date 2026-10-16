@@ -1,8 +1,8 @@
 // Restore structural parents before content. Replay historical rows without
 // applying current publishing rules (an archived class may contain PDFs).
-export const historicalInsertTriggers=['attendance_teaching_conflict','attendance_student_conflict','folder_parent_insert','material_active_class_insert','homework_active_class_insert','material_initial_version','homework_initial_version','class_session_auto_insert','class_session_conflict_insert','class_session_link_insert'];
+export const historicalInsertTriggers=['attendance_teaching_conflict','attendance_student_conflict','folder_parent_insert','material_active_class_insert','homework_active_class_insert','material_initial_version','homework_initial_version','class_session_auto_insert','class_session_conflict_insert','class_session_link_insert','billing_student_identity_insert','billing_subject_identity_insert'];
 export function orderedSnapshotTables(tables) {
- const names=Object.keys(tables),priority=['academic_catalogues','tuition_groups','teachers','students','plans','accounts','classrooms','classroom_folders','class_sessions','lessons','class_session_participants','pdf_files','teaching_materials','homework','homework_recipients','homework_submissions','homework_resubmission_grants','homework_feedback','push_subscriptions','learning_notifications','learning_notification_deliveries','quizzes','quiz_images','quiz_versions','quiz_answer_keys','quiz_version_images','quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations','quiz_practice_events','quiz_assignment_notifications','student_grade_promotions'];
+ const names=Object.keys(tables),priority=['academic_catalogues','tuition_groups','teachers','students','plans','accounts','classrooms','classroom_folders','class_sessions','lessons','class_session_participants','pdf_files','teaching_materials','homework','homework_recipients','homework_submissions','homework_resubmission_grants','homework_feedback','push_subscriptions','learning_notifications','learning_notification_deliveries','quizzes','quiz_images','quiz_versions','quiz_answer_keys','quiz_version_images','quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations','quiz_practice_events','quiz_assignment_notifications','student_grade_promotions','billing_students','billing_subjects','billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments'];
  const ordered=[...priority.filter(name=>names.includes(name)),...names.filter(name=>!priority.includes(name)&&name!=='classroom_content_state'),...(names.includes('classroom_content_state')?['classroom_content_state']:[])];
  return ordered.map(name=>{
   const table=tables[name];if(name!=='classroom_folders')return [name,table];
@@ -55,7 +55,43 @@ export function checkRestoredAcademicStructure(db) {
   if(!syllabus||!Number.isSafeInteger(promotion.cycle)||promotion.cycle<1||from<0||syllabus.grades[from+1]!==promotion.to_grade||typeof promotion.confirmed_by!=='string'||!promotion.confirmed_by||!Number.isFinite(Date.parse(promotion.confirmed_at)))fail();
  }
 }
+export function checkRestoredBillingStructure(db) {
+ const tables=['billing_students','billing_subjects','billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments'];
+ const present=db.prepare(`SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN (${tables.map(()=>'?').join(',')})`).get(...tables).count;
+ if(!present)return;
+ const fail=()=>{throw Error('Restored billing relationships or financial metadata are invalid');};
+ if(present!==tables.length)fail();
+ const bad=db.prepare(`SELECT 1 FROM billing_students b LEFT JOIN students s ON s.group_id=b.group_id AND s.name=b.student_name LEFT JOIN tuition_groups g ON g.id=b.group_id WHERE s.name IS NULL OR g.id IS NULL
+ UNION ALL SELECT 1 FROM billing_subjects s LEFT JOIN billing_students b ON b.id=s.student_id AND b.group_id=s.group_id WHERE b.id IS NULL
+ UNION ALL SELECT 1 FROM billing_policies p LEFT JOIN tuition_groups g ON g.id=p.group_id LEFT JOIN billing_policy_versions v ON v.id=p.current_version_id AND v.group_id=p.group_id AND v.revision=p.revision WHERE g.id IS NULL OR (p.revision=0 AND (p.current_version_id IS NOT NULL OR EXISTS(SELECT 1 FROM billing_policy_versions x WHERE x.group_id=p.group_id))) OR (p.revision>0 AND (v.id IS NULL OR EXISTS(SELECT 1 FROM billing_policy_versions x WHERE x.group_id=p.group_id AND x.revision>p.revision)))
+ UNION ALL SELECT 1 FROM billing_policy_versions v LEFT JOIN billing_policies p ON p.group_id=v.group_id WHERE p.group_id IS NULL
+ UNION ALL SELECT 1 FROM billing_rates r LEFT JOIN billing_subjects s ON s.group_id=r.group_id AND s.student_id=r.student_id AND s.subject_key=r.subject_key LEFT JOIN billing_rate_versions v ON v.id=r.current_version_id AND v.group_id=r.group_id AND v.rate_id=r.id AND v.revision=r.revision WHERE s.id IS NULL OR (r.revision=0 AND (r.current_version_id IS NOT NULL OR EXISTS(SELECT 1 FROM billing_rate_versions x WHERE x.rate_id=r.id))) OR (r.revision>0 AND (v.id IS NULL OR EXISTS(SELECT 1 FROM billing_rate_versions x WHERE x.rate_id=r.id AND x.revision>r.revision)))
+ UNION ALL SELECT 1 FROM billing_rate_versions v LEFT JOIN billing_rates r ON r.id=v.rate_id AND r.group_id=v.group_id WHERE r.id IS NULL
+ UNION ALL SELECT 1 FROM billing_operations o LEFT JOIN tuition_groups g ON g.id=o.group_id WHERE g.id IS NULL
+ UNION ALL SELECT 1 FROM billing_adjustments a LEFT JOIN billing_students b ON b.id=a.student_id AND b.group_id=a.group_id WHERE b.id IS NULL
+ UNION ALL SELECT 1 FROM billing_policies p WHERE p.revision<>(SELECT count(*) FROM billing_policy_versions v WHERE v.group_id=p.group_id)
+ UNION ALL SELECT 1 FROM billing_rates r WHERE r.revision<>(SELECT count(*) FROM billing_rate_versions v WHERE v.rate_id=r.id AND v.group_id=r.group_id)
+ UNION ALL SELECT 1 FROM billing_adjustments GROUP BY group_id,line_id HAVING count(*)<>max(revision) OR count(DISTINCT student_id)>1 OR count(DISTINCT month)>1 LIMIT 1`).get();
+ if(bad)fail();
+ const identifier=value=>typeof value==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(value);
+ const text=(value,max)=>typeof value==='string'&&value.trim().length>0&&value.length<=max;
+ const integer=(value,min=0,max=Number.MAX_SAFE_INTEGER)=>Number.isSafeInteger(value)&&value>=min&&value<=max;
+ const date=value=>typeof value==='string'&&/^20\d\d-\d\d-\d\d$/.test(value)&&Number.isFinite(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
+ const instant=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value;
+ for(const row of db.prepare('SELECT * FROM billing_students').all())if(!identifier(row.id)||!text(row.student_name,160)||!instant(row.created_at))fail();
+ for(const row of db.prepare('SELECT * FROM billing_subjects').all())if(!identifier(row.id)||!text(row.subject_key,200)||!text(row.subject,100)||!instant(row.created_at))fail();
+ for(const name of ['billing_policies','billing_rates'])for(const row of db.prepare('SELECT * FROM '+name).all())if((name==='billing_rates'&&!identifier(row.id))||!integer(row.revision)||!instant(row.updated_at)||(row.current_version_id!==null&&!identifier(row.current_version_id)))fail();
+ for(const row of db.prepare('SELECT * FROM billing_policy_versions').all())if(!identifier(row.id)||!integer(row.revision,1)||row.currency!=='MYR'||!['minute','quarter_up'].includes(row.hour_rounding)||!['personal','teaching'].includes(row.attendance_basis)||!['manual','daily'].includes(row.monthly_partial)||!date(row.effective_from)||!text(row.actor_id,160)||!instant(row.created_at))fail();
+ for(const row of db.prepare('SELECT * FROM billing_rate_versions').all())if(!identifier(row.id)||!integer(row.revision,1)||!['hour','lesson','month'].includes(row.mode)||!integer(row.amount_cents,1,100000000)||row.currency!=='MYR'||!date(row.effective_from)||!text(row.subject_snapshot,100)||!text(row.actor_id,160)||!instant(row.created_at))fail();
+ for(const row of db.prepare('SELECT * FROM billing_operations').all()){
+  if(!identifier(row.operation_id)||!text(row.actor_id,160)||!text(row.action,80)||typeof row.request_hash!=='string'||!/^[a-f0-9]{64}$/.test(row.request_hash)||!instant(row.created_at))fail();
+  let result;try{result=JSON.parse(row.result_json);}catch{fail();}if(!result||typeof result!=='object'||Array.isArray(result))fail();
+ }
+ for(const row of db.prepare('SELECT * FROM billing_adjustments').all())if(!identifier(row.id)||!/^20\d\d-(?:0[1-9]|1[0-2])$/.test(row.month)||!text(row.line_id,512)||!integer(row.revision,1)||(row.amount_cents!==null&&!integer(row.amount_cents,0,100000000))||typeof row.basis_hash!=='string'||!/^[a-f0-9]{64}$/.test(row.basis_hash)||!text(row.reason,1000)||!text(row.actor_id,160)||!instant(row.created_at))fail();
+ if(db.prepare('PRAGMA foreign_key_check').all().length)fail();
+}
 export function checkRestoredFolderStructure(db) {
+ checkRestoredBillingStructure(db);
  checkRestoredAcademicStructure(db);
  if(!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='classroom_folders'").get())return;
  const invalid=db.prepare(`SELECT 1 FROM classroom_folders f LEFT JOIN classrooms c ON c.id=f.classroom_id LEFT JOIN classroom_folders p ON p.id=f.parent_id WHERE c.id IS NULL OR c.group_id<>f.group_id OR (f.parent_id IS NOT NULL AND (p.id IS NULL OR p.classroom_id<>f.classroom_id OR p.group_id<>f.group_id)) LIMIT 1`).get();
@@ -139,10 +175,10 @@ export function checkRestoredFolderStructure(db) {
  if(invalid||db.prepare('PRAGMA foreign_key_check').all().length)throw Error('Restored folder relationships are invalid');
 }
 
-export function snapshotVersion(data){return Number(data?.format?.match(/^timelyo-d1-v(19|18|17|16|15|14|13|12|11|10|[1-9])$/)?.[1]||0);}
+export function snapshotVersion(data){return Number(data?.format?.match(/^timelyo-d1-v(20|19|18|17|16|15|14|13|12|11|10|[1-9])$/)?.[1]||0);}
 export function expectedSnapshotTables(version){
  const base=['accounts','assignments','audit','lessons','local_credentials','login_attempts','plans','reschedule_requests','sessions','students','teachers','pdf_files','storage_quota','teaching_materials','material_recipients','homework','homework_recipients','homework_submissions','study_blocks'];
- return [...(version>=9?['tuition_groups']:[]),...base,...(version>=2?['classrooms','classroom_members','classroom_announcements']:[]),...(version>=3?['google_identities']:[]),...(version>=4?['academic_terms']:[]),...(version>=7?['notification_items','notification_deliveries','push_subscriptions','notification_runtime']:[]),...(version>=8?['site_notifications']:[]),...(version>=10?['classroom_folders','classroom_content_state']:[]),...(version>=11?['learning_versions','homework_score_history']:[]),...(version>=12?['homework_resubmission_grants','homework_feedback','learning_notifications','learning_notification_deliveries']:[]),...(version>=13?['class_sessions','class_session_participants']:[]),...(version>=15?['quizzes','quiz_versions','quiz_answer_keys','quiz_images','quiz_version_images']:[]),...(version>=16?['quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations']:[]),...(version>=17?['quiz_practice_events','quiz_assignment_notifications']:[]),...(version>=18?['academic_catalogues','student_grade_promotions']:[])];
+ return [...(version>=9?['tuition_groups']:[]),...base,...(version>=2?['classrooms','classroom_members','classroom_announcements']:[]),...(version>=3?['google_identities']:[]),...(version>=4?['academic_terms']:[]),...(version>=7?['notification_items','notification_deliveries','push_subscriptions','notification_runtime']:[]),...(version>=8?['site_notifications']:[]),...(version>=10?['classroom_folders','classroom_content_state']:[]),...(version>=11?['learning_versions','homework_score_history']:[]),...(version>=12?['homework_resubmission_grants','homework_feedback','learning_notifications','learning_notification_deliveries']:[]),...(version>=13?['class_sessions','class_session_participants']:[]),...(version>=15?['quizzes','quiz_versions','quiz_answer_keys','quiz_images','quiz_version_images']:[]),...(version>=16?['quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations']:[]),...(version>=17?['quiz_practice_events','quiz_assignment_notifications']:[]),...(version>=18?['academic_catalogues','student_grade_promotions']:[]),...(version>=20?['billing_students','billing_subjects','billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments']:[])];
 }
 export function snapshotObjects(database){
  const pdfs=database?.tables?.pdf_files?.rows;if(!Array.isArray(pdfs))throw Error('Database export lacks PDF metadata');

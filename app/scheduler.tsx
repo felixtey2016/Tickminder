@@ -12,6 +12,7 @@ import {groupFetch,setClientGroup} from "@/lib/group-client";
 import { BulkDeleteTool } from "./bulk-delete";
 import { FilterScope, useFilterPreference } from "@/lib/filter-preferences";
 import { getLanguage, LANGUAGE_KEY, setLanguage, t, type Language } from "@/lib/i18n";
+import {formatDurationHours} from '@/lib/duration-format';
 import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
 import { clearDialogHistory, useDialogState } from "@/lib/use-dialog-state";
 import { FilterPanel } from "@/components/filter-panel";
@@ -38,6 +39,7 @@ const GroupConsole=lazy(()=>import("./group-console").then(m=>({default:m.GroupC
 const TeacherLearning = lazy(() => import("./learning-portal").then(module => ({default: module.TeacherLearning})));
 const AdminLearning = lazy(() => import("./admin-learning").then(module => ({default: module.AdminLearning})));
 const QuizWorkspace=lazy(()=>import('./quiz-workspace'));
+const BillingWorkspace=lazy(()=>import('./billing-workspace'));
 import type { Classroom } from "./classrooms-page";
 const ClassroomsPage = lazy(() => import("./classrooms-page").then(module => ({default: module.ClassroomsPage})));
 import { Timetable } from "./timetables";
@@ -570,7 +572,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "list", label: "课程列表", Icon: List },
         { id: "students", label: "学生时间表", Icon: ContactRound },
         { id: "teachers", label: "老师时间表", Icon: CalendarClock },
-        { id: "subjects", label: "学生科目配对", Icon: BookOpen },
+        { id: "subjects", label: "学生课程设置", Icon: BookOpen },
         { id: "teacherRoster", label: "老师名单", Icon: UserRound },
         { id: "studentRoster", label: "学生名单", Icon: UsersRound },
         { id: "accounts", label: "账号管理", Icon: Users },
@@ -606,7 +608,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
 };
 
 const NAV_GROUPS: Record<NavigationRole, Array<{ label: string; ids: string[] }>> = {
- admin: [{label:"",ids:["groups","home"]},{label:"课程管理",ids:["courses"]},{label:"教学",ids:["classrooms","homework","materials","quizzes","subjects"]},{label:"管理与设置",ids:["people","settings"]},{label:"",ids:["notifications"]}],
+ admin: [{label:"",ids:["groups","home"]},{label:"课程管理",ids:["courses"]},{label:"教学",ids:["classrooms","homework","materials","quizzes","subjects"]},{label:"财务",ids:["billing"]},{label:"管理与设置",ids:["people","settings"]},{label:"",ids:["notifications"]}],
  teacher: [{label:"",ids:["home"]},{label:"课程管理",ids:["courses"]},{label:"教学",ids:["classrooms","students","homework","materials","quizzes"]},{label:"我的账号",ids:["notifications","myAccount"]}],
  student: [{label:"",ids:["home"]},{label:"学习",ids:["courses"]},{label:"班级与作业",ids:["classrooms","homework","materials","quizzes"]},{label:"我的账号",ids:["notifications","myAccount"]}],
  pending: [{label:"",ids:["home"]},{label:"我的账号",ids:["notifications","myAccount"]}],
@@ -634,7 +636,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     changeLanguage: (next: Language) => void;
 }) {
     const role = account.role as NavigationRole;
-    const items = [...(account.isOwner?[{id:"groups",label:"平台总控制台",Icon:Building2}]:[]),...NAV_ITEMS[role],...(role!=="pending"?[{id:"courses",label:"course.nav.title",Icon:CalendarDays}]:[]),...(role==="admin"?[{id:"groupInfo",label:"集团信息",Icon:Building2},{id:"people",label:"人员与账号",Icon:UsersRound},{id:"settings",label:"设置",Icon:Settings}]:[]), { id: "notifications", label: "通知中心", Icon: Bell }];
+    const items = [...(account.isOwner?[{id:"groups",label:"平台总控制台",Icon:Building2},{id:'billing',label:'学费与账单',Icon:FileText}]:[]),...NAV_ITEMS[role],...(role!=="pending"?[{id:"courses",label:"course.nav.title",Icon:CalendarDays}]:[]),...(role==="admin"?[{id:"groupInfo",label:"集团信息",Icon:Building2},{id:"people",label:"人员与账号",Icon:UsersRound},{id:"settings",label:"设置",Icon:Settings}]:[]), { id: "notifications", label: "通知中心", Icon: Bell }];
     const [badgeNow,setBadgeNow]=useState(()=>Date.now());
     useEffect(()=>{const timer=window.setInterval(()=>setBadgeNow(Date.now()),30_000);return()=>window.clearInterval(timer);},[]);
     const badgeCounts=navigationBadges(role,account.id || "",lessons,state?.proposals || [],badgeNow);
@@ -773,7 +775,9 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
         } else if (activeView === "teachers") {
             pageContent = <Timetable type="teacher" lessons={lessons} students={state?.students || []} teachers={(state?.allTeachers || []).map(row => row.name).sort()} month={selectedMonth} setMonth={setSelectedMonth}/>;
         } else if (activeView === "subjects") {
-            pageContent = <SubjectAdmin studentProfiles={state?.allStudents||[]} students={state?.students || []} teachers={state?.teachers || []} plans={state?.allPlans || []} mutate={mutate} busy={busy}/>;
+            pageContent = <SubjectAdmin studentProfiles={state?.allStudents||[]} students={state?.students || []} teachers={state?.teachers || []} plans={state?.allPlans || []} mutate={mutate} busy={busy} canFinance={Boolean(account.isOwner)} onPreview={()=>choose('billing')}/>;
+        } else if (activeView==='billing'&&account.isOwner) {
+            pageContent=<BillingWorkspace key={account.groupId} students={(state?.allStudents||[]).map(student=>student.name)} onCourses={()=>choose('subjects')}/>;
         } else if (["teacherRoster", "studentRoster", "accounts"].includes(activeView)) {
             const view = activeView === "teacherRoster" ? "teachers" : activeView === "studentRoster" ? "students" : activeView as "binding" | "accounts";
             pageContent = <RosterAdmin account={account} state={state} mutate={mutate} busy={busy} view={view}/>;
@@ -808,7 +812,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
             {menuOpen && <aside id="workspace-menu" className="workspace-menu" aria-label={t("功能菜单")}>
                 <SignedInIdentity account={account}/>
                 <nav className="menu-links" aria-label={t("功能菜单")}>
-                    {NAV_GROUPS[role].map(group => <div className="menu-group" key={group.ids.join('-')}>{group.label && <h2 className="menu-group-title">{t(group.label)}</h2>}{group.ids.map(id => items.find(item => item.id === id)!).filter(Boolean).map(item => <button key={item.id} type="button" data-testid={`menu-${item.id}`} className={"menu-link" + (activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? " active" : "")} aria-current={activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? "page" : undefined} onClick={() => choose(item.id)}><item.Icon size={19} aria-hidden="true"/><span>{t(item.label)}</span><MenuBadge count={item.id === "courses" ? courseBadgeCount(role,badgeCounts) : badgeCounts[item.id as keyof typeof badgeCounts] || 0} includeUnread={item.id==="notifications"} quizOnly={item.id==="quizzes"}/></button>)}</div>)}
+                    {NAV_GROUPS[role].filter(group=>group.ids.some(id=>items.some(item=>item.id===id))).map(group => <div className="menu-group" key={group.ids.join('-')}>{group.label && <h2 className="menu-group-title">{t(group.label)}</h2>}{group.ids.map(id => items.find(item => item.id === id)!).filter(Boolean).map(item => <button key={item.id} type="button" data-testid={`menu-${item.id}`} className={"menu-link" + (activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? " active" : "")} aria-current={activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? "page" : undefined} onClick={() => choose(item.id)}><item.Icon size={19} aria-hidden="true"/><span>{t(item.label)}</span><MenuBadge count={item.id === "courses" ? courseBadgeCount(role,badgeCounts) : badgeCounts[item.id as keyof typeof badgeCounts] || 0} includeUnread={item.id==="notifications"} quizOnly={item.id==="quizzes"}/></button>)}</div>)}
                 </nav>
                 <div className="menu-utilities">
                     <button type="button" className="menu-link" onClick={reload}><RefreshCw size={19}/><span>{t("刷新")}</span></button>
@@ -860,7 +864,7 @@ function AdminDashboard({ state, lessons, open, view,mutate,busy }: {
     const upcoming = lessons.filter(l => l.status === "scheduled" && l.plannedStart >= new Date().toISOString()).slice(0, 8);
     if (view === "attention") return <><SessionAttendanceBoard sessions={state?.attendanceSessions} role="admin" mode="review" mutate={mutate} busy={busy}/><AttentionPanel lessons={lessons} open={open} pendingReviewCount={review.length}/></>;
     if (view === "activity") return <ActivityLog items={state?.activity || []}/>;
-    return <div className="dashboard"><TeachingHoursPanel sessions={state?.attendanceSessions} month={state?.month||""}/><div className="metric-grid"><div className="metric"><span>{t("学生累计出席课时")}</span><strong>{summary.reduce((s, x) => s + x.completed, 0).toFixed(2)} <small>h</small></strong><p>{state?.month}{t(" · 已记录出席")}</p></div><div className="metric"><span>{t("\u672A\u6765\u5DF2\u5B89\u6392\u8BFE\u65F6")}</span><strong>{summary.reduce((s, x) => s + x.upcoming, 0).toFixed(2)} <small>h</small></strong><p>{t("\u6240\u9009\u6708\u4EFD")}</p></div><div className="metric attention"><span>{t("待复核记录")}</span><strong>{review.length}</strong><p>{t("已完成课时按实际时长计入统计")}</p></div></div><div className="dashboard-columns"><section className="panel"><div className="section-head"><h2>{t("待复核记录")}</h2><span>{review.length}{t(" \u6761")}</span></div><div className="lesson-stack">{review.length ? review.map(l => <LessonCard key={l.id} lesson={l} admin open={open}/>) : <div className="empty">{t("目前没有待复核记录。")}</div>}</div></section><section className="panel"><div className="section-head"><h2>{t("\u5373\u5C06\u4E0A\u8BFE")}</h2></div>{upcoming.length ? upcoming.map(l => <div className="upcoming-item" key={l.id}><span>{day(l.plannedStart)}</span><strong>{l.student} · {l.subject}</strong><small>{time(l.plannedStart)}–{time(l.plannedEnd)} · {l.teacherName}</small></div>) : <div className="empty">{t("\u6682\u65E0\u8BFE\u7A0B\u3002")}</div>}</section></div><section className="panel"><div className="section-head"><h2>{t("\u5B66\u751F\u79D1\u76EE\u7EDF\u8BA1")}</h2><span>{t("按实际开始日期归属月份")}</span></div><div className="summary-grid">{summary.map(s => <div className="summary-row" key={s.key}><strong>{s.key.replace("|", " · ")}</strong><span>{s.completed.toFixed(2)} h · {s.lessons}{t(" \u5802\u5DF2\u4E0A\u8BFE")}</span><span>{s.upcoming.toFixed(2)}{t(" h \u672A\u6765")}</span><span>{s.pending}{t(" 待记录出席 · ")}{s.makeupNeeded}{t(" \u5F85\u8865")}</span></div>)}</div></section></div>;
+    return <div className="dashboard"><TeachingHoursPanel sessions={state?.attendanceSessions} month={state?.month||""}/><div className="metric-grid"><div className="metric"><span>{t("学生累计出席课时")}</span><strong>{formatDurationHours(summary.reduce((s,x)=>s+x.completed,0),getLanguage())}</strong><p>{state?.month}{t(" · 已记录出席")}</p></div><div className="metric"><span>{t("\u672A\u6765\u5DF2\u5B89\u6392\u8BFE\u65F6")}</span><strong>{formatDurationHours(summary.reduce((s,x)=>s+x.upcoming,0),getLanguage())}</strong><p>{t("\u6240\u9009\u6708\u4EFD")}</p></div><div className="metric attention"><span>{t("待复核记录")}</span><strong>{review.length}</strong><p>{t("已完成课时按实际时长计入统计")}</p></div></div><div className="dashboard-columns"><section className="panel"><div className="section-head"><h2>{t("待复核记录")}</h2><span>{review.length}{t(" \u6761")}</span></div><div className="lesson-stack">{review.length ? review.map(l => <LessonCard key={l.id} lesson={l} admin open={open}/>) : <div className="empty">{t("目前没有待复核记录。")}</div>}</div></section><section className="panel"><div className="section-head"><h2>{t("\u5373\u5C06\u4E0A\u8BFE")}</h2></div>{upcoming.length ? upcoming.map(l => <div className="upcoming-item" key={l.id}><span>{day(l.plannedStart)}</span><strong>{l.student} · {l.subject}</strong><small>{time(l.plannedStart)}–{time(l.plannedEnd)} · {l.teacherName}</small></div>) : <div className="empty">{t("\u6682\u65E0\u8BFE\u7A0B\u3002")}</div>}</section></div><section className="panel"><div className="section-head"><h2>{t("\u5B66\u751F\u79D1\u76EE\u7EDF\u8BA1")}</h2><span>{t("按实际开始日期归属月份")}</span></div><div className="summary-grid">{summary.map(s => <div className="summary-row" key={s.key}><strong>{s.key.replace("|", " · ")}</strong><span>{formatDurationHours(s.completed,getLanguage())} · {s.lessons}{t(" \u5802\u5DF2\u4E0A\u8BFE")}</span><span>{formatDurationHours(s.upcoming,getLanguage())} · {t("未来已安排")}</span><span>{s.pending}{t(" 待记录出席 · ")}{s.makeupNeeded}{t(" \u5F85\u8865")}</span></div>)}</div></section></div>;
 }
 function RosterAdmin({ account, state, mutate, busy, view }: { account: Account; state: State | null; mutate: (x: Record<string, unknown>) => Promise<boolean>; busy: boolean; view: "teachers" | "students" | "binding" | "accounts" }) {
     if (view === "teachers" || view === "students") return <PeopleDirectory kind={view === "teachers" ? "teacher" : "student"} people={view === "teachers" ? state?.allTeachers || [] : state?.allStudents || []} mutate={mutate} busy={busy}/>;

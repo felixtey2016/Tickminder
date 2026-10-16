@@ -9,8 +9,11 @@ import {drizzle} from 'drizzle-orm/d1';
 process.on('uncaughtException',error=>{console.error(error.name+': '+error.message);console.error(String(error.stack).split('\n').filter(line=>!line.includes('data:text/')).slice(0,8).join('\n'));process.exit(1);});
 
 const sqlite=new DatabaseSync(':memory:');
+const fixtureOwnerEmail='platform-owner@example.test';
+const configuredOwnerEmail=fs.readFileSync(new URL('../lib/owner.ts',import.meta.url),'utf8').match(/export const OWNER_EMAIL\s*=\s*"([^"]+)";/)?.[1];
+assert(configuredOwnerEmail,'Owner constant is required for the isolated identity fixture');
 const migrations=fs.readdirSync(new URL('../drizzle/',import.meta.url)).filter(n=>n.endsWith('.sql')).sort();
-for(const file of migrations)sqlite.exec(fs.readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8'));
+for(const file of migrations)sqlite.exec(fs.readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8').replaceAll(configuredOwnerEmail,fixtureOwnerEmail));
 function statement(sql,values=[]) {
   const execute=arrays=>{const st=sqlite.prepare(sql);if(arrays)st.setReturnArrays(true);const reading=st.columns().length>0;return reading?{results:st.all(...values),meta:{changes:0}}:{results:[],meta:st.run(...values)};};
   return {bind:(...v)=>statement(sql,v),all:async()=>execute(false),raw:async()=>execute(true).results,first:async()=>execute(false).results[0]||null,run:async()=>execute(false),execute:()=>execute(false)};
@@ -25,7 +28,8 @@ const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'tickminder-groups-')),stub
 process.once('exit',()=>{const resolved=path.resolve(temporary);if(path.dirname(resolved)===path.resolve(os.tmpdir())&&path.basename(resolved).startsWith('tickminder-groups-'))fs.rmSync(resolved,{recursive:true,force:true});});
 fs.writeFileSync(stubPath,'export const {env,cookies,headers,NextResponse}=globalThis.__groups;'+['getDb','currentAccount','currentIdentity','currentBusinessAccount','createSession','hashToken','verifyGoogleCredential'].map(name=>`export const ${name}=(...args)=>globalThis.__groups.${name}(...args);`).join(''));
 const stub=pathToFileURL(stubPath).href,cache=new Map();
-function compile(file){if(cache.has(file))return cache.get(file);const output=path.join(temporary,file.replace(/\.ts$/,'.mjs')),url=pathToFileURL(output).href;cache.set(file,url);let source=fs.readFileSync(new URL('../'+file,import.meta.url),'utf8');for(const [,spec]of [...source.matchAll(/from ["']([^"']+)["']/g)]){const replacement=['cloudflare:workers','next/headers','next/server','@/db','@/lib/auth'].includes(spec)?stub:spec.startsWith('@/')?compile(spec.slice(2)+'.ts'):spec.startsWith('.')?compile(path.posix.normalize(path.posix.join(path.posix.dirname(file),spec))+(spec.endsWith('.ts')?'':'.ts')):import.meta.resolve(spec);source=source.replaceAll('"'+spec+'"','"'+replacement+'"').replaceAll("'"+spec+"'","'"+replacement+"'");}fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText);return url;}
+// Run the real owner-check algorithm with a fictional identity constant.
+function compile(file){if(cache.has(file))return cache.get(file);const output=path.join(temporary,file.replace(/\.ts$/,'.mjs')),url=pathToFileURL(output).href;cache.set(file,url);let source=fs.readFileSync(new URL('../'+file,import.meta.url),'utf8');if(file==='lib/owner.ts')source=source.replace(/(export const OWNER_EMAIL\s*=\s*)"[^"]+";/,(_,prefix)=>prefix+JSON.stringify(fixtureOwnerEmail)+';');for(const [,spec]of [...source.matchAll(/from ["']([^"']+)["']/g)]){const replacement=['cloudflare:workers','next/headers','next/server','@/db','@/lib/auth'].includes(spec)?stub:spec.startsWith('@/')?compile(spec.slice(2)+'.ts'):spec.startsWith('.')?compile(path.posix.normalize(path.posix.join(path.posix.dirname(file),spec))+(spec.endsWith('.ts')?'':'.ts')):import.meta.resolve(spec);source=source.replaceAll('"'+spec+'"','"'+replacement+'"').replaceAll("'"+spec+"'","'"+replacement+"'");}fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText);return url;}
 async function load(file){const url=compile(file);return{url,module:await import(url)};}
 
 const schema=(await load('db/schema.ts')).module;runtime.getDb=()=>drizzle(d1,{schema});
@@ -43,7 +47,7 @@ for(const group of ['next-genn-edu','school-b']) {
     sqlite.prepare('INSERT INTO local_credentials(account_id,username,password_hash,must_change_password,updated_at) VALUES(?,?,?,0,?)').run(id,id,passwordHash,now);
   }
 }
-sqlite.prepare("INSERT INTO accounts(group_id,id,email,name,role,created_at,name_confirmed_at,activated_at) VALUES(NULL,'owner','felixtey2016@gmail.com','Platform Owner','admin',?,?,?)").run(now,now,now);
+sqlite.prepare("INSERT INTO accounts(group_id,id,email,name,role,created_at,name_confirmed_at,activated_at) VALUES(NULL,'owner',?,'Platform Owner','admin',?,?,?)").run(fixtureOwnerEmail,now,now,now);
 sqlite.prepare("INSERT INTO local_credentials(account_id,username,password_hash,must_change_password,updated_at) VALUES('owner','owner',?,0,?)").run(passwordHash,now);
 async function login(id,groupHeader) {
   const token='fixture-session-'+crypto.randomUUID();cookieValues.tuition_session=token;requestHeaders=new Headers(groupHeader?{'x-tickminder-group':groupHeader}:{});
@@ -108,6 +112,25 @@ for(const [name,method,foreignToken,status] of [['backup-export','GET',runtime.e
  for(const token of ['',foreignToken]){
   const response=await handler[method](new Request('https://test.invalid/api/'+name,{method,headers:token?{authorization:'Bearer '+token}:{}}));
   check(response.status===status,'dedicated task secret required '+name);
+ }
+}
+// Part 22 pilot: financial audit details are Owner-only, with filtering in SQL
+// before LIMIT. New billing events must not crowd normal events out of an
+// ordinary administrator's latest-30 list or appear in shared state/rosters.
+for(const group of ['next-genn-edu','school-b']){
+ const identity=sqlite.prepare('SELECT id FROM billing_students WHERE group_id=? AND student_name=?').get(group,'Student Same').id;
+ const subject=sqlite.prepare('SELECT subject_key FROM billing_subjects WHERE group_id=? AND student_id=?').get(group,identity).subject_key;
+ const rate='privacy-rate-'+group,version=rate+'-version';
+ sqlite.prepare('INSERT INTO billing_rates(id,group_id,student_id,subject_key,revision,current_version_id,updated_at) VALUES(?,?,?,?,1,?,?)').run(rate,group,identity,subject,version,now);
+ sqlite.prepare('INSERT INTO billing_rate_versions(id,group_id,rate_id,revision,mode,amount_cents,currency,effective_from,subject_snapshot,actor_id,created_at) VALUES(?,?,?,1,?,?,?,?,?,?,?)').run(version,group,rate,'hour',9876543,'MYR','2032-01-01','Science','owner',now);
+ for(let index=0;index<35;index++)sqlite.prepare('INSERT INTO audit(group_id,id,lesson_id,actor_id,action,after_json,at) VALUES(?,?,?,?,?,?,?)').run(group,'normal-audit-'+group+'-'+index,'privacy-fixture','owner','normal.fixture',JSON.stringify({visible:'ordinary event '+index}),new Date(Date.UTC(2032,0,1,0,0,index)).toISOString());
+ for(let index=0;index<40;index++)sqlite.prepare('INSERT INTO audit(group_id,id,lesson_id,actor_id,action,after_json,at) VALUES(?,?,?,?,?,?,?)').run(group,'financial-audit-'+group+'-'+index,'billing','owner','billing.saveRate',JSON.stringify({feePrivacySentinel:'FICTIONAL_PRIVATE_FEE',amountCents:9876543}),new Date(Date.UTC(2033,0,1,0,0,index)).toISOString());
+ await login('owner',group);const ownerActivity=await ok('state',null,'?scope=activity');check(ownerActivity.activity.length===30&&ownerActivity.activity.every(entry=>entry.action==='billing.saveRate'&&entry.groupId===group),'Owner sees current-group financial history');check(JSON.stringify(ownerActivity).includes('FICTIONAL_PRIVATE_FEE'),'Owner retains authorized financial audit payload');
+ await login(group+'-admin');const adminActivity=await ok('state',null,'?scope=activity');check(adminActivity.activity.length===30,'financial SQL filter runs before latest-30 limit');check(adminActivity.activity.every(entry=>entry.action==='normal.fixture'&&entry.groupId===group),'administrator sees normal events from own group only');check(!JSON.stringify(adminActivity).includes('FICTIONAL_PRIVATE_FEE'),'administrator cannot receive financial audit fields');
+ for(const role of ['admin','teacher','student']){
+  await login(group+'-'+role);const core=await ok('state',null,'?scope=core'),encoded=JSON.stringify(core);check(!encoded.includes('9876543')&&!encoded.includes('amountCents')&&!encoded.includes('billing_rate')&&!encoded.includes('FICTIONAL_PRIVATE_FEE'),'shared core contains no financial rates for '+group+' '+role);
+  const account=await auth.currentBusinessAccount(),roster=await(await load('lib/roster.ts')).module.readRoster(account),rosterJson=JSON.stringify(roster);check(!rosterJson.includes('9876543')&&!rosterJson.includes('amountCents')&&!rosterJson.includes('billing_rate'),'shared roster contains no financial rates for '+group+' '+role);
+  if(role!=='admin')check((await call('state',null,'?scope=activity')).status===403,'non-admin cannot request activity '+role);
  }
 }
 check(sqlite.prepare('PRAGMA integrity_check').get().integrity_check==='ok','SQLite integrity');sqlite.close();

@@ -118,6 +118,15 @@ const fresh=await (await manage.POST(request({action:'previewDelete',entries})))
 assert.equal((await manage.POST(request({entries,confirm:true,fingerprint:fresh.fingerprint,previewAt:'2020-01-01T00:00:00Z'}))).status,409);
 assert.equal((await manage.POST(request({entries,confirm:true,fingerprint:fresh.fingerprint,previewAt:fresh.previewAt}))).status,200);
 assert.equal(db.prepare('SELECT count(*) AS n FROM lessons').get().n,0);assert.equal(db.prepare('SELECT count(*) AS n FROM reschedule_requests').get().n,0);
+// Keep raw attendance seconds in the preview DTO. Rounding 1h00m29s to 1.01h
+// before rendering would incorrectly display 1h01m instead of 1h.
+db.prepare('INSERT INTO lessons (id,student,subject,teacher_name,planned_start,planned_end,actual_start,actual_end,status,chargeable,reviewed_at,created_by,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)').run('precise-duration','Synthetic Student','Science','Teacher','2026-09-01T00:00:00Z','2026-09-01T01:00:00Z','2026-09-01T00:00:00Z','2026-09-01T01:00:29Z','completed',1,now,'admin',now);
+const exactPreview=await (await manage.POST(request({action:'previewDelete',entries:[{kind:'lesson',id:'precise-duration'}]}))).json();
+assert.equal(exactPreview.items[0].hours,3629/3600,'Deletion preview retains original time precision');
+const duration=(await load('lib/duration-format.ts')).module;
+assert.equal(duration.formatDurationHours(exactPreview.items[0].hours,'en'),'1 hour');
+assert.ok(db.prepare("SELECT id FROM lessons WHERE id='precise-duration'").get(),'Duration preview remains read-only');
+assert.equal((await manage.POST(request({kind:'lesson',id:'precise-duration',confirm:true}))).status,200);
 const blocked=await (await manage.POST(request({action:'previewDelete',entries:[{kind:'account',id:'admin'},{kind:'account',id:'other'}]}))).json();
 assert.equal(blocked.blocked.length,1);assert.equal(blocked.items.length,1);
 assert.equal((await manage.POST(request({entries:[{kind:'account',id:'other'},{kind:'account',id:'admin'}],confirm:true,fingerprint:blocked.fingerprint,previewAt:blocked.previewAt}))).status,403);
@@ -169,5 +178,49 @@ for(const [table,seed] of references){const target='history-'+table;account(targ
 }
 account('without-quiz-history','teacher','Unused');actor={groupId:historyGroup,id:'admin',role:'admin',email:''};assert.equal((await manage.POST(request({kind:'account',id:'without-quiz-history',confirm:true}))).status,200);assert.equal(db.prepare('SELECT id FROM accounts WHERE id=?').get('without-quiz-history'),undefined);
 for(const table of ['quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations'])assert.ok(harness.GROUP_TABLES.includes(table),table+' is group scoped');
+// Execute the actual deletion route with financial history in two groups.
+// Same names and plan keys elsewhere must not block an unpriced learner.
+const financialGroup='next-genn-edu',financialOther='management-financial-other',financialStudent='Fictional Financial Learner';
+db.prepare('INSERT INTO tuition_groups(id,name,join_code,created_at,updated_at) VALUES(?,?,?,?,?)').run(financialOther,'Fictional Financial Other','management-financial-other',now,now);
+for(const groupId of [financialGroup,financialOther]){
+ db.prepare('INSERT INTO students(group_id,name,name_key,created_at) VALUES(?,?,?,?)').run(groupId,financialStudent,'fictional financial learner',now);
+ db.prepare('INSERT INTO plans(group_id,key,student,subject,teacher_name,created_at) VALUES(?,?,?,?,?,?)').run(groupId,'financial-shared-plan',financialStudent,'Mathematics','Fictional Financial Teacher',now);
+}
+const financialIdentity=db.prepare('SELECT id FROM billing_students WHERE group_id=? AND student_name=?').get(financialGroup,financialStudent).id;
+const financialSubject=db.prepare('SELECT subject_key FROM billing_subjects WHERE group_id=? AND student_id=?').get(financialGroup,financialIdentity).subject_key;
+db.prepare('INSERT INTO billing_rates(id,group_id,student_id,subject_key,revision,current_version_id,updated_at) VALUES(?,?,?,?,1,?,?)').run('management-financial-rate',financialGroup,financialIdentity,financialSubject,'management-financial-version',now);
+db.prepare('INSERT INTO billing_rate_versions(id,group_id,rate_id,revision,mode,amount_cents,currency,effective_from,subject_snapshot,actor_id,created_at) VALUES(?,?,?,1,?,?,?,?,?,?,?)').run('management-financial-version',financialGroup,'management-financial-rate','hour',3500,'MYR','2032-06-01','Mathematics','owner',now);
+actor={groupId:financialGroup,id:'admin',role:'admin',email:''};
+for(const entry of [{kind:'student',id:financialStudent},{kind:'plan',id:'financial-shared-plan'}]){
+ const blockedResponse=await manage.POST(request({...entry,confirm:true}));assert.equal(blockedResponse.status,409);assert.match((await blockedResponse.json()).error,/收费或费用调整历史/);
+ const preview=await(await manage.POST(request({action:'previewDelete',entries:[entry]}))).json();assert.equal(preview.items.length,0);assert.equal(preview.blocked.length,1);assert.match(preview.blocked[0].error,/收费或费用调整历史/);
+}
+assert.ok(db.prepare('SELECT name FROM students WHERE group_id=? AND name=?').get(financialGroup,financialStudent));
+assert.ok(db.prepare('SELECT key FROM plans WHERE group_id=? AND key=?').get(financialGroup,'financial-shared-plan'));
+assert.equal(db.prepare('SELECT amount_cents FROM billing_rate_versions WHERE id=?').get('management-financial-version').amount_cents,3500);
+assert.throws(()=>db.prepare('DELETE FROM plans WHERE group_id=? AND key=?').run(financialGroup,'financial-shared-plan'),/financial history/,'database guard protects direct/racing plan deletion');
+assert.throws(()=>db.prepare('DELETE FROM students WHERE group_id=? AND name=?').run(financialGroup,financialStudent),/financial history/);
+actor={groupId:financialOther,id:'admin',role:'admin',email:''};
+assert.equal((await manage.POST(request({kind:'plan',id:'financial-shared-plan',confirm:true}))).status,200,'another group same plan key has no financial history');
+assert.equal((await manage.POST(request({kind:'student',id:financialStudent,confirm:true}))).status,200,'unused financial identity maps are safe to remove');
+assert.ok(db.prepare('SELECT name FROM students WHERE group_id=? AND name=?').get(financialGroup,financialStudent),'other group deletion retains priced learner');
+// A zero-revision header can remain after a stale request in older builds.
+db.prepare('INSERT INTO students(group_id,name,name_key,created_at) VALUES(?,?,?,?)').run(financialOther,'Unused Financial Learner','unused financial learner',now);
+db.prepare('INSERT INTO plans(group_id,key,student,subject,teacher_name,created_at) VALUES(?,?,?,?,?,?)').run(financialOther,'unused-financial-plan','Unused Financial Learner','Science','Fictional Financial Teacher',now);
+const unusedIdentity=db.prepare('SELECT id FROM billing_students WHERE group_id=? AND student_name=?').get(financialOther,'Unused Financial Learner').id;
+const unusedSubject=db.prepare('SELECT subject_key FROM billing_subjects WHERE group_id=? AND student_id=?').get(financialOther,unusedIdentity).subject_key;
+db.prepare('INSERT INTO billing_rates(id,group_id,student_id,subject_key,revision,updated_at) VALUES(?,?,?,?,0,?)').run('unused-financial-header',financialOther,unusedIdentity,unusedSubject,now);
+assert.equal((await manage.POST(request({kind:'student',id:'Unused Financial Learner',confirm:true}))).status,200,'unpriced empty headers do not prevent student cleanup');
+assert.equal(db.prepare('SELECT id FROM billing_rates WHERE id=?').get('unused-financial-header'),undefined);
+db.prepare('INSERT INTO students(group_id,name,name_key,created_at) VALUES(?,?,?,?)').run(financialOther,'Adjusted Financial Learner','adjusted financial learner',now);
+db.prepare('INSERT INTO plans(group_id,key,student,subject,teacher_name,created_at) VALUES(?,?,?,?,?,?)').run(financialOther,'adjusted-financial-plan','Adjusted Financial Learner','Science','Fictional Financial Teacher',now);
+const adjustedIdentity=db.prepare('SELECT id FROM billing_students WHERE group_id=? AND student_name=?').get(financialOther,'Adjusted Financial Learner').id;
+const adjustedSubject=db.prepare('SELECT subject_key FROM billing_subjects WHERE group_id=? AND student_id=?').get(financialOther,adjustedIdentity).subject_key;
+db.prepare('INSERT INTO billing_adjustments(id,group_id,student_id,month,line_id,revision,amount_cents,basis_hash,reason,actor_id,created_at) VALUES(?,?,?,?,?,1,?,?,?,?,?)').run('management-financial-adjustment',financialOther,adjustedIdentity,'2032-06','monthly:'+adjustedIdentity+':'+adjustedSubject+':2032-06:fixture',0,'a'.repeat(64),'Fictional fee waived','owner',now);
+for(const entry of [{kind:'student',id:'Adjusted Financial Learner'},{kind:'plan',id:'adjusted-financial-plan'}]){
+ const response=await manage.POST(request({...entry,confirm:true}));assert.equal(response.status,409);assert.match((await response.json()).error,/收费或费用调整历史/);
+}
+assert.throws(()=>db.prepare('DELETE FROM plans WHERE group_id=? AND key=?').run(financialOther,'adjusted-financial-plan'),/financial history/,'zero amount adjustments retain their history');
+
 delete globalThis.__accountTest; db.close();
 console.log('Account proof, explicit merge, rollback, deletion permissions and shared PDF preservation passed');

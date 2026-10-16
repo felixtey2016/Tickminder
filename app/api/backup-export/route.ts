@@ -9,6 +9,7 @@ const baseTables = [
   "homework", "homework_recipients", "homework_submissions", "study_blocks",
 ] as const;
 const classroomTables = ["classrooms", "classroom_members", "classroom_announcements"] as const;
+const billingTables = ["billing_students", "billing_subjects", "billing_policies", "billing_policy_versions", "billing_rates", "billing_rate_versions", "billing_operations", "billing_adjustments"] as const;
 const noStore = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" };
 
 async function authorized(request: Request): Promise<boolean> {
@@ -101,6 +102,13 @@ export async function GET(request: Request) {
       (names as string[]).unshift("academic_catalogues");
       (names as string[]).push("student_grade_promotions");
     }
+    const billingSchema=await db.prepare(`SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name IN (${billingTables.map(()=>'?').join(',')})`).bind(...billingTables).first<{count:number}>();
+    if(billingSchema?.count&&billingSchema.count!==billingTables.length)throw new Error("Incomplete billing schema");
+    const hasBilling=billingSchema?.count===billingTables.length;
+    if(hasBilling){
+      if(!hasAcademicCatalogues||!hasClassSessions||!hasPractice||!hasFormalPractice||!hasQuizzes||!hasVersions||!hasFolders||!hasGroups||!hasReview)throw new Error("Billing schema lacks required teaching tables");
+      (names as string[]).push(...billingTables);
+    }
     const tables: Record<string, { columns: string[]; rows: Record<string, unknown>[] }> = {};
     for (const name of names) {
       const info = await db.prepare(`PRAGMA table_info("${name}")`).all<{ name: string }>();
@@ -108,9 +116,10 @@ export async function GET(request: Request) {
       if (columns.length === 0) throw new Error(`Missing table ${name}`);
       tables[name] = { columns, rows: [] };
     }
+    if(hasBilling&&!tables.quiz_practice_attempts.columns.includes("discarded_at"))throw new Error("Billing schema lacks required practice history");
     const contents=await db.batch<Record<string,unknown>>(names.map(name=>db.prepare(`SELECT * FROM "${name}"`)));
     names.forEach((name,index)=>{tables[name].rows=contents[index].results;});
-    return Response.json({ format: hasAcademicCatalogues && tables.quiz_practice_attempts.columns.includes("discarded_at") ? "timelyo-d1-v19" : hasAcademicCatalogues ? "timelyo-d1-v18" : hasFormalPractice ? "timelyo-d1-v17" : hasPractice ? "timelyo-d1-v16" : hasQuizzes ? "timelyo-d1-v15" : hasClassSessions&&tables.class_sessions.columns.includes("teaching_status") ? "timelyo-d1-v14" : hasClassSessions ? "timelyo-d1-v13" : hasReview ? "timelyo-d1-v12" : hasVersions ? "timelyo-d1-v11" : hasFolders ? "timelyo-d1-v10" : hasGroups ? "timelyo-d1-v9" : hasInbox ? "timelyo-d1-v8" : hasNotifications ? "timelyo-d1-v7" : tables.accounts.columns.includes("pending_expires_at") ? "timelyo-d1-v6" : tables.reschedule_requests.columns.includes("requested_role") ? "timelyo-d1-v5" : hasTerms ? "timelyo-d1-v4" : hasIdentities ? "timelyo-d1-v3" : hasClassrooms ? "timelyo-d1-v2" : "timelyo-d1-v1", tables }, { headers: noStore });
+    return Response.json({ format: hasBilling ? "timelyo-d1-v20" : hasAcademicCatalogues && tables.quiz_practice_attempts.columns.includes("discarded_at") ? "timelyo-d1-v19" : hasAcademicCatalogues ? "timelyo-d1-v18" : hasFormalPractice ? "timelyo-d1-v17" : hasPractice ? "timelyo-d1-v16" : hasQuizzes ? "timelyo-d1-v15" : hasClassSessions&&tables.class_sessions.columns.includes("teaching_status") ? "timelyo-d1-v14" : hasClassSessions ? "timelyo-d1-v13" : hasReview ? "timelyo-d1-v12" : hasVersions ? "timelyo-d1-v11" : hasFolders ? "timelyo-d1-v10" : hasGroups ? "timelyo-d1-v9" : hasInbox ? "timelyo-d1-v8" : hasNotifications ? "timelyo-d1-v7" : tables.accounts.columns.includes("pending_expires_at") ? "timelyo-d1-v6" : tables.reschedule_requests.columns.includes("requested_role") ? "timelyo-d1-v5" : hasTerms ? "timelyo-d1-v4" : hasIdentities ? "timelyo-d1-v3" : hasClassrooms ? "timelyo-d1-v2" : "timelyo-d1-v1", tables }, { headers: noStore });
   } catch {
     return Response.json({ error: "Backup export unavailable" }, { status: 503, headers: noStore });
   }

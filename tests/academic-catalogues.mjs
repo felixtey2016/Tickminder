@@ -110,8 +110,8 @@ sqlite.prepare('UPDATE students SET grade=? WHERE name=?').run('Form 3','Fiction
 const backupRoute=(await load('app/api/backup-export/route.ts')).module;
 const backupRequest=()=>new Request('https://catalogue.example.test/api/backup-export',{headers:{authorization:'Bearer fictional-catalogue-backup-token-with-32-characters'}});
 const exportResponse=await backupRoute.GET(backupRequest()),snapshot=await exportResponse.json();
-check(()=>assert.equal(exportResponse.status,200));check(()=>assert.equal(snapshot.format,'timelyo-d1-v19'));
-check(()=>assert.deepEqual(Object.keys(snapshot.tables).sort(),expectedSnapshotTables(18).sort()));
+check(()=>assert.equal(exportResponse.status,200));check(()=>assert.equal(snapshot.format,'timelyo-d1-v20'));
+check(()=>assert.deepEqual(Object.keys(snapshot.tables).sort(),expectedSnapshotTables(20).sort()));
 check(()=>assert.equal(snapshot.tables.academic_catalogues.rows.length,2));
 check(()=>assert.equal(snapshot.tables.student_grade_promotions.rows.length,1));
 const savedQuizCatalogue=sqlite.prepare("SELECT * FROM academic_catalogues WHERE scope='quiz'").get();

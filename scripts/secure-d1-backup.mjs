@@ -72,7 +72,7 @@ function restoreInMemory(data) {
   const version=Number(data.format.slice('timelyo-d1-v'.length));
   const db = new DatabaseSync(':memory:');
   try {
-    for (const prefix of [...baseMigrations,...Array.from({length:Math.min(8,Math.max(0,version-1))},(_,index)=>String(10+index).padStart(4,'0')),...(version>=10?['0019']:[]),...(version>=11?['0020']:[]),...(version>=12?['0021']:[]),...(version>=13?['0022']:[]),...(version>=14?['0023']:[]),...(version>=15?['0024']:[]),...(version>=16?['0025','0026']:[]),...(version>=17?['0027','0028']:[]),...(version>=18?['0029']:[]),...(version>=19?['0030']:[])]) {
+    for (const prefix of [...baseMigrations,...Array.from({length:Math.min(8,Math.max(0,version-1))},(_,index)=>String(10+index).padStart(4,'0')),...(version>=10?['0019']:[]),...(version>=11?['0020']:[]),...(version>=12?['0021']:[]),...(version>=13?['0022']:[]),...(version>=14?['0023']:[]),...(version>=15?['0024']:[]),...(version>=16?['0025','0026']:[]),...(version>=17?['0027','0028']:[]),...(version>=18?['0029']:[]),...(version>=19?['0030']:[]),...(version>=20?['0031']:[])]) {
       const file = readdirSync(resolve(projectRoot, 'drizzle')).find((name) => name.startsWith(prefix + '_') && name.endsWith('.sql'));
       if (!file) throw new Error(`Missing migration ${prefix}`);
       db.exec(readFileSync(resolve(projectRoot, 'drizzle', file), 'utf8'));

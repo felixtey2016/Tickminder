@@ -13,6 +13,18 @@ import {classPlanSubjectSql,planSubjectLabelSql} from "@/lib/academic-subject-ma
 class DeleteError extends Error { constructor(message: string, public status = 409) { super(message); } }
 type Entry = { kind: string; id: string };
 type Snapshot = {table: string; records: Record<string, unknown>[]};
+const financialHistoryMessage="此记录已有收费或费用调整历史，不能永久删除。请改为停用，以保留核算依据。";
+const studentFinancialHistory=`SELECT 1 AS found FROM billing_students b WHERE b.group_id=? AND b.student_name=? AND (
+ EXISTS(SELECT 1 FROM billing_rates r JOIN billing_rate_versions v ON v.group_id=r.group_id AND v.rate_id=r.id WHERE r.group_id=b.group_id AND r.student_id=b.id)
+ OR EXISTS(SELECT 1 FROM billing_adjustments a WHERE a.group_id=b.group_id AND a.student_id=b.id)) LIMIT 1`;
+const planFinancialHistory=`SELECT 1 AS found FROM plans p JOIN students s ON s.group_id=p.group_id AND s.name=p.student
+ JOIN billing_students b ON b.group_id=p.group_id AND b.student_name=p.student
+ JOIN billing_subjects bs ON bs.group_id=b.group_id AND bs.student_id=b.id AND bs.subject_key=CASE WHEN p.subject_id IS NOT NULL THEN 'id:'||s.syllabus_id||':'||p.subject_id ELSE 'label:'||lower(trim(p.subject)) END
+ WHERE p.group_id=? AND p.key=? AND (
+ EXISTS(SELECT 1 FROM billing_rates r JOIN billing_rate_versions v ON v.group_id=r.group_id AND v.rate_id=r.id WHERE r.group_id=b.group_id AND r.student_id=b.id AND r.subject_key=bs.subject_key)
+ OR EXISTS(SELECT 1 FROM billing_adjustments a WHERE a.group_id=b.group_id AND a.student_id=b.id AND (
+ substr(a.line_id,1,length('monthly:'||b.id||':'||bs.subject_key||':'))='monthly:'||b.id||':'||bs.subject_key||':'
+ OR EXISTS(SELECT 1 FROM lessons l WHERE l.group_id=p.group_id AND l.student=p.student AND a.line_id='lesson:'||l.id AND ${planSubjectLabelSql('p','s','l.subject')})))) LIMIT 1`;
 async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof currentAccount>>>, kind: string, id: string) {
     const groupId=requireGroup(actor.groupId); const {first,rows}=groupReader(groupId);
     if (!id || !["account", "teacher", "student", "plan", "lesson", "classroom", "homework"].includes(kind)) throw new DeleteError("请求格式无效", 400);
@@ -38,16 +50,19 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
       const accountColumn = kind === "teacher" ? "teacher_name" : "student_name";
       const table = kind === "teacher" ? "teachers" : "students";
       if (!await first(`SELECT 1 AS found FROM ${table} WHERE name = ?`, id)) throw new DeleteError("记录不存在", 404);
+      if(kind==="student"&&await raw.prepare(studentFinancialHistory).bind(groupId,id).first())throw new DeleteError(financialHistoryMessage);
       if (await first(`SELECT 1 AS found FROM accounts WHERE ${accountColumn} = ?`, id)) throw new DeleteError("此姓名仍关联登录账号，请先删除或重新绑定账号");
       if (await first(`SELECT 1 AS found FROM lessons WHERE ${column} = ? AND status = 'scheduled'`, id)) throw new DeleteError("仍有已安排的课程，请先取消或删除这些课程");
       const member = kind === "teacher" ? await first("SELECT 1 AS found FROM classrooms WHERE teacher_name = ?", id) : await first("SELECT 1 AS found FROM classroom_members WHERE student_name = ?", id);
       if (member) throw new DeleteError("此姓名仍在班级中，请先处理班级或移出名单");
+      if(kind==="student")statements.push(db.prepare("DELETE FROM billing_rates WHERE group_id=? AND student_id IN(SELECT id FROM billing_students WHERE group_id=? AND student_name=?) AND NOT EXISTS(SELECT 1 FROM billing_rate_versions v WHERE v.group_id=billing_rates.group_id AND v.rate_id=billing_rates.id)").bind(groupId,groupId,id));
       statements.push(db.prepare(`DELETE FROM assignments WHERE (plan_key IN (SELECT key FROM plans WHERE ${column} = ?)) AND group_id = ?`).bind(id,groupId));
       statements.push(db.prepare(`DELETE FROM plans WHERE (${column} = ?) AND group_id = ?`).bind(id,groupId));
       statements.push(db.prepare(`DELETE FROM ${table} WHERE (name = ?) AND group_id = ?`).bind(id,groupId));
     } else if (kind === "plan") {
       const plan = await first<{ student: string; subject: string }>("SELECT student,subject FROM plans WHERE key = ?", id);
       if (!plan) throw new DeleteError("记录不存在", 404);
+      if(await raw.prepare(planFinancialHistory).bind(groupId,id).first())throw new DeleteError(financialHistoryMessage);
       if (await first(`SELECT 1 AS found FROM lessons l JOIN plans p ON p.student=l.student JOIN students s ON s.name=p.student WHERE p.key=? AND l.status='scheduled' AND ${planSubjectLabelSql('p','s','l.subject')}`,id)) throw new DeleteError("仍有已安排的课程，请先取消或删除这些课程");
       if (await first(`SELECT 1 AS found FROM classroom_members m JOIN classrooms c ON c.id=m.classroom_id JOIN plans p ON p.student=m.student_name JOIN students s ON s.name=p.student WHERE p.key=? AND ${classPlanSubjectSql()}`,id)) throw new DeleteError("此科目仍用于班级，请先移出班级");
       statements.push(db.prepare("DELETE FROM assignments WHERE (plan_key = ?) AND group_id = ?").bind(id,groupId));
@@ -111,7 +126,7 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
       const diff = l.actual_start && l.actual_end ? (Date.parse(String(l.actual_end))-Date.parse(String(l.actual_start)))/3600000 : 0;
       return sum + (l.status === 'completed' && l.reviewed_at && diff > 0 && diff <= 12 ? diff : 0);
     }, 0);
-    return { statements, files, snapshots, summary: {kind,id,label,effects,hours:Number(hours.toFixed(2)),checkedIn:lessonRows.filter(l=>['completed','student_absent','teacher_absent'].includes(String(l.status))).length, date:kind==='lesson'?primary?.planned_start:undefined} };
+    return { statements, files, snapshots, summary: {kind,id,label,effects,hours,checkedIn:lessonRows.filter(l=>['completed','student_absent','teacher_absent'].includes(String(l.status))).length, date:kind==='lesson'?primary?.planned_start:undefined} };
 }
 async function proof(actorId: string, plans: Array<Awaited<ReturnType<typeof planDeletion>>>, at: string) {
   const payload = JSON.stringify({actorId, at, snapshots: plans.map(p=>p.snapshots)});
@@ -148,5 +163,5 @@ export async function POST(request: Request) {
     let cleanupPending=false;
     for (const file of new Set(plans.flatMap(p=>p.files))) {try {await deleteUnreferencedFile(file);} catch {cleanupPending=true;}}
     return NextResponse.json({ok:true,deletedCount:entries.length,warning:cleanupPending?"记录已删除，部分文件清理尚未完成，请联系管理员":undefined});
-  } catch (e) {if(isClassroomCoverageFailure(e))return NextResponse.json({error:classroomRequiredMessage},{status:409});return NextResponse.json({error:e instanceof DeleteError?e.message:"删除未能确认，请刷新列表后再试"},{status:e instanceof DeleteError?e.status:503});}
+  } catch (e) {if(isClassroomCoverageFailure(e))return NextResponse.json({error:classroomRequiredMessage},{status:409});if(e instanceof Error&&/financial history/i.test(e.message))return NextResponse.json({error:financialHistoryMessage},{status:409});return NextResponse.json({error:e instanceof DeleteError?e.message:"删除未能确认，请刷新列表后再试"},{status:e instanceof DeleteError?e.status:503});}
 }

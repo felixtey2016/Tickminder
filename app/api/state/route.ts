@@ -2,7 +2,8 @@ import {classSessionState} from "@/lib/class-sessions";
 import {groupRows} from "@/lib/group-data";
 import { groupWhere } from "@/lib/group-data";
 import { NextResponse } from "next/server";
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray,notLike } from "drizzle-orm";
+import {isOwnerAccount} from '@/lib/owner';
 import { currentBusinessAccount as currentAccount, type Account } from "@/lib/auth";
 import { lifecycleView } from "@/lib/account-lifecycle";
 import { readRoster } from "@/lib/roster";
@@ -24,9 +25,9 @@ function monthlySummary(plans: Array<{ key: string; student: string; subject: st
     const planned = items.filter(l => inMonth(l.plannedStart, month));
     return {
       key: p.key,
-      completed: Number(completed.reduce((sum, l) => sum + approvedHoursInMonth(l, month), 0).toFixed(2)),
+      completed: completed.reduce((sum, l) => sum + approvedHoursInMonth(l, month), 0),
       lessons: completed.filter(l => approvedActualHours(l) > 0).length,
-      upcoming: Number(planned.filter(l => l.status === "scheduled" && l.plannedStart > now).reduce((sum, l) => sum + (Date.parse(l.plannedEnd) - Date.parse(l.plannedStart)) / 3600000, 0).toFixed(2)),
+      upcoming: planned.filter(l => l.status === "scheduled" && l.plannedStart > now).reduce((sum, l) => sum + (Date.parse(l.plannedEnd) - Date.parse(l.plannedStart)) / 3600000, 0),
       pending: planned.filter(l => l.status !== "cancelled" && !l.reviewedAt && l.plannedStart <= now).length,
       makeupNeeded: planned.filter(l => ["student_absent", "teacher_absent"].includes(l.status) && !rows.some(x => x.replacementFor === l.id && x.status !== "cancelled")).length,
     };
@@ -83,7 +84,7 @@ async function extraState(account: Account, scope: Exclude<Scope, "core">) {
     const byId = new Map(credentials.map(c => [c.accountId, c]));
     return {users: users.map(u => ({...u, ...lifecycleView(u), username: byId.get(u.id)?.username || null, mustChangePassword: byId.get(u.id)?.mustChangePassword || false}))};
   }
-  const [changes, mergedNames] = await Promise.all([db.select().from(audit).where(groupWhere(audit,account.groupId)).orderBy(desc(audit.at)).limit(30).all(), mergedAccountNames(account.groupId)]);
+  const [changes, mergedNames] = await Promise.all([db.select().from(audit).where(groupWhere(audit,account.groupId,isOwnerAccount(account)?undefined:notLike(audit.action,'billing.%'))).orderBy(desc(audit.at)).limit(30).all(), mergedAccountNames(account.groupId)]);
   const changedLessons = changes.length ? await db.select({id: lessons.id, student: lessons.student, subject: lessons.subject}).from(lessons).where(groupWhere(lessons,account.groupId,inArray(lessons.id, changes.map(c => c.lessonId)))).all() : [];
   const byId = new Map(changedLessons.map(l => [l.id, `${l.student} · ${l.subject}`]));
   return {activity: changes.map(c => ({...c, actorName: (c.actorId===account.id?account.name:users.find(u => u.id === c.actorId)?.name) || mergedNames.get(c.actorId) || c.actorId, lessonName: byId.get(c.lessonId) || c.lessonId}))};

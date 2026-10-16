@@ -3,7 +3,7 @@
 import { createDecipheriv, createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
-import { resolve, join, relative } from 'node:path';
+import { resolve, join, relative, isAbsolute, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import {orderedSnapshotTables,historicalInsertTriggers,checkRestoredFolderStructure,matchManifestObjects,backupObjectName,validObjectSignature} from './backup-order.mjs';
@@ -11,14 +11,20 @@ import {orderedSnapshotTables,historicalInsertTriggers,checkRestoredFolderStruct
 const root = resolve(import.meta.dirname, '..');
 const args = process.argv.slice(2);
 const input = args.indexOf('--in');
-if (input < 0 || !args[input + 1]) throw new Error('Expected --in encrypted-snapshot-directory [--apply]');
+if (input < 0 || !args[input + 1]) throw new Error('Expected --in encrypted-snapshot-directory --expected-target private-target.json [--apply]');
 const snapshot = resolve(args[input + 1]);
 const withinSource = relative(root, snapshot);
-if (!withinSource || (!withinSource.startsWith('..') && !/^[A-Za-z]:/.test(withinSource))) throw new Error('Snapshot must be outside source');
+if (!withinSource || (!isAbsolute(withinSource) && withinSource !== '..' && !withinSource.startsWith('..'+sep))) throw new Error('Snapshot must be outside source');
 const target = JSON.parse(readFileSync(join(root, 'wrangler.recovery.json'), 'utf8'));
-if (target.account_id !== '2199d150c756b2abfd96507da5ff1d8e' ||
-    target.d1_databases[0].database_id !== '10893827-25a7-4a36-a823-ecb561b711b4' ||
-    target.r2_buckets[0].bucket_name !== 'tickminder-recovery-files') throw new Error('Unexpected recovery target');
+// Keep the independently approved target outside public source. A mismatch
+// still stops before any cloud command; no target is inferred or accepted by default.
+const expectedOption=args.indexOf('--expected-target');
+if(expectedOption<0||!args[expectedOption+1])throw new Error('A private --expected-target file is required');
+const expectedPath=resolve(args[expectedOption+1]),expectedWithinSource=relative(root,expectedPath);
+if(!expectedWithinSource||(!isAbsolute(expectedWithinSource)&&expectedWithinSource!=='..'&&!expectedWithinSource.startsWith('..'+sep)))throw new Error('Expected target must be outside source');
+const expected=JSON.parse(readFileSync(expectedPath,'utf8'));
+if(!/^[a-f0-9]{32}$/i.test(expected.accountId||'')||!/^[a-f0-9-]{36}$/i.test(expected.databaseId||'')||!expected.bucketName||
+ target.account_id!==expected.accountId||target.d1_databases?.[0]?.database_id!==expected.databaseId||target.r2_buckets?.[0]?.bucket_name!==expected.bucketName)throw new Error('Unexpected recovery target');
 const env = { ...process.env, WRANGLER_SEND_METRICS: 'false', WRANGLER_WRITE_LOGS: 'false',
   CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: 'false', CLOUDFLARE_INCLUDE_PROCESS_ENV: 'false' };
 function command(script, params, inputBytes) {
@@ -72,12 +78,14 @@ try {
   plain = decrypt(readFileSync(join(snapshot, 'database.json.aes')), manifest.database);
   if (hash(plain) !== manifest.database.sha256) throw new Error('Database checksum mismatch');
   const database = JSON.parse(plain.toString('utf8'));
-  if (!['timelyo-d1-v7','timelyo-d1-v8','timelyo-d1-v9','timelyo-d1-v10','timelyo-d1-v11','timelyo-d1-v12','timelyo-d1-v13','timelyo-d1-v14','timelyo-d1-v15','timelyo-d1-v16','timelyo-d1-v17','timelyo-d1-v18','timelyo-d1-v19'].includes(database.format)) throw new Error('Recovery branch requires a v7–v19 database snapshot');
+  const legacyOwnerEmail=String(expected.legacyOwnerEmail||'').trim().toLowerCase();
+  if(database.tables?.accounts&&!database.tables.accounts.columns.includes('group_id')&&!legacyOwnerEmail)throw new Error('Legacy restore requires legacyOwnerEmail in the private expected-target file');
+  if (!['timelyo-d1-v7','timelyo-d1-v8','timelyo-d1-v9','timelyo-d1-v10','timelyo-d1-v11','timelyo-d1-v12','timelyo-d1-v13','timelyo-d1-v14','timelyo-d1-v15','timelyo-d1-v16','timelyo-d1-v17','timelyo-d1-v18','timelyo-d1-v19','timelyo-d1-v20'].includes(database.format)) throw new Error('Recovery branch requires a v7–v20 database snapshot');
   const tables = orderedSnapshotTables(database.tables);
   const schema = readdirSync(join(root, 'drizzle')).filter(name => /^\d{4}_.*\.sql$/.test(name)).sort()
     .map(name => readFileSync(join(root, 'drizzle', name), 'utf8')).join('\n');
   const schemaCheck=new DatabaseSync(':memory:');let triggers;
-  try {schemaCheck.exec(schema);triggers=historicalInsertTriggers.map(name=>schemaCheck.prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND name=?").get(name)).filter(Boolean);}finally{schemaCheck.close();}
+  try {schemaCheck.exec(schema);triggers=historicalInsertTriggers.filter(name=>database.tables.billing_students||!name.startsWith('billing_')).map(name=>schemaCheck.prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND name=?").get(name)).filter(Boolean);}finally{schemaCheck.close();}
   // Large bilingual quiz JSON can exceed D1's per-statement SQL limit after
   // UTF-8 hex encoding. Assemble bounded chunks before inserting the final row.
   const chunkTable='_tickminder_restore_large_text';let textSequence=0;
@@ -86,7 +94,7 @@ try {
     sqlParts.push(`DELETE FROM ${identifier(name)};`);
     const columns = table.columns.map(identifier).join(',');
     for (const row of table.rows) {
-      const legacyOwner=name==='accounts'&&!table.columns.includes('group_id')&&row.role==='admin'&&!row.id.startsWith('local:')&&row.email.trim().toLowerCase()==='felixtey2016@gmail.com';
+      const legacyOwner=name==='accounts'&&!table.columns.includes('group_id')&&row.role==='admin'&&!row.id.startsWith('local:')&&row.email.trim().toLowerCase()===legacyOwnerEmail;
       let encoded=table.columns.map(c=>value(row[c]));
       const render=()=>`INSERT INTO ${identifier(name)}(${columns}${legacyOwner?',group_id':''}) VALUES(${encoded.join(',')}${legacyOwner?',NULL':''});`;
       if(Buffer.byteLength(render())>90_000)encoded=table.columns.map((c,index)=>{
@@ -125,7 +133,7 @@ try {
   } else {
     const existing = query("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*' AND name NOT GLOB 'd1_*'")[0];
     if (Number(existing?.count) !== 0) throw new Error('Recovery database must be empty; refusing overwrite');
-    const info = wrangler(['r2', 'bucket', 'info', 'tickminder-recovery-files']).toString('utf8');
+    const info = wrangler(['r2', 'bucket', 'info', expected.bucketName]).toString('utf8');
     if (!/object_count:\s+0\b/.test(info)) throw new Error('Recovery bucket must be empty; refusing overwrite');
     // D1's CLI imports SQL from a file. Restrict the temporary directory BEFORE
     // writing private SQL, capture CLI output, and always remove the directory.
@@ -147,7 +155,7 @@ try {
       const bytes = decrypt(readFileSync(join(snapshot, backupObjectName(file))), metadata);
       try {
         if (bytes.length !== file.bytes || hash(bytes) !== metadata.sha256 || !validObjectSignature(bytes,file.mime)) throw new Error('Backup object checksum or signature mismatch');
-        const path = `tickminder-recovery-files/${file.object_key}`;
+        const path = `${expected.bucketName}/${file.object_key}`;
         wrangler(['r2', 'object', 'put', path, '--remote', '--pipe', '--content-type', file.mime], bytes);
         const downloaded = wrangler(['r2', 'object', 'get', path, '--remote', '--pipe']);
         try { if (hash(downloaded) !== metadata.sha256) throw new Error('Restored object checksum mismatch'); }

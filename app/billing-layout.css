@@ -1,0 +1,46 @@
+.billing-workspace,.billing-rate-editor{display:grid;gap:24px;min-width:0;max-width:100%;}
+.billing-workspace .panel{margin:0;min-width:0;max-width:100%;}
+.billing-workspace h2,.billing-workspace h3,.billing-rate-editor h3{margin:0;}
+.billing-form,.billing-policy,.billing-context,.billing-current-rate,.billing-rate-history,.billing-line-body{display:grid;gap:12px;min-width:0;}
+.billing-form-grid,.billing-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:20px;min-width:0;}
+.billing-workspace label,.billing-rate-editor label{display:grid;gap:8px;min-width:0;}
+.billing-workspace :is(input,select,textarea),.billing-rate-editor :is(input,select,textarea){width:100%;max-width:100%;min-width:0;min-height:44px;border:1px solid #d9d6ea;border-radius:6px;padding:10px 12px;background:#fff;color:var(--foreground);font:inherit;font-size:16px;}
+.billing-workspace textarea{min-height:88px;resize:vertical;}
+.billing-actions,.billing-pagination,.billing-notice{display:flex;flex-wrap:wrap;align-items:center;gap:12px;}
+.billing-actions button,.billing-pagination button{min-height:44px;}
+.billing-notice p{flex:1 1 220px;margin:0;}
+.billing-current-rate{padding:16px;background:#f7f5fc;border:1px solid #e2ddec;border-radius:6px;}
+.billing-current-rate>strong{font-size:1.4rem;}
+.billing-context strong,.billing-workspace :is(strong,h2,h3,p,small,span),.billing-rate-history li{overflow-wrap:anywhere;}
+.billing-rate-history ol{list-style:none;padding:0;display:grid;gap:12px;}
+.billing-rate-history li{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid #ebe8f3;}
+.billing-rate-history li>div{display:grid;gap:6px;}
+.billing-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:16px;}
+.billing-summary>div{display:grid;gap:8px;padding:16px;border:1px solid #e2ddec;border-radius:6px;}
+.billing-summary strong{font-size:1.35rem;}
+.billing-students{display:grid;gap:12px;}
+.billing-student-row,.billing-line{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;align-items:start;padding:18px 0;border-bottom:1px solid #e8e4f1;min-width:0;}
+.billing-student-row>div:first-child{display:grid;gap:8px;}
+.billing-student-row .billing-actions{justify-content:flex-end;}
+.billing-detail-heading{display:flex;flex-wrap:wrap;align-items:start;justify-content:space-between;gap:16px;margin-bottom:20px;}
+.billing-detail-heading>div{display:grid;gap:8px;min-width:0;}
+.billing-line-meta{display:flex;flex-wrap:wrap;gap:8px 16px;color:#605974;font-size:.9rem;}
+.billing-line-amount{display:grid;gap:12px;text-align:right;min-width:120px;}
+.billing-line-amount>strong{font-size:1.2rem;}
+.billing-line-amount button{min-height:44px;}
+.billing-warning-list{margin:0;padding-left:20px;display:grid;gap:6px;color:#775321;}
+.billing-status{display:inline-flex;justify-self:start;padding:4px 8px;border-radius:4px;background:#f0edf8;font-size:.85rem;color:#524274;}
+.billing-status-pending{background:#fff3d8;color:#765114;}
+.billing-status-exempt{background:#eef4ef;color:#3c6546;}
+.billing-policy>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:600;}
+.billing-policy>form{margin-top:16px;}
+.billing-error{display:grid;gap:12px;justify-items:start;}
+.billing-pilot-note{margin:0;color:#625a74;}
+.billing-adjustment{padding:16px;border:1px solid #ddd5ef;border-radius:6px;margin-top:12px;display:grid;gap:16px;}
+.course-duration-input{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.course-duration-input label{display:grid;gap:8px;}
+.billing-detail-panel{scroll-margin-top:130px;outline-offset:4px;}.billing-history{display:grid;gap:16px;margin:0;padding-left:20px;}.billing-history li{display:grid;gap:6px;}
+.subject-edit-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;}
+.course-duration-fieldset{min-width:0;margin:0;padding:0;border:0;display:grid;gap:8px;}.course-duration-fieldset legend{margin-bottom:8px;}
+.billing-workspace .section-head{gap:16px;flex-wrap:wrap;margin-bottom:20px;}.billing-workspace .billing-policy p{margin:0;}.billing-adjustment-controls{min-width:0;display:grid;gap:12px;}.billing-source{display:grid;gap:12px;}.billing-source summary{min-height:36px;cursor:pointer;font-size:.9rem;color:#625a74;}.billing-adjustment-history p{margin:0 0 8px;}.billing-workspace .billing-line-amount .billing-adjustment{text-align:left;min-width:0;}.billing-line-amount:has(.billing-adjustment){width:min(360px,100%);}.billing-workspace .billing-pagination{margin-top:20px;}.billing-workspace .billing-policy form{margin:0;}
+@media(max-width:700px){.billing-student-row,.billing-line{grid-template-columns:minmax(0,1fr);gap:16px;}.billing-line-amount{text-align:left;min-width:0;}.billing-line-amount>.billing-actions,.billing-student-row .billing-actions{justify-content:flex-start;}.billing-filters,.billing-form-grid{grid-template-columns:minmax(0,1fr);}.billing-rate-editor{gap:20px;}}

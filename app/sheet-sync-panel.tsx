@@ -2,7 +2,8 @@
 import {groupFetch} from "@/lib/group-client";
 
 import { useRef, useState } from "react";
-import { t } from "@/lib/i18n";
+import { getLanguage, t } from "@/lib/i18n";
+import { formatDurationHours } from "@/lib/duration-format";
 import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
 import { Button } from "@/components/ui/button";
 import type { SyncMode } from "@/lib/sheet-sync";
@@ -21,6 +22,12 @@ const reason: Record<string, string> = {
   duplicate_website: "网站中有重复的学生和科目",
   not_in_website: "网站中没有此学生科目",
 };
+
+function displaySheetHours(value: number | string) {
+  if (value === "") return "—";
+  const numeric = typeof value === "number" ? value : value.trim() ? Number(value) : NaN;
+  return Number.isFinite(numeric) && numeric >= 0 ? formatDurationHours(numeric, getLanguage()) : String(value);
+}
 
 export function SheetSyncPanel() {
   const [mode, setMode] = useState<SyncMode>("billable");
@@ -67,7 +74,7 @@ export function SheetSyncPanel() {
     {preview && <div className="sheet-sync-preview">
       <h3>{t("目标月份")}：{preview.displayMonth} <small>({preview.month})</small></h3>
       <p className="muted">{t("将更新")} {preview.changes.length} {t("行，跳过")} {preview.skipped.length} {t("行。请核对后确认。")}</p>
-      {preview.changes.length > 0 && <div className="sheet-sync-table-wrap"><table className="sheet-sync-table"><thead><tr><th>{t("表格行")}</th><th>{t("学生")}</th><th>{t("科目")}</th><th>{t("Total Hours 原值 → 新值")}</th></tr></thead><tbody>{preview.changes.map(item => <tr key={item.row}><td>{item.row}</td><td>{item.student}</td><td>{item.subject}</td><td>{item.before === "" ? "—" : item.before} → <strong>{item.after.toFixed(2)} h</strong></td></tr>)}</tbody></table></div>}
+      {preview.changes.length > 0 && <div className="sheet-sync-table-wrap"><table className="sheet-sync-table"><thead><tr><th>{t("表格行")}</th><th>{t("学生")}</th><th>{t("科目")}</th><th>{t("Total Hours 原值 → 新值")}</th></tr></thead><tbody>{preview.changes.map(item => <tr key={item.row}><td>{item.row}</td><td>{item.student}</td><td>{item.subject}</td><td>{displaySheetHours(item.before)} → <strong>{formatDurationHours(item.after, getLanguage())}</strong></td></tr>)}</tbody></table></div>}
       {preview.skipped.length > 0 && <details className="sheet-sync-skipped"><summary>{t("未匹配或已跳过的记录")} ({preview.skipped.length})</summary><ul>{preview.skipped.map((item, index) => <li key={`${item.student}|${item.subject}|${index}`}><strong>{item.student} · {item.subject}</strong> — {t(reason[item.reason] || item.reason)}</li>)}</ul></details>}
       <Button disabled={busy || !preview.changes.length} onClick={() => void run("commit")}>{t("确认写入表格")}</Button>
     </div>}
