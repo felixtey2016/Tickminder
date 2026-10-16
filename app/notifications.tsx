@@ -13,8 +13,6 @@ type Item={id:string;contentKind?:"material"|"homework"|"quiz";recordId?:string;
 type State={groupId?:string;accountId?:string;unreadCount:number;unreadQuizCount?:number;items:Item[];configured:boolean;publicKey:string|null;schedulerReady:boolean;lastDispatchAt:string|null};
 type Device={accountId:string;id:string};
 const DEVICE_KEY="tickminder-push-device";
-// A dismissal is intentionally not persisted: a full new entry offers again.
-let offeredThisEntry=false;
 let pushPaused=false;
 let deviceQueue:Promise<unknown>=Promise.resolve();
 function withDeviceLock<T>(operation:()=>Promise<T>):Promise<T> {
@@ -65,7 +63,9 @@ export function MenuBadge({count=0,includeUnread=false,quizOnly=false,header=fal
 
 export function NotificationsProvider({accountId,groupId,language,children}:{accountId:string;groupId:string;language:Language;children:ReactNode}) {
   const [state,setState]=useState<State|null>(null),[loadError,setLoadError]=useState(""),[deviceId,setDeviceId]=useState<string|null>(null),[enabled,setEnabled]=useState(false),[busy,setBusy]=useState(false);
-  const [prompt,setPrompt]=useDialogState<true|null>("notification-permission",null);
+  // Only explicit notification controls open this guide. Do not restore a
+  // legacy automatically opened permission dialog from navigation history.
+  const [prompt,setPrompt]=useDialogState<true|null>("notification-help",null);
   const inFlight=useRef(false),configured=useRef<State|null>(null),latestRefresh=useRef(0);
   useEffect(()=>{pushPaused=false;},[accountId]);
   const refresh=useCallback(async()=>{
@@ -94,12 +94,13 @@ export function NotificationsProvider({accountId,groupId,language,children}:{acc
           }
         }
         setDeviceId(null);setEnabled(false);
-        if(!offeredThisEntry && alive) {offeredThisEntry=true;setPrompt(true);}
+        // A missing subscription is not a reason to interrupt the page. The
+        // Notification Centre retains explicit enable/help controls.
       } catch(error) {if(alive)setLoadError(error instanceof Error?t(error.message):t("通知中心暂时无法载入，请稍后重试"));}
     });
     void sync();
     const visible=()=>{if(document.visibilityState==="visible") void sync();};
-    const returning=(event:PageTransitionEvent)=>{if(event.persisted){offeredThisEntry=false;void sync();}};
+    const returning=(event:PageTransitionEvent)=>{if(event.persisted)void sync();};
     const changed=()=>{if(alive && document.visibilityState==="visible")void refresh().catch(()=>setLoadError(t("通知中心暂时无法载入，请稍后重试")));};
     const message=(event:MessageEvent)=>{if(event.data?.type==="tickminder:notifications"){changed();window.dispatchEvent(new Event("tickminder:open-notifications"));}};
     const timer=window.setInterval(changed,30_000);
@@ -116,8 +117,8 @@ export function NotificationsProvider({accountId,groupId,language,children}:{acc
     pushPaused=false;
     try {
       // Request immediately within the user's click, before any asynchronous IO.
-      const permission=await Notification.requestPermission();
-      if(permission!=="granted") {setEnabled(false);return;}
+      const permission=Notification.permission==="granted"?"granted":await Notification.requestPermission();
+      if(permission!=="granted") {setEnabled(false);setPrompt(null);return;}
       await withDeviceLock(async()=>{
         if(pushPaused)return;
         const registration=await navigator.serviceWorker.ready;

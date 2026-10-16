@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import ts from 'typescript';
+import {registerHooks} from 'node:module';
 const sqlite=new DatabaseSync(':memory:');
 for(const f of readdirSync(new URL('../drizzle/',import.meta.url)).filter(n=>n.endsWith('.sql')).sort())sqlite.exec(readFileSync(new URL('../drizzle/'+f,import.meta.url),'utf8'));
 function statement(sql,values=[]){return{bind(...v){return statement(sql,v);},async first(){return sqlite.prepare(sql).get(...values)||null;},async all(){return{results:sqlite.prepare(sql).all(...values)};},async run(){return{meta:sqlite.prepare(sql).run(...values)};},execute(){const s=sqlite.prepare(sql);return /^\s*(SELECT|PRAGMA)/i.test(sql)?{results:s.all(...values)}:{meta:s.run(...values)};}};}
@@ -12,8 +13,23 @@ const encode=b=>Buffer.from(b).toString('base64url');
 const vapidPublic=encode(await crypto.subtle.exportKey('raw',pair.publicKey));
 const env={DB:d1,VAPID_PUBLIC_KEY:vapidPublic,VAPID_PRIVATE_KEY:jwk.d,VAPID_SUBJECT:'mailto:contact@example.test',NOTIFICATIONS_CRON_TOKEN:'test-clock-secret-'.repeat(3)};
 globalThis.__pushTest={env,learningDb:()=>d1,rows:async(sql,...v)=>(await statement(sql,v).all()).results,first:async(sql,...v)=>statement(sql,v).first(),currentBusinessAccount:async()=>account};
-const stub='data:text/javascript;base64,'+Buffer.from('export const {env,learningDb,rows,first,currentBusinessAccount}=globalThis.__pushTest;').toString('base64');const cache=new Map();
-async function load(file){if(cache.has(file))return cache.get(file);let s=readFileSync(new URL('../'+file,import.meta.url),'utf8');for(const [,spec] of [...s.matchAll(/from ["']([^"']+)["']/g)]){const url=['cloudflare:workers','@/lib/learning-server','@/lib/auth'].includes(spec)?stub:spec.startsWith('@/')?(await load(spec.slice(2)+'.ts')).url:import.meta.resolve(spec);s=s.replaceAll('"'+spec+'"','"'+url+'"');}const url='data:text/javascript;base64,'+Buffer.from(ts.transpileModule(s,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64'),r={url,module:await import(url)};cache.set(file,r);return r;}
+const stub='data:text/javascript;base64,'+Buffer.from('export const {env,learningDb,rows,first,currentBusinessAccount}=globalThis.__pushTest;').toString('base64');
+const applicationRoot=new URL('../',import.meta.url).href;
+// Native ESM resolves current relative/alias imports, including shared cycles.
+// Only the original runtime boundaries above are substituted.
+const hooks=registerHooks({
+ resolve(specifier,context,nextResolve){
+  if(['cloudflare:workers','@/lib/learning-server','@/lib/auth'].includes(specifier))return {url:stub,shortCircuit:true};
+  if(specifier.startsWith('@/'))return {url:new URL(specifier.slice(2)+'.ts',applicationRoot).href,shortCircuit:true};
+  if(specifier.startsWith('.')&&context.parentURL?.startsWith(applicationRoot)&&context.parentURL.endsWith('.ts'))return {url:new URL(/\.[cm]?[jt]sx?$/.test(specifier)?specifier:specifier+'.ts',context.parentURL).href,shortCircuit:true};
+  return nextResolve(specifier,context);
+ },
+ load(url,context,nextLoad){
+  if(url.startsWith(applicationRoot)&&url.endsWith('.ts'))return {format:'module',source:ts.transpileModule(readFileSync(new URL(url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText,shortCircuit:true};
+  return nextLoad(url,context);
+ },
+});
+async function load(file){const url=new URL('../'+file,import.meta.url).href;return {url,module:await import(url)};}
 const engine=(await load('lib/notifications-server.ts')).module,route=(await load('app/api/notifications/route.ts')).module,dispatch=(await load('app/api/notifications/dispatch/route.ts')).module;
 function req(body,origin='https://test.invalid'){return new Request('https://test.invalid/api/notifications',{method:'POST',headers:{origin,'Content-Type':'application/json'},body:JSON.stringify(body)});}
 async function call(body){const r=await route.POST(req(body));return{status:r.status,data:await r.json()};}
@@ -22,7 +38,9 @@ for(const [id,role,teacher,student] of [['student-a','student',null,'Student A']
 sqlite.prepare('INSERT INTO teachers (name,active,created_at) VALUES (?,1,?)').run('Teacher A',at);sqlite.prepare('INSERT INTO teachers (name,active,created_at) VALUES (?,1,?)').run('Teacher B',at);
 for(const name of ['Student A','Student B'])sqlite.prepare('INSERT INTO students (name,name_key,active,created_at) VALUES (?,?,1,?)').run(name,name.toLowerCase(),at);
 for(const [student,teacher] of [['Student A','Teacher A'],['Student B','Teacher B']])sqlite.prepare('INSERT INTO plans (key,student,subject,teacher_name,duration,active,created_at) VALUES (?,?,?,?,1,1,?)').run(student,student,'Science',teacher,at);
-function lesson(id,start,status='scheduled',student='Student A',teacher='Teacher A'){sqlite.prepare('INSERT INTO lessons (id,student,subject,teacher_name,planned_start,planned_end,status,created_by,updated_at) VALUES (?,?,?,?,?,?,?,?,?)').run(id,student,'Science',teacher,new Date(start).toISOString(),new Date(start+3600000).toISOString(),status,'teacher-a',at);}
+// Reminder offsets use separate short lessons so current overlap guards remain
+// active; this fixture does not need one-hour teaching durations.
+function lesson(id,start,status='scheduled',student='Student A',teacher='Teacher A'){sqlite.prepare('INSERT INTO lessons (id,student,subject,teacher_name,planned_start,planned_end,status,created_by,updated_at) VALUES (?,?,?,?,?,?,?,?,?)').run(id,student,'Science',teacher,new Date(start).toISOString(),new Date(start+60000).toISOString(),status,'teacher-a',at);}
 lesson('thirty',now+30*60000);lesson('five',now+5*60000);lesson('start',now);lesson('past',now-5*60000);lesson('cancel',now+30*60000,'cancelled');lesson('foreign',now+30*60000,'scheduled','Student B','Teacher B');
 for(const url of ['http://fcm.googleapis.com/push','https://localhost/push','https://fcm.googleapis.com.attacker.test/push','https://attacker.test/push','https://fcm.googleapis.com:444/push','https://user@fcm.googleapis.com/push'])assert.equal(engine.allowedPushEndpoint(url),false,url);
 for(const url of ['https://fcm.googleapis.com/push','https://updates.push.services.mozilla.com/push','https://web.push.apple.com/push','https://wns2-bl2p.notify.windows.com/push'])assert.equal(engine.allowedPushEndpoint(url),true);
@@ -92,6 +110,6 @@ sqlite.prepare("UPDATE plans SET active=1 WHERE student='Student A'").run();acco
 const {navigationBadges}=(await load('lib/navigation-badges.ts')).module;
 const lessonRows=[{id:'missed',status:'scheduled',plannedEnd:new Date(now-60000).toISOString()},{id:'ongoing',status:'scheduled',plannedEnd:new Date(now+60000).toISOString()},{id:'cancelled',status:'cancelled',plannedEnd:oldStart},{id:'absent',status:'student_absent',plannedEnd:oldStart,chargeable:false},{id:'makeup',status:'scheduled',plannedEnd:oldStart,replacementFor:'absent'}];
 const requests=[{lessonId:'ongoing',status:'pending',requestedRole:'student',requestedBy:'student-a'},{lessonId:'ongoing',status:'pending',requestedRole:'teacher',requestedBy:'teacher-a'},{lessonId:'cancelled',status:'pending',requestedRole:'student'},{lessonId:'ongoing',status:'accepted',requestedRole:'student'}];
-assert.deepEqual(navigationBadges('teacher','teacher-a',lessonRows,requests,now),{lessons:1,reschedule:1,attention:0});assert.equal(navigationBadges('student','student-a',lessonRows,requests,now).reschedule,1);assert.equal(navigationBadges('admin','owner-admin',lessonRows,requests,now).attention,1);
+assert.deepEqual(navigationBadges('teacher','teacher-a',lessonRows,requests,now),{lessons:1,reschedule:1,overview:0,attention:0});assert.equal(navigationBadges('student','student-a',lessonRows,requests,now).reschedule,1);assert.equal(navigationBadges('admin','owner-admin',lessonRows,requests,now).attention,2);
 lessonRows[0].status='completed';requests[0].status='rejected';assert.equal(navigationBadges('teacher','teacher-a',lessonRows,requests,now).lessons,0);assert.equal(navigationBadges('teacher','teacher-a',lessonRows,requests,now).reschedule,0);
-sqlite.close();console.log('PASS notifications: existing push/security checks; durable schedule messages; role/assignment/actor isolation; single/all-read persistence; exact unread counts over 100; no internal audit payload; outstanding-course and incoming-request badge lifecycle.');
+hooks.deregister();sqlite.close();console.log('PASS notifications: existing push/security checks; durable schedule messages; role/assignment/actor isolation; single/all-read persistence; exact unread counts over 100; no internal audit payload; outstanding-course and incoming-request badge lifecycle.');
