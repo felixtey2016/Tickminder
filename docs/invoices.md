@@ -14,6 +14,8 @@ Open Finance (财务), then Tuition, Invoices, or Institution & templates. Only 
 
 ## Issued originals and locks
 
+Saving complete attendance confirms it under the recording teacher or administrator. A second administrator review is not required for billing or invoice issuance. Administrators can correct confirmed attendance until an issued invoice locks its financial sources. Teachers must contact an administrator to correct a confirmed record.
+
 Issuance allocates an atomic group/year sequence and freezes student, institution, logo reference, template, fee versions, amounts, lesson times and additions. Subsequent institution or fee changes do not rewrite an issued invoice. Replaced logo objects remain private and available for old originals.
 
 Issuance locks the student's billing month and the financially relevant lessons and sessions, including replacement relatives outside the billed month. New billable lessons, rescheduling, attendance or financial-source changes in a locked period are rejected by database triggers, including old/direct/bulk API paths. Non-financial note changes remain possible. The confirmation screen explains the month closure before issuance.

@@ -20,7 +20,7 @@ export async function attendanceAction(actor:Account,data:Record<string,unknown>
  if(s.status==='cancelled')throw new ClassSessionError('已取消课次不能登记考勤',409);
  const review=data.action==='reviewSessionAttendance';
  if(review&&actor.role!=='admin')throw new ClassSessionError('只有管理员可以复核考勤',403);
- if(actor.role==='teacher'&&s.attendanceReviewedAt)throw new ClassSessionError('考勤已经复核，请联系管理员更正',409);
+ if(actor.role==='teacher'&&s.attendanceReviewedAt)throw new ClassSessionError('考勤已经确认，请联系管理员更正',409);
  if(actor.role==='teacher'&&!mayCheckIn(s.plannedStart,now))throw new ClassSessionError('课程当天才可以打卡');
  if(!Number.isSafeInteger(data.revision)||data.revision!==s.revision)throw new ClassSessionError('课次已改变，请重新载入考勤',409);
  const teaching=review?s.teachingStatus:str(data.teachingStatus);
@@ -44,7 +44,9 @@ export async function attendanceAction(actor:Account,data:Record<string,unknown>
  });
  const billableIds=JSON.stringify(recorded.filter(p=>p.chargeable).map(p=>p.lessonId));
  if(await first("SELECT 1 FROM lessons WHERE replacement_for IN(SELECT value FROM json_each(?)) AND status<>'cancelled'",billableIds))throw new ClassSessionError('已有补课安排，不能同时标记原课收费',409);
- const checked=actor.role==='admin'?now:null,note=review?s.attendanceNote:str(data.note).slice(0,500)||null;
+ // A successful save is the recording teacher's final confirmation. Persist
+ // the same confirmation facts used by billing and invoices in this batch.
+ const checked=now,note=review?s.attendanceNote:str(data.note).slice(0,500)||null;
  const guard="EXISTS(SELECT 1 FROM accounts a JOIN tuition_groups g ON g.id=? AND g.active=1 WHERE a.id=? AND a.disabled_at IS NULL AND a.role=? AND (a.group_id=g.id OR (?=1 AND a.group_id IS NULL)) AND (a.role='admin' OR (a.teacher_name=class_sessions.teacher_name AND EXISTS(SELECT 1 FROM teachers t WHERE t.group_id=g.id AND t.name=a.teacher_name AND t.active=1))))";
  const claim='EXISTS(SELECT 1 FROM class_sessions WHERE id=? AND group_id=? AND mutation_id=?)',claimArgs=[s.id,group,op],afterTeaching={teachingStatus:teaching,actualStart:start,actualEnd:end,reviewedAt:checked};
  const statements=[db.prepare('UPDATE class_sessions SET teaching_status=?,actual_start=?,actual_end=?,attendance_note=?,attendance_recorded_at=?,attendance_recorded_by=?,attendance_reviewed_at=?,attendance_reviewed_by=?,attendance_written_at=?,revision=revision+1,mutation_id=?,updated_at=? WHERE id=? AND group_id=? AND revision=? AND '+guard+(actor.role==='teacher'?' AND attendance_reviewed_at IS NULL':''))

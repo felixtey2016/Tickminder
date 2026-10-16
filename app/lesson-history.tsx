@@ -59,7 +59,7 @@ export function LessonHistory({ lessonId }: { lessonId: string }) {
         </li>)}</ol> : <p>{t("暂无改期记录")}</p>}
         {history.attendanceEntries?.length ? <section className="attendance-history">
           <h3>{t("考勤变更历史")}</h3><ol>{history.attendanceEntries.map(entry => <li key={entry.id}>
-            <strong>{t(entry.action.includes("review") ? "复核考勤" : "登记考勤")}{!history.studentView && <> · {entry.actor || t("已删除账号")}</>}</strong>
+            <strong>{t(entry.action==="autoConfirmAttendance" ? "自动确认考勤" : entry.action.includes("review") ? "复核考勤" : "登记考勤")}{!history.studentView && <> · {entry.actor || t("已删除账号")}</>}</strong>
             <small>{dateTime(entry.at)}</small>{[entry.before, entry.after].map((value, index) => <div key={index}>
               <b>{t(index ? "变更后" : "变更前")}</b><span>{t(attendanceLabels[String(value.status || "")] || String(value.status || "—"))}</span>
               {typeof value.actualStart === "string" && typeof value.actualEnd === "string" && <small>{t("老师授课时间")} · {span(value.actualStart, value.actualEnd)}</small>}

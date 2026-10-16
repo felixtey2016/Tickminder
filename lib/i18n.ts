@@ -17,6 +17,11 @@ export function setLanguage(language: Language) {
 export function getLanguage() { return currentLanguage; }
 
 const en: Record<string, string> = {
+  "保存并确认考勤": "Save and confirm attendance",
+  "考勤已经确认，请联系管理员更正": "Attendance is confirmed. Contact an administrator for corrections.",
+  "保存后考勤自动确认，无需管理员再次复核。": "Saving confirms attendance. No further administrator review is needed.",
+  "自动确认考勤": "Attendance automatically confirmed",
+  "已确认考勤": "Attendance confirmed",
   "财务":"Finance",
   "关联资料已正式开单，考勤及计费依据已锁定。请通过账单调整流程更正。":"An invoice has been issued for these records. Attendance and billing sources are locked. Corrections require an invoice adjustment.",
   "生成账单草稿":"Create invoice draft",

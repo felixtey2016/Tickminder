@@ -37,7 +37,7 @@ export async function GET(request: Request) {
 
   const [requests, changes] = await Promise.all([
     showReschedules?guardedCoreReader(actor,['reschedules.view']).rows<typeof rescheduleRequests.$inferSelect>("SELECT id,original_start AS originalStart,original_end AS originalEnd,proposed_start AS proposedStart,proposed_end AS proposedEnd,status,note,requested_role AS requestedRole,requested_by AS requestedBy,requested_at AS requestedAt,responded_by AS respondedBy,responded_at AS respondedAt FROM reschedule_requests WHERE lesson_id=? OR (session_id=? AND EXISTS(SELECT 1 FROM class_sessions WHERE id=? AND session_type='group'))",id,lesson.sessionId,lesson.sessionId):[],
-    db.select().from(audit).where(and(groupWhere(audit,actor.groupId,eq(audit.lessonId,id)),or(and(eq(audit.action,'reschedule'),adminPermissionReadCondition(actor,'reschedules.view')),and(inArray(audit.action,['saveSessionAttendance','reviewSessionAttendance','attendance','review']),adminPermissionReadCondition(actor,'attendance.view'))))).all(),
+    db.select().from(audit).where(and(groupWhere(audit,actor.groupId,eq(audit.lessonId,id)),or(and(eq(audit.action,'reschedule'),adminPermissionReadCondition(actor,'reschedules.view')),and(inArray(audit.action,['saveSessionAttendance','reviewSessionAttendance','attendance','review','autoConfirmAttendance']),adminPermissionReadCondition(actor,'attendance.view'))))).all(),
   ]);
   const relevant = showReschedules?changes.filter(change => change.action === "reschedule"):[];
   const actorIds = new Set([...requests.flatMap(row => [row.requestedBy, row.respondedBy]), ...changes.map(row => row.actorId)].filter(Boolean));
@@ -68,7 +68,7 @@ export async function GET(request: Request) {
       } catch { return []; }
     }),
   ].sort((a, b) => b.requestedAt.localeCompare(a.requestedAt) || b.id.localeCompare(a.id));
-  const attendanceEntries=(showAttendance?changes:[]).filter(c=>['saveSessionAttendance','reviewSessionAttendance','attendance','review'].includes(c.action)).map(c=>{let before:unknown={},after:unknown={};try{before=JSON.parse(c.before||'{}');after=JSON.parse(c.after||'{}');}catch{}return studentView ? {id:c.id,action:c.action,at:c.at,before:studentAttendanceSnapshot(before),after:studentAttendanceSnapshot(after)} : {id:c.id,action:c.action,at:c.at,actor:nameOf(c.actorId),before,after};}).sort((a,b)=>b.at.localeCompare(a.at)||b.id.localeCompare(a.id));
+  const attendanceEntries=(showAttendance?changes:[]).filter(c=>['saveSessionAttendance','reviewSessionAttendance','attendance','review','autoConfirmAttendance'].includes(c.action)).map(c=>{let before:unknown={},after:unknown={};try{before=JSON.parse(c.before||'{}');after=JSON.parse(c.after||'{}');}catch{}return studentView ? {id:c.id,action:c.action,at:c.at,before:studentAttendanceSnapshot(before),after:studentAttendanceSnapshot(after)} : {id:c.id,action:c.action,at:c.at,actor:nameOf(c.actorId),before,after};}).sort((a,b)=>b.at.localeCompare(a.at)||b.id.localeCompare(a.id));
   return NextResponse.json({studentView,attendanceEntries, currentStart: lesson.plannedStart, currentEnd: lesson.plannedEnd, entries }, {headers:responseHeaders});
   }catch(error){const permission=adminPermissionFailure(error);return bad(permission?.error||'课程历史暂时无法加载',permission?.status||503);}
 }
