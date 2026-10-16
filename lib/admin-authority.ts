@@ -3,6 +3,7 @@ import { learningDb } from "@/lib/learning-server";
 import { OWNER_EMAIL } from "@/lib/owner";
 import { requireGroup } from "@/lib/group-data";
 import { sql } from "drizzle-orm";
+import { accountSessionPredicate } from "@/lib/account-session";
 
 type Predicate = { sql: string; args: unknown[] };
 export type AccountManagementAction = "resetLocalPassword" | "activateAccount" | "bind" | "deleteAccount" | "restoreAccount" | "permanentDelete";
@@ -16,11 +17,12 @@ export class AdminAuthorityError extends Error {
 const ownerSql = (alias: string) => `${alias}.role='admin' AND lower(trim(${alias}.email))=? AND substr(${alias}.id,1,6)<>'local:'`;
 function actorPredicate(actor: Account, groupId: string, administrators = false, ownerOnly = false): Predicate {
   const owner = ownerSql("a");
+  const session = accountSessionPredicate(actor);
   return {
     sql: `EXISTS(SELECT 1 FROM accounts a JOIN tuition_groups g ON g.id=? WHERE a.id=? AND a.disabled_at IS NULL AND a.role='admin'
       AND NOT EXISTS(SELECT 1 FROM local_credentials c WHERE c.account_id=a.id AND c.must_change_password=1)
-      AND ((${owner})${ownerOnly ? "" : ` OR (a.group_id=g.id AND g.active=1${administrators ? " AND g.chief_admin_id=a.id" : ""})`}))`,
-    args: [groupId, actor.id, OWNER_EMAIL],
+      AND ((${owner})${ownerOnly ? "" : ` OR (a.group_id=g.id AND g.active=1${administrators ? " AND g.chief_admin_id=a.id" : ""})`}) AND ${session.sql})`,
+    args: [groupId, actor.id, OWNER_EMAIL, ...session.args],
   };
 }
 

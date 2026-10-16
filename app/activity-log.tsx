@@ -10,7 +10,7 @@ type Change = {
     after: string | null;
     at: string;
 };
-const actionLabel: Record<string, string> = {"create":"课程已安排","attendance":"出席记录已更新","review":"复核结果已保存","reschedule":"课程时间已更新","cancel":"课程已取消","saveTeacher":"老师名单已更新","saveStudent":"学生名单已更新","setStudentActive":"学生名单已更新","savePlan":"科目配对已保存","bind":"身份分配已保存","createLocalAccount":"账号已创建","deleteAccount":"admin.accountSuspended","restoreAccount":"admin.accountRestored","activateAccount":"admin.accountActivated","group.setChief":"admin.chiefSaved","permanentDelete":"admin.accountPermanentlyDeleted","resetLocalPassword":"密码已重置","proposeReschedule":"改期申请已提交","acceptReschedule":"改期申请已接受","rejectReschedule":"改期申请已拒绝","reassignTeacher":"负责老师已更换"};
+const actionLabel: Record<string, string> = {"adminPermissions.saveDraft":"admin.permissionsDraftSaved","adminPermissions.applyDraft":"admin.permissionsApplied","adminPermissions.discardDraft":"admin.permissionsDraftDiscarded","create":"课程已安排","attendance":"出席记录已更新","review":"复核结果已保存","reschedule":"课程时间已更新","cancel":"课程已取消","saveTeacher":"老师名单已更新","saveStudent":"学生名单已更新","setStudentActive":"学生名单已更新","savePlan":"科目配对已保存","bind":"身份分配已保存","createLocalAccount":"账号已创建","deleteAccount":"admin.accountSuspended","restoreAccount":"admin.accountRestored","activateAccount":"admin.accountActivated","group.setChief":"admin.chiefSaved","permanentDelete":"admin.accountPermanentlyDeleted","resetLocalPassword":"密码已重置","proposeReschedule":"改期申请已提交","acceptReschedule":"改期申请已接受","rejectReschedule":"改期申请已拒绝","reassignTeacher":"负责老师已更换"};
 function describe(json: string | null, action: string) {
     if (!json)
         return t("\u65E0");

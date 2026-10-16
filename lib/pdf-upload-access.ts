@@ -1,13 +1,15 @@
+import {accountSessionPredicate} from "./account-session";
 import type {Account} from "./auth";
 import {classPlanSubjectSql} from "./academic-subject-match";
 
 // Re-evaluate identity and context in the write statement, after body parsing,
 // hashing and cleanup have yielded. All names and identifiers remain bound.
 export function pdfUploadAuthority(actor: Account, kind: string, context: {classroomId: string; homeworkId: string; submissionId: string}) {
+  const session=accountSessionPredicate(actor);
   const identity = `EXISTS(SELECT 1 FROM accounts upload_actor JOIN tuition_groups upload_group ON upload_group.id=upload_actor.group_id AND upload_group.active=1
     WHERE upload_actor.id=? AND upload_actor.group_id=? AND upload_actor.role=? AND upload_actor.disabled_at IS NULL
-    AND NOT EXISTS(SELECT 1 FROM local_credentials credentials WHERE credentials.account_id=upload_actor.id AND credentials.must_change_password=1)`;
-  const values: unknown[] = [actor.id, actor.groupId, actor.role];
+    AND NOT EXISTS(SELECT 1 FROM local_credentials credentials WHERE credentials.account_id=upload_actor.id AND credentials.must_change_password=1) AND (${session.sql})`;
+  const values: unknown[] = [actor.id, actor.groupId, actor.role,...session.args];
   if (actor.role === "teacher") {
     const feedback = kind === "feedback" ? ` AND EXISTS(SELECT 1 FROM homework_submissions submission JOIN homework task ON task.id=submission.homework_id AND task.group_id=submission.group_id
       WHERE submission.id=? AND submission.group_id=upload_actor.group_id AND task.owner_id=upload_actor.id AND task.classroom_id=upload_class.id)` : "";

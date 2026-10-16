@@ -1,4 +1,7 @@
 export const adminHierarchyZh: Record<string, string> = {
+  "admin.permissionsDraftSaved": "管理员权限草稿已保存",
+  "admin.permissionsApplied": "管理员权限已应用",
+  "admin.permissionsDraftDiscarded": "管理员权限草稿已删除",
   "admin.accountSuspended": "账号已停用",
   "admin.accountRestored": "账号已恢复启用",
   "admin.accountActivated": "账号已启用",
@@ -40,6 +43,9 @@ export const adminHierarchyZh: Record<string, string> = {
 };
 
 export const adminHierarchyEn: Record<string, string> = {
+  "admin.permissionsDraftSaved": "Administrator permission draft saved",
+  "admin.permissionsApplied": "Administrator permissions applied",
+  "admin.permissionsDraftDiscarded": "Administrator permission draft deleted",
   "admin.accountSuspended": "Account suspended",
   "admin.accountRestored": "Account restored",
   "admin.accountActivated": "Account activated",

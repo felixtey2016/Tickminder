@@ -117,7 +117,8 @@ export type AdminPermissionProfile = {
   grants: AdminGrantKey[]; draftGrants: AdminGrantKey[] | null; updatedBy: string | null; updatedAt: string | null;
 };
 export type AdminPermissionsResponse = {
-  rollout: typeof ADMIN_PERMISSIONS_ROLLOUT; status: "pending"; runtimeEnforcement: boolean; currentAccess: "legacy" | "configured";
+  rollout: typeof ADMIN_PERMISSIONS_ROLLOUT | "active"; status: "pending" | "active"; runtimeEnforcement: boolean; currentAccess: "legacy" | "configured";
+  draftStatus: "saved" | "none"; canApplyDraft: boolean; canDiscardDraft: boolean;
   target: {id: string; name: string; disabledAt: string | null}; profile: AdminPermissionProfile;
   catalog: AdminPermissionModule[]; templates: AdminPermissionTemplate[];
   effectiveGrants: AdminGrantKey[]; configuredGrants: AdminGrantKey[];

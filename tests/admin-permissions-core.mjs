@@ -158,6 +158,7 @@ await section('teacher creation and restore are independently guarded with trans
   grant(adminId,['teachers.disable']);await ok('action',{action:'saveTeacher',name:'Created Teacher',active:false});assert.equal(sqlite.prepare('SELECT active FROM teachers WHERE name=?').get('Created Teacher').active,0);
   grant(adminId,['teachers.restore']);await ok('action',{action:'saveTeacher',name:'Created Teacher'});assert.equal(sqlite.prepare('SELECT active FROM teachers WHERE name=?').get('Created Teacher').active,1);
   grant(adminId,['teachers.delete']);await unchanged('unknown mutation cannot alias an authorized permanent delete',()=>denied('manage',{action:'futureAction',kind:'teacher',id:'Created Teacher',confirm:true},'',[403]));
+  for(const action of [['previewDelete'],['permanentDelete'],{action:'previewDelete'},null,true,false])await unchanged('non-string delete action cannot alias preview or permanent deletion',()=>denied('manage',{action,kind:'teacher',id:'Created Teacher',confirm:true},'',[403]));
 });
 
 await section('pairing creation avoids profile access while profile edits require student edit',async()=>{

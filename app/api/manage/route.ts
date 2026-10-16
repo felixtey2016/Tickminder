@@ -146,7 +146,7 @@ export async function POST(request: Request) {
   const groupId=requireGroup(actor.groupId); const {first,rows}=groupReader(groupId);
   try {
     const data = await request.json() as Record<string,unknown>;
-    if(actor.role==='admin'&&adminPermissionsEnforced()&&data.action!==undefined&&!['previewDelete','permanentDelete'].includes(String(data.action)))throw new AdminPermissionDenied();
+    if(actor.role==='admin'&&adminPermissionsEnforced()&&data.action!==undefined&&(typeof data.action!=='string'||!['previewDelete','permanentDelete'].includes(data.action)))throw new AdminPermissionDenied();
     const preview = data.action === 'previewDelete';
     if (!preview && data.confirm !== true) throw new DeleteError("请确认永久删除",400);
     if (await first("SELECT 1 AS found FROM local_credentials WHERE account_id = ? AND must_change_password = 1",actor.id)) throw new DeleteError("请先修改初始密码",403);

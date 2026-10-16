@@ -20,7 +20,7 @@ type BridgeResponse = {
   written?: number;
 };
 
-async function bridge(payload: Record<string, unknown>): Promise<BridgeResponse> {
+async function bridge(payload: Record<string, unknown>, authorize: () => Promise<void>): Promise<BridgeResponse> {
   const url = env.SHEET_SYNC_URL;
   const secret = env.SHEET_SYNC_SECRET;
   if (!url || !secret) throw new Error("尚未配置 Google Sheet 课时导入。");
@@ -32,6 +32,10 @@ async function bridge(payload: Record<string, unknown>): Promise<BridgeResponse>
   const key = await crypto.subtle.importKey("raw", bytes.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const signed = await crypto.subtle.sign("HMAC", key, bytes.encode(`${timestamp}.${nonce}.${body}`));
   const signature = [...new Uint8Array(signed)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+  // HMAC operations yield. Recheck the same authenticated actor/session after
+  // signing and immediately before dispatching private data or a remote write.
+  // A request already accepted by Apps Script cannot be cancelled transactionally.
+  await authorize();
   const response = await fetch(url, {
     method: "POST",
     headers: { "content-type": "text/plain;charset=UTF-8" },
@@ -71,7 +75,8 @@ export async function POST(request: Request) {
     const mode = input.mode as SyncMode;
     const permissionKey=input.action==='commit'?'sheetSync.commit':'sheetSync.preview';
     await requireCorePermissions(actor,[permissionKey]);
-    const selected = await bridge({ action: "month" });
+    const authorize=()=>requireCorePermissions(actor,[permissionKey]);
+    const selected = await bridge({ action: "month" },authorize);
     if (!selected.month || !selected.displayMonth) throw new Error("无法读取表格当前月份。");
     if (input.action === "commit" && (input.month !== selected.month || !input.previewToken)) {
       return NextResponse.json({ error: "表格月份已变化，请重新预览。" }, { status: 409 });
@@ -80,7 +85,7 @@ export async function POST(request: Request) {
     const [planRows, lessonRows] = await Promise.all([db.select().from(plans).where(and(groupWhere(plans,actor.groupId),adminPermissionReadCondition(actor,permissionKey))).all(), db.select().from(lessons).where(and(groupWhere(lessons,actor.groupId),adminPermissionReadCondition(actor,permissionKey))).all()]);
     const pairs = monthlySheetPairs(planRows, lessonRows, selected.month, mode);
     await requireCorePermissions(actor,[permissionKey]);
-    const result = await bridge({ action: input.action, month: selected.month, mode, pairs, previewToken: input.previewToken });
+    const result = await bridge({ action: input.action, month: selected.month, mode, pairs, previewToken: input.previewToken },authorize);
     return NextResponse.json(result, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     const permission=adminPermissionFailure(error);if(permission)return NextResponse.json({error:permission.error},{status:permission.status});

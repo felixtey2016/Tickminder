@@ -6,10 +6,10 @@ import { requireGroup } from "@/lib/group-data";
 import { OWNER_EMAIL } from "@/lib/owner";
 import { configuredAdminGrantGuard, configuredAdminGrantPredicate } from "@/lib/admin-permissions-server";
 import { LEGACY_ADMIN_GRANTS, hasAdminGrant, normalizeAdminGrants, type AdminGrantKey } from "@/lib/admin-permissions";
+import { accountSessionPredicate } from "@/lib/account-session";
 
 export type AdminPermissionContext = { enforced: boolean; grants: AdminGrantKey[]; privileged: boolean };
-// Round 2 verifies enforcement only in an isolated local runtime. No deployed
-// configuration enables this binding; the complete rollout is a separate gate.
+// A deployment can retain preparation mode during staged rollout or recovery.
 export function adminPermissionsEnforced() { return env.ADMIN_PERMISSIONS_MODE === "enforced"; }
 export class AdminPermissionDenied extends Error {
   readonly status = 403;
@@ -24,6 +24,7 @@ export async function adminPermissionContext(account: Pick<Account,"id"|"role"|"
   if (account.role !== "admin") return {enforced: false, grants: [], privileged: false};
   if (!enforced) return {enforced, grants: [...LEGACY_ADMIN_GRANTS], privileged: false};
   const groupId = requireGroup(account.groupId);
+  const session = accountSessionPredicate(account);
   const row = await learningDb().prepare(`SELECT
     CASE WHEN lower(trim(a.email))=? AND substr(a.id,1,6)<>'local:' OR a.group_id=g.id AND g.active=1 AND g.chief_admin_id=a.id THEN 1 ELSE 0 END AS privileged,
     p.grants_json AS grantsJson
@@ -31,8 +32,8 @@ export async function adminPermissionContext(account: Pick<Account,"id"|"role"|"
     LEFT JOIN admin_permission_profiles p ON p.group_id=g.id AND p.account_id=a.id
     WHERE a.id=? AND a.role='admin' AND a.disabled_at IS NULL
     AND NOT EXISTS(SELECT 1 FROM local_credentials c WHERE c.account_id=a.id AND c.must_change_password=1)
-    AND (lower(trim(a.email))=? AND substr(a.id,1,6)<>'local:' OR a.group_id=g.id AND g.active=1)`)
-    .bind(OWNER_EMAIL,groupId,account.id,OWNER_EMAIL).first<{privileged:number;grantsJson:string|null}>();
+    AND (lower(trim(a.email))=? AND substr(a.id,1,6)<>'local:' OR a.group_id=g.id AND g.active=1) AND ${session.sql}`)
+    .bind(OWNER_EMAIL,groupId,account.id,OWNER_EMAIL,...session.args).first<{privileged:number;grantsJson:string|null}>();
   if (!row) return {enforced,grants:[],privileged:false};
   if (row.privileged) return {enforced,grants:[...LEGACY_ADMIN_GRANTS],privileged:true};
   let grants: AdminGrantKey[] = [];

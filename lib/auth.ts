@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import { accounts, googleIdentities, localCredentials, sessions } from "@/db/schema";
 import { pendingExpired } from "@/lib/account-lifecycle";
 import { selectedGroup } from "@/lib/groups-server";
+import { bindAccountSession, transferAccountSession } from "@/lib/account-session";
 
 export type Account = typeof accounts.$inferSelect;
 const encoder = new TextEncoder();
@@ -75,6 +76,7 @@ export async function verifyGoogleCredential(token: string) {
 export async function currentIdentity() {
   const token = (await cookies()).get("tuition_session")?.value;
   if (!token) return null;
+  const sessionHash = await hashToken(token);
   const row = await getDb().select({
     account: accounts,
     username: localCredentials.username,
@@ -84,9 +86,9 @@ export async function currentIdentity() {
   }).from(sessions).innerJoin(accounts, eq(accounts.id, sessions.accountId))
     .leftJoin(localCredentials, eq(localCredentials.accountId, accounts.id))
     .leftJoin(googleIdentities, eq(googleIdentities.accountId, accounts.id))
-    .where(and(eq(sessions.tokenHash, await hashToken(token)), gt(sessions.expiresAt, new Date().toISOString()))).get();
+    .where(and(eq(sessions.tokenHash, sessionHash), gt(sessions.expiresAt, new Date().toISOString()))).get();
   if (!row || row.account.disabledAt || pendingExpired(row.account)) return null;
-  return { account: row.account,
+  return { account: bindAccountSession(row.account, sessionHash),
     local: row.username ? { username: row.username, mustChangePassword: Boolean(row.mustChangePassword) } : null,
     google: row.googleSubject ? { subject: row.googleSubject, email: row.googleEmail! } : null };
 }
@@ -101,7 +103,7 @@ export async function currentBusinessAccount(): Promise<Account | null> {
   if (!identity || identity.local?.mustChangePassword || (!identity.local && identity.google)) return null;
   const group = await selectedGroup(identity.account);
   if (!group) return null;
-  return {...identity.account,groupId:group.id};
+  return transferAccountSession(identity.account, {...identity.account,groupId:group.id});
 }
 
 export async function createSession(accountId: string) {
