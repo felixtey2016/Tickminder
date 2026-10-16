@@ -25,7 +25,7 @@ export function BillingRateEditor({planKey,onPreview}:{planKey:string;onPreview?
  if(!data)return <div className="billing-error" role="alert"><p>{error}</p><Button variant="outline" onClick={()=>setReload(x=>x+1)}>{t('重试')}</Button></div>;
  return <div className="billing-rate-editor" aria-busy={busy}>
   <div className="billing-context"><strong>{data.context.student} · {data.context.subject}</strong><p className="muted">{t('收费设置仅对平台最高管理员开放。')}</p></div>
-  {!data.policy&&<div className="notice billing-notice"><p>{t('首次核算前，请在费用预览确认计费规则。')}</p>{onPreview&&<Button type="button" variant="outline" onClick={onPreview}>{t('前往费用预览')}</Button>}</div>}
+  {!data.policy&&data.policyRevision===0&&<div className="notice billing-notice"><p>{t('首次保存收费时会启用默认规则：MYR、普通打卡按课程预设时长、明确早退才调整、月中变动人工核对。')}</p>{onPreview&&<Button type="button" variant="outline" onClick={onPreview}>{t('前往费用预览')}</Button>}</div>}
   <div className="billing-current-rate"><span>{t('当前费率')}</span><strong>{billingMoney(data.context.currentRate?.amountCents)}</strong><small>{data.context.currentRate?`${t(billingModeLabel[data.context.currentRate.mode])} · ${t('生效日期')} ${data.context.currentRate.effectiveFrom}`:t('尚未设置已生效的费率')}</small></div>
   {!data.context.active&&<p className="notice" role="status">{t('该学生或课程已停用，收费设置为只读。费率历史保留。')}</p>}
   {data.context.active&&<form className="billing-form" onSubmit={save}>

@@ -1,7 +1,7 @@
 import type {Account} from './auth';
 import {learningDb} from './learning-server';
 import {isOwnerAccount,OWNER_EMAIL} from './owner';
-import {BillingError,billingDate,billingMonth,malaysiaDate,parseBillingAmount,policyOnDate,rateOnDate,billHourlyCents,roundRatioCents,type BillingContext,type BillingPolicy,type BillingRate,type BillingRateResponse,type BillingLine,type BillingPreview,type BillingSummary} from './billing';
+import {BillingError,DEFAULT_BILLING_POLICY,billingDate,billingMonth,malaysiaDate,parseBillingAmount,policyOnDate,rateOnDate,billHourlyCents,roundRatioCents,type BillingContext,type BillingPolicy,type BillingRate,type BillingRateResponse,type BillingLine,type BillingPreview,type BillingSummary} from './billing';
 
 const ownerSql=`EXISTS(SELECT 1 FROM accounts ba JOIN tuition_groups bg ON bg.id=? AND bg.active=1 WHERE ba.id=? AND ba.role='admin' AND ba.disabled_at IS NULL AND lower(trim(ba.email))=? AND substr(ba.id,1,6)<>'local:' AND NOT EXISTS(SELECT 1 FROM local_credentials lc WHERE lc.account_id=ba.id AND lc.must_change_password=1))`;
 const str=(v:unknown)=>typeof v==='string'?v.trim():'';
@@ -53,6 +53,15 @@ export async function saveBilling(actor:Account,data:Record<string,unknown>){
    db.prepare(`INSERT INTO billing_operations(group_id,operation_id,actor_id,action,request_hash,result_json,created_at) SELECT ?,?,?,?,?,?,? WHERE ${ownerSql} AND ${liveSubject} AND EXISTS(SELECT 1 FROM billing_rates WHERE group_id=? AND id=? AND revision=?) AND NOT EXISTS(SELECT 1 FROM billing_rate_versions WHERE group_id=? AND rate_id=? AND effective_from>=?)`).bind(group,operation,actor.id,action,requestHash,JSON.stringify(result),now,...c.args,group,studentId,subjectKey,group,rateId,revision,group,rateId,effectiveFrom),
    db.prepare(`INSERT INTO billing_rate_versions(id,group_id,rate_id,revision,mode,amount_cents,currency,effective_from,subject_snapshot,actor_id,created_at) SELECT ?,?,?,?,?,?,'MYR',?,?,?,? WHERE ${guard}`).bind(id,group,rateId,revision+1,mode,amountCents,effectiveFrom,subject.subject,actor.id,now,group,operation,requestHash),
    db.prepare(`UPDATE billing_rates SET revision=?,current_version_id=?,updated_at=? WHERE group_id=? AND id=? AND revision=? AND ${guard}`).bind(revision+1,id,now,group,rateId,revision,group,operation,requestHash)];
+  // Initial policy activation belongs to this successful rate operation. A rejected
+  // live permission/revision check must not create policy records on its own.
+  const policyId=crypto.randomUUID(),defaults=DEFAULT_BILLING_POLICY;
+  statements.push(
+   db.prepare(`INSERT OR IGNORE INTO billing_policies(group_id,revision,updated_at) SELECT ?,0,? WHERE ${guard} AND NOT EXISTS(SELECT 1 FROM billing_policy_versions WHERE group_id=?)`).bind(group,now,group,operation,requestHash,group),
+   db.prepare(`INSERT INTO billing_policy_versions(id,group_id,revision,currency,hour_rounding,attendance_basis,monthly_partial,effective_from,actor_id,created_at) SELECT ?,?,1,?,?,?,?,(SELECT min(value) FROM (SELECT ? AS value UNION ALL SELECT effective_from FROM billing_rate_versions WHERE group_id=?)),?,? WHERE ${guard} AND EXISTS(SELECT 1 FROM billing_policies WHERE group_id=? AND revision=0) AND NOT EXISTS(SELECT 1 FROM billing_policy_versions WHERE group_id=?)`).bind(policyId,group,defaults.currency,defaults.hourRounding,defaults.attendanceBasis,defaults.monthlyPartial,effectiveFrom,group,actor.id,now,group,operation,requestHash,group,group),
+   db.prepare(`UPDATE billing_policies SET revision=1,current_version_id=?,updated_at=? WHERE group_id=? AND revision=0 AND EXISTS(SELECT 1 FROM billing_policy_versions WHERE id=? AND group_id=?) AND ${guard}`).bind(policyId,now,group,policyId,group,group,operation,requestHash),
+   db.prepare(`INSERT INTO audit(group_id,id,lesson_id,actor_id,action,after_json,at) SELECT ?,?,'billing',?,'billing.defaultPolicy',?,? WHERE EXISTS(SELECT 1 FROM billing_policy_versions WHERE id=? AND group_id=?) AND ${guard}`).bind(group,crypto.randomUUID(),actor.id,JSON.stringify({versionId:policyId,revision:1,source:'initialRate',rateOperationId:operation}),now,policyId,group,group,operation,requestHash)
+  );
  }else throw new BillingError('未知财务操作');
  statements.push(db.prepare(`INSERT INTO audit(group_id,id,lesson_id,actor_id,action,after_json,at) SELECT ?,?,'billing',?,?,?,? WHERE ${guard}`).bind(group,crypto.randomUUID(),actor.id,'billing.'+action,JSON.stringify({versionId:id,revision:revision+1}),now,group,operation,requestHash));
  const saved=await db.batch(statements);if(!saved[1].meta.changes)throw new BillingError('资料或权限已改变，请刷新后重试',409);return result;
@@ -60,8 +69,9 @@ export async function saveBilling(actor:Account,data:Record<string,unknown>){
 
 type Source={id:string;student:string;subject:string;teacherName:string;plannedStart:string;plannedEnd:string;actualStart:string|null;actualEnd:string|null;status:string;attendanceKind:string|null;chargeable:number|null;reviewedAt:string|null;replacementFor:string|null;sessionId:string|null;sessionStatus:string|null;classroomId:string|null;classroomTitle:string|null;teachingStatus:string|null;teachingStart:string|null;teachingEnd:string|null;sessionReviewedAt:string|null;attendanceStatus:string|null;arrivedAt:string|null;leftAt:string|null;subjectId:string|null};
 type Subject={studentId:string;student:string;subjectKey:string;subject:string;subjectId:string|null;syllabusId:string|null;identityCreatedAt:string;active:number;createdAt:string;hasPlan:number;planCreatedAt:string|null};
+function futureUnstarted(source:Source,asOf:number){const pending=source.status==='scheduled'||source.teachingStatus==='pending'||['pending','scheduled'].includes(source.attendanceStatus||source.attendanceKind||'');return !source.teachingStart&&!source.actualStart&&pending&&Date.parse(source.plannedStart)>asOf;}
 function seconds(start:string|null,end:string|null){if(!start||!end)return null;const value=(Date.parse(end)-Date.parse(start))/1000;return Number.isSafeInteger(value)&&value>0&&value<=86400?value:null;}
-function addWarning(line:BillingLine,warning:string){if(!line.warnings.includes(warning))line.warnings.push(warning);line.status='pending';line.amountCents=null;}
+function addWarning(line:BillingLine,warning:string){if(!line.warnings.includes(warning))line.warnings.push(warning);line.status='pending';line.amountCents=null;line.estimatedAmountCents=null;}
 const basisSql=`WITH f AS(SELECT ? AS gid,? AS sid,? AS lo,? AS hi), b AS(SELECT bs.* FROM billing_students bs,f WHERE bs.group_id=f.gid AND bs.id=f.sid)
  SELECT json_object(
  'student',(SELECT json_object('name',s.name,'active',s.active,'syllabus',s.syllabus_id,'created',s.created_at) FROM students s,b,f WHERE s.group_id=f.gid AND s.name=b.student_name),
@@ -104,7 +114,7 @@ async function saveAdjustment(actor:Account,data:Record<string,unknown>){
 }
 function lessonLine(studentId:string,subject:Subject|null,source:Source,rates:BillingRate[],policies:BillingPolicy[]):BillingLine{
  const date=malaysiaDate(source.teachingStart||source.actualStart||source.plannedStart),rate=rateOnDate(rates,date),policy=policyOnDate(policies,date),attendance=source.attendanceStatus||source.attendanceKind||source.status;
- const line:BillingLine={id:'lesson:'+source.id,studentId,student:source.student,subjectKey:subject?.subjectKey||'',subject:source.subject,date,lessonId:source.id,sessionId:source.sessionId,classroomId:source.classroomId,classroomTitle:source.classroomTitle,teacherName:source.teacherName,attendanceStatus:attendance,reviewedAt:source.sessionId?source.sessionReviewedAt:source.reviewedAt,rateVersionId:rate?.id||null,policyVersionId:policy?.id||null,mode:rate?.mode||null,unitAmountCents:rate?.amountCents??null,currency:'MYR',durationSeconds:0,billableSeconds:0,billableMinutes:0,quantity:0,amountCents:null,status:'ready',warnings:[],replacementFor:source.replacementFor};
+ const line:BillingLine={id:'lesson:'+source.id,studentId,student:source.student,subjectKey:subject?.subjectKey||'',subject:source.subject,date,lessonId:source.id,sessionId:source.sessionId,classroomId:source.classroomId,classroomTitle:source.classroomTitle,teacherName:source.teacherName,attendanceStatus:attendance,reviewedAt:source.sessionId?source.sessionReviewedAt:source.reviewedAt,rateVersionId:rate?.id||null,policyVersionId:policy?.id||null,mode:rate?.mode||null,unitAmountCents:rate?.amountCents??null,currency:'MYR',durationSeconds:0,billableSeconds:0,billableMinutes:0,quantity:0,amountCents:null,estimatedAmountCents:null,status:'ready',warnings:[],replacementFor:source.replacementFor};
  if(source.status==='cancelled'||source.sessionStatus==='cancelled'){line.status='exempt';line.amountCents=0;return line;}
  if(source.teachingStatus==='teacher_absent'||source.status==='teacher_absent'){if(!line.reviewedAt)addWarning(line,'attendance_unreviewed');else{line.status='exempt';line.amountCents=0;}return line;}
  if(!subject)addWarning(line,'subject_unmatched');
@@ -114,15 +124,21 @@ function lessonLine(studentId:string,subject:Subject|null,source:Source,rates:Bi
  if(source.teachingStatus&&source.teachingStatus!=='taught')addWarning(line,'teaching_incomplete');
  if(source.chargeable===null)addWarning(line,'charge_decision_pending');
  if(source.chargeable===0&&line.reviewedAt&&!line.warnings.includes('attendance_pending')){line.status='exempt';line.amountCents=0;line.warnings=line.warnings.filter(x=>!['missing_rate','missing_policy'].includes(x));if(!line.warnings.length)return line;}
- if(!rate||!policy||line.status==='pending')return line;
- if(rate.mode==='month'){line.status='exempt';line.amountCents=0;line.warnings.push('included_in_monthly');return line;}
+ if(!rate||!policy||!subject)return line;
  const absent=attendance==='absent'||attendance==='student_absent';
- const teaching=seconds(source.teachingStart||source.actualStart,source.teachingEnd||source.actualEnd);
+ const recorded=Boolean(source.teachingStart||source.actualStart)||source.status==='completed'||['present','late','early_leave','late_early','late_early_leave'].includes(attendance);
+ const estimable=recorded&&!absent&&source.teachingStatus!=='teacher_absent'&&source.status!=='teacher_absent'&&(!source.teachingStatus||source.teachingStatus==='taught')&&!line.warnings.some(w=>!['attendance_unreviewed','charge_decision_pending'].includes(w));
+ if(line.status==='pending'&&!estimable)return line;
+ if(rate.mode==='month'){line.warnings.push('included_in_monthly');if(line.status==='pending')line.estimatedAmountCents=0;else{line.status='exempt';line.amountCents=0;}return line;}
+ const scheduled=seconds(source.plannedStart,source.plannedEnd),early=['early_leave','late_early','late_early_leave'].includes(attendance);
+ const earlyDuration=early?seconds(source.teachingStart||source.actualStart||source.plannedStart,source.sessionId?source.leftAt:source.actualEnd):null;
+ const teaching=early?(scheduled!==null&&earlyDuration!==null?Math.min(scheduled,earlyDuration):null):scheduled;
  const personal=source.sessionId?seconds(source.arrivedAt,source.leftAt):seconds(source.actualStart,source.actualEnd);
- const duration=absent?teaching:policy.attendanceBasis==='personal'?personal:teaching;
+ const duration=policy.attendanceBasis==='personal'?(absent?seconds(source.teachingStart||source.actualStart,source.teachingEnd||source.actualEnd):personal):teaching;
  if(duration===null){addWarning(line,'invalid_attendance_duration');return line;}
- line.durationSeconds=duration;line.quantity=rate.mode==='lesson'?1:duration/3600;
- if(rate.mode==='lesson'){line.billableSeconds=duration;line.amountCents=rate.amountCents;}else{const result=billHourlyCents(rate.amountCents,duration,policy.hourRounding);line.billableSeconds=result.billableSeconds;line.amountCents=result.amountCents;}
+ line.durationBasis=policy.attendanceBasis==='personal'?'personal':early?'early_leave':'scheduled';line.durationSeconds=duration;line.quantity=rate.mode==='lesson'?1:duration/3600;
+ let amount:number;if(rate.mode==='lesson'){line.billableSeconds=duration;amount=rate.amountCents;}else{const result=billHourlyCents(rate.amountCents,duration,policy.hourRounding);line.billableSeconds=result.billableSeconds;amount=result.amountCents;}
+ if(line.status==='pending')line.estimatedAmountCents=amount;else line.amountCents=amount;
  line.billableMinutes=line.billableSeconds/60;return line;
 }
 
@@ -132,7 +148,7 @@ export async function billingPreview(actor:Account,monthValue:string,pageValue=1
  const total=(await read<{total:number}>(actor,`SELECT count(*) AS total FROM billing_students b JOIN students s ON s.group_id=b.group_id AND s.name=b.student_name WHERE ${eligible}`,...eligibleArgs))[0]?.total||0,pages=Math.max(1,Math.ceil(total/pageSize)),page=Math.min(requestedPage,pages);
  const students=await read<{studentId:string;student:string;active:number}>(actor,`SELECT b.id AS studentId,b.student_name AS student,s.active FROM billing_students b JOIN students s ON s.group_id=b.group_id AND s.name=b.student_name WHERE ${eligible} ${studentId?'AND b.id=?':''} ORDER BY lower(b.student_name),b.id LIMIT ? OFFSET ?`,...eligibleArgs,...(studentId?[studentId]:[]),studentId?1:pageSize,studentId?0:(page-1)*pageSize);
  if(studentId&&!students.length)throw new BillingError('学生不存在或无权访问',404);
- const summaries:BillingSummary[]=[],details=new Map<string,BillingLine[]>();
+ const summaries:BillingSummary[]=[],details=new Map<string,BillingLine[]>(),asOf=Date.now();
  const ids=JSON.stringify(students.map(item=>item.studentId)),names=JSON.stringify(students.map(item=>item.student));
  const [pageSubjects,pageSources,pageRates,pageAdjustments]=await Promise.all([
   read<Subject>(actor,`SELECT bs.student_id AS studentId,b.student_name AS student,bs.subject_key AS subjectKey,bs.subject,bs.subject_id AS subjectId,bs.syllabus_id AS syllabusId,bs.created_at AS identityCreatedAt,s.active,s.created_at AS createdAt,EXISTS(SELECT 1 FROM plans p WHERE p.group_id=bs.group_id AND p.student=b.student_name AND p.active=1 AND CASE WHEN p.subject_id IS NOT NULL THEN 'id:'||s.syllabus_id||':'||p.subject_id ELSE 'label:'||lower(trim(p.subject)) END=bs.subject_key) AS hasPlan,(SELECT min(p.created_at) FROM plans p WHERE p.group_id=bs.group_id AND p.student=b.student_name AND CASE WHEN p.subject_id IS NOT NULL THEN 'id:'||s.syllabus_id||':'||p.subject_id ELSE 'label:'||lower(trim(p.subject)) END=bs.subject_key) AS planCreatedAt FROM billing_subjects bs JOIN billing_students b ON b.id=bs.student_id AND b.group_id=bs.group_id JOIN students s ON s.group_id=b.group_id AND s.name=b.student_name WHERE bs.group_id=? AND bs.student_id IN(SELECT value FROM json_each(?))`,group,ids),
@@ -142,7 +158,7 @@ export async function billingPreview(actor:Account,monthValue:string,pageValue=1
  ]);
  const pageRelatives=await read<{student:string;id:string;replacementFor:string|null;chargeable:number|null;reviewedAt:string|null;status:string}>(actor,'SELECT student,id,replacement_for AS replacementFor,chargeable,reviewed_at AS reviewedAt,status FROM lessons WHERE group_id=? AND student IN(SELECT value FROM json_each(?)) AND (replacement_for IN(SELECT value FROM json_each(?)) OR id IN(SELECT value FROM json_each(?)))',group,names,JSON.stringify(pageSources.map(row=>row.id)),JSON.stringify(pageSources.map(row=>row.replacementFor).filter(Boolean)));
  for(const student of students){
-  const subjects=pageSubjects.filter(item=>item.studentId===student.studentId),sources=pageSources.filter(item=>item.student===student.student),allRates=pageRates.filter(item=>item.studentId===student.studentId);
+  const subjects=pageSubjects.filter(item=>item.studentId===student.studentId),sources=pageSources.filter(item=>item.student===student.student&&!futureUnstarted(item,asOf)),allRates=pageRates.filter(item=>item.studentId===student.studentId);
   const lines=sources.map(source=>{const matches=subjects.filter(subject=>(source.subjectId&&subject.subjectId===source.subjectId||subject.subject.trim().toLowerCase()===source.subject.trim().toLowerCase())&&subject.identityCreatedAt<=(source.teachingStart||source.actualStart||source.plannedStart)).sort((a,b)=>b.identityCreatedAt.localeCompare(a.identityCreatedAt)),subject=matches.length===1||matches.length>1&&matches[0].identityCreatedAt>matches[1].identityCreatedAt?matches[0]:null;return lessonLine(student.studentId,subject,source,subject?allRates.filter(rate=>rate.subjectKey===subject.subjectKey):[],policies);});
   // Replacement chains are inspected across month boundaries, never charged twice.
   const relatives=pageRelatives.filter(item=>item.student===student.student);
@@ -152,19 +168,21 @@ export async function billingPreview(actor:Account,monthValue:string,pageValue=1
    const boundaries=[...new Set([from,...rates.filter(rate=>rate.effectiveFrom>from&&rate.effectiveFrom<=last).map(rate=>rate.effectiveFrom),...policies.filter(policy=>policy.effectiveFrom>from&&policy.effectiveFrom<=last).map(policy=>policy.effectiveFrom),until])].sort();
    for(let i=0;i<boundaries.length-1;i++){
     const date=boundaries[i],rate=rateOnDate(rates,date);if(!rate||rate.mode!=='month')continue;const policy=policyOnDate(policies,date),enrolled=[subject.createdAt,subject.planCreatedAt].filter(Boolean).map(value=>malaysiaDate(value!)).sort().at(-1)||from,firstDay=[date,enrolled].sort().at(-1)!,lastDay=boundaries[i+1],days=Math.max(0,(Date.parse(lastDay)-Date.parse(firstDay))/86400000),daysInMonth=Number(last.slice(8,10));
-    const line:BillingLine={id:`monthly:${student.studentId}:${subject.subjectKey}:${month}:${rate.id}:${date}`,studentId:student.studentId,student:student.student,subjectKey:subject.subjectKey,subject:subject.subject,date,lessonId:null,sessionId:null,classroomId:null,classroomTitle:null,teacherName:null,attendanceStatus:'monthly',reviewedAt:null,rateVersionId:rate.id,policyVersionId:policy?.id||null,mode:'month',unitAmountCents:rate.amountCents,currency:'MYR',durationSeconds:0,billableSeconds:0,billableMinutes:0,quantity:days/daysInMonth,amountCents:null,status:'ready',warnings:[],replacementFor:null};
+    const line:BillingLine={id:`monthly:${student.studentId}:${subject.subjectKey}:${month}:${rate.id}:${date}`,studentId:student.studentId,student:student.student,subjectKey:subject.subjectKey,subject:subject.subject,date,lessonId:null,sessionId:null,classroomId:null,classroomTitle:null,teacherName:null,attendanceStatus:'monthly',reviewedAt:null,rateVersionId:rate.id,policyVersionId:policy?.id||null,mode:'month',unitAmountCents:rate.amountCents,currency:'MYR',durationSeconds:0,billableSeconds:0,billableMinutes:0,quantity:days/daysInMonth,amountCents:null,estimatedAmountCents:null,status:'ready',warnings:[],replacementFor:null};
     const related=lines.filter(l=>l.lessonId!==null&&l.subjectKey===subject.subjectKey),partial=firstDay!==from||lastDay!==until;
     if(!policy)addWarning(line,'missing_policy');if(!subject.hasPlan||!student.active||enrolled>last)addWarning(line,'monthly_enrolment_unconfirmed');if(related.some(l=>l.status==='pending'))addWarning(line,'monthly_attendance_pending');
     if(partial&&policy?.monthlyPartial==='manual')addWarning(line,'monthly_partial_review');
     const lessonIds=new Set(related.map(item=>item.lessonId).filter(Boolean)),monthlySources=sources.filter(source=>lessonIds.has(source.id));
     if(monthlySources.some(source=>source.teachingStatus==='teacher_absent'||source.status==='teacher_absent'||source.chargeable===0&&Boolean(source.sessionId?source.sessionReviewedAt:source.reviewedAt)&&['absent','student_absent'].includes(source.attendanceStatus||source.attendanceKind||source.status)||source.chargeable===1&&Boolean(source.replacementFor)))addWarning(line,'monthly_exception_review');
-    if(line.status==='ready'){line.amountCents=partial&&policy?.monthlyPartial==='daily'?roundRatioCents(rate.amountCents,days,daysInMonth):rate.amountCents;line.quantity=partial&&policy?.monthlyPartial==='daily'?days/daysInMonth:1;}
+    const monthlyAmount=partial&&policy?.monthlyPartial==='daily'?roundRatioCents(rate.amountCents,days,daysInMonth):rate.amountCents;
+    if(line.status==='ready'){line.amountCents=monthlyAmount;line.quantity=partial&&policy?.monthlyPartial==='daily'?days/daysInMonth:1;}
+    else if(line.warnings.every(w=>w==='monthly_attendance_pending')&&related.filter(l=>l.status==='pending').every(l=>l.estimatedAmountCents!==null))line.estimatedAmountCents=monthlyAmount;
     lines.push(line);
    }
   }
   lines.sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
   await applyAdjustments(actor,student.studentId,month,lines,Boolean(studentId),snapshots,pageAdjustments.filter(item=>item.studentId===student.studentId));
-  const summary:BillingSummary={studentId:student.studentId,student:student.student,active:Boolean(student.active),subtotalCents:lines.reduce((sum,line)=>sum+(line.amountCents??0),0),pendingCount:lines.filter(line=>line.status==='pending').length,lineCount:lines.length};if(!Number.isSafeInteger(summary.subtotalCents))throw new BillingError('费用超出可计算范围');summaries.push(summary);details.set(student.studentId,lines);
+  const summary:BillingSummary={studentId:student.studentId,student:student.student,active:Boolean(student.active),subtotalCents:lines.reduce((sum,line)=>sum+(line.amountCents??0),0),estimatedSubtotalCents:lines.reduce((sum,line)=>sum+(line.amountCents??line.estimatedAmountCents??0),0),pendingCount:lines.filter(line=>line.status==='pending').length,lineCount:lines.length};if(!Number.isSafeInteger(summary.subtotalCents)||!Number.isSafeInteger(summary.estimatedSubtotalCents))throw new BillingError('费用超出可计算范围');summaries.push(summary);details.set(student.studentId,lines);
  }
  return{month,currency:'MYR',policy:current(policies),policyRevision:Math.max(0,...policies.map(p=>p.revision)),items:summaries,total,page,pageSize,pages,...(studentId?{detail:{...summaries[0],lines:details.get(studentId)||[]}}:{}),warnings:policies.length?[]:['missing_policy']};
 }
