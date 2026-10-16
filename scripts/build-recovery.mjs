@@ -23,6 +23,7 @@ if (JSON.stringify(built.routes) !== JSON.stringify(source.routes)) throw new Er
 if (JSON.stringify(built.d1_databases) !== JSON.stringify(source.d1_databases) ||
     JSON.stringify(built.r2_buckets) !== JSON.stringify(source.r2_buckets)) throw new Error('Recovery storage mismatch');
 if (JSON.stringify(Object.keys(built.vars).sort()) !== JSON.stringify(Object.keys(source.vars).sort())) throw new Error('Unexpected build variables');
+for (const [key, value] of Object.entries(source.vars)) if (built.vars[key] !== value) throw new Error('Recovery build variable value mismatch');
 function checkAssets(folder) {
   for (const item of readdirSync(folder, { withFileTypes: true })) {
     if (/^(?:\.env|\.dev\.vars|\.openai|\.git)|\.(?:dpapi|aes|sqlite|db|pdf)$/i.test(item.name)) throw new Error('Private file in deployment assets');

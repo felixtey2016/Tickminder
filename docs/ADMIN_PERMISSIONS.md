@@ -1,8 +1,8 @@
 # Administrator permission configuration
 
-## Round 1: preparation
+## Current operation
 
-Permission configurations can be prepared and saved as drafts. **They are not active.** Existing access continues under the administrator hierarchy until the complete permission rollout is enabled after integration and verification.
+The production release configuration enables module permissions with `ADMIN_PERMISSIONS_MODE=enforced`. Current administrator access uses the explicitly stored permissions and the existing administrator hierarchy. **Saving a draft does not apply it.** A manager must review and explicitly apply the saved draft to change access.
 
 In **People & accounts → Accounts**, the platform owner or organisation chief can choose **Permission settings** for an ordinary administrator in the selected organisation. Suspended accounts may be configured without being reactivated. Ordinary administrators cannot change their own permissions or another administrator's permissions.
 
@@ -12,19 +12,19 @@ Only actions already supported by the application are configurable. Teaching-mat
 
 ## Existing and new accounts
 
-Existing administrator identities receive an explicit snapshot of their existing scope. The snapshot does not expand when new modules are added. Accounts created after the migration begin with an empty stored configuration for the future rollout; preparation mode continues to use existing access rules.
+Existing administrator identities receive an explicit snapshot of their existing scope. The snapshot does not expand when new modules are added. Accounts created after the migration begin with an empty stored configuration and have no business-module access until an authorised manager applies their permissions. The platform owner and designated organisation chief retain their existing protected management authority.
 
 Saved drafts do not alter the stored baseline or live access. Configuration changes are recorded with before/after values and a revision. Concurrent edits require reloading and reviewing the latest version; a stale page cannot silently replace newer settings. Configuration history is visible only to authorised administrator managers.
 
-## Round 2: integration
+## Integrated access checks
 
-Module permissions are connected to business queries and actions, current and historic files, navigation and controls. This integration is verified in an isolated local environment. The normal deployment configuration continues to use existing access rules; saved drafts remain pending.
+Module permissions are connected to business queries and actions, current and historic files, navigation and controls. The integration and application workflow are verified with synthetic accounts in an isolated local environment before release. Saved drafts remain pending until explicitly applied.
 
 Selectors return only the names, academic labels and references needed for the permitted action. A scheduling administrator can select students and teachers without receiving their complete profiles. Quiz-library access and student-assignment access are independent. Statistics can be viewed without attendance notes, and activity-log snapshots require access to the relevant module. Student, teacher, creator, recipient and organisation restrictions continue to apply alongside module permissions.
 
 Folder and classroom deletion retain their existing confirmed cascade behaviour. Permission to delete these containers includes deleting the affected contents described in their confirmation. This does not grant separate content editing, publishing or grading rights. Preview the deletion effects before confirming.
 
-## Round 3: saved drafts and explicit application
+## Saved drafts and explicit application
 
 When runtime enforcement is enabled, the permission editor separates the current access, saved draft and unsaved changes. Save the draft, review its additions and removals against the current configuration, then explicitly confirm **Apply permissions**. Only the exact saved server draft can be applied; the application request cannot supply replacement grants. Applying an empty draft revokes every configurable permission. Discarding a draft preserves current access. Suspended accounts can be configured without being reactivated.
 
@@ -38,7 +38,7 @@ Google Sheet requests recheck authority after signing, immediately before dispat
 
 ## Formal rollout and recovery
 
-The tracked deployment configuration still omits `ADMIN_PERMISSIONS_MODE`; formal activation requires a separately approved release. Applying a draft is rejected while runtime enforcement is off. The isolated fixtures enable `ADMIN_PERMISSIONS_MODE=enforced` to verify the finished workflow in advance. The static preparation constant is not an activation switch.
+The tracked production configuration sets `ADMIN_PERMISSIONS_MODE=enforced` following explicit approval for the release. Applying a draft is rejected if a deployment retains preparation mode by omitting this binding. Isolated fixtures verify both modes. The static preparation constant is the fallback response label, not an activation switch.
 
 Before formal activation, create and verify an encrypted production backup, rehearse migration `0032_admin_permissions.sql` and the v21 restore, then add only the missing permission table and frozen legacy profiles. Do not run all historical migrations against a database restored without matching migration tracking. Existing administrators receive their explicit legacy scope; new administrators have no configurable permissions until a manager applies a draft. An existing draft is never applied automatically during rollout. Students, teachers, content ownership, tenant boundaries and the owner-only billing pilot remain in force.
 

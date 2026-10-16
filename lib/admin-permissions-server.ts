@@ -38,8 +38,8 @@ function targetPredicate(actor: Account, accountId: string): Predicate {
   };
 }
 
-// Integrated callers opt in only in the isolated enforcement runtime during
-// preparation. Missing profiles and unknown/future grants deny by default;
+// Runtime enforcement uses explicit stored grants. Missing profiles and
+// unknown/future grants deny by default;
 // configuring an ordinary admin can never elevate it above existing ceilings.
 export function configuredAdminGrantPredicate(actor: Account, key: string): Predicate {
   if (!hasAdminGrant(LEGACY_ADMIN_GRANTS, key)) return {sql: "0", args: []};
@@ -153,9 +153,8 @@ export async function saveAdminPermissionDraft(actor: Account, accountId: string
   return response(target, next);
 }
 
-// Production remains in preparation. Application is deliberately unavailable
-// unless the existing runtime enforcement binding is enabled by a later release.
-// Isolated tests use that binding to verify the complete lifecycle in advance.
+// Application is unavailable when a deployment explicitly retains preparation
+// mode during rollout or recovery. The release configuration controls this gate.
 export async function changeSavedAdminPermissionDraft(actor:Account,accountId:string,expectedRevision:number,action:'applyDraft'|'discardDraft'):Promise<AdminPermissionsResponse> {
   const target=await managedTarget(actor,accountId),groupId=requireGroup(actor.groupId),previous=await profileRow(actor,accountId),before=profileResponse(groupId,accountId,previous);
   if(before.revision!==expectedRevision)throw new AdminPermissionsError('permissions.revisionChanged',409);
