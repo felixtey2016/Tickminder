@@ -79,6 +79,11 @@ check(()=>assert.equal(restored.prepare('SELECT amount_cents FROM billing_adjust
 check(()=>assert.equal(restored.prepare('SELECT amount_cents FROM billing_adjustments WHERE id=?').get('fixture-adjustment-0').amount_cents,4200));
 check(()=>assert.equal(restored.prepare('SELECT count(*) count FROM accounts WHERE id=?').get('historical-owner-id').count,0,'immutable financial authors may be retained after the actor account is removed'));
 const mutate=(sql,values,test)=>{restored.exec('SAVEPOINT malformed_snapshot;PRAGMA defer_foreign_keys=ON');try{restored.prepare(sql).run(...values);test();}finally{restored.exec('ROLLBACK TO malformed_snapshot;RELEASE malformed_snapshot');}};
+for(const identityTable of ['billing_students','billing_subjects']){
+ for(const legacyTimestamp of ['2032-06-01T00:00:00Z','2032-06-01T08:00:00+08:00'])check(()=>mutate('UPDATE '+identityTable+' SET created_at=?',[legacyTimestamp],()=>assert.doesNotThrow(()=>checkRestoredBillingStructure(restored),'inherited valid roster/plan timestamps retain their original representation')));
+ check(()=>mutate('UPDATE '+identityTable+' SET created_at=?',['invalid-timestamp'],()=>assert.throws(()=>checkRestoredBillingStructure(restored),/billing/,'unparseable inherited timestamps are still rejected')));
+}
+check(()=>mutate('UPDATE billing_rate_versions SET created_at=?',['2032-06-01T00:00:00Z'],()=>assert.throws(()=>checkRestoredBillingStructure(restored),/billing/,'new financial versions still require canonical timestamps')));
 check(()=>mutate('UPDATE billing_rates SET current_version_id=? WHERE id=?',['fixture-rate-1-version','fixture-rate-0'],()=>assert.throws(()=>checkRestoredBillingStructure(restored),/billing/,'cross-group current pointers rejected')));
 check(()=>mutate('UPDATE billing_policies SET revision=revision+1 WHERE group_id=?',[group],()=>assert.throws(()=>checkRestoredBillingStructure(restored),/billing/,'dangling current policy revision rejected')));
 check(()=>mutate('UPDATE billing_rates SET student_id=? WHERE id=?',[restored.prepare('SELECT id FROM billing_students WHERE group_id=?').get(other).id,'fixture-rate-0'],()=>assert.throws(()=>checkRestoredBillingStructure(restored),/billing/,'forged financial student group rejected')));

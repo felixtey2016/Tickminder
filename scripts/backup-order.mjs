@@ -78,8 +78,10 @@ export function checkRestoredBillingStructure(db) {
  const integer=(value,min=0,max=Number.MAX_SAFE_INTEGER)=>Number.isSafeInteger(value)&&value>=min&&value<=max;
  const date=value=>typeof value==='string'&&/^20\d\d-\d\d-\d\d$/.test(value)&&Number.isFinite(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
  const instant=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value;
- for(const row of db.prepare('SELECT * FROM billing_students').all())if(!identifier(row.id)||!text(row.student_name,160)||!instant(row.created_at))fail();
- for(const row of db.prepare('SELECT * FROM billing_subjects').all())if(!identifier(row.id)||!text(row.subject_key,200)||!text(row.subject,100)||!instant(row.created_at))fail();
+ // Identity mappings inherit roster/plan timestamps verbatim. Older valid
+ // timestamps may omit milliseconds or use an explicit UTC offset.
+ for(const row of db.prepare('SELECT * FROM billing_students').all())if(!identifier(row.id)||!text(row.student_name,160)||typeof row.created_at!=='string'||!Number.isFinite(Date.parse(row.created_at)))fail();
+ for(const row of db.prepare('SELECT * FROM billing_subjects').all())if(!identifier(row.id)||!text(row.subject_key,200)||!text(row.subject,100)||typeof row.created_at!=='string'||!Number.isFinite(Date.parse(row.created_at)))fail();
  for(const name of ['billing_policies','billing_rates'])for(const row of db.prepare('SELECT * FROM '+name).all())if((name==='billing_rates'&&!identifier(row.id))||!integer(row.revision)||!instant(row.updated_at)||(row.current_version_id!==null&&!identifier(row.current_version_id)))fail();
  for(const row of db.prepare('SELECT * FROM billing_policy_versions').all())if(!identifier(row.id)||!integer(row.revision,1)||row.currency!=='MYR'||!['minute','quarter_up'].includes(row.hour_rounding)||!['personal','teaching'].includes(row.attendance_basis)||!['manual','daily'].includes(row.monthly_partial)||!date(row.effective_from)||!text(row.actor_id,160)||!instant(row.created_at))fail();
  for(const row of db.prepare('SELECT * FROM billing_rate_versions').all())if(!identifier(row.id)||!integer(row.revision,1)||!['hour','lesson','month'].includes(row.mode)||!integer(row.amount_cents,1,100000000)||row.currency!=='MYR'||!date(row.effective_from)||!text(row.subject_snapshot,100)||!text(row.actor_id,160)||!instant(row.created_at))fail();
