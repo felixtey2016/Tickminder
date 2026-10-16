@@ -67,6 +67,24 @@
 .settings-disclosure > summary:focus-visible { outline: 2px solid #6245bd; outline-offset: 3px; }
 .settings-disclosure[open] > summary { margin-bottom: 16px; }
 .group-entry-management { border-top: 1px solid var(--border); padding-top: 12px; }
+.account-authority-hint { margin: 0 0 20px; line-height: 1.7; overflow-wrap: anywhere; }
+.account-authority-badge { display: inline-flex; align-items: center; justify-self: start; width: fit-content; max-width: 100%; padding: 4px 10px; border: 1px solid #ded9ec; border-radius: 6px; color: #605a75; background: #f8f7fb; font-size: 12px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
+.account-authority-badge[data-authority=owner] { color: #fff; background: #41277b; border-color: #41277b; }
+.account-authority-badge[data-authority=chief] { color: #4e329c; background: #f0ebfc; border-color: #d3c8ed; }
+.group-chief-settings { display: grid; gap: 16px; min-width: 0; padding-block: 20px; border-top: 1px solid var(--border); }
+.group-chief-settings > :is(p,label) { margin: 0; min-width: 0; }
+.group-chief-settings label { display: grid; gap: 8px; }
+.group-chief-settings select { width: 100%; max-width: 100%; min-width: 0; min-height: 44px; }
+.group-chief-current { display: grid; gap: 12px; min-width: 0; }
+.group-chief-current > p { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 0; min-width: 0; line-height: 1.6; }
+.group-chief-current > p > span { color: var(--muted-foreground); }
+.group-chief-current > p > strong { min-width: 0; overflow-wrap: anywhere; }
+.group-chief-review { display: grid; gap: 16px; min-width: 0; margin: 0; }
+.group-chief-review > div { display: grid; grid-template-columns: minmax(110px,1fr) minmax(0,2fr); gap: 12px; }
+.group-chief-review dt { color: var(--muted-foreground); }
+.group-chief-review dd { min-width: 0; margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.group-chief-notice { margin: 0; padding: 16px; border: 1px solid #d3c8ed; border-radius: 6px; background: #f6f3fc; color: #4e329c; line-height: 1.7; overflow-wrap: anywhere; }
+.group-chief-confirmation .settings-actions { justify-content: flex-end; }
 .catalogue-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 20px; }
 .catalogue-meta > p { flex: 1 1 240px; margin: 0; }
 .catalogue-version { font-size: 13px; color: var(--muted-foreground); }
@@ -100,4 +118,6 @@
  .group-console .group-counts { grid-template-columns: repeat(2,minmax(0,1fr)); }
  .settings-actions > button { min-width: 0; }
  .directory-create { padding: 12px 16px; }
+ .group-chief-review > div { grid-template-columns: minmax(0,1fr); gap: 4px; }
+ .group-chief-confirmation .settings-actions > button { flex: 1 1 140px; }
 }

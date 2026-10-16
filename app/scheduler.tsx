@@ -70,6 +70,8 @@ type Account = {
     activatedAt?: string | null;
     role: "admin" | "teacher" | "student" | "pending";
     isOwner?: boolean;
+    isGroupChief?: boolean;
+    canManageAdministrators?: boolean;
     groupId?:string|null;groupName?:string|null;groupUnavailable?:boolean;
     teacherName?: string | null;
     studentName?: string | null;
@@ -274,8 +276,8 @@ export function Scheduler() {
             });
             setAuth(previous => {
                 if (!previous?.account || !next.account || previous.account.id !== next.account.id) return previous;
-                const updated = { ...previous.account, name: next.account.name, role: next.account.role, teacherName: next.account.teacherName || null, studentName: next.account.studentName || null };
-                return previous.account.name === updated.name && previous.account.role === updated.role && previous.account.teacherName === updated.teacherName && previous.account.studentName === updated.studentName ? previous : { ...previous, account: updated };
+                const updated = { ...previous.account, name: next.account.name, role: next.account.role, teacherName: next.account.teacherName || null, studentName: next.account.studentName || null, isOwner: Boolean(next.account.isOwner), isGroupChief: Boolean(next.account.isGroupChief), canManageAdministrators: next.account.canManageAdministrators === true };
+                return previous.account.name === updated.name && previous.account.role === updated.role && previous.account.teacherName === updated.teacherName && previous.account.studentName === updated.studentName && previous.account.isOwner === updated.isOwner && previous.account.isGroupChief === updated.isGroupChief && previous.account.canManageAdministrators === updated.canManageAdministrators ? previous : { ...previous, account: updated };
             });
             await Promise.all([...wantedScopes.current].map(scope => ensureScope(scope, true)));
             window.dispatchEvent(new Event("tickminder:data-changed"));
@@ -868,9 +870,10 @@ function AdminDashboard({ state, lessons, open, view,mutate,busy }: {
 }
 function RosterAdmin({ account, state, mutate, busy, view }: { account: Account; state: State | null; mutate: (x: Record<string, unknown>) => Promise<boolean>; busy: boolean; view: "teachers" | "students" | "binding" | "accounts" }) {
     if (view === "teachers" || view === "students") return <PeopleDirectory kind={view === "teachers" ? "teacher" : "student"} people={view === "teachers" ? state?.allTeachers || [] : state?.allStudents || []} mutate={mutate} busy={busy}/>;
-    return <AccountDirectory actor={account} users={state?.users || []} teachers={state?.teachers || []} students={state?.students || []} mutate={mutate} busy={busy} createForm={<LocalAccountAdmin state={state} mutate={mutate} busy={busy}/>}/>;
+    return <AccountDirectory actor={account} users={state?.users || []} teachers={state?.teachers || []} students={state?.students || []} mutate={mutate} busy={busy} createForm={<LocalAccountAdmin account={account} state={state} mutate={mutate} busy={busy}/>}/>;
 }
-function LocalAccountAdmin({ state, mutate, busy }: {
+function LocalAccountAdmin({ account, state, mutate, busy }: {
+    account: Account;
     state: State | null;
     mutate: (x: Record<string, unknown>) => Promise<boolean>;
     busy: boolean;
@@ -883,9 +886,11 @@ function LocalAccountAdmin({ state, mutate, busy }: {
     const [studentName, setStudentName] = useState("");
     const [resetUserId, setResetUserId] = useState("");
     const [resetPassword, setResetPassword] = useState("");
-    const localUsers = (state?.users || []).filter(u => u.username && !u.disabledAt && u.id !== state?.account.id);
+    const canManageAdministrators = account.canManageAdministrators === true;
+    const selectedRole = role === "admin" && !canManageAdministrators ? "teacher" : role;
+    const localUsers = (state?.users || []).filter(u => u.username && !u.disabledAt && u.id !== account.id && !u.isOwner && (!u.isGroupChief || account.isOwner) && (u.role !== "admin" || canManageAdministrators));
     return <section className="panel local-account-admin"><p className="muted">{t("创建账号后，请将临时密码交给用户；首次登录须设置新密码。忘记密码时可在下方重置。")}</p>
-    <form onSubmit={async (e) => { e.preventDefault(); if (await mutate({ action: "createLocalAccount", username, name, password, role, teacherName, studentName })) {
+    <form onSubmit={async (e) => { e.preventDefault(); if (await mutate({ action: "createLocalAccount", username, name, password, role: selectedRole, teacherName: selectedRole === "teacher" ? teacherName : "", studentName: selectedRole === "student" ? studentName : "" })) {
         setUsername("");
         setName("");
         setPassword("");
@@ -896,16 +901,16 @@ function LocalAccountAdmin({ state, mutate, busy }: {
       <label>{t("用户名")}<input required minLength={3} maxLength={40} pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,39}" autoComplete="off" value={username} onChange={e => setUsername(e.target.value)} placeholder={t("\u4F8B\u5982 ms.sydney")}/></label>
       <label>{t("\u663E\u793A\u59D3\u540D")}<input required maxLength={80} value={name} onChange={e => setName(e.target.value)}/></label>
       <label>{t("临时密码（至少 8 个字符）")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)}/></label>
-      <label>{t("\u89D2\u8272")}<select value={role} onChange={e => setRole(e.target.value as "teacher" | "student" | "admin")}><option value="teacher">{t("\u8001\u5E08")}</option><option value="student">{t("\u5B66\u751F")}</option><option value="admin">{t("\u7BA1\u7406\u5458")}</option></select></label>
-      {role === "teacher" && <label>{t("\u5173\u8054\u8001\u5E08")}<select required value={teacherName} onChange={e => setTeacherName(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{state?.teachers?.map(t => <option key={t}>{t}</option>)}</select></label>}
-      {role === "student" && <label>{t("\u5173\u8054\u5B66\u751F")}<select required value={studentName} onChange={e => setStudentName(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{(state?.students || []).map(s => <option key={s}>{s}</option>)}</select></label>}
-      <div className="directory-form-actions"><Button disabled={busy || (role === "teacher" && !teacherName) || (role === "student" && !studentName)}>{t("\u521B\u5EFA\u8D26\u53F7")}</Button></div>
+      <label>{t("\u89D2\u8272")}<select value={selectedRole} onChange={e => setRole(e.target.value as "teacher" | "student" | "admin")}><option value="teacher">{t("\u8001\u5E08")}</option><option value="student">{t("\u5B66\u751F")}</option>{canManageAdministrators && <option value="admin">{t("admin.regularAdministrator")}</option>}</select></label>
+      {selectedRole === "teacher" && <label>{t("\u5173\u8054\u8001\u5E08")}<select required value={teacherName} onChange={e => setTeacherName(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{state?.teachers?.map(t => <option key={t}>{t}</option>)}</select></label>}
+      {selectedRole === "student" && <label>{t("\u5173\u8054\u5B66\u751F")}<select required value={studentName} onChange={e => setStudentName(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{(state?.students || []).map(s => <option key={s}>{s}</option>)}</select></label>}
+      <div className="directory-form-actions"><Button disabled={busy || (selectedRole === "teacher" && !teacherName) || (selectedRole === "student" && !studentName)}>{t("\u521B\u5EFA\u8D26\u53F7")}</Button></div>
     </form>
     <details className="local-password-reset settings-disclosure"><summary><span>{t("\u91CD\u7F6E\u5FD8\u8BB0\u7684\u5BC6\u7801")}</span><ChevronDown size={18} aria-hidden="true"/></summary><p className="muted">{t("\u91CD\u7F6E\u540E\uFF0C\u8BE5\u8D26\u53F7\u73B0\u6709\u767B\u5F55\u4F1A\u9000\u51FA\uFF0C\u4E0B\u6B21\u767B\u5F55\u5FC5\u987B\u518D\u6B21\u4FEE\u6539\u5BC6\u7801\u3002")}</p>
-    <form onSubmit={async (e) => { e.preventDefault(); if (await mutate({ action: "resetLocalPassword", userId: resetUserId, password: resetPassword })) {
+    <form onSubmit={async (e) => { e.preventDefault(); if (!localUsers.some(user => user.id === resetUserId)) return; if (await mutate({ action: "resetLocalPassword", userId: resetUserId, password: resetPassword })) {
         setResetUserId("");
         setResetPassword("");
-    } }}><label>{t("\u9009\u62E9\u8D26\u53F7")}<select required value={resetUserId} onChange={e => setResetUserId(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{localUsers.map(u => <option value={u.id} key={u.id}>{u.username} · {u.name}</option>)}</select></label><label>{t("新的临时密码")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={resetPassword} onChange={e => setResetPassword(e.target.value)}/></label><div className="directory-form-actions"><Button variant="outline" disabled={busy || !resetUserId}>{t("\u91CD\u7F6E\u5BC6\u7801")}</Button></div></form></details>
+    } }}><label>{t("\u9009\u62E9\u8D26\u53F7")}<select required value={resetUserId} onChange={e => setResetUserId(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{localUsers.map(u => <option value={u.id} key={u.id}>{u.username} · {u.name}{u.role === "admin" ? ` · ${t(u.isGroupChief ? "admin.groupChief" : "admin.regularAdministrator")}` : ""}</option>)}</select></label><label>{t("新的临时密码")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={resetPassword} onChange={e => setResetPassword(e.target.value)}/></label><div className="directory-form-actions"><Button variant="outline" disabled={busy || !localUsers.some(user => user.id === resetUserId)}>{t("\u91CD\u7F6E\u5BC6\u7801")}</Button></div></form></details>
   </section>;
 }
 type Open = (x: {

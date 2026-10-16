@@ -4,6 +4,7 @@ import { first, learningDb } from "@/lib/learning-server";
 import { verifyPassword } from "@/lib/password";
 import { OWNER_EMAIL } from "@/lib/owner";
 import { prepareAccountMerge } from "@/lib/account-merge";
+import { isAdminAuthorityFailure } from "@/lib/admin-authority";
 
 class LinkError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export async function POST(request: Request) {
@@ -44,6 +45,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof LinkError) return NextResponse.json({ error: error.message }, { status: error.status });
+    if (isAdminAuthorityFailure(error)) return NextResponse.json({ error: "admin.authorityChanged" }, { status: 409 });
     return NextResponse.json({ error: "Google 连接失败，请重新验证后再试" }, { status: 400 });
   }
 }

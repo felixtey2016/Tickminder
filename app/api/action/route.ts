@@ -10,18 +10,18 @@ import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { currentBusinessAccount as currentAccount } from "@/lib/auth";
 import { getDb } from "@/db";
-import { accounts, assignments, audit, lessons, localCredentials, loginAttempts, plans, rescheduleRequests, sessions, students, teachers } from "@/db/schema";
+import { accounts, assignments, audit, lessons, localCredentials, plans, rescheduleRequests, students, teachers } from "@/db/schema";
 import { hashPassword, normalizeUsername, validPassword, validUsername } from "@/lib/password";
 import { findLessonConflict, generateWeekly, hoursBetween, lessonConflictReason, malaysiaDate, mayCheckIn, type LessonSlot } from "@/lib/lesson-rules";
 import { readRoster } from "@/lib/roster";
 import { recordLessonChange,lessonChangeStatements } from "@/lib/inbox-server";
 import { teacherMaySeeLesson, mayRequestReschedule, mayRespondReschedule } from "@/lib/access";
-import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 import { studentNameKey } from "@/lib/student-names";
 import { first, learningDb } from "@/lib/learning-server";
 import { normalizeOnlineLink } from "@/lib/online-link";
 import {classPlanSubjectSql} from "@/lib/academic-subject-match";
 import {ensurePlanClassroom,ensureStudentClassrooms,ensureTeacherClassrooms,planClassroomStatements,planSessionClassroomStatements} from "@/lib/student-classrooms";
+import { adminAuthority, adminActorGuard, accountAuthorityGuard, assertAccountAuthority, AdminAuthorityError, isAdminAuthorityFailure } from "@/lib/admin-authority";
 
 type Body = Record<string, unknown>;
 const str = (v: unknown) => typeof v === "string" ? v.trim() : "";
@@ -29,6 +29,11 @@ const bad = (message: string, status = 400) => NextResponse.json({ error: messag
 async function restoreStudentClassrooms(groupId:string,actorId:string,studentName:string|null,teacherName:string|null=null){
   if(studentName){await ensureStudentClassrooms(groupId,studentName,actorId);return;}
   if(teacherName)await ensureTeacherClassrooms(groupId,teacherName,actorId);
+}
+async function accountClassroomStatements(groupId:string,actorId:string,studentName:string|null,teacherName:string|null){
+  if(!studentName&&!teacherName)return [];
+  const plans=await groupReader(groupId).rows<{key:string}>(`SELECT key FROM plans WHERE ${studentName?'student':'teacher_name'}=? AND active=1 ORDER BY key`,studentName||teacherName);
+  return plans.flatMap(plan=>[...planClassroomStatements(groupId,plan.key,actorId),...planSessionClassroomStatements(groupId,plan.key)]);
 }
 const conflictReply = (slot: LessonSlot, conflict: LessonSlot, role: string) => NextResponse.json({
   error: "课程时间冲突", conflict: { start: conflict.plannedStart, end: conflict.plannedEnd,
@@ -67,15 +72,20 @@ export async function POST(request: Request) {
       if (!validUsername(username)) return bad("账号需为 3–40 位英文字母、数字、点、横线或底线，且以字母或数字开头");
       if (!validPassword(password)) return bad("初始密码需为 8–128 个字符");
       if (!name || name.length > 80 || !["admin", "teacher", "student"].includes(role)) return bad("请输入姓名并选择角色");
+      if(role==='admin'&&!(await adminAuthority(actor)).canManageAdministrators)return bad('admin.administratorAccessRequired',403);
       if (await db.select({ accountId: localCredentials.accountId }).from(localCredentials).where(eq(localCredentials.username, username)).get()) return bad("此账号名已被使用");
       if (role === "teacher" && !(await readRoster(actor)).teachers.includes(teacherName)) return bad("请选择启用的老师");
       if (role === "student" && !(await readRoster(actor)).students.includes(studentName)) return bad("请选择已登记的学生");
       if (role !== "admin" && await first("SELECT 1 AS found FROM accounts WHERE role = ? AND " + (role === "teacher" ? "teacher_name" : "student_name") + " = ? AND disabled_at IS NULL", role, role === "teacher" ? teacherName : studentName)) return bad("此身份已有账号，请使用现有账号连接 Google，避免重复创建", 409);
       const id = `local:${crypto.randomUUID()}`;
       const passwordHash = await hashPassword(password);
-      await db.batch([db.insert(accounts).values({groupId:actor.groupId!, id, email: "", name, role, teacherName: role === "teacher" ? teacherName : null, studentName: role === "student" ? studentName : null, createdAt: now, activatedAt: now, activationReason: "admin-created" }),
-        db.insert(localCredentials).values({ accountId: id, username, passwordHash, mustChangePassword: true, updatedAt: now })]);
-      await db.insert(audit).values({groupId:actor.groupId!, id: crypto.randomUUID(), lessonId: `account:${id}`, actorId: actor.id, action: "createLocalAccount", before: null, after: JSON.stringify({ username, name, role, teacherName: role === "teacher" ? teacherName : null, studentName: role === "student" ? studentName : null }), at: now });
+      const raw=learningDb(),after={username,name,role,teacherName:role==='teacher'?teacherName:null,studentName:role==='student'?studentName:null};
+      await raw.batch([
+        adminActorGuard(actor,role==='admin'),
+        raw.prepare("INSERT INTO accounts(group_id,id,email,name,role,teacher_name,student_name,created_at,activated_at,activation_reason) VALUES(?,?,'',?,?,?,?,?,?,'admin-created')").bind(groupId,id,name,role,after.teacherName,after.studentName,now,now),
+        raw.prepare("INSERT INTO local_credentials(account_id,username,password_hash,must_change_password,updated_at) VALUES(?,?,?,1,?)").bind(id,username,passwordHash,now),
+        raw.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) VALUES(?,?,?,?,'createLocalAccount',NULL,?,?)").bind(groupId,crypto.randomUUID(),`account:${id}`,actor.id,JSON.stringify(after),now),
+      ]);
       return NextResponse.json({ ok: true });
     }
     if (action === "resetLocalPassword") {
@@ -84,13 +94,19 @@ export async function POST(request: Request) {
       if (!userId || userId === actor.id) return bad("请选择其他账号");
       const target = await db.select().from(accounts).where(groupWhere(accounts,actor.groupId,eq(accounts.id, userId))).get();
       const credential = await db.select().from(localCredentials).where(eq(localCredentials.accountId, userId)).get();
-      if (!target || !credential || target.email.toLowerCase() === OWNER_EMAIL) return bad("只能重置已创建的账号密码");
+      if (!target || !credential) return bad("只能重置已创建的账号密码");
+      const authority={action:'resetLocalPassword' as const,expected:target};
+      await assertAccountAuthority(actor,userId,authority);
       if (!validPassword(data.password)) return bad("新初始密码需为 8–128 个字符");
       const passwordHash = await hashPassword(data.password);
-      await db.update(localCredentials).set({ passwordHash, mustChangePassword: true, updatedAt: now }).where(eq(localCredentials.accountId, userId));
-      await db.delete(sessions).where(eq(sessions.accountId, userId));
-      await db.delete(loginAttempts).where(eq(loginAttempts.username, credential.username));
-      await db.insert(audit).values({groupId:actor.groupId!, id: crypto.randomUUID(), lessonId: `account:${userId}`, actorId: actor.id, action: "resetLocalPassword", before: null, after: JSON.stringify({ username: credential.username }), at: now });
+      const raw=learningDb();
+      await raw.batch([
+        accountAuthorityGuard(actor,userId,authority),
+        raw.prepare("UPDATE local_credentials SET password_hash=?,must_change_password=1,updated_at=? WHERE account_id=?").bind(passwordHash,now,userId),
+        raw.prepare("DELETE FROM sessions WHERE account_id=?").bind(userId),
+        raw.prepare("DELETE FROM login_attempts WHERE username=?").bind(credential.username),
+        raw.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,after_json,at) VALUES(?,?,?,?,'resetLocalPassword',?,?)").bind(groupId,crypto.randomUUID(),`account:${userId}`,actor.id,JSON.stringify({username:credential.username}),now),
+      ]);
       return NextResponse.json({ ok: true });
     }
     if (action === "activateAccount") {
@@ -98,7 +114,10 @@ export async function POST(request: Request) {
       const userId = str(data.userId);
       const target = await db.select().from(accounts).where(groupWhere(accounts,actor.groupId,eq(accounts.id,userId))).get();
       if (!target || target.disabledAt) return bad("Account not found",404);
+      const authority={action:'activateAccount' as const,expected:target};
+      await assertAccountAuthority(actor,userId,authority);
       await learningDb().batch([
+        accountAuthorityGuard(actor,userId,authority),
         groupStatement(groupId,"UPDATE accounts SET activated_at = coalesce(activated_at,?), activation_reason = coalesce(activation_reason,'admin-confirmed'), pending_expires_at = NULL WHERE (id = ? AND disabled_at IS NULL) AND group_id = ?").bind(now,userId,groupId),
         groupStatement(groupId,"INSERT INTO audit (group_id,id,lesson_id,actor_id,action,at) SELECT ?,?,?,?,'activateAccount',? WHERE EXISTS (SELECT 1 FROM accounts WHERE id = ? AND activated_at IS NOT NULL AND disabled_at IS NULL)").bind(groupId,crypto.randomUUID(),`account:${userId}`,actor.id,now,userId),
       ]);
@@ -109,15 +128,17 @@ export async function POST(request: Request) {
       const userId = str(data.userId);
       const target = userId ? await db.select().from(accounts).where(groupWhere(accounts,actor.groupId,eq(accounts.id, userId))).get() : null;
       if (!target) return bad("Account not found", 404);
-      if (target.id === actor.id || target.email.toLowerCase() === OWNER_EMAIL) return bad("Cannot delete the owner account", 403);
-      if (target.role === "admin" && !isOwnerAccount(actor)) return bad("Only the owner can remove administrators", 403);
+      const authority={action:action as 'deleteAccount'|'restoreAccount',expected:target};
+      await assertAccountAuthority(actor,userId,authority);
       if (action === "restoreAccount" && ["teacher", "student"].includes(target.role) && await first("SELECT 1 AS found FROM accounts WHERE id <> ? AND role = ? AND " + (target.role === "teacher" ? "teacher_name" : "student_name") + " = ? AND disabled_at IS NULL", target.id, target.role, target.role === "teacher" ? target.teacherName : target.studentName)) return bad("此身份已有账号，请使用现有账号连接 Google，避免重复创建", 409);
-      await db.batch([
-        db.update(accounts).set({ disabledAt: action === "deleteAccount" ? now : null }).where(groupWhere(accounts,actor.groupId,eq(accounts.id, userId))),
-        db.delete(sessions).where(eq(sessions.accountId, userId)),
-        db.insert(audit).values({groupId:actor.groupId!, id: crypto.randomUUID(), lessonId: `account:${userId}`, actorId: actor.id, action, at: now }),
+      const raw=learningDb(),classroomStatements=action==='restoreAccount'?await accountClassroomStatements(groupId,actor.id,target.role==='student'?target.studentName:null,target.role==='teacher'?target.teacherName:null):[];
+      await raw.batch([
+        accountAuthorityGuard(actor,userId,authority),
+        raw.prepare("UPDATE accounts SET disabled_at=? WHERE id=? AND group_id=?").bind(action==='deleteAccount'?now:null,userId,groupId),
+        raw.prepare("DELETE FROM sessions WHERE account_id=?").bind(userId),
+        raw.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) VALUES(?,?,?,?,?,?,?,?)").bind(groupId,crypto.randomUUID(),`account:${userId}`,actor.id,action,JSON.stringify({disabledAt:target.disabledAt,role:target.role}),JSON.stringify({disabledAt:action==='deleteAccount'?now:null,role:target.role}),now),
+        ...classroomStatements,
       ]);
-      if(action==="restoreAccount")await restoreStudentClassrooms(groupId,actor.id,target.role==="student"?target.studentName:null,target.role==="teacher"?target.teacherName:null);
       return NextResponse.json({ ok: true });
     }
     if (action === "saveTeacher") {
@@ -233,8 +254,8 @@ export async function POST(request: Request) {
       const userId = str(data.userId), role = str(data.role), teacherName = str(data.teacherName), studentName = str(data.studentName);
       const target = await db.select().from(accounts).where(groupWhere(accounts,actor.groupId,eq(accounts.id, userId))).get();
       if (!target || !["teacher", "admin", "student"].includes(role)) return bad("Choose an account and role");
-      if (target.id === actor.id || target.email.toLowerCase() === OWNER_EMAIL) return bad("Cannot change this administrator account");
-      if (target.role === "admin" && role !== "admin" && !isOwnerAccount(actor)) return bad("Only the owner can remove administrators", 403);
+      const authority={action:'bind' as const,nextRole:role,expected:target};
+      await assertAccountAuthority(actor,userId,authority);
       if (role === "teacher") {
         const roster = await readRoster(actor);
         if (!roster.teachers.includes(teacherName)) return bad("Choose an active teacher");
@@ -246,10 +267,14 @@ export async function POST(request: Request) {
       if (target.disabledAt) return bad("请先恢复账号", 409);
       if (role !== "admin" && await first("SELECT 1 AS found FROM accounts WHERE role = ? AND " + (role === "teacher" ? "teacher_name" : "student_name") + " = ? AND id <> ? AND disabled_at IS NULL", role, role === "teacher" ? teacherName : studentName, userId)) return bad("此身份已有账号，请使用现有账号连接 Google，避免重复创建", 409);
       const update = { role, teacherName: role === "teacher" ? teacherName : null, studentName: role === "student" ? studentName : null, activatedAt: target.activatedAt || now, activationReason: target.activationReason || "identity-bound", pendingExpiresAt: null };
-      await db.update(accounts).set(update).where(groupWhere(accounts,actor.groupId,eq(accounts.id, userId)));
-      if (!await first("SELECT 1 AS found FROM accounts WHERE id = ?",userId)) return bad("Account not found",404);
-      await db.insert(audit).values({groupId:actor.groupId!, id: crypto.randomUUID(), lessonId: `account:${userId}`, actorId: actor.id, action: "bind", before: JSON.stringify({ role: target.role, teacherName: target.teacherName, studentName: target.studentName }), after: JSON.stringify(update), at: now });
-      await restoreStudentClassrooms(groupId,actor.id,role==="student"?studentName:null,role==="teacher"?teacherName:null);
+      const raw=learningDb(),classroomStatements=await accountClassroomStatements(groupId,actor.id,role==='student'?studentName:null,role==='teacher'?teacherName:null);
+      await raw.batch([
+        accountAuthorityGuard(actor,userId,authority),
+        raw.prepare("UPDATE accounts SET role=?,teacher_name=?,student_name=?,activated_at=?,activation_reason=?,pending_expires_at=NULL WHERE id=? AND group_id=?").bind(role,update.teacherName,update.studentName,update.activatedAt,update.activationReason,userId,groupId),
+        raw.prepare("DELETE FROM sessions WHERE account_id=?").bind(userId),
+        raw.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) VALUES(?,?,?,?,'bind',?,?,?)").bind(groupId,crypto.randomUUID(),`account:${userId}`,actor.id,JSON.stringify({role:target.role,teacherName:target.teacherName,studentName:target.studentName}),JSON.stringify(update),now),
+        ...classroomStatements,
+      ]);
       return NextResponse.json({ ok: true });
     }
     if (action === "create") {
@@ -383,6 +408,8 @@ export async function POST(request: Request) {
     }
     return bad("Unknown action");
   } catch (error) {
+    if(error instanceof AdminAuthorityError)return bad(error.message,error.status);
+    if(isAdminAuthorityFailure(error))return bad('admin.authorityChanged',409);
     if(error instanceof StudentAcademicError)return bad(error.message,error.status);
     if(error instanceof ClassSessionError)return NextResponse.json({error:error.message,...(error.conflict?{conflict:error.conflict}:{})},{status:error.status});
     if(error instanceof LearningEditError)return bad(error.message,error.status);

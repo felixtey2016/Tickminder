@@ -6,6 +6,7 @@ import { desc, eq, inArray,notLike } from "drizzle-orm";
 import {isOwnerAccount} from '@/lib/owner';
 import { currentBusinessAccount as currentAccount, type Account } from "@/lib/auth";
 import { lifecycleView } from "@/lib/account-lifecycle";
+import { adminAuthority } from "@/lib/admin-authority";
 import { readRoster } from "@/lib/roster";
 import { getDb } from "@/db";
 import { accounts, audit, lessons, localCredentials, rescheduleRequests } from "@/db/schema";
@@ -80,9 +81,12 @@ async function extraState(account: Account, scope: Exclude<Scope, "core">) {
   const db = getDb();
   const users = await db.select().from(accounts).where(groupWhere(accounts,account.groupId)).all();
   if (scope === "accounts") {
-    const credentials = await db.select({ accountId: localCredentials.accountId, username: localCredentials.username, mustChangePassword: localCredentials.mustChangePassword }).from(localCredentials).where(inArray(localCredentials.accountId,users.map(u=>u.id))).all();
+    const [credentials, hierarchy] = await Promise.all([
+      db.select({ accountId: localCredentials.accountId, username: localCredentials.username, mustChangePassword: localCredentials.mustChangePassword }).from(localCredentials).where(inArray(localCredentials.accountId,users.map(u=>u.id))).all(),
+      adminAuthority(account),
+    ]);
     const byId = new Map(credentials.map(c => [c.accountId, c]));
-    return {users: users.map(u => ({...u, ...lifecycleView(u), username: byId.get(u.id)?.username || null, mustChangePassword: byId.get(u.id)?.mustChangePassword || false}))};
+    return {users: users.map(u => ({...u, ...lifecycleView(u), isOwner:isOwnerAccount(u), isGroupChief:u.role==='admin'&&!u.disabledAt&&u.id===hierarchy.chiefAdminId, username: byId.get(u.id)?.username || null, mustChangePassword: byId.get(u.id)?.mustChangePassword || false}))};
   }
   const [changes, mergedNames] = await Promise.all([db.select().from(audit).where(groupWhere(audit,account.groupId,isOwnerAccount(account)?undefined:notLike(audit.action,'billing.%'))).orderBy(desc(audit.at)).limit(30).all(), mergedAccountNames(account.groupId)]);
   const changedLessons = changes.length ? await db.select({id: lessons.id, student: lessons.student, subject: lessons.subject}).from(lessons).where(groupWhere(lessons,account.groupId,inArray(lessons.id, changes.map(c => c.lessonId)))).all() : [];
@@ -98,7 +102,8 @@ export async function GET(request: Request) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(selected)) return json({error: "Invalid month"}, 400);
   if (scope && !["core","learning","classrooms","accounts","activity"].includes(scope)) return json({error: "请求无效，请刷新后重试"}, 400);
   if ((scope === "accounts" || scope === "activity") && account.role !== "admin") return json({error: "没有权限执行此操作"}, 403);
-  const identity = {groupId:account.groupId,id: account.id, name: account.name, email: account.email, role: account.role, teacherName: account.teacherName, studentName: account.studentName};
+  const hierarchy=account.role==='admin'?await adminAuthority(account):{isGroupChief:false,canManageAdministrators:false};
+  const identity = {groupId:account.groupId,id: account.id, name: account.name, email: account.email, role: account.role, isOwner:isOwnerAccount(account), isGroupChief:hierarchy.isGroupChief, canManageAdministrators:hierarchy.canManageAdministrators, teacherName: account.teacherName, studentName: account.studentName};
   if (account.role === "pending") return json({account: {...identity, ...lifecycleView(account)}, lessons:[], classrooms:[], proposals:[], loadedScopes: ["core"]});
   try {
     // No scope preserves the existing full response for compatible clients.

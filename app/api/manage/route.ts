@@ -3,11 +3,11 @@ import {groupReader,groupStatement,requireGroup} from "@/lib/group-data";
 import { NextResponse } from "next/server";
 import { currentBusinessAccount as currentAccount } from "@/lib/auth";
 import { first, learningDb, rows } from "@/lib/learning-server";
-import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 import { classroomMayManage } from "@/lib/classrooms-server";
 import { deleteUnreferencedFile } from "@/lib/pdf-storage";
 import { hasQuizAccountHistory } from "@/lib/account-merge";
 import {classPlanSubjectSql,planSubjectLabelSql} from "@/lib/academic-subject-match";
+import { accountAuthorityGuard, assertAccountAuthority, AdminAuthorityError, isAdminAuthorityFailure } from "@/lib/admin-authority";
 
 
 class DeleteError extends Error { constructor(message: string, public status = 409) { super(message); } }
@@ -34,9 +34,11 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
     const db = {prepare: (sql: string) => ({bind: (...params: unknown[]) => {operations.push({sql, params});return groupStatement(groupId,sql).bind(...params);}})};
     const statements = [], files: string[] = [];
     if (kind === "account") {
-      const target = await first<{ role: string; email: string }>("SELECT role,email FROM accounts WHERE id = ?", id);
+      const target = await first<{ role: string; email: string; disabledAt: string|null; teacherName: string|null; studentName: string|null }>("SELECT role,email,disabled_at AS disabledAt,teacher_name AS teacherName,student_name AS studentName FROM accounts WHERE id = ?", id);
       if (!target) throw new DeleteError("Account not found", 404);
-      if (id === actor.id || target.email.toLowerCase() === OWNER_EMAIL || (target.role === "admin" && !isOwnerAccount(actor))) throw new DeleteError("只有最高管理员可以移除其他管理员，且不能删除本人", 403);
+      const authority={action:'permanentDelete' as const,expected:target};
+      await assertAccountAuthority(actor,id,authority);
+      statements.push(accountAuthorityGuard(actor,id,authority));
       if (await hasQuizAccountHistory(id)) throw new DeleteError("account.quizHistoryDeleteBlocked");
       if (await first("SELECT 1 AS found FROM teaching_materials WHERE owner_id = ? UNION SELECT 1 FROM homework WHERE owner_id = ? LIMIT 1", id, id)) throw new DeleteError("此账号仍拥有教学资料或功课，请先处理这些资料后再永久删除");
       const local = await first<{ username: string }>("SELECT username FROM local_credentials WHERE account_id = ?", id);
@@ -148,7 +150,7 @@ export async function POST(request: Request) {
     const plans: Array<Awaited<ReturnType<typeof planDeletion>>> = [], blocked: Array<{kind:string;id:string;error:string}> = [];
     for (const entry of entries) {
       try { plans.push(await planDeletion(actor,entry.kind,entry.id)); }
-      catch (e) { if (!preview) throw e; if (!(e instanceof DeleteError)) throw e; blocked.push({...entry,error:e.message}); }
+      catch (e) { if (!preview) throw e; if (!(e instanceof DeleteError) && !(e instanceof AdminAuthorityError)) throw e; blocked.push({...entry,error:e.message}); }
     }
     const previewAt = preview ? new Date().toISOString() : String(data.previewAt || '');
     if (preview) return NextResponse.json({ok:true,items:plans.map(p=>p.summary),blocked,previewAt,fingerprint:await proof(actor.id,plans,previewAt)});
@@ -158,10 +160,13 @@ export async function POST(request: Request) {
     }
     const db = learningDb();
     const statements = plans.flatMap(p=>p.statements);
-    for (const entry of entries) statements.push(db.prepare("INSERT INTO audit (group_id,id,lesson_id,actor_id,action,after_json,at) VALUES (?,?,?,?,'permanentDelete',?,?)").bind(groupId,crypto.randomUUID(),entry.kind+':'+entry.id,actor.id,JSON.stringify(entry),new Date().toISOString()));
+    for (const entry of entries) {
+      const account=entry.kind==='account'?plans.find(p=>p.summary.id===entry.id)?.snapshots.find(s=>s.table==='accounts')?.records[0]:null;
+      statements.push(db.prepare("INSERT INTO audit (group_id,id,lesson_id,actor_id,action,before_json,after_json,at) VALUES (?,?,?,?,'permanentDelete',?,?,?)").bind(groupId,crypto.randomUUID(),entry.kind+':'+entry.id,actor.id,account?JSON.stringify({id:account.id,role:account.role,disabledAt:account.disabled_at}):null,JSON.stringify(entry),new Date().toISOString()));
+    }
     await db.batch(statements);
     let cleanupPending=false;
     for (const file of new Set(plans.flatMap(p=>p.files))) {try {await deleteUnreferencedFile(file);} catch {cleanupPending=true;}}
     return NextResponse.json({ok:true,deletedCount:entries.length,warning:cleanupPending?"记录已删除，部分文件清理尚未完成，请联系管理员":undefined});
-  } catch (e) {if(isClassroomCoverageFailure(e))return NextResponse.json({error:classroomRequiredMessage},{status:409});if(e instanceof Error&&/financial history/i.test(e.message))return NextResponse.json({error:financialHistoryMessage},{status:409});return NextResponse.json({error:e instanceof DeleteError?e.message:"删除未能确认，请刷新列表后再试"},{status:e instanceof DeleteError?e.status:503});}
+  } catch (e) {if(e instanceof AdminAuthorityError)return NextResponse.json({error:e.message},{status:e.status});if(isAdminAuthorityFailure(e))return NextResponse.json({error:'admin.authorityChanged'},{status:409});if(isClassroomCoverageFailure(e))return NextResponse.json({error:classroomRequiredMessage},{status:409});if(e instanceof Error&&/financial history/i.test(e.message))return NextResponse.json({error:financialHistoryMessage},{status:409});return NextResponse.json({error:e instanceof DeleteError?e.message:"删除未能确认，请刷新列表后再试"},{status:e instanceof DeleteError?e.status:503});}
 }

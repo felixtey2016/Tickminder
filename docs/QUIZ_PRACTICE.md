@@ -34,7 +34,7 @@ Formatting applies only where relevant notation occurs, across any subject. Expl
 ## Removal and organisation designation
 
 - The quiz's author may delete it. Platform owner may delete any group's quiz. A designated organisation chief administrator may delete any quiz in that organisation; other administrators may delete only their own.
-- Platform owner designates one existing active group administrator under **Platform console → organisation → Organisation chief administrator**. No existing administrator is promoted automatically. The designation currently grants the documented Quiz management/removal permission; it is not a new general permissions system.
+- Platform owner designates one existing active group administrator under **Platform console → organisation → Organisation chief administrator**. No existing administrator is promoted automatically. The designation grants the documented Quiz management/removal permission and the organisation administrator account management described in [Administrator roles](ADMINISTRATOR_ROLES.md); module-specific permissions remain separate.
 - Author lists and permitted bank cards expose removal. Chiefs and platform owner also have **Quiz → Manage quizzes**, including unpublished private quizzes. Platform owner sees all groups there; a chief sees only their own group. Confirmation is required.
 - Removal is a tombstone: it hides the quiz and stops new starts/allocations, retaining versions, submitted answers, scores and legitimate historical image grants. An already started attempt may finish. The old source hash is retained in the deletion audit while the active import key is released for a future reimport. No shared source images or copies are physically deleted.
 

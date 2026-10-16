@@ -69,7 +69,8 @@ db.prepare('INSERT INTO local_credentials VALUES (?,?,?,?,?)').run('local:teache
 db.prepare('INSERT INTO google_identities VALUES (?,?,?,?)').run('duplicate','duplicate','teacher@example.test',now);
 db.prepare('INSERT INTO classrooms (id,title,subject,teacher_name,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?)').run('class','Science','Science','Teacher','duplicate',now,now);
 const request = body => new Request('https://test.invalid/api/action', { method:'POST',headers:{origin:'https://test.invalid','content-type':'application/json'},body:JSON.stringify(body) });
-actor={groupId:'next-genn-edu', id:'local:teacher',role:'teacher',teacherName:'Teacher',email:'' };
+// Match currentAccount's stored nulls; merge guards bind the full identity.
+actor={groupId:'next-genn-edu', id:'local:teacher',role:'teacher',teacherName:'Teacher',studentName:null,email:'' };
 assert.equal((await link.POST(request({password:'bad',credential:'verified-google-proof'}))).status,403);
 assert.equal((await link.POST(request({password:'correct-password',credential:'invalid'}))).status,400);
 const pending = await link.POST(request({password:'correct-password',credential:'verified-google-proof'}));

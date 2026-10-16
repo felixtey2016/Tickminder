@@ -10,10 +10,12 @@ import { normalizeUsername, validUsername, verifyPassword } from "@/lib/password
 import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 import { lifecycleView, pendingDeadline, pendingExpired } from "@/lib/account-lifecycle";
 import { rows } from "@/lib/learning-server";
+import { adminAuthority } from "@/lib/admin-authority";
 
 async function authPayload(account: Account | null | undefined, local: {username: string; mustChangePassword?: boolean | number} | null | undefined, google: {email: string} | null | undefined) {
   const group=account?await selectedGroup(account):null;
-  return { account: account ? { groupId:group?.id || account.groupId,groupName:group?.name || null,groupUnavailable:Boolean(account && !group),id: account.id, email: google?.email || account.email, name: account.name, nameConfirmedAt: account.nameConfirmedAt, role: account.role, isOwner: isOwnerAccount(account), teacherName: account.teacherName, studentName: account.studentName, googleLinked: Boolean(google), emailLoginAvailable: Boolean(google && local), requiresAccountSetup: Boolean(google && !local), username: local?.username || null, mustChangePassword: Boolean(local?.mustChangePassword), ...lifecycleView(account) } : null, clientId: env.GOOGLE_CLIENT_ID || null };
+  const hierarchy=account&&group?await adminAuthority(account,group.id):{isGroupChief:false,canManageAdministrators:false};
+  return { account: account ? { groupId:group?.id || account.groupId,groupName:group?.name || null,groupUnavailable:Boolean(account && !group),id: account.id, email: google?.email || account.email, name: account.name, nameConfirmedAt: account.nameConfirmedAt, role: account.role, isOwner: isOwnerAccount(account), isGroupChief:hierarchy.isGroupChief, canManageAdministrators:Boolean(local&&!local.mustChangePassword&&hierarchy.canManageAdministrators), teacherName: account.teacherName, studentName: account.studentName, googleLinked: Boolean(google), emailLoginAvailable: Boolean(google && local), requiresAccountSetup: Boolean(google && !local), username: local?.username || null, mustChangePassword: Boolean(local?.mustChangePassword), ...lifecycleView(account) } : null, clientId: env.GOOGLE_CLIENT_ID || null };
 }
 
 export async function GET() {

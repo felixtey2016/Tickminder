@@ -5,7 +5,7 @@ This is a source review of the current application. It documents intended access
 ## Conventions
 
 - **Owner**: the platform owner identified by the verified account predicate. May select a group; a supplied group value never upgrades another account.
-- **Admin**: an ordinary group administrator. The designated group chief currently adds Quiz management/deletion authority only.
+- **Admin**: an ordinary group administrator. The designated group chief also manages ordinary administrator accounts in that group and retains Quiz management/deletion authority. See [Administrator roles](ADMINISTRATOR_ROLES.md).
 - **Teacher / Student**: the signed-in account's server-side role, group and bound roster identity.
 - **Identity gate**: valid, unexpired session; account not disabled; unactivated pending accounts not expired. Account setup/password/profile/linking use this gate so setup remains possible.
 - **Business gate**: identity gate, completed initial password/Google setup, and a valid selected group. Ordinary users cannot select another group by header or cookie. Individual modules must also check permitted role and current resource relationships.
@@ -23,7 +23,7 @@ This is a source review of the current application. It documents intended access
 | `/api/account-link` | POST | Identity, existing noninitial password, password reauthentication and verified Google token | Own account only. Explicit merge confirmation; same-group and compatible identity checks; block protected owner binding and historical Quiz account merge. No arbitrary target binding. |
 | `/api/password` | POST | Identity with current password | Current account only; replace hash, clear initial-password flag and revoke old sessions. No account ID supplied by caller can redirect operation. |
 | `/api/profile` | POST | Identity after initial password change | Update current account's display name only; never role, bound teacher/student or group. |
-| `/api/groups` | GET invite code / group list; POST switch/create/update/setChief | Invite lookup returns minimal public group label; signed-in own group; Owner manages platform groups | Ordinary accounts receive only their own group. Owner group list/admin candidates are platform-only. Chief candidate must be enabled admin in that group; current chief authority remains Quiz-only. |
+| `/api/groups` | GET invite code / group list; POST switch/create/update/setChief | Invite lookup returns minimal public group label; signed-in own group; Owner manages platform groups | Ordinary accounts receive only their own group. Owner group list/admin candidates are platform-only. Chief candidate must be an enabled same-group administrator other than Owner. Appointment requires the expected previous chief; a configured chief cannot be cleared. Handover revokes the former chief's sessions. |
 | `/api/state` | GET core / learning / classrooms / accounts / activity scopes | Business; scopes by role; pending receives own minimal waiting state | Admin sees selected group's records; teacher current assigned scope; student own lessons/recipients only. Accounts/activity admin-only. Student lesson/session/proposal payloads use explicit safe fields; never raw internal notes, billing flags, reviewer/creator IDs or audit snapshots. |
 | `/api/revision` | GET | Business | Own account ID and selected-group revision marker only. No foreign-group state. |
 | `/api/action` | POST; detailed action matrix below | Business + per-action role/resource gates | All IDs, roster names and plan keys resolved inside selected group. Check current responsible teacher/student, not posted actor IDs. Legacy lesson operations delegate to class-session/attendance controls where required. |
@@ -56,11 +56,11 @@ All entries use business gate and selected-group scope. Owner acting in a group 
 
 | `/api/action` actions | Role / additional condition |
 | --- | --- |
-| `createLocalAccount`, `resetLocalPassword`, `activateAccount` | Admin. Target belongs to selected group; no protected owner reset. Teacher/student binding must exist in current active roster and cannot duplicate a live identity. |
-| `deleteAccount`, `restoreAccount` | Admin with self/Owner protections. Only Owner removes an administrator. Restore rejects a conflicting live teacher/student account; revoke sessions when disabling. |
+| `createLocalAccount`, `resetLocalPassword`, `activateAccount` | Admin for nonadministrator targets; Owner or current same-group chief for administrator targets. Only Owner may reset the current chief's password; no other-account reset of Owner. Teacher/student binding must exist in current active roster and cannot duplicate a live identity. |
+| `deleteAccount`, `restoreAccount` | Admin for nonadministrator targets; Owner or current same-group chief for ordinary administrators. Protect self, Owner and the current chief; a chief must be handed over before suspension. Restore rejects a conflicting live teacher/student account. Session revocation, live authority checks and successful audit are committed together. |
 | `saveTeacher`, `saveStudent`, `setStudentActive`, `updateStudentProfile` | Admin; selected-group roster only. Classification IDs from central student catalogue, not free text; profile plan/classroom consistency preserved. |
 | `savePlan` | Admin; current student, teacher and catalogue subject in group; plan revision/classroom coverage and reassignment conflict checks. |
-| `bind` | Admin; own-group target and enabled roster. Cannot change self or Owner, ordinary admin cannot demote another admin. Full chief/CRUD redesign remains Parts 02–03. |
+| `bind` | Admin; own-group target and enabled roster. Existing or requested administrator identity requires Owner or current chief. Cannot change self or Owner, or demote the current chief before handover. Module-specific CRUD permissions remain Part 03. |
 | `updateOnlineLink` | Responsible teacher, active own plan; validated online URL. |
 | `create` | Admin or assigned teacher; active current student/subject/teacher plan, valid classroom, scheduling/conflict rules. |
 | `proposeReschedule` | Admin or current own teacher/student where permitted; same-group lesson; student cannot change whole-group session. Preserve the student's own request reason. |
