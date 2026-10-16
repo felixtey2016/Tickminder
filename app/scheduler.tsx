@@ -809,9 +809,9 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
         } else if (activeView === "teachers") {
             pageContent = <Timetable type="teacher" lessons={lessons} students={state?.students || []} teachers={((canAdminAction(account,"teachers.view")?state?.allTeachers:state?.teacherOptions) || []).map(row => row.name).sort()} month={selectedMonth} setMonth={setSelectedMonth}/>;
         } else if (activeView === "subjects") {
-            pageContent = <SubjectAdmin studentProfiles={(canAdminAction(account,"students.view")?state?.allStudents:state?.studentOptions)||[]} students={state?.students || []} teachers={state?.teachers || []} plans={state?.allPlans || []} mutate={mutate} busy={busy} canFinance={Boolean(account.isOwner)} onPreview={()=>choose('billing')}/>;
+            pageContent = <SubjectAdmin studentProfiles={(canAdminAction(account,"students.view")?state?.allStudents:state?.studentOptions)||[]} students={state?.students || []} teachers={state?.teachers || []} plans={state?.allPlans || []} mutate={mutate} busy={busy} canFinance={Boolean(account.isOwner||account.isGroupChief)} onPreview={()=>choose('billing')}/>;
         } else if (activeView==='billing'&&role==='admin'&&canAdminView(account,'billing')) {
-            pageContent=<BillingWorkspace key={account.groupId} students={(state?.allStudents?.length?state.allStudents:state?.studentOptions||[]).map(student=>student.name)} canManageFees={Boolean(account.isOwner)} onCourses={()=>choose('subjects')}/>;
+            pageContent=<BillingWorkspace key={account.groupId} students={(state?.allStudents?.length?state.allStudents:state?.studentOptions||[]).map(student=>student.name)} canManageFees={Boolean(account.isOwner||account.isGroupChief)} onCourses={()=>choose('subjects')}/>;
         } else if (["teacherRoster", "studentRoster", "accounts"].includes(activeView)) {
             const view = activeView === "teacherRoster" ? "teachers" : activeView === "studentRoster" ? "students" : activeView as "binding" | "accounts";
             pageContent = <RosterAdmin account={account} state={state} mutate={mutate} busy={busy} view={view}/>;

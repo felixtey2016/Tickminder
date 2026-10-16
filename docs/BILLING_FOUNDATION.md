@@ -2,7 +2,7 @@
 
 ## Access
 
-The platform owner can configure rates, confirm billing rules and adjust amounts. Administrators with **Tuition fee viewing** (`fees.view`), including the designated organisation chief, can view only their own group's tuition estimates and breakdowns. Teachers, students and pending accounts cannot access these pages or APIs. Viewing never grants rate-setting or adjustment authority.
+The platform owner can configure rates, confirm billing rules and adjust amounts in any selected active organisation. Each organisation’s designated chief administrator has the same fee-management actions within their own active organisation. Ordinary administrators with **Tuition fee viewing** (`fees.view`) can view only their own group’s tuition estimates and breakdowns. Teachers, students and pending accounts cannot access these pages or APIs. Viewing never grants rate-setting or adjustment authority. Management is checked against the live chief designation and session at write time; role flags from the browser cannot grant access.
 
 The approved viewing rollout explicitly grants `fees.view` to existing ordinary administrators, with a before/after permission audit and revision check. Existing drafts are retained without application; applying an older draft later uses exactly its reviewed permissions. New administrators still begin with no module grants until a manager applies a configuration. The historical legacy snapshot remains frozen.
 

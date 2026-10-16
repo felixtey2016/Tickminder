@@ -145,4 +145,39 @@ expect(await get({month:'2032-06'},admin),200,'bound fee viewer session is accep
 beforeFeeRead=()=>sqlite.prepare('DELETE FROM sessions WHERE token_hash=?').run(sessionHash);
 expect(await get({month:'2032-06'},admin),403,'logout during fee loading blocks the pending response');
 check(()=>assert.equal(JSON.stringify(admin).includes(sessionHash),false,'session binding never enters account JSON'));
-console.log(JSON.stringify({suite:'billing',passed:checks,scope:'Actual API and SQLite; existing fee calculations and write controls, fee-only admin view, group and role boundaries, revoked grants/session during reads; fictional data only.'}));sqlite.close();
+
+// Organisation chiefs manage tuition fees only in their live designated group.
+const chiefGroup='billing-chief-school';sqlite.prepare('INSERT INTO tuition_groups(id,name,join_code,created_at,updated_at) VALUES(?,?,?,?,?)').run(chiefGroup,chiefGroup,chiefGroup,now,now);
+const chief=account('billing-chief','admin',undefined,chiefGroup);sqlite.prepare('UPDATE tuition_groups SET chief_admin_id=? WHERE id=?').run(chief.id,chiefGroup);learner('Chief Student',chiefGroup);
+const chiefStart='2032-06-05T02:00:00Z',chiefEnd='2032-06-05T03:30:00Z';
+sqlite.prepare("INSERT INTO lessons(id,group_id,student,subject,teacher_name,planned_start,planned_end,actual_start,actual_end,status,attendance_kind,chargeable,reviewed_at,created_by,updated_at) VALUES(?,?,?,'Science','Demo Teacher',?,?,?,?,'completed','present',1,?,?,?)").run('chief-lesson',chiefGroup,'Chief Student',chiefStart,chiefEnd,chiefStart,chiefEnd,now,chief.id,now);
+sqlite.prepare("UPDATE class_sessions SET teaching_status='taught',actual_start=planned_start,actual_end=planned_end,attendance_reviewed_at=? WHERE id=(SELECT session_id FROM lessons WHERE id='chief-lesson')").run(now);
+sqlite.prepare("UPDATE class_session_participants SET attendance_status='present',arrived_at=?,left_at=? WHERE lesson_id='chief-lesson'").run(chiefStart,chiefEnd);
+const chiefSettings=expect(await get({view:'rates',planKey:'Chief Student-science'},chief),200,'designated chief can open fee settings');
+const chiefRate={action:'saveRate',revision:0,operationId:op(),studentId:chiefSettings.context.studentId,subjectKey:chiefSettings.context.subjectKey,mode:'hour',amount:'40.00',effectiveFrom:'2020-01-01'};
+expect(await post(chiefRate,chief),200,'chief saves own-group rate and default policy');
+let chiefPreview=expect(await get({month:'2032-06',studentId:chiefSettings.context.studentId},chief),200,'chief reads own fee detail');let chiefLine=chiefPreview.detail.lines.find(l=>l.lessonId==='chief-lesson');check(()=>assert.equal(chiefLine.amountCents,6000));
+const chiefAdjustment={action:'saveAdjustment',month:'2032-06',studentId:chiefSettings.context.studentId,lineId:chiefLine.id,expectedBasis:chiefLine.basisHash,revision:0,operationId:op(),amount:'55.00',reason:'Chief approved correction'};
+expect(await post(chiefAdjustment,chief),200,'chief adjusts own-group fee with a reason');
+chiefPreview=expect(await get({month:'2032-06',studentId:chiefSettings.context.studentId},chief),200,'chief adjusted detail');chiefLine=chiefPreview.detail.lines.find(l=>l.lessonId==='chief-lesson');check(()=>assert.equal(chiefLine.amountCents,5500));
+expect(await post({...chiefAdjustment,action:'clearAdjustment',operationId:op(),revision:1,expectedBasis:chiefLine.basisHash,reason:'Chief restores calculation'},chief),200,'chief restores calculation and keeps adjustment history');
+expect(await post({...policy,revision:1,operationId:op(),effectiveFrom:'2032-06-16'},chief),200,'chief can version own-group billing policy');
+expect(await get({view:'rates',planKey:'Chief Student-science'},{...owner,groupId:chiefGroup}),200,'platform Owner retains selected-group fee management');
+check(()=>assert.equal(sqlite.prepare("SELECT count(*) AS n FROM billing_adjustments WHERE group_id=? AND actor_id=?").get(chiefGroup,chief.id).n,2,'chief adjustment actions retain actor audit history'));
+const chiefFinancialBefore=financialSnapshot();
+expect(await get({view:'rates',planKey:'Alpha-science'},{...admin,isGroupChief:true}),403,'client chief flag never grants financial management');
+expect(await get({view:'rates',planKey:'Alpha-science'},{...chief,groupId:group}),403,'chief cannot switch to another group');
+expect(await post({...chiefRate,groupId:group,operationId:op()},chief),403,'chief cannot override target group in the body');
+check(()=>assert.equal(financialSnapshot(),chiefFinancialBefore));
+const designate=id=>sqlite.prepare('UPDATE tuition_groups SET chief_admin_id=? WHERE id=?').run(id,chiefGroup);
+beforeFeeRead=()=>designate(null);expect(await get({view:'rates',planKey:'Chief Student-science'},chief),403,'handover while opening settings blocks the pending response');designate(chief.id);
+const futureChiefRate={...chiefRate,revision:1,effectiveFrom:'2099-01-01',operationId:op(),amount:'50.00'};
+
+for(const change of ['handover','inactiveGroup','disable']){
+ const savedFees=financialSnapshot();beforeBatch=()=>{if(change==='handover')designate(null);else if(change==='inactiveGroup')sqlite.prepare('UPDATE tuition_groups SET active=0 WHERE id=?').run(chiefGroup);else sqlite.prepare('UPDATE accounts SET disabled_at=? WHERE id=?').run(now,chief.id);};
+ expect(await post({...futureChiefRate,operationId:op()},chief),409,'live '+change+' prevents chief write');check(()=>assert.equal(financialSnapshot(),savedFees,'denied '+change+' preserves fees, policy and audit'));
+ designate(chief.id);sqlite.prepare('UPDATE tuition_groups SET active=1 WHERE id=?').run(chiefGroup);sqlite.prepare('UPDATE accounts SET disabled_at=NULL WHERE id=?').run(chief.id);
+}
+const chiefSession='c'.repeat(43);bindAccountSession(chief,chiefSession);sqlite.prepare('INSERT INTO sessions(token_hash,account_id,expires_at) VALUES(?,?,?)').run(chiefSession,chief.id,'2099-01-01T00:00:00Z');
+const beforeSessionRevocation=financialSnapshot();beforeBatch=()=>sqlite.prepare('DELETE FROM sessions WHERE token_hash=?').run(chiefSession);expect(await post({...futureChiefRate,operationId:op()},chief),409,'logout at transaction boundary prevents chief write');check(()=>assert.equal(financialSnapshot(),beforeSessionRevocation));
+console.log(JSON.stringify({suite:'billing',passed:checks,scope:'Owner and designated chief fee management; handover, inactive group, disable and logout at write time; actual API and SQLite; existing fee calculations and write controls, fee-only admin view, group and role boundaries, revoked grants/session during reads; fictional data only.'}));sqlite.close();
