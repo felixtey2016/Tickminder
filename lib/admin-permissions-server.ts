@@ -4,6 +4,7 @@ import { learningDb } from "@/lib/learning-server";
 import { requireGroup } from "@/lib/group-data";
 import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 import { ADMIN_PERMISSION_CATALOG, ADMIN_PERMISSION_TEMPLATES, ADMIN_PERMISSIONS_ROLLOUT, LEGACY_ADMIN_GRANTS, AdminPermissionValidationError, hasAdminGrant, normalizeAdminGrants, type AdminGrantKey, type AdminPermissionProfile, type AdminPermissionsResponse } from "@/lib/admin-permissions";
+import { adminPermissionContext } from "@/lib/admin-permission-access";
 
 type Predicate = {sql: string; args: unknown[]};
 type ProfileRow = {accountId: string; groupId: string; revision: number; grantsJson: string; draftGrantsJson: string | null; origin: "legacy" | "new"; updatedBy: string | null; updatedAt: string};
@@ -34,24 +35,28 @@ function targetPredicate(actor: Account, accountId: string): Predicate {
   };
 }
 
-// Prepared for round 2 integration only. No business route calls this helper in
-// preparation. Missing profiles and unknown/future grant keys deny by default;
+// Integrated callers opt in only in the isolated enforcement runtime during
+// preparation. Missing profiles and unknown/future grants deny by default;
 // configuring an ordinary admin can never elevate it above existing ceilings.
 export function configuredAdminGrantPredicate(actor: Account, key: string): Predicate {
   if (!hasAdminGrant(LEGACY_ADMIN_GRANTS, key)) return {sql: "0", args: []};
-  const known = ADMIN_PERMISSION_CATALOG.flatMap(module => module.actions.map(action => action.key));
+  const actions = ADMIN_PERMISSION_CATALOG.flatMap(module => module.actions);
+  const known = actions.map(action => action.key);
+  const dependencies = actions.flatMap(action=>action.requires.map(dependency=>({key:action.key,dependency})));
   const required = normalizeAdminGrants([key]);
   const profileArray = "CASE WHEN json_valid(p.grants_json) AND json_type(p.grants_json)='array' THEN p.grants_json ELSE '[]' END";
   return {
-    sql: `EXISTS(SELECT 1 FROM accounts permission_actor JOIN tuition_groups permission_group ON permission_group.id=?
+    sql: `EXISTS(SELECT 1 FROM main.accounts permission_actor JOIN main.tuition_groups permission_group ON permission_group.id=?
       WHERE permission_actor.id=? AND permission_actor.role='admin' AND permission_actor.disabled_at IS NULL
-      AND NOT EXISTS(SELECT 1 FROM local_credentials c WHERE c.account_id=permission_actor.id AND c.must_change_password=1)
+      AND NOT EXISTS(SELECT 1 FROM main.local_credentials c WHERE c.account_id=permission_actor.id AND c.must_change_password=1)
       AND ((${ownerSql("permission_actor")}) OR (permission_actor.group_id=permission_group.id AND permission_group.active=1 AND
-        (permission_group.chief_admin_id=permission_actor.id OR EXISTS(SELECT 1 FROM admin_permission_profiles p
+        (permission_group.chief_admin_id=permission_actor.id OR EXISTS(SELECT 1 FROM main.admin_permission_profiles p
           WHERE p.group_id=permission_group.id AND p.account_id=permission_actor.id
           AND NOT EXISTS(SELECT 1 FROM json_each(${profileArray}) invalid_key WHERE invalid_key.type<>'text' OR NOT EXISTS(SELECT 1 FROM json_each(?) supported_key WHERE supported_key.value=invalid_key.value))
+          AND json_array_length(${profileArray})=(SELECT count(DISTINCT unique_key.value) FROM json_each(${profileArray}) unique_key)
+          AND NOT EXISTS(SELECT 1 FROM json_each(?) required_dependency WHERE EXISTS(SELECT 1 FROM json_each(${profileArray}) selected_key WHERE selected_key.value=json_extract(required_dependency.value,'$.key')) AND NOT EXISTS(SELECT 1 FROM json_each(${profileArray}) dependency_key WHERE dependency_key.value=json_extract(required_dependency.value,'$.dependency')))
           AND NOT EXISTS(SELECT 1 FROM json_each(?) required_key WHERE NOT EXISTS(SELECT 1 FROM json_each(${profileArray}) grant_key WHERE grant_key.type='text' AND grant_key.value=required_key.value)))))))`,
-    args: [requireGroup(actor.groupId), actor.id, OWNER_EMAIL, JSON.stringify(known), JSON.stringify(required)],
+    args: [requireGroup(actor.groupId), actor.id, OWNER_EMAIL, JSON.stringify(known), JSON.stringify(dependencies), JSON.stringify(required)],
   };
 }
 export function configuredAdminGrantGuard(actor: Account, key: string) {
@@ -93,8 +98,9 @@ async function profileRow(actor: Account, accountId: string): Promise<ProfileRow
   ]);
   return (result[2].results[0] as unknown as ProfileRow | undefined) || null;
 }
-function response(target: ManagedTarget, profile: AdminPermissionProfile): AdminPermissionsResponse {
-  return {rollout: ADMIN_PERMISSIONS_ROLLOUT, status: "pending", runtimeEnforcement: false, currentAccess: "legacy", target, profile, catalog: ADMIN_PERMISSION_CATALOG, templates: ADMIN_PERMISSION_TEMPLATES, effectiveGrants: [...LEGACY_ADMIN_GRANTS], configuredGrants: [...profile.grants]};
+async function response(target: ManagedTarget, profile: AdminPermissionProfile): Promise<AdminPermissionsResponse> {
+  const access=await adminPermissionContext({id:target.id,groupId:profile.groupId,role:"admin"});
+  return {rollout: ADMIN_PERMISSIONS_ROLLOUT, status: "pending", runtimeEnforcement: access.enforced, currentAccess: access.enforced?"configured":"legacy", target, profile, catalog: ADMIN_PERMISSION_CATALOG, templates: ADMIN_PERMISSION_TEMPLATES, effectiveGrants: access.grants, configuredGrants: [...profile.grants]};
 }
 export async function readAdminPermissions(actor: Account, accountId: string): Promise<AdminPermissionsResponse> {
   const target = await managedTarget(actor, accountId);

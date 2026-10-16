@@ -3,6 +3,8 @@ const pairs:Record<string,[string,string]>={
  'quiz.deleteTitle':['确认删除测验？','Delete this quiz?'],
  'quiz.deleteDescription':['删除后，题库将不再显示此测验，并停止新增作答。已有作答和成绩会保留。','This quiz will be removed from the library and new attempts will stop. Existing attempts and results will be retained.'],
  'quiz.deleted':['测验已删除','Quiz deleted'],
+ 'quiz.copiedDraft':['已复制草稿；当前账号可查看，编辑需要另行授权。','Draft copied. This account can view it; editing requires permission.'],
+ 'quiz.permissionReadOnly':['当前账号仅可查看此草稿。','This account can only view this draft.'],
  'quiz.manageTab':['管理测验','Manage quizzes'],
  'quiz.chiefAdmin':['集团最高管理员','Organisation chief administrator'],
  'quiz.noChiefAdmin':['尚未指定','Not designated'],

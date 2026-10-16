@@ -9,6 +9,8 @@ import {generateWeekly,hoursBetween,findLessonConflict,lessonConflictReason,type
 import {operationHash,operationId} from "./learning-operations";
 import {isOwnerAccount} from "./owner";
 import {participantSql} from "./notification-access";
+import {corePermissionKeys,requireCorePermissions,rejectUnknownAdminAction,guardedCoreDb,guardedCoreReader} from './admin-core-permissions';
+import {hasAdminPermission} from './admin-permission-access';
 
 export class ClassSessionError extends Error {constructor(message:string,readonly status=400,readonly conflict?:Record<string,unknown>){super(message);}}
 const str=(value:unknown)=>typeof value==="string"?value.trim():"";
@@ -18,13 +20,14 @@ type Participant=AttendanceParticipant;
 const columns="s.id,s.group_id AS groupId,s.session_type AS sessionType,s.classroom_id AS classroomId,s.classroom_title AS classroomTitle,s.teacher_name AS teacherName,s.subject,(SELECT subject_id FROM classrooms WHERE id=s.classroom_id AND group_id=s.group_id) AS subjectId,(SELECT syllabus_id FROM classrooms WHERE id=s.classroom_id AND group_id=s.group_id) AS syllabusId,s.planned_start AS plannedStart,s.planned_end AS plannedEnd,s.online_link AS onlineLink,s.status,s.series_id AS seriesId,s.revision,s.created_at AS createdAt,s.updated_at AS updatedAt,s.teaching_status AS teachingStatus,s.actual_start AS actualStart,s.actual_end AS actualEnd,s.attendance_note AS attendanceNote,s.attendance_recorded_at AS attendanceRecordedAt,s.attendance_recorded_by AS attendanceRecordedBy,s.attendance_reviewed_at AS attendanceReviewedAt,s.attendance_reviewed_by AS attendanceReviewedBy";
 function roleFilter(actor:Account) {return actor.role==="admin"?{sql:"1",args:[]}:actor.role==="teacher"?{sql:"s.teacher_name=?",args:[actor.teacherName]}:{sql:"EXISTS(SELECT 1 FROM class_session_participants p WHERE p.session_id=s.id AND p.group_id=s.group_id AND p.student_name=?)",args:[actor.studentName]};}
 export async function classSessionState(actor:Account) {
- const {rows}=groupReader(actor.groupId),filter=roleFilter(actor);
+ await requireCorePermissions(actor,['lessons.view']);
+ const filter=roleFilter(actor),showAttendance=actor.role!=='admin'||await hasAdminPermission(actor,'attendance.view'),{rows}=guardedCoreReader(actor,showAttendance?['lessons.view','attendance.view']:['lessons.view']);
  const [sessions,participants]=await Promise.all([
   rows<ClassSession&{participantCount:number}>("SELECT "+columns+",(SELECT count(*) FROM class_session_participants p WHERE p.session_id=s.id AND p.group_id=s.group_id) AS participantCount FROM class_sessions s WHERE "+filter.sql+" ORDER BY s.planned_start",...filter.args),
   rows<Participant>("SELECT p.session_id AS sessionId,p.lesson_id AS lessonId,p.student_name AS studentName,p.attendance_status AS attendanceStatus,p.arrived_at AS arrivedAt,p.left_at AS leftAt,p.attendance_note AS attendanceNote,(SELECT chargeable FROM lessons WHERE id=p.lesson_id) AS chargeable FROM class_session_participants p JOIN class_sessions s ON s.id=p.session_id WHERE "+filter.sql+(actor.role==="student"?" AND p.student_name=?":"")+" ORDER BY p.student_name",...filter.args,...(actor.role==="student"?[actor.studentName]:[])),
  ]);
  const classes=actor.role==="teacher"?await rows<{id:string}>("SELECT id FROM classrooms WHERE teacher_name=? AND archived=0",actor.teacherName):[],manageable=new Set(classes.map(c=>c.id));
- const enriched=sessions.map(s=>({...s,canManage:actor.role==="admin"||Boolean(s.classroomId&&manageable.has(s.classroomId)),participants:participants.filter(p=>p.sessionId===s.id)}));
+ const enriched=sessions.map(s=>({...s,...(!showAttendance?{teachingStatus:'pending',actualStart:null,actualEnd:null,attendanceNote:null,attendanceRecordedAt:null,attendanceRecordedBy:null,attendanceReviewedAt:null,attendanceReviewedBy:null}:{}),canManage:actor.role==="admin"||Boolean(s.classroomId&&manageable.has(s.classroomId)),participants:participants.filter(p=>p.sessionId===s.id).map(p=>showAttendance?p:{...p,attendanceStatus:'pending',arrivedAt:null,leftAt:null,attendanceNote:null,chargeable:null})}));
  // A classroom can contain preserved one-to-one sessions as well as group
  // sessions. The type still controls rescheduling and participant snapshots;
  // merely organising a lesson into a classroom must not change those rules.
@@ -37,7 +40,8 @@ export function malaysiaClassIso(value:unknown) {
 function revision(value:unknown){if(!Number.isSafeInteger(value)||Number(value)<1)throw new ClassSessionError("课次已改变，请重新打开窗口",409);return Number(value);}
 export async function classScheduleOptions(actor:Account) {
  if(!["admin","teacher"].includes(actor.role))throw new ClassSessionError("没有整班排课权限",403);
- const {rows}=groupReader(actor.groupId);
+ const key=await hasAdminPermission(actor,'lessons.create')?'lessons.create':'lessons.edit';await requireCorePermissions(actor,[key]);
+ const {rows}=guardedCoreReader(actor,[key]);
  const classes=await rows<{id:string;title:string;teacherName:string;subject:string;subjectId:string|null;syllabusId:string|null;grade:string|null;updatedAt:string}>("SELECT c.id,c.title,c.teacher_name AS teacherName,c.subject,c.subject_id AS subjectId,c.syllabus_id AS syllabusId,c.grade,c.updated_at AS updatedAt FROM classrooms c JOIN teachers t ON t.name=c.teacher_name AND t.active=1 WHERE c.archived=0"+(actor.role==="teacher"?" AND c.teacher_name=?":"")+" ORDER BY c.title",...(actor.role==="teacher"?[actor.teacherName]:[]));
  return Promise.all(classes.map(async c=>{
   const members=await activeClassroomMemberNames(c.id,actor.groupId),matched=await rows<{student:string;subject:string;link:string|null;key:string}>(`SELECT p.student,p.subject,p.online_link AS link,p.key FROM plans p JOIN classroom_members m ON m.student_name=p.student JOIN classrooms c ON c.id=m.classroom_id JOIN students s ON s.name=p.student AND s.active=1 WHERE c.id=? AND ${classPlanSubjectSql()} AND p.teacher_name=c.teacher_name AND p.active=1 ORDER BY p.key`,c.id);
@@ -71,7 +75,8 @@ function sessionNotice(actor:Account,s:ClassSession,opId:string,kind:string,at:s
   .bind("class-event:"+opId+":",kind,at,s.id,actor.groupId,actor.id,...args);
 }
 export async function classSessionAction(actor:Account,data:Record<string,unknown>) {
- const action=str(data.action),groupId=requireGroup(actor.groupId),requestId=operationId(data.operationId),hash=await operationHash(data),{first,rows}=groupReader(groupId),db=learningDb(),now=new Date().toISOString(),guard=actorGuard(actor,groupId);
+ const action=str(data.action),permissionKeys=corePermissionKeys(action);rejectUnknownAdminAction(actor,permissionKeys);await requireCorePermissions(actor,permissionKeys);
+ const groupId=requireGroup(actor.groupId),requestId=operationId(data.operationId),hash=await operationHash(data),{first,rows}=groupReader(groupId),db=guardedCoreDb(actor,permissionKeys),now=new Date().toISOString(),guard=actorGuard(actor,groupId);
  if(!["admin","teacher"].includes(actor.role))throw new ClassSessionError("没有整班排课权限",403);
  const previous=await first<{afterJson:string}>("SELECT after_json AS afterJson FROM audit WHERE id=? AND actor_id=?","class-op:"+requestId,actor.id);
  if(previous){const saved=JSON.parse(previous.afterJson);if(saved.hash!==hash)throw new ClassSessionError("重复操作内容不同，请重新打开窗口",409);return {ok:true,replayed:true,count:saved.count};}
@@ -96,7 +101,7 @@ export async function classSessionAction(actor:Account,data:Record<string,unknow
 }
 
 async function changeClassSession(actor:Account,data:Record<string,unknown>,context:{groupId:string;requestId:string;hash:string;now:string;guard:{sql:string;args:unknown[]}}) {
- const {groupId,requestId,hash,now,guard}=context,action=str(data.action),{first,rows}=groupReader(groupId),db=learningDb();
+ const {groupId,requestId,hash,now,guard}=context,action=str(data.action),{first,rows}=groupReader(groupId),db=guardedCoreDb(actor,corePermissionKeys(action));
  const id=str(data.sessionId),current=await session(actor,id),baseRevision=revision(data.revision);
  if(current.revision!==baseRevision)throw new ClassSessionError("课次已改变，请重新打开窗口",409);
  const participants=await rows<Participant>("SELECT session_id AS sessionId,lesson_id AS lessonId,student_name AS studentName FROM class_session_participants WHERE session_id=?",id);
@@ -160,6 +165,7 @@ export async function legacyGroupAction(actor:Account,data:Record<string,unknown
  return classSessionAction(actor,{...data,action:map[str(data.action)],sessionId,revision:data.sessionRevision,operationId:data.operationId});
 }
 export async function classSessionPreview(actor:Account,data:Record<string,unknown>) {
+ const permissionKeys=corePermissionKeys(str(data.action));rejectUnknownAdminAction(actor,permissionKeys);await requireCorePermissions(actor,permissionKeys);
  const start=malaysiaClassIso(data.start),end=malaysiaClassIso(data.end);hoursBetween(start,end);
  if(data.action==="createClassSession"){
   const chosen=(await classScheduleOptions(actor)).find(c=>c.id===str(data.classroomId));if(!chosen||!chosen.members.length)throw new ClassSessionError("请选择有效且有权管理的班级",403);

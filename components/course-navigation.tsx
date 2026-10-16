@@ -10,6 +10,7 @@ type CourseNavigationProps = {
   activeView: string;
   onChoose: (view: string) => void;
   badges?: Partial<Record<string, number>>;
+  canView?: (view:string)=>boolean;
 };
 
 function PendingCount({ count = 0 }: { count?: number }) {
@@ -18,12 +19,12 @@ function PendingCount({ count = 0 }: { count?: number }) {
 }
 
 /** Present existing course destinations without changing their history or permissions. */
-export function CourseNavigation({ role, activeView, onChoose, badges = {} }: CourseNavigationProps) {
-  const sections = getCourseTabs(role);
+export function CourseNavigation({ role, activeView, onChoose, badges = {}, canView=()=>true }: CourseNavigationProps) {
+  const sections = getCourseTabs(role).filter(section=>section.views.some(canView));
   const selected = courseSection(role, activeView);
   const row = useRef<HTMLElement>(null);
   const activeButton = useRef<HTMLButtonElement>(null);
-  const canArrange = role === "admin" || role === "teacher";
+  const canArrange = (role === "admin" || role === "teacher") && canView("schedule");
   const secondary = selected === "timetable"
     ? [{ view: "students", label: "按学生" }, { view: "teachers", label: "按老师" }]
     : role === "teacher" && selected === "attendance"
@@ -52,7 +53,7 @@ export function CourseNavigation({ role, activeView, onChoose, badges = {} }: Co
           return <button type="button" key={section.id} ref={active ? activeButton : undefined}
             data-testid={`course-view-${section.id}`} data-active={active}
             aria-current={active ? "page" : undefined}
-            onClick={() => onChoose(section.defaultView)}>
+            onClick={() => onChoose(canView(section.defaultView)?section.defaultView:section.views.find(canView)!)}>
             <span>{t(section.label)}</span><PendingCount count={count}/>
           </button>;
         })}
@@ -66,7 +67,7 @@ export function CourseNavigation({ role, activeView, onChoose, badges = {} }: Co
       </div>}
     </div>
     {secondary.length > 0 && <nav className="course-navigation-secondary" aria-label={selected === "timetable" ? t("时间表对象") : t("考勤视图")} data-testid="course-navigation-secondary">
-      {secondary.map(item => <button type="button" key={item.view} data-testid={`course-subview-${item.view}`}
+      {secondary.filter(item=>canView(item.view)).map(item => <button type="button" key={item.view} data-testid={`course-subview-${item.view}`}
         data-active={activeView === item.view} aria-current={activeView === item.view ? "page" : undefined}
         onClick={() => onChoose(item.view)}>{t(item.label)}<PendingCount count={badges[item.view]}/></button>)}
     </nav>}

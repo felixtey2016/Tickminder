@@ -5,12 +5,14 @@ import {learningDb} from './learning-server';
 import {operationId,operationHash} from './learning-operations';
 import {isOwnerAccount} from './owner';
 import {hoursBetween,mayCheckIn,malaysiaDate} from './lesson-rules';
+import {corePermissionKeys,requireCorePermissions,rejectUnknownAdminAction,guardedCoreDb} from './admin-core-permissions';
 
 const str=(v:unknown)=>typeof v==='string'?v.trim():'';
 export const attendanceActions=['saveSessionAttendance','reviewSessionAttendance'];
 export async function attendanceAction(actor:Account,data:Record<string,unknown>){
  if(!['teacher','admin'].includes(actor.role))throw new ClassSessionError('没有考勤操作权限',403);
- const group=requireGroup(actor.groupId),{first,rows}=groupReader(group),db=learningDb(),op=operationId(data.operationId),hash=await operationHash(data),now=new Date().toISOString();
+ const permissionKeys=corePermissionKeys(str(data.action));rejectUnknownAdminAction(actor,permissionKeys);await requireCorePermissions(actor,permissionKeys);
+ const group=requireGroup(actor.groupId),{first,rows}=groupReader(group),db=guardedCoreDb(actor,permissionKeys),op=operationId(data.operationId),hash=await operationHash(data),now=new Date().toISOString();
  const previous=await first<{after:string}>("SELECT after_json AS after FROM audit WHERE id=? AND actor_id=?",'attendance-op:'+op,actor.id);
  if(previous){if(JSON.parse(previous.after).hash!==hash)throw new ClassSessionError('重复操作内容不同，请重新打开窗口',409);return {ok:true,replayed:true};}
  const state=await classSessionState(actor),s=state.allSessions.find(s=>s.id===str(data.sessionId));

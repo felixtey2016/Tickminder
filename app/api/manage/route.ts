@@ -8,11 +8,14 @@ import { deleteUnreferencedFile } from "@/lib/pdf-storage";
 import { hasQuizAccountHistory } from "@/lib/account-merge";
 import {classPlanSubjectSql,planSubjectLabelSql} from "@/lib/academic-subject-match";
 import { accountAuthorityGuard, assertAccountAuthority, AdminAuthorityError, isAdminAuthorityFailure } from "@/lib/admin-authority";
+import {requireCorePermissions,guardedCoreDb} from '@/lib/admin-core-permissions';
+import {adminPermissionFailure,AdminPermissionDenied,adminPermissionsEnforced} from '@/lib/admin-permission-access';
 
 
 class DeleteError extends Error { constructor(message: string, public status = 409) { super(message); } }
 type Entry = { kind: string; id: string };
 type Snapshot = {table: string; records: Record<string, unknown>[]};
+const deletionPermission:Record<string,string>={account:'accounts.delete',teacher:'teachers.delete',student:'students.delete',plan:'plans.delete',lesson:'lessons.delete',classroom:'classrooms.delete',homework:'homework.delete'};
 const financialHistoryMessage="此记录已有收费或费用调整历史，不能永久删除。请改为停用，以保留核算依据。";
 const studentFinancialHistory=`SELECT 1 AS found FROM billing_students b WHERE b.group_id=? AND b.student_name=? AND (
  EXISTS(SELECT 1 FROM billing_rates r JOIN billing_rate_versions v ON v.group_id=r.group_id AND v.rate_id=r.id WHERE r.group_id=b.group_id AND r.student_id=b.id)
@@ -29,6 +32,7 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
     const groupId=requireGroup(actor.groupId); const {first,rows}=groupReader(groupId);
     if (!id || !["account", "teacher", "student", "plan", "lesson", "classroom", "homework"].includes(kind)) throw new DeleteError("请求格式无效", 400);
     if (actor.role !== "admin" && !(actor.role === "teacher" && ["classroom", "homework"].includes(kind))) throw new DeleteError("没有权限执行此操作", 403);
+    await requireCorePermissions(actor,[deletionPermission[kind]]);
     const raw = learningDb();
     const operations: Array<{sql: string; params: unknown[]}> = [];
     const db = {prepare: (sql: string) => ({bind: (...params: unknown[]) => {operations.push({sql, params});return groupStatement(groupId,sql).bind(...params);}})};
@@ -142,6 +146,7 @@ export async function POST(request: Request) {
   const groupId=requireGroup(actor.groupId); const {first,rows}=groupReader(groupId);
   try {
     const data = await request.json() as Record<string,unknown>;
+    if(actor.role==='admin'&&adminPermissionsEnforced()&&data.action!==undefined&&!['previewDelete','permanentDelete'].includes(String(data.action)))throw new AdminPermissionDenied();
     const preview = data.action === 'previewDelete';
     if (!preview && data.confirm !== true) throw new DeleteError("请确认永久删除",400);
     if (await first("SELECT 1 AS found FROM local_credentials WHERE account_id = ? AND must_change_password = 1",actor.id)) throw new DeleteError("请先修改初始密码",403);
@@ -150,7 +155,7 @@ export async function POST(request: Request) {
     const plans: Array<Awaited<ReturnType<typeof planDeletion>>> = [], blocked: Array<{kind:string;id:string;error:string}> = [];
     for (const entry of entries) {
       try { plans.push(await planDeletion(actor,entry.kind,entry.id)); }
-      catch (e) { if (!preview) throw e; if (!(e instanceof DeleteError) && !(e instanceof AdminAuthorityError)) throw e; blocked.push({...entry,error:e.message}); }
+      catch (e) { if (!preview) throw e; if (!(e instanceof DeleteError) && !(e instanceof AdminAuthorityError) && !(e instanceof AdminPermissionDenied)) throw e; blocked.push({...entry,error:e.message}); }
     }
     const previewAt = preview ? new Date().toISOString() : String(data.previewAt || '');
     if (preview) return NextResponse.json({ok:true,items:plans.map(p=>p.summary),blocked,previewAt,fingerprint:await proof(actor.id,plans,previewAt)});
@@ -158,7 +163,7 @@ export async function POST(request: Request) {
       const age = Date.now()-Date.parse(previewAt);
       if (!Number.isFinite(age) || age < 0 || age > 300000 || data.fingerprint !== await proof(actor.id,plans,previewAt)) throw new DeleteError("记录已更新或预览已过期，请重新预览后确认",409);
     }
-    const db = learningDb();
+    const db = guardedCoreDb(actor,entries.map(entry=>deletionPermission[entry.kind]));
     const statements = plans.flatMap(p=>p.statements);
     for (const entry of entries) {
       const account=entry.kind==='account'?plans.find(p=>p.summary.id===entry.id)?.snapshots.find(s=>s.table==='accounts')?.records[0]:null;
@@ -168,5 +173,5 @@ export async function POST(request: Request) {
     let cleanupPending=false;
     for (const file of new Set(plans.flatMap(p=>p.files))) {try {await deleteUnreferencedFile(file);} catch {cleanupPending=true;}}
     return NextResponse.json({ok:true,deletedCount:entries.length,warning:cleanupPending?"记录已删除，部分文件清理尚未完成，请联系管理员":undefined});
-  } catch (e) {if(e instanceof AdminAuthorityError)return NextResponse.json({error:e.message},{status:e.status});if(isAdminAuthorityFailure(e))return NextResponse.json({error:'admin.authorityChanged'},{status:409});if(isClassroomCoverageFailure(e))return NextResponse.json({error:classroomRequiredMessage},{status:409});if(e instanceof Error&&/financial history/i.test(e.message))return NextResponse.json({error:financialHistoryMessage},{status:409});return NextResponse.json({error:e instanceof DeleteError?e.message:"删除未能确认，请刷新列表后再试"},{status:e instanceof DeleteError?e.status:503});}
+  } catch (e) {const permissionFailure=adminPermissionFailure(e);if(permissionFailure)return NextResponse.json({error:permissionFailure.error},{status:permissionFailure.status});if(e instanceof AdminAuthorityError)return NextResponse.json({error:e.message},{status:e.status});if(isAdminAuthorityFailure(e))return NextResponse.json({error:'admin.authorityChanged'},{status:409});if(isClassroomCoverageFailure(e))return NextResponse.json({error:classroomRequiredMessage},{status:409});if(e instanceof Error&&/financial history/i.test(e.message))return NextResponse.json({error:financialHistoryMessage},{status:409});return NextResponse.json({error:e instanceof DeleteError?e.message:"删除未能确认，请刷新列表后再试"},{status:e instanceof DeleteError?e.status:503});}
 }

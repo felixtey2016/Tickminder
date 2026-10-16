@@ -3,6 +3,7 @@ import {learningInbox} from "./learning-notices";
 import {quizAssignmentInbox} from "./quiz-assignment-notices";
 import { participantSql } from "@/lib/notification-access";
 import type { Account } from "@/lib/auth";
+import { adminPermissionPredicate } from "@/lib/admin-permission-access";
 
 type LessonChange = { groupId:string; lessonId: string; actorId: string; action: "reschedule" | "acceptReschedule" | "rejectReschedule" | "cancel"; before: unknown; after: unknown; at: string };
 const inboxAccess = `a.disabled_at IS NULL AND ((a.role='admin' AND (a.group_id=l.group_id OR (a.group_id IS NULL AND a.id NOT LIKE 'local:%' AND lower(trim(a.email))='felixtey2016@gmail.com'))) OR (${participantSql}))`;
@@ -27,12 +28,13 @@ const snapshot = (value: string | null) => {
 const date = (value: unknown, fallback: string) => typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : fallback;
 
 export async function inboxState(account: Account) {
+  const permission=adminPermissionPredicate(account,"lessons.view");
   const messages = await rows<{ id: string; kind: string; createdAt: string; readAt: string | null; subject: string; teacherName: string; plannedStart: string; plannedEnd: string; beforeJson: string | null; afterJson: string | null; unreadTotal: number }>(`SELECT n.id,n.kind,n.created_at AS createdAt,n.read_at AS readAt,
     l.subject,l.teacher_name AS teacherName,l.planned_start AS plannedStart,l.planned_end AS plannedEnd,
     e.before_json AS beforeJson,e.after_json AS afterJson,sum(n.read_at IS NULL) OVER () AS unreadTotal
     FROM site_notifications n JOIN audit e ON e.id=n.event_id JOIN lessons l ON l.id=n.lesson_id JOIN accounts a ON a.id=n.account_id
-    WHERE n.account_id=? AND n.group_id=? AND e.group_id=n.group_id AND l.group_id=n.group_id AND ${inboxAccess}
-    ORDER BY (n.read_at IS NULL) DESC,n.created_at DESC,n.id DESC LIMIT 100`, account.id,account.groupId);
+    WHERE n.account_id=? AND n.group_id=? AND e.group_id=n.group_id AND l.group_id=n.group_id AND ${inboxAccess} AND ${permission.sql}
+    ORDER BY (n.read_at IS NULL) DESC,n.created_at DESC,n.id DESC LIMIT 100`, account.id,account.groupId,...permission.args);
   const [learning,quiz]=await Promise.all([learningInbox(account),quizAssignmentInbox(account)]);
   return { unreadCount: Number(messages[0]?.unreadTotal || 0)+learning.unreadCount+quiz.unreadCount, unreadQuizCount:quiz.unreadCount, items: [...quiz.items,...learning.items,...messages.map(message => {
     const before = snapshot(message.beforeJson), after = snapshot(message.afterJson);

@@ -1,3 +1,4 @@
+import {adminPermissionPredicate} from './admin-permission-access';
 import type {Account} from './auth';
 import {learningDb,rows} from './learning-server';
 import {quizClassroomEligibleSql,quizStudentEligibleSql} from './quiz-targets';
@@ -50,9 +51,10 @@ export function quizAssignmentNoticeStatements(event:QuizNoticeEvent) {
 }
 export async function quizAssignmentInbox(account:Account) {
  if(!account.groupId||!['student','teacher','admin'].includes(account.role))return {items:[],unreadCount:0};
+ const permission=adminPermissionPredicate(account,'quizAssignments.view');
  const messages=await rows<{id:string;kind:string;assignmentId:string;title:string;subject:string;createdAt:string;readAt:string|null;unreadTotal:number}>(`SELECT n.id,n.kind,n.assignment_id AS assignmentId,n.title,n.subject,n.created_at AS createdAt,n.read_at AS readAt,sum(n.read_at IS NULL) OVER() AS unreadTotal
   FROM quiz_assignment_notifications n JOIN accounts a ON a.id=n.account_id JOIN quiz_practice_assignments qa ON qa.id=n.assignment_id
-  WHERE n.account_id=? AND n.group_id=? AND ${quizAssignmentNoticeAccess}
-  ORDER BY (n.read_at IS NULL) DESC,n.created_at DESC,n.id DESC LIMIT 100`,account.id,account.groupId);
+  WHERE n.account_id=? AND n.group_id=? AND ${quizAssignmentNoticeAccess} AND (${permission.sql})
+  ORDER BY (n.read_at IS NULL) DESC,n.created_at DESC,n.id DESC LIMIT 100`,account.id,account.groupId,...permission.args);
  return {unreadCount:Number(messages[0]?.unreadTotal||0),items:messages.map(n=>({id:'quiz:'+n.id,kind:'quiz_'+n.kind,contentKind:'quiz' as const,recordId:n.assignmentId,title:n.title,subject:n.subject,dueAt:n.createdAt,readAt:n.readAt}))};
 }

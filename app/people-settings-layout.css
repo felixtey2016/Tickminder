@@ -11,6 +11,8 @@
 .directory-panel .directory-toolbar { margin-block: 20px; }
 .directory-panel .directory-maintenance { margin-top: 0; }
 .directory-toolbar .student-promotions { max-width: 100%; margin-block: 0; }
+.student-promotions .button-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.student-promotions .button-row > button { min-width: 0; max-width: 100%; min-height: 44px; height: auto; white-space: normal; }
 .directory-filter-actions,.directory-form-actions { grid-column: 1 / -1; }
 .directory-filter-actions .check-row { margin: 0; }
 .directory-form-actions { margin-top: 4px; }

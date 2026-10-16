@@ -7,9 +7,12 @@ import { deleteUnreferencedFile } from "@/lib/pdf-storage";
 import { FolderError,folderTree,folderRevision,folderDescendants,validateFolderPosition,folderName,validateContentFolder } from "@/lib/folders-server";
 import {readAcademicCatalogue} from "@/lib/academic-catalogue-server";
 import {findCatalogueSubject,findCatalogueSyllabus} from "@/lib/academic-catalogue";
+import {requireCorePermissions,rejectUnknownAdminAction,guardedCoreDb,guardedCoreChange} from '@/lib/admin-core-permissions';
+import {adminPermissionFailure} from '@/lib/admin-permission-access';
 
 const str=(value:unknown)=>typeof value==="string"?value.trim():"";
 function failure(error:unknown) {
+  const permissionFailure=adminPermissionFailure(error);if(permissionFailure)return NextResponse.json({error:permissionFailure.error},{status:permissionFailure.status});
   if(error instanceof FolderError) return NextResponse.json({error:error.message},{status:error.status});
   if(/UNIQUE constraint/.test(String(error))) return NextResponse.json({error:"同一位置已有这个名称的文件夹"},{status:409});
   if(/folder cycle|invalid .*folder/.test(String(error))) return NextResponse.json({error:"文件夹结构已改变，请刷新后重试"},{status:409});
@@ -19,9 +22,11 @@ export async function GET(request:Request) {
   try {
     const actor=await currentBusinessAccount();
     if(!actor) throw new FolderError("请先登录",401);
+    await requireCorePermissions(actor,['folders.view']);
     const groupId=requireGroup(actor.groupId),classroomId=new URL(request.url).searchParams.get("classroomId") || "";
     if(!await classroomMayRead(actor,classroomId)) throw new FolderError("班级不存在或无权访问",403);
     const [folders,revision]=await Promise.all([folderTree(groupId,classroomId),folderRevision(groupId,classroomId)]);
+    await requireCorePermissions(actor,['folders.view']);
     return NextResponse.json({folders,revision},{headers:{"cache-control":"no-store"}});
   } catch(error) { return failure(error); }
 }
@@ -33,7 +38,10 @@ export async function POST(request:Request) {
     const groupId=requireGroup(actor.groupId),{first,rows}=groupReader(groupId);
     if(await first("SELECT 1 FROM local_credentials WHERE account_id=? AND must_change_password=1",actor.id)) throw new FolderError("请先修改初始密码",403);
     let data:Record<string,unknown>; try {data=await request.json();if(!data || typeof data!=="object" || Array.isArray(data))throw new Error();} catch {throw new FolderError("请求格式无效");}
-    const classroomId=str(data.classroomId),action=str(data.action),id=str(data.id),db=learningDb();
+    const classroomId=str(data.classroomId),action=str(data.action),id=str(data.id);
+    const permissionKeys=action==='create'?['folders.create']:['rename','move'].includes(action)?['folders.edit']:action==='placeContent'?['folders.placeContent',str(data.kind)==='material'?'materials.view':'homework.view']:['previewDelete','delete'].includes(action)?['folders.delete']:[];
+    rejectUnknownAdminAction(actor,permissionKeys);await requireCorePermissions(actor,permissionKeys);
+    const db=guardedCoreDb(actor,permissionKeys);
     const classroom=await classroomMayManage(actor,classroomId);
     if(!classroom || classroom.archived) throw new FolderError("班级不存在、已封存或无权管理",403);
     const tree=await folderTree(groupId,classroomId),revision=await folderRevision(groupId,classroomId);
@@ -53,7 +61,7 @@ export async function POST(request:Request) {
       const result=action==="create" ? await db.prepare(`INSERT INTO classroom_folders(id,group_id,classroom_id,parent_id,name,name_key,created_by,created_at,updated_at) SELECT ?,?,?,?,?,?,?,?,? WHERE ${stateGuard}`).bind(recordId,groupId,classroomId,parentId,name,key,actor.id,now,now,...guardArgs).run()
         : await db.prepare(`UPDATE classroom_folders SET parent_id=?,name=?,name_key=?,updated_at=? WHERE id=? AND group_id=? AND classroom_id=? AND ${stateGuard}`).bind(parentId,name,key,now,id,groupId,classroomId,...guardArgs).run();
       if(!result.meta.changes) throw new FolderError("内容已改变，请刷新后重试",409);
-      await change(groupId,`folder:${action}`,actor.id,recordId,{classroomId,parentId,name});
+      await guardedCoreChange(actor,permissionKeys,`folder:${action}`,recordId,{classroomId,parentId,name});
       return NextResponse.json({ok:true,id:recordId});
     }
     if(action==="placeContent") {
@@ -75,7 +83,7 @@ export async function POST(request:Request) {
       // Keep the same record and recipient rows; moving does not republish or reset scores.
       const result=await db.prepare(`UPDATE ${table} SET classroom_id=?,folder_id=? WHERE id=? AND group_id=? AND ${stateGuard}`).bind(classroomId,folderId,id,groupId,...guardArgs).run();
       if(!result.meta.changes) throw new FolderError("内容已改变，请刷新后重试",409);
-      await change(groupId,"folder:placeContent",actor.id,id,{classroomId,folderId,kind});
+      await guardedCoreChange(actor,permissionKeys,"folder:placeContent",id,{classroomId,folderId,kind});
       return NextResponse.json({ok:true});
     }
     if(action==="previewDelete" || action==="delete") {
@@ -95,7 +103,7 @@ export async function POST(request:Request) {
       const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(signature));
       const token=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,"0")).join("");
       const preview={name:folder.name,folders:ids.length-1,materials:materials.length,homework:homework.length,submissions:submissions.length,scores:scores.length,versions:versionFiles.length,scoreHistory:scoreHistory.length,feedback:feedback.length,grants:grants.length,revision,token};
-      if(action==="previewDelete") return NextResponse.json({preview});
+      if(action==="previewDelete"){await requireCorePermissions(actor,permissionKeys);return NextResponse.json({preview});}
       ensureRevision();
       if(data.confirmed!==true || data.token!==token) throw new FolderError("删除范围已改变，请重新确认",409);
       const mutationId=crypto.randomUUID();
@@ -113,7 +121,7 @@ export async function POST(request:Request) {
         db.prepare(`DELETE FROM classroom_folders WHERE group_id=? AND classroom_id=? AND id=? AND ${guard}`).bind(groupId,classroomId,id,...claimed),
       ]);
       if(!results[0].meta.changes) throw new FolderError("删除范围已改变，请重新确认",409);
-      await change(groupId,"folder:delete",actor.id,id,{classroomId,...preview,token:undefined});
+      await guardedCoreChange(actor,permissionKeys,"folder:delete",id,{classroomId,...preview,token:undefined});
       let cleanupPending=false;
       for(const fileId of new Set([...materials.map(m=>m.fileId),...homework.map(h=>h.fileId),...submissions.map(s=>s.fileId),...versionFiles.map(v=>v.fileId),...feedback.map(f=>f.fileId)].filter((f):f is string=>Boolean(f)))) { try {await deleteUnreferencedFile(fileId);} catch {cleanupPending=true;} }
       return NextResponse.json({ok:true,warning:cleanupPending?"内容已删除；未引用的 PDF 清理将在后续上传时重试":undefined});

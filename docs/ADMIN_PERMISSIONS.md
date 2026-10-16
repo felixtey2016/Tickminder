@@ -16,6 +16,14 @@ Existing administrator identities receive an explicit snapshot of their existing
 
 Saved drafts do not alter the stored baseline or live access. Configuration changes are recorded with before/after values and a revision. Concurrent edits require reloading and reviewing the latest version; a stale page cannot silently replace newer settings. Configuration history is visible only to authorised administrator managers.
 
+## Round 2: integration
+
+Module permissions are connected to business queries and actions, current and historic files, navigation and controls. This integration is verified in an isolated local environment. The normal deployment configuration continues to use existing access rules; saved drafts remain pending.
+
+Selectors return only the names, academic labels and references needed for the permitted action. A scheduling administrator can select students and teachers without receiving their complete profiles. Quiz-library access and student-assignment access are independent. Statistics can be viewed without attendance notes, and activity-log snapshots require access to the relevant module. Student, teacher, creator, recipient and organisation restrictions continue to apply alongside module permissions.
+
+Folder and classroom deletion retain their existing confirmed cascade behaviour. Permission to delete these containers includes deleting the affected contents described in their confirmation. This does not grant separate content editing, publishing or grading rights. Preview the deletion effects before confirming.
+
 ## Remaining rollout
 
-Round 2 connects module permissions to business queries, actions, files, navigation and dependent selection lists. Round 3 verifies revocation, in-progress and bulk operations, group isolation and existing teacher/student workflows. The complete system is enabled only after all three rounds pass verification.
+Round 3 verifies the complete rollout, including revocation during in-progress and bulk operations, group isolation, backup/restore and existing teacher/student workflows. Formal activation and deployment remain pending until that verification is complete.

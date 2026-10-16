@@ -1,3 +1,4 @@
+import {requireAdminPermission,adminPermissionStatements,adminPermissionFailure} from '@/lib/admin-permission-access';
 import type {Account} from '@/lib/auth';
 import {isOwnerAccount} from '@/lib/owner';
 import {learningDb} from '@/lib/learning-server';
@@ -6,6 +7,7 @@ import {QuizError} from '@/lib/quiz';
 export async function quizManager(actor:Account){return isOwnerAccount(actor)||actor.role==='admin'&&Boolean(await learningDb().prepare('SELECT 1 FROM tuition_groups WHERE id=? AND chief_admin_id=? AND active=1').bind(actor.groupId,actor.id).first());}
 export function quizCanDelete(actor:Account,q:{group_id:string;owner_id:string},manager:boolean){return actor.role!=='student'&&(isOwnerAccount(actor)||q.group_id===actor.groupId&&(q.owner_id===actor.id||manager));}
 export async function deleteQuiz(actor:Account,data:Record<string,unknown>){
+ await requireAdminPermission(actor,'quizzes.delete');
  const id=data.id,operation=data.operationId;
  if(typeof id!=='string'||!/^[a-zA-Z0-9_-]{16,80}$/.test(id)||typeof operation!=='string'||!/^[a-zA-Z0-9_-]{16,80}$/.test(operation))throw new QuizError('quiz.invalidFields');
  const db=learningDb(),hash=await operationHash({id,action:'quiz.delete'}),auditId='quizdelete:'+operation;
@@ -21,6 +23,7 @@ export async function deleteQuiz(actor:Account,data:Record<string,unknown>){
  try{const results=await db.batch([
   db.prepare(`UPDATE quizzes SET deleted_at=?,deleted_by=?,visibility='private',shared_revision=NULL,source_key=NULL,updated_at=? WHERE id=? AND revision=? AND deleted_at IS NULL AND ${authority}`).bind(now,actor.id,now,id,q.revision,actor.id,isOwnerAccount(actor)?1:0,actor.email.trim().toLowerCase()),
   db.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) SELECT ?,?,?,?,'quiz.delete',?,?,? WHERE changes()=1").bind(q.group_id,auditId,'quiz:'+id,actor.id,JSON.stringify({revision:q.revision,sourceKey:q.source_key}),JSON.stringify({id,requestHash:hash,deletedAt:now}),now),
+ ...adminPermissionStatements(actor,'quizzes.delete'),
  ]);if(results[0].meta.changes!==1)throw new QuizError('quiz.conflict',409);return {ok:true};}
- catch(error){const committed=await db.prepare("SELECT actor_id,after_json FROM audit WHERE id=? AND action='quiz.delete'").bind(auditId).first<{actor_id:string;after_json:string}>();if(committed&&committed.actor_id===actor.id&&JSON.parse(committed.after_json).requestHash===hash)return {ok:true,replayed:true};throw error;}
+ catch(error){if(adminPermissionFailure(error))throw error;const committed=await db.prepare("SELECT actor_id,after_json FROM audit WHERE id=? AND action='quiz.delete'").bind(auditId).first<{actor_id:string;after_json:string}>();if(committed&&committed.actor_id===actor.id&&JSON.parse(committed.after_json).requestHash===hash)return {ok:true,replayed:true};throw error;}
 }

@@ -45,6 +45,7 @@ const ClassroomsPage = lazy(() => import("./classrooms-page").then(module => ({d
 import { Timetable } from "./timetables";
 import { SubjectAdmin } from "./roster-forms";
 const SheetSyncPanel = lazy(() => import("./sheet-sync-panel").then(module => ({default: module.SheetSyncPanel})));
+const TermManager = lazy(() => import("./term-manager").then(module => ({default: module.TermManager})));
 const AccountDirectory = lazy(() => import("./account-directory").then(module => ({default: module.AccountDirectory})));
 import { AccountSettings } from "./account-settings";
 import { NotificationsProvider, NotificationCentre, MenuBadge, detachPushOnLogout } from "./notifications";
@@ -55,8 +56,10 @@ import { ManagementNavigation } from "@/components/management-navigation";
 import { defaultManagementView, managementArea, managementTitle, normalizeManagementView } from "@/lib/management-navigation";
 import { AccountSetup } from "./account-setup";
 import { DeleteButton, DirectoryFilters, PeopleDirectory } from "./directory-tools";
+import { AdminPermissionContext, useAdminAction } from "./admin-permission-context";
+import { canAdminAction, canAdminView, adminMutationGrant, type AdminPermissionAccount } from "@/lib/admin-permission-client";
 
-type Account = {
+type Account = AdminPermissionAccount & {
     id?: string;
     name: string;
     email?: string;
@@ -118,6 +121,11 @@ type State = {
     terms?: Array<{id: string; name: string; isCurrent: number}>;
     revision?: number;
     plans?: Plan[];
+    studentOptions?: Array<{name:string;active:boolean;syllabusId?:string;grade?:string|null}>;
+    teacherOptions?: Array<{name:string;active:boolean}>;
+    planOptions?: Array<Omit<Plan,"teacher"> & {teacher?:string;teacherName:string;active:boolean}>;
+    classroomOptions?: Classroom[];
+    termOptions?: Array<{id:string;name:string;isCurrent:number}>;
     allPlans?: Array<Omit<Plan, "teacher"> & {
         teacherName: string;
         active: boolean;
@@ -238,10 +246,24 @@ export function Scheduler() {
                 const next = await request(`/api/state?scope=${scope}`) as State;
                 if (epoch !== latestStateRequest.current || accountId !== activeAccountId.current) return;
                 if (next.account.id !== accountId) return;
+                if (JSON.stringify(next.account.adminPermissions)!==JSON.stringify(auth?.account?.adminPermissions)) {
+                    // A lazy scope can observe revocation before the next poll.
+                    // Drop prior private datasets and reject other older responses.
+                    latestStateRequest.current++;
+                    scopeRequests.current.clear();wantedScopes.current.clear();
+                    loadedScopes.current=new Set([scope]);setModal(null);
+                    setState({...next,loadedScopes:next.loadedScopes||[scope],scopeErrors:{}});
+                    setAuth(previous=>previous?.account?.id===accountId?{...previous,account:{...previous.account,...next.account}}:previous);
+                    return;
+                }
                 loadedScopes.current.add(scope);
                 setState(previous => {
                     if (!previous || previous.account.id !== accountId || previous.account.groupId !== next.account.groupId || previous.account.role !== next.account.role || previous.account.teacherName !== next.account.teacherName || previous.account.studentName !== next.account.studentName) return previous;
-                    return {...previous, ...next, account: previous.account, revision: previous.revision,
+                    if(JSON.stringify(previous.account.adminPermissions)!==JSON.stringify(next.account.adminPermissions)) {
+                        loadedScopes.current=new Set([scope]);
+                        return {...next,loadedScopes:next.loadedScopes||[scope],scopeErrors:{}};
+                    }
+                    return {...previous, ...next, account: next.account, revision: previous.revision,
                         loadedScopes: [...new Set([...(previous.loadedScopes || []), ...(next.loadedScopes || [scope])])],
                         scopeErrors: {...previous.scopeErrors, [scope]: undefined}};
                 });
@@ -251,7 +273,7 @@ export function Scheduler() {
         })();
         scopeRequests.current.set(scope, promise);
         try { await promise; } finally { if (scopeRequests.current.get(scope) === promise) scopeRequests.current.delete(scope); }
-    }, [auth?.account?.id]);
+    }, [auth?.account?.id,auth?.account?.adminPermissions]);
     const refreshState = useCallback(async (silent: boolean) => {
         const requestId = ++latestStateRequest.current;
         scopeRequests.current.clear();
@@ -270,14 +292,14 @@ export function Scheduler() {
             const retainedScopes = [...wantedScopes.current].filter(scope => loadedScopes.current.has(scope));
             loadedScopes.current = new Set(retainedScopes);
             setState(previous => {
-                const sameIdentity = previous?.account.id === next.account.id && previous?.account.groupId === next.account.groupId && previous?.account.role === next.account.role && previous?.account.teacherName === next.account.teacherName && previous?.account.studentName === next.account.studentName;
+                const sameIdentity = JSON.stringify(previous?.account.adminPermissions)===JSON.stringify(next.account.adminPermissions) && previous?.account.id === next.account.id && previous?.account.groupId === next.account.groupId && previous?.account.role === next.account.role && previous?.account.teacherName === next.account.teacherName && previous?.account.studentName === next.account.studentName;
                 if (!sameIdentity) loadedScopes.current.clear();
                 return sameIdentity ? {...previous, ...next, loadedScopes: [...new Set([...(next.loadedScopes || ["core"]), ...retainedScopes])]} : next;
             });
             setAuth(previous => {
                 if (!previous?.account || !next.account || previous.account.id !== next.account.id) return previous;
-                const updated = { ...previous.account, name: next.account.name, role: next.account.role, teacherName: next.account.teacherName || null, studentName: next.account.studentName || null, isOwner: Boolean(next.account.isOwner), isGroupChief: Boolean(next.account.isGroupChief), canManageAdministrators: next.account.canManageAdministrators === true };
-                return previous.account.name === updated.name && previous.account.role === updated.role && previous.account.teacherName === updated.teacherName && previous.account.studentName === updated.studentName && previous.account.isOwner === updated.isOwner && previous.account.isGroupChief === updated.isGroupChief && previous.account.canManageAdministrators === updated.canManageAdministrators ? previous : { ...previous, account: updated };
+                const updated = { ...previous.account, name: next.account.name, role: next.account.role, teacherName: next.account.teacherName || null, studentName: next.account.studentName || null, isOwner: Boolean(next.account.isOwner), isGroupChief: Boolean(next.account.isGroupChief), canManageAdministrators: next.account.canManageAdministrators === true, adminPermissions: next.account.adminPermissions };
+                return JSON.stringify(previous.account) === JSON.stringify(updated) ? previous : { ...previous, account: updated };
             });
             await Promise.all([...wantedScopes.current].map(scope => ensureScope(scope, true)));
             window.dispatchEvent(new Event("tickminder:data-changed"));
@@ -324,11 +346,15 @@ export function Scheduler() {
                     const next = await request("/api/auth");
                     if (active && JSON.stringify(next.account) !== JSON.stringify(account)) setAuth(next);
                 } else {
-                    const { revision, accountId } = await request("/api/revision") as { revision: number; accountId: string };
+                    const { revision, accountId, adminPermissions } = await request("/api/revision") as { revision: number; accountId: string; adminPermissions?: Account["adminPermissions"] };
                     if (active && accountId !== account.id) {
                         setAuth(await request("/api/auth"));
                         setState(null);
                         revisionRef.current = null;
+                    } else if (active && JSON.stringify(adminPermissions)!==JSON.stringify(account.adminPermissions)) {
+                        loadedScopes.current.clear();wantedScopes.current.clear();scopeRequests.current.clear();setModal(null);setState(null);
+                        setAuth(previous=>previous?.account?{...previous,account:{...previous.account,adminPermissions}}:previous);
+                        await refreshState(true);
                     } else if (active && (revisionRef.current === null || revision !== revisionRef.current)) await refreshState(true);
                 }
             } catch (error) {
@@ -347,7 +373,7 @@ export function Scheduler() {
         document.addEventListener("visibilitychange", foregroundCheck);
         window.addEventListener("focus", foregroundCheck);
         return () => { active = false; window.clearInterval(timer); channel?.close(); if (channelRef.current === channel) channelRef.current = null; document.removeEventListener("visibilitychange", foregroundCheck); window.removeEventListener("focus", foregroundCheck); };
-    }, [auth?.account?.id, auth?.account?.role, auth?.account?.requiresAccountSetup, auth?.account?.mustChangePassword, auth?.account?.nameConfirmedAt, busy, refreshState]);
+    }, [auth?.account?.id, auth?.account?.role, auth?.account?.requiresAccountSetup, auth?.account?.mustChangePassword, auth?.account?.nameConfirmedAt, auth?.account?.adminPermissions, busy, refreshState]);
     useEffect(() => {
         if (!auth || auth.account || !auth.clientId || !googleButton.current)
             return;
@@ -387,7 +413,7 @@ export function Scheduler() {
         script.addEventListener("load", setup);
         return () => { script?.removeEventListener("load", setup); };
     }, [auth, reload, language]);
-    async function mutate(body: Record<string, unknown>) { if (mutationInFlight.current) return false; mutationInFlight.current = true; try {
+    async function mutate(body: Record<string, unknown>) { const grant=adminMutationGrant(body);if(grant&&!canAdminAction(auth?.account,grant)){showActionToast("error","没有权限执行此操作");return false;} if (mutationInFlight.current) return false; mutationInFlight.current = true; try {
         setBusy(true);
         setMessage("");
         const result = await request(body.action === "permanentDelete" ? "/api/manage" : "/api/action", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -434,6 +460,7 @@ export function Scheduler() {
         } finally { mutationInFlight.current = false; setBusy(false); }
     }
     async function classroomMutate(body: Record<string, unknown>) {
+        const grant=adminMutationGrant(body);if(grant&&!canAdminAction(auth?.account,grant)){showActionToast("error","没有权限执行此操作");return {ok:false};}
         if (mutationInFlight.current) return { ok: false };
         mutationInFlight.current = true;
         try {
@@ -503,7 +530,7 @@ export function Scheduler() {
         return <AccountSetup email={account.email} onSaved={async()=>setAuth(await request("/api/auth"))} logout={logout} language={language} changeLanguage={changeLanguage}/>;
     if(account.groupUnavailable)return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><h1>{t("补习集团暂不可用")}</h1><p>{t("请联系所属集团的管理员，或稍后重试。")}</p><Button onClick={()=>window.location.reload()}>{t("刷新")}</Button><Button variant="outline" onClick={logout}>{t("退出登录")}</Button></div></main>;
     const admin = account.role === "admin";
-    return <Workspace key={`${account.id}:${account.groupId}`} account={account} state={state} ensureScope={ensureScope} setActiveScopes={setActiveScopes} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/>;
+    return <AdminPermissionContext.Provider value={account}><Workspace key={`${account.id}:${account.groupId}:${JSON.stringify(account.adminPermissions)}`} account={account} state={state} ensureScope={ensureScope} setActiveScopes={setActiveScopes} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/></AdminPermissionContext.Provider>;
 }
 function BrandLogo({ small = false }: { small?: boolean }) { return <span className={`brand-logo ${small ? "small" : ""}`}><img src="/tickminder-logo.svg" width={small ? 40 : 80} height={small ? 40 : 80} alt={BRAND_NAME} /></span>; }
 function LanguageSwitcher({ language, change }: { language: Language; change: (next: Language) => void }) { return <div className="language-switch" role="group" aria-label={t("语言")}><button type="button" aria-pressed={language === "zh"} onClick={() => change("zh")}>中文</button><span className="language-separator" aria-hidden="true">|</span><button type="button" aria-pressed={language === "en"} onClick={() => change("en")}>EN</button></div>; }
@@ -638,10 +665,13 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     changeLanguage: (next: Language) => void;
 }) {
     const role = account.role as NavigationRole;
-    const items = [...(account.isOwner?[{id:"groups",label:"平台总控制台",Icon:Building2},{id:'billing',label:'学费与账单',Icon:FileText}]:[]),...NAV_ITEMS[role],...(role!=="pending"?[{id:"courses",label:"course.nav.title",Icon:CalendarDays}]:[]),...(role==="admin"?[{id:"groupInfo",label:"集团信息",Icon:Building2},{id:"people",label:"人员与账号",Icon:UsersRound},{id:"settings",label:"设置",Icon:Settings}]:[]), { id: "notifications", label: "通知中心", Icon: Bell }];
+    const items = [...(account.isOwner?[{id:"groups",label:"平台总控制台",Icon:Building2},{id:'billing',label:'学费与账单',Icon:FileText}]:[]),...NAV_ITEMS[role],...(role!=="pending"?[{id:"courses",label:"course.nav.title",Icon:CalendarDays}]:[]),...(role==="admin"?[{id:"groupInfo",label:"集团信息",Icon:Building2},{id:"people",label:"人员与账号",Icon:UsersRound},{id:"settings",label:"设置",Icon:Settings}]:[]), { id: "notifications", label: "通知中心", Icon: Bell }].filter(item=>canAdminView(account,item.id));
+    const permissionSignature=JSON.stringify(account.adminPermissions);
+    const canView=(view:string)=>items.some(item=>item.id===view);
     const [badgeNow,setBadgeNow]=useState(()=>Date.now());
     useEffect(()=>{const timer=window.setInterval(()=>setBadgeNow(Date.now()),30_000);return()=>window.clearInterval(timer);},[]);
-    const badgeCounts=navigationBadges(role,account.id || "",lessons,state?.proposals || [],badgeNow);
+    const rawBadgeCounts=navigationBadges(role,account.id || "",lessons,state?.proposals || [],badgeNow);
+    const badgeCounts=role==="admin"&&!canAdminAction(account,"attendance.view")?{...rawBadgeCounts,attention:0,overview:0}:rawBadgeCounts;
     const taskCount=badgeCounts.lessons+badgeCounts.reschedule+badgeCounts.attention;
     const [selectedView, setSelectedView] = useState(items[0].id);
     const lastCourseView = useRef<string>(defaultCourseView(role) || "calendar");
@@ -683,7 +713,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
         };
         window.addEventListener("popstate", onPopState);
         return () => window.removeEventListener("popstate", onPopState);
-    }, [role, account.id,account.groupId]);
+    }, [role, account.id,account.groupId,permissionSignature]);
     useEffect(() => {
         const query = window.matchMedia("(min-width: 901px)");
         const sync = () => {
@@ -714,7 +744,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     useEffect(() => {
         setActiveScopes(activeView === "classrooms" ? ["classrooms", "learning"] : requiredScope ? [requiredScope] : activeView === "home" && role !== "admin" ? ["learning"] : []);
         return () => setActiveScopes([]);
-    }, [requiredScope, activeView, role, setActiveScopes, state?.account.id]);
+    }, [requiredScope, activeView, role, setActiveScopes, state?.account.id,permissionSignature]);
     useEffect(() => {
         if (!state?.account.id || role === "pending") return;
         if (requiredScope && !scopeLoaded && !scopeError) void ensureScope(requiredScope);
@@ -736,8 +766,10 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
         else setMenuOpen(open => !open);
     };
     const choose = (requested: string) => {
-        const managementTarget = role === 'admin' && (requested === 'people' || requested === 'settings') ? lastManagementViews.current[requested] : requested;
-        const id = requested === "courses" ? (isCourseView(role,lastCourseView.current) ? lastCourseView.current : defaultCourseView(role)) : normalizeManagementView(role,normalizeCourseView(role,managementTarget));
+        const area=role==='admin'&&(requested==='people'||requested==='settings')?requested:null;
+        const managementTarget = area ? (canView(lastManagementViews.current[area])?lastManagementViews.current[area]:items.find(item=>managementArea(role,item.id)===area)?.id||"home") : requested;
+        const courseTarget=canView(lastCourseView.current)?lastCourseView.current:items.find(item=>isCourseView(role,item.id))?.id;
+        const id = requested === "courses" ? courseTarget : normalizeManagementView(role,normalizeCourseView(role,managementTarget));
         if (!id || !items.some(item => item.id === id)) return;
         if(id!==activeView&&!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;
         if (id !== activeView) {
@@ -750,7 +782,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
         window.scrollTo(0, 0);
     };
     let pageContent: React.ReactNode = null;
-    if((activeView==="groups"&&account.isOwner)||(activeView==="groupInfo"&&role==="admin")){pageContent=<GroupConsole isOwner={activeView==="groups"&&Boolean(account.isOwner)} currentGroupId={account.groupId}/>;}
+    if((activeView==="groups"&&account.isOwner)||(activeView==="groupInfo"&&role==="admin")){pageContent=<><GroupConsole isOwner={activeView==="groups"&&Boolean(account.isOwner)} currentGroupId={account.groupId}/>{activeView==="groupInfo"&&canAdminAction(account,"terms.view")&&<section className="panel"><h2>{t("管理学期")}</h2><TermManager terms={state?.terms||state?.termOptions||[]} mutate={classroomMutate} busy={busy}/></section>}</>;}
     else if (activeView==='quizzes'&&(role==='teacher'||role==='admin'||role==='student')) {
         pageContent=<QuizWorkspace key={`${account.groupId}:${activeView}`} view={activeView} language={language} role={role}/>;
     }
@@ -763,8 +795,8 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     } else if (activeView === "myAccount") {
         pageContent = <AccountSettings/>;
     } else if (activeView === "classrooms" && role !== "pending") {
-        const classPlans = role === "teacher" ? (state?.plans || []).map(plan => ({ student: plan.student, subject: plan.subject,subjectId:plan.subjectId,syllabusId:plan.syllabusId,grade:plan.grade, teacherName: account.teacherName || "", active: true })) : (state?.allPlans || []).map(plan => ({ student: plan.student, subject: plan.subject,subjectId:plan.subjectId,syllabusId:plan.syllabusId,grade:plan.grade, teacherName: plan.teacherName, active: plan.active }));
-        pageContent = <ClassroomsPage role={role} classes={state?.classrooms || []} terms={state?.terms || []} learning={learning} learningReady={learningReady} learningError={state?.scopeErrors?.learning} loadLearning={force => ensureScope("learning", force)} teacherName={account.teacherName} teachers={role === "teacher" && account.teacherName ? [account.teacherName] : state?.teachers || []} plans={classPlans} mutate={classroomMutate} learningMutate={learningMutate} busy={busy} onCalendar={() => choose("calendar")}/>;
+        const classPlans = role === "teacher" ? (state?.plans || []).map(plan => ({ student: plan.student, subject: plan.subject,subjectId:plan.subjectId,syllabusId:plan.syllabusId,grade:plan.grade, teacherName: account.teacherName || "", active: true })) : ((canAdminAction(account,"plans.view")?state?.allPlans:state?.planOptions) || []).map(plan => ({ student: plan.student, subject: plan.subject,subjectId:plan.subjectId,syllabusId:plan.syllabusId,grade:plan.grade, teacherName: plan.teacherName, active: plan.active }));
+        pageContent = <ClassroomsPage role={role} classes={state?.classrooms || []} terms={state?.terms || state?.termOptions || []} learning={learning} learningReady={learningReady} learningError={state?.scopeErrors?.learning} loadLearning={force => ensureScope("learning", force)} teacherName={account.teacherName} teachers={role === "teacher" && account.teacherName ? [account.teacherName] : state?.teachers || []} plans={classPlans} mutate={classroomMutate} learningMutate={learningMutate} busy={busy} onCalendar={() => choose("calendar")}/>;
     } else if (role === "admin") {
         if (activeView === "homework" || activeView === "materials") {
             pageContent = <AdminLearning key={activeView} learning={learning} view={activeView} onChanged={()=>ensureScope("learning",true)}/>;
@@ -775,9 +807,9 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
         } else if (activeView === "students") {
             pageContent = <Timetable type="student" lessons={lessons} students={state?.students || []} teachers={state?.teachers || []} month={selectedMonth} setMonth={setSelectedMonth}/>;
         } else if (activeView === "teachers") {
-            pageContent = <Timetable type="teacher" lessons={lessons} students={state?.students || []} teachers={(state?.allTeachers || []).map(row => row.name).sort()} month={selectedMonth} setMonth={setSelectedMonth}/>;
+            pageContent = <Timetable type="teacher" lessons={lessons} students={state?.students || []} teachers={((canAdminAction(account,"teachers.view")?state?.allTeachers:state?.teacherOptions) || []).map(row => row.name).sort()} month={selectedMonth} setMonth={setSelectedMonth}/>;
         } else if (activeView === "subjects") {
-            pageContent = <SubjectAdmin studentProfiles={state?.allStudents||[]} students={state?.students || []} teachers={state?.teachers || []} plans={state?.allPlans || []} mutate={mutate} busy={busy} canFinance={Boolean(account.isOwner)} onPreview={()=>choose('billing')}/>;
+            pageContent = <SubjectAdmin studentProfiles={(canAdminAction(account,"students.view")?state?.allStudents:state?.studentOptions)||[]} students={state?.students || []} teachers={state?.teachers || []} plans={state?.allPlans || []} mutate={mutate} busy={busy} canFinance={Boolean(account.isOwner)} onPreview={()=>choose('billing')}/>;
         } else if (activeView==='billing'&&account.isOwner) {
             pageContent=<BillingWorkspace key={account.groupId} students={(state?.allStudents||[]).map(student=>student.name)} onCourses={()=>choose('subjects')}/>;
         } else if (["teacherRoster", "studentRoster", "accounts"].includes(activeView)) {
@@ -826,8 +858,8 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
                 <div className="page-head"><div><p className="eyebrow">{t(role === "admin" ? "管理员工作台" : role === "student" ? "学生工作台" : role === "pending" ? "待分配账号" : "老师工作台")}</p><h1>{t(title)}</h1></div>
                     {showMonth && <label className="month-select">{t("统计月份")}<input type="month" value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)}/></label>}
                 </div>
-                {courseView && <CourseNavigation role={role} activeView={activeView} onChoose={choose} badges={badgeCounts}/>}
-                {managementView && <ManagementNavigation area={managementView} activeView={activeView} onChoose={choose}/>}
+                {courseView && <CourseNavigation role={role} activeView={activeView} onChoose={choose} badges={badgeCounts} canView={canView}/>}
+                {managementView && <ManagementNavigation area={managementView} activeView={activeView} onChoose={choose} canView={canView}/>}
                 {message && state && !state.error && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("关闭")}>×</button></div>}
 
                 {role === "teacher" && state && !state.error && !(state.plans || []).length && <div className="notice">{t("暂无负责的学生科目。请联系管理员完成课程分配。")}</div>}
@@ -861,12 +893,13 @@ function AdminDashboard({ state, lessons, open, view,mutate,busy }: {
     open: Open;
     view: "overview" | "attention" | "activity";
 }) {
+    const can=useAdminAction();
     const summary = state?.summary || [];
     const review = uniqueSessionLessons(lessons.filter(l => ["completed", "student_absent", "teacher_absent"].includes(l.status) && !l.reviewedAt));
     const upcoming = lessons.filter(l => l.status === "scheduled" && l.plannedStart >= new Date().toISOString()).slice(0, 8);
     if (view === "attention") return <><SessionAttendanceBoard sessions={state?.attendanceSessions} role="admin" mode="review" mutate={mutate} busy={busy}/><AttentionPanel lessons={lessons} open={open} pendingReviewCount={review.length}/></>;
     if (view === "activity") return <ActivityLog items={state?.activity || []}/>;
-    return <div className="dashboard"><TeachingHoursPanel sessions={state?.attendanceSessions} month={state?.month||""}/><div className="metric-grid"><div className="metric"><span>{t("学生累计出席课时")}</span><strong>{formatDurationHours(summary.reduce((s,x)=>s+x.completed,0),getLanguage())}</strong><p>{state?.month}{t(" · 已记录出席")}</p></div><div className="metric"><span>{t("\u672A\u6765\u5DF2\u5B89\u6392\u8BFE\u65F6")}</span><strong>{formatDurationHours(summary.reduce((s,x)=>s+x.upcoming,0),getLanguage())}</strong><p>{t("\u6240\u9009\u6708\u4EFD")}</p></div><div className="metric attention"><span>{t("待复核记录")}</span><strong>{review.length}</strong><p>{t("已完成课时按实际时长计入统计")}</p></div></div><div className="dashboard-columns"><section className="panel"><div className="section-head"><h2>{t("待复核记录")}</h2><span>{review.length}{t(" \u6761")}</span></div><div className="lesson-stack">{review.length ? review.map(l => <LessonCard key={l.id} lesson={l} admin open={open}/>) : <div className="empty">{t("目前没有待复核记录。")}</div>}</div></section><section className="panel"><div className="section-head"><h2>{t("\u5373\u5C06\u4E0A\u8BFE")}</h2></div>{upcoming.length ? upcoming.map(l => <div className="upcoming-item" key={l.id}><span>{day(l.plannedStart)}</span><strong>{l.student} · {l.subject}</strong><small>{time(l.plannedStart)}–{time(l.plannedEnd)} · {l.teacherName}</small></div>) : <div className="empty">{t("\u6682\u65E0\u8BFE\u7A0B\u3002")}</div>}</section></div><section className="panel"><div className="section-head"><h2>{t("\u5B66\u751F\u79D1\u76EE\u7EDF\u8BA1")}</h2><span>{t("按实际开始日期归属月份")}</span></div><div className="summary-grid">{summary.map(s => <div className="summary-row" key={s.key}><strong>{s.key.replace("|", " · ")}</strong><span>{formatDurationHours(s.completed,getLanguage())} · {s.lessons}{t(" \u5802\u5DF2\u4E0A\u8BFE")}</span><span>{formatDurationHours(s.upcoming,getLanguage())} · {t("未来已安排")}</span><span>{s.pending}{t(" 待记录出席 · ")}{s.makeupNeeded}{t(" \u5F85\u8865")}</span></div>)}</div></section></div>;
+    return <div className="dashboard">{can("attendance.view")&&<TeachingHoursPanel sessions={state?.attendanceSessions} month={state?.month||""}/>}<div className="metric-grid"><div className="metric"><span>{t("学生累计出席课时")}</span><strong>{formatDurationHours(summary.reduce((s,x)=>s+x.completed,0),getLanguage())}</strong><p>{state?.month}{t(" · 已记录出席")}</p></div><div className="metric"><span>{t("\u672A\u6765\u5DF2\u5B89\u6392\u8BFE\u65F6")}</span><strong>{formatDurationHours(summary.reduce((s,x)=>s+x.upcoming,0),getLanguage())}</strong><p>{t("\u6240\u9009\u6708\u4EFD")}</p></div><div className="metric attention"><span>{t("待复核记录")}</span><strong>{review.length}</strong><p>{t("已完成课时按实际时长计入统计")}</p></div></div><div className="dashboard-columns"><section className="panel"><div className="section-head"><h2>{t("待复核记录")}</h2><span>{review.length}{t(" \u6761")}</span></div><div className="lesson-stack">{review.length ? review.map(l => <LessonCard key={l.id} lesson={l} admin open={open}/>) : <div className="empty">{t("目前没有待复核记录。")}</div>}</div></section><section className="panel"><div className="section-head"><h2>{t("\u5373\u5C06\u4E0A\u8BFE")}</h2></div>{upcoming.length ? upcoming.map(l => <div className="upcoming-item" key={l.id}><span>{day(l.plannedStart)}</span><strong>{l.student} · {l.subject}</strong><small>{time(l.plannedStart)}–{time(l.plannedEnd)} · {l.teacherName}</small></div>) : <div className="empty">{t("\u6682\u65E0\u8BFE\u7A0B\u3002")}</div>}</section></div><section className="panel"><div className="section-head"><h2>{t("\u5B66\u751F\u79D1\u76EE\u7EDF\u8BA1")}</h2><span>{t("按实际开始日期归属月份")}</span></div><div className="summary-grid">{summary.map(s => <div className="summary-row" key={s.key}><strong>{s.key.replace("|", " · ")}</strong><span>{formatDurationHours(s.completed,getLanguage())} · {s.lessons}{t(" \u5802\u5DF2\u4E0A\u8BFE")}</span><span>{formatDurationHours(s.upcoming,getLanguage())} · {t("未来已安排")}</span><span>{s.pending}{t(" 待记录出席 · ")}{s.makeupNeeded}{t(" \u5F85\u8865")}</span></div>)}</div></section></div>;
 }
 function RosterAdmin({ account, state, mutate, busy, view }: { account: Account; state: State | null; mutate: (x: Record<string, unknown>) => Promise<boolean>; busy: boolean; view: "teachers" | "students" | "binding" | "accounts" }) {
     if (view === "teachers" || view === "students") return <PeopleDirectory kind={view === "teachers" ? "teacher" : "student"} people={view === "teachers" ? state?.allTeachers || [] : state?.allStudents || []} mutate={mutate} busy={busy}/>;
@@ -888,9 +921,10 @@ function LocalAccountAdmin({ account, state, mutate, busy }: {
     const [resetPassword, setResetPassword] = useState("");
     const canManageAdministrators = account.canManageAdministrators === true;
     const selectedRole = role === "admin" && !canManageAdministrators ? "teacher" : role;
+    const can=useAdminAction();
     const localUsers = (state?.users || []).filter(u => u.username && !u.disabledAt && u.id !== account.id && !u.isOwner && (!u.isGroupChief || account.isOwner) && (u.role !== "admin" || canManageAdministrators));
     return <section className="panel local-account-admin"><p className="muted">{t("创建账号后，请将临时密码交给用户；首次登录须设置新密码。忘记密码时可在下方重置。")}</p>
-    <form onSubmit={async (e) => { e.preventDefault(); if (await mutate({ action: "createLocalAccount", username, name, password, role: selectedRole, teacherName: selectedRole === "teacher" ? teacherName : "", studentName: selectedRole === "student" ? studentName : "" })) {
+    {can("accounts.create")&&<form onSubmit={async (e) => { e.preventDefault(); if (await mutate({ action: "createLocalAccount", username, name, password, role: selectedRole, teacherName: selectedRole === "teacher" ? teacherName : "", studentName: selectedRole === "student" ? studentName : "" })) {
         setUsername("");
         setName("");
         setPassword("");
@@ -905,12 +939,12 @@ function LocalAccountAdmin({ account, state, mutate, busy }: {
       {selectedRole === "teacher" && <label>{t("\u5173\u8054\u8001\u5E08")}<select required value={teacherName} onChange={e => setTeacherName(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{state?.teachers?.map(t => <option key={t}>{t}</option>)}</select></label>}
       {selectedRole === "student" && <label>{t("\u5173\u8054\u5B66\u751F")}<select required value={studentName} onChange={e => setStudentName(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{(state?.students || []).map(s => <option key={s}>{s}</option>)}</select></label>}
       <div className="directory-form-actions"><Button disabled={busy || (selectedRole === "teacher" && !teacherName) || (selectedRole === "student" && !studentName)}>{t("\u521B\u5EFA\u8D26\u53F7")}</Button></div>
-    </form>
-    <details className="local-password-reset settings-disclosure"><summary><span>{t("\u91CD\u7F6E\u5FD8\u8BB0\u7684\u5BC6\u7801")}</span><ChevronDown size={18} aria-hidden="true"/></summary><p className="muted">{t("\u91CD\u7F6E\u540E\uFF0C\u8BE5\u8D26\u53F7\u73B0\u6709\u767B\u5F55\u4F1A\u9000\u51FA\uFF0C\u4E0B\u6B21\u767B\u5F55\u5FC5\u987B\u518D\u6B21\u4FEE\u6539\u5BC6\u7801\u3002")}</p>
+    </form>}
+    {can("accounts.resetPassword")&&<details className="local-password-reset settings-disclosure"><summary><span>{t("\u91CD\u7F6E\u5FD8\u8BB0\u7684\u5BC6\u7801")}</span><ChevronDown size={18} aria-hidden="true"/></summary><p className="muted">{t("\u91CD\u7F6E\u540E\uFF0C\u8BE5\u8D26\u53F7\u73B0\u6709\u767B\u5F55\u4F1A\u9000\u51FA\uFF0C\u4E0B\u6B21\u767B\u5F55\u5FC5\u987B\u518D\u6B21\u4FEE\u6539\u5BC6\u7801\u3002")}</p>
     <form onSubmit={async (e) => { e.preventDefault(); if (!localUsers.some(user => user.id === resetUserId)) return; if (await mutate({ action: "resetLocalPassword", userId: resetUserId, password: resetPassword })) {
         setResetUserId("");
         setResetPassword("");
-    } }}><label>{t("\u9009\u62E9\u8D26\u53F7")}<select required value={resetUserId} onChange={e => setResetUserId(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{localUsers.map(u => <option value={u.id} key={u.id}>{u.username} · {u.name}{u.role === "admin" ? ` · ${t(u.isGroupChief ? "admin.groupChief" : "admin.regularAdministrator")}` : ""}</option>)}</select></label><label>{t("新的临时密码")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={resetPassword} onChange={e => setResetPassword(e.target.value)}/></label><div className="directory-form-actions"><Button variant="outline" disabled={busy || !localUsers.some(user => user.id === resetUserId)}>{t("\u91CD\u7F6E\u5BC6\u7801")}</Button></div></form></details>
+    } }}><label>{t("\u9009\u62E9\u8D26\u53F7")}<select required value={resetUserId} onChange={e => setResetUserId(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{localUsers.map(u => <option value={u.id} key={u.id}>{u.username} · {u.name}{u.role === "admin" ? ` · ${t(u.isGroupChief ? "admin.groupChief" : "admin.regularAdministrator")}` : ""}</option>)}</select></label><label>{t("新的临时密码")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={resetPassword} onChange={e => setResetPassword(e.target.value)}/></label><div className="directory-form-actions"><Button variant="outline" disabled={busy || !localUsers.some(user => user.id === resetUserId)}>{t("\u91CD\u7F6E\u5BC6\u7801")}</Button></div></form></details>}
   </section>;
 }
 type Open = (x: {
@@ -923,7 +957,7 @@ function LessonCard({ lesson: l, admin, open, mutate, busy = false }: {
     open: Open;
     mutate?: (x: Record<string, unknown>) => Promise<boolean>;
     busy?: boolean;
-}) { return <article className="lesson-card"><div className="date-tile"><strong>{day(l.plannedStart)}</strong><span>{time(l.plannedStart)}–{time(l.plannedEnd)}</span></div><div className="lesson-body"><div className="lesson-title"><strong>{l.student} · {l.subject}</strong><span className={`status status-${l.status}`}>{t(l.attendanceKind === "early_dismissal" ? "提前结束课程" : statusLabel[l.status] || l.status)}</span></div><ClassSessionLabel lesson={l}/><p>{l.teacherName}{l.kind === "makeup" ? t(" \u00B7 \u8865\u8BFE") : l.kind === "extra" ? t(" \u00B7 \u52A0\u8BFE") : ""}</p>{l.note && <p className="lesson-note">{l.note}</p>}<div className="lesson-actions">{l.status !== "cancelled" && (admin || !l.reviewedAt) && <Button size="sm" onClick={() => open({ type: "attendance", lesson: l })}>{admin && l.status !== "scheduled" ? t("更正出席记录") : t("记录出席…")}</Button>}<LessonMore>{admin && l.status !== "cancelled" && <><Button size="sm" variant="outline" onClick={() => open({ type: "edit", lesson: l })}>{t("调整时间")}</Button><Button size="sm" variant="outline" onClick={() => open({ type: "cancel", lesson: l })}>{t("取消课程")}</Button>{["completed", "student_absent", "teacher_absent"].includes(l.status) && <Button size="sm" variant="secondary" onClick={() => open({ type: "review", lesson: l })}>{l.reviewedAt ? t("再次复核") : t("复核记录")}</Button>}</>}{admin && mutate && l.sessionType!=="group" && <DeleteButton kind="lesson" id={l.id} mutate={mutate} busy={busy} message="永久删除这堂课程及改期申请？已记录课时也会移除，无法恢复。"/>}</LessonMore></div><LessonHistory lessonId={l.id}/></div></article>; }
+}) { return <article className="lesson-card"><div className="date-tile"><strong>{day(l.plannedStart)}</strong><span>{time(l.plannedStart)}–{time(l.plannedEnd)}</span></div><div className="lesson-body"><div className="lesson-title"><strong>{l.student} · {l.subject}</strong><span className={`status status-${l.status}`}>{t(l.attendanceKind === "early_dismissal" ? "提前结束课程" : statusLabel[l.status] || l.status)}</span></div><ClassSessionLabel lesson={l}/><p>{l.teacherName}{l.kind === "makeup" ? t(" \u00B7 \u8865\u8BFE") : l.kind === "extra" ? t(" \u00B7 \u52A0\u8BFE") : ""}</p>{l.note && <p className="lesson-note">{l.note}</p>}<div className="lesson-actions">{l.status !== "cancelled" && (admin || !l.reviewedAt) && <Button adminGrant="attendance.edit" size="sm" onClick={() => open({ type: "attendance", lesson: l })}>{admin && l.status !== "scheduled" ? t("更正出席记录") : t("记录出席…")}</Button>}<LessonMore>{admin && l.status !== "cancelled" && <><Button adminGrant="lessons.edit" size="sm" variant="outline" onClick={() => open({ type: "edit", lesson: l })}>{t("调整时间")}</Button><Button adminGrant="lessons.cancel" size="sm" variant="outline" onClick={() => open({ type: "cancel", lesson: l })}>{t("取消课程")}</Button>{["completed", "student_absent", "teacher_absent"].includes(l.status) && <Button adminGrant="attendance.review" size="sm" variant="secondary" onClick={() => open({ type: "review", lesson: l })}>{l.reviewedAt ? t("再次复核") : t("复核记录")}</Button>}</>}{admin && mutate && l.sessionType!=="group" && <DeleteButton kind="lesson" id={l.id} mutate={mutate} busy={busy} message="永久删除这堂课程及改期申请？已记录课时也会移除，无法恢复。"/>}</LessonMore></div><LessonHistory lessonId={l.id}/></div></article>; }
 function TeacherHome({ lessons, plans, open }: {
     lessons: Lesson[];
     plans: Plan[];
@@ -937,7 +971,8 @@ function Schedule({ state, lessons, mutate, open, busy, view }: {
     busy: boolean;
     view: "create" | "calendar" | "list";
 }) {
-    const plans = state?.plans || [];
+    const can=useAdminAction();
+    const plans = can("plans.view")?(state?.plans || []):(state?.planOptions || []).map(plan=>({...plan,teacher:plan.teacher||plan.teacherName}));
     const [filterTeacher, setFilterTeacher] = useFilterPreference<string>("courses-teacher", ""), [filterStudent, setFilterStudent] = useFilterPreference<string>("courses-student", ""), [cancelled, setCancelled] = useFilterPreference<boolean>("courses-cancelled", false);
     const [completion,setCompletion]=useFilterPreference<string>("courses-completion","all");
     const visible = lessons.filter(l => l.sessionType!=="group" && (l.status === "cancelled") === cancelled && (!state?.month || local(l.plannedStart).slice(0,7) === state.month) && (!filterTeacher || l.teacherName === filterTeacher) && (!filterStudent || l.student === filterStudent)&&(view!=="list"||matchesCourseCompletion(l,completion)));
@@ -981,7 +1016,7 @@ function Schedule({ state, lessons, mutate, open, busy, view }: {
             <label>{t("课程类型")}<select value={kind} onChange={e => setKind(e.target.value)}><option value="regular">{t("常规课程")}</option><option value="extra">{t("临时加课")}</option><option value="makeup">{t("补课")}</option></select></label>
             {kind === "makeup" && <label>{t("关联原课程")}<select required value={replacementFor} onChange={e => setReplacementFor(e.target.value)}><option value="">{t("请选择")}</option>{originals.map(l => <option key={l.id} value={l.id}>{day(l.plannedStart)} {time(l.plannedStart)} · {t(statusLabel[l.status] || l.status)}</option>)}</select></label>}
             <label>{t("每周重复至（可留空）")}<input type="date" value={until} onChange={e => setUntil(e.target.value)}/></label>
-            <Button disabled={busy || !chosen || !selectedClassId || classOptions===null} className="primary-full">{t("保存排课")}</Button>
+            <Button adminGrant="lessons.create" disabled={busy || !chosen || !selectedClassId || classOptions===null} className="primary-full">{t("保存排课")}</Button>
         </form></section>
         <GroupSessionBoard sessions={state?.classSessions||[]} requests={state?.classSessionRequests||[]} role={state?.account.role==="teacher"?"teacher":"admin"} mutate={mutate} busy={busy} month={state?.month} completionScope={'class-sessions-'+view} onAttendance={state?.account.role==="admin"?id=>{const lesson=lessons.find(l=>l.id===id);if(lesson)open({type:"attendance",lesson});}:undefined}/>
         <section className="panel" hidden={view === "create"}><div className="section-head"><h2>{t("一对一课程")}</h2><span>{visible.length}{t(" 堂")}</span></div>
@@ -999,7 +1034,7 @@ function LessonDialog({ modal, close, mutate, busy }: {
     close: () => void;
     mutate: (x: Record<string, unknown>) => Promise<boolean>;
     busy: boolean;
-}) { const l = modal.lesson; const [operationId]=useState(()=>crypto.randomUUID()); const [status, setStatus] = useState(l.attendanceKind === "early_dismissal" ? "early_dismissal" : l.status === "scheduled" ? "completed" : l.status); const [actualStart, setActualStart] = useState(local(l.actualStart || l.plannedStart)); const [actualEnd, setActualEnd] = useState(local(l.actualEnd || l.plannedEnd)); const [note, setNote] = useState(l.note || ""); const [chargeable, setChargeable] = useState(l.chargeable ?? (l.status === "completed")); const [start, setStart] = useState(local(l.plannedStart)); const [end, setEnd] = useState(local(l.plannedEnd)); const [scope, setScope] = useState("single"); return <Dialog open onOpenChange={close}><DialogContent className="lesson-dialog"><DialogHeader><DialogTitle>{{ attendance: t("记录出席"), review: t("复核课程记录"), edit: t("\u8BFE\u7A0B\u6539\u671F"), cancel: t("\u53D6\u6D88\u8BFE\u7A0B") }[modal.type]}</DialogTitle></DialogHeader><ClassSessionLabel lesson={l}/>{l.sessionType==="group"&&["edit","cancel"].includes(modal.type)&&<p className="notice">{t("此操作会同时更新该课次所有学生的安排。")}</p>}<p className="dialog-sub">{l.student} · {l.subject}<br />{day(l.plannedStart)} {time(l.plannedStart)}–{time(l.plannedEnd)}</p><LessonHistory lessonId={l.id}/><form onSubmit={e => { e.preventDefault(); if (modal.type === "attendance")
+}) { const can=useAdminAction();const grant=modal.type==='attendance'?'attendance.edit':modal.type==='review'?'attendance.review':modal.type==='edit'?'lessons.edit':'lessons.cancel'; const l = modal.lesson; const [operationId]=useState(()=>crypto.randomUUID()); const [status, setStatus] = useState(l.attendanceKind === "early_dismissal" ? "early_dismissal" : l.status === "scheduled" ? "completed" : l.status); const [actualStart, setActualStart] = useState(local(l.actualStart || l.plannedStart)); const [actualEnd, setActualEnd] = useState(local(l.actualEnd || l.plannedEnd)); const [note, setNote] = useState(l.note || ""); const [chargeable, setChargeable] = useState(l.chargeable ?? (l.status === "completed")); const [start, setStart] = useState(local(l.plannedStart)); const [end, setEnd] = useState(local(l.plannedEnd)); const [scope, setScope] = useState("single"); if(!can(grant))return <Dialog open={can("lessons.view")} onOpenChange={close}><DialogContent className="lesson-dialog"><DialogHeader><DialogTitle>{t("课程安排")}</DialogTitle></DialogHeader><ClassSessionLabel lesson={l}/><p className="dialog-sub">{l.student} · {l.subject}<br/>{day(l.plannedStart)} {time(l.plannedStart)}–{time(l.plannedEnd)}<br/>{l.teacherName}</p><p>{t(statusLabel[l.status]||l.status)}</p><LessonHistory lessonId={l.id}/><div className="learning-card-actions"><Button type="button" variant="outline" onClick={close}>{t("关闭")}</Button></div></DialogContent></Dialog>; return <Dialog open={can(grant)} onOpenChange={close}><DialogContent className="lesson-dialog"><DialogHeader><DialogTitle>{{ attendance: t("记录出席"), review: t("复核课程记录"), edit: t("\u8BFE\u7A0B\u6539\u671F"), cancel: t("\u53D6\u6D88\u8BFE\u7A0B") }[modal.type]}</DialogTitle></DialogHeader><ClassSessionLabel lesson={l}/>{l.sessionType==="group"&&["edit","cancel"].includes(modal.type)&&<p className="notice">{t("此操作会同时更新该课次所有学生的安排。")}</p>}<p className="dialog-sub">{l.student} · {l.subject}<br />{day(l.plannedStart)} {time(l.plannedStart)}–{time(l.plannedEnd)}</p><LessonHistory lessonId={l.id}/><form onSubmit={e => { e.preventDefault(); if (modal.type === "attendance")
     mutate({ action: "attendance", id: l.id, status, actualStart, actualEnd, note,sessionRevision:l.sessionRevision,operationId }); if (modal.type === "review")
     mutate({ action: "review", id: l.id, chargeable,sessionRevision:l.sessionRevision,operationId }); if (modal.type === "edit")
     mutate({ action: "edit", id: l.id, start, end, scope,sessionRevision:l.sessionRevision,operationId }); if (modal.type === "cancel")

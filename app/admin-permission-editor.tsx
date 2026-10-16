@@ -26,7 +26,7 @@ async function requestPermissions(accountId: string, signal: AbortSignal, draft?
     throw failure;
   }
   if (!response.ok) throw new PermissionRequestError(response.status, result.error || (draft ? "permissions.saveFailed" : "permissions.loadFailed"));
-  if (result.rollout !== "preparation" || result.runtimeEnforcement !== false || !result.profile || !Array.isArray(result.catalog)) throw new Error("permissions.unavailable");
+  if (result.rollout !== "preparation" || typeof result.runtimeEnforcement !== "boolean" || !result.profile || !Array.isArray(result.catalog)) throw new Error("permissions.unavailable");
   return result;
 }
 function sorted(grants: readonly AdminGrantKey[]) { return [...grants].sort(); }
@@ -169,10 +169,10 @@ export function AdminPermissionEditor({accountId, accountName, onClose, onAuthor
   const confirmation = step === "discard" || step === "reload";
   const titleKey = step === "review" ? "permissions.reviewTitle" : step === "discard" ? "permissions.discardTitle" : step === "reload" ? "permissions.reloadTitle" : "permissions.title";
   return <Dialog open onOpenChange={open => { if (!open) requestClose(); }}><DialogContent className="admin-permission-dialog" overlayClassName="admin-permission-overlay" showCloseButton={!saving} onEscapeKeyDown={event => { event.preventDefault(); requestClose(); }}>
-    <DialogHeader><DialogTitle>{t(titleKey)}</DialogTitle><DialogDescription>{accountName} · {t("admin.regularAdministrator")} · {t("permissions.preparation")}</DialogDescription></DialogHeader>
+    <DialogHeader><DialogTitle>{t(titleKey)}</DialogTitle><DialogDescription>{accountName} · {t("admin.regularAdministrator")} · {t(data?.runtimeEnforcement?"permissions.draftPreparation":"permissions.preparation")}</DialogDescription></DialogHeader>
     <div className="admin-permission-body" aria-busy={loading || saving}>
-      <p className="permission-stage-badge">{t("permissions.preparation")}</p>
-      <p className="permission-stage-notice">{t("permissions.preparationNotice")}</p>
+      <p className="permission-stage-badge">{t(data?.runtimeEnforcement?"permissions.draftPreparation":"permissions.preparation")}</p>
+      <p className="permission-stage-notice">{t(data?.runtimeEnforcement?"permissions.draftPreparationNotice":"permissions.preparationNotice")}</p>
       <div ref={statusRef} tabIndex={-1} className="permission-status" aria-live="polite">
         {error && <p className="error" role="alert">{error}</p>}
         {notice && <p className="permission-notice" role="status">{notice}</p>}
@@ -181,7 +181,7 @@ export function AdminPermissionEditor({accountId, accountName, onClose, onAuthor
       {loading ? <p className="permission-loading" role="status">{t("permissions.loading")}</p> : confirmation ? <p className="permission-confirm-copy">{t(step === "discard" ? "permissions.discardDescription" : "permissions.reloadDescription")}</p> : !data ? <div className="settings-actions"><Button type="button" variant="outline" onClick={() => void load()}>{t("permissions.retry")}</Button></div> : <>
         {data.target.disabledAt && <p className="permission-notice">{t("permissions.disabledNotice")}</p>}
         <div className="permission-comparison">
-          <section className="permission-summary-card"><h3>{t("permissions.current")}</h3><strong>{t("permissions.currentLegacy")}</strong><p>{t(data.target.disabledAt ? "permissions.currentDisabled" : "permissions.currentLegacyDescription")}</p><span>{data.effectiveGrants.length} {t("permissions.grantCount")}</span><details><summary>{t("permissions.currentRules")}</summary><GrantSummary grants={data.effectiveGrants} catalog={data.catalog}/></details></section>
+          <section className="permission-summary-card"><h3>{t("permissions.current")}</h3><strong>{t(data.currentAccess==="configured"?"permissions.currentConfigured":"permissions.currentLegacy")}</strong><p>{t(data.target.disabledAt ? "permissions.currentDisabled" : data.currentAccess==="configured"?"permissions.currentConfiguredDescription":"permissions.currentLegacyDescription")}</p><span>{data.effectiveGrants.length} {t("permissions.grantCount")}</span><details><summary>{t("permissions.currentRules")}</summary><GrantSummary grants={data.effectiveGrants} catalog={data.catalog}/></details></section>
           <section className="permission-summary-card"><h3>{t("permissions.draft")}</h3><strong>{draft.length} {t("permissions.grantCount")}</strong><p>{t(dirty ? "permissions.unsaved" : data.profile.draftGrants === null ? "permissions.noSavedDraft" : "permissions.draftPending")}</p><span>{t(data.profile.draftGrants === null ? "permissions.configuredBasis" : "permissions.savedDraft")} · {baseline.length} {t("permissions.grantCount")}</span><details><summary>{t("permissions.draftRules")}</summary><GrantSummary grants={draft} catalog={data.catalog}/></details></section>
         </div>
         {step === "review" ? <section className="permission-review"><p>{t(data.profile.draftGrants === null ? "permissions.reviewFirstDraft" : "permissions.reviewDescription")}</p><div className="permission-diff-counts"><span>{t("permissions.added")} · <strong>{additions.length}</strong></span><span>{t("permissions.removed")} · <strong>{removals.length}</strong></span></div>{[{label: "permissions.added", grants: additions}, {label: "permissions.removed", grants: removals}].map(change => <section key={change.label}><h3>{t(change.label)} · {change.grants.length}</h3><GrantSummary grants={change.grants} catalog={data.catalog}/></section>)}</section> : <>

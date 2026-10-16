@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import ts from 'typescript';
+import {createFixtureLoader} from './fixture-loader.mjs';
 
 // Execute the actual handler, transaction SQL and scoped classroom refresh.
 // Authentication is a fictional session; race hooks run immediately before BEGIN.
@@ -17,15 +18,8 @@ function statement(sql,values=[]){
 const db={prepare:statement,batch:async statements=>{beforeBatch?.();beforeBatch=null;sqlite.exec('BEGIN');try{const results=statements.map(stmt=>stmt.execute());sqlite.exec('COMMIT');return results;}catch(error){sqlite.exec('ROLLBACK');throw error;}}};
 const ownerEmail='promotion-owner@example.test';
 globalThis.__promotionRuntime={learningDb:()=>db,currentBusinessAccount:async()=>actor,OWNER_EMAIL:ownerEmail,isOwnerAccount:value=>value.id==='promotion-owner'&&value.role==='admin'};
-const sourceUrl=code=>'data:text/javascript;base64,'+Buffer.from(code).toString('base64'),stub=sourceUrl('export const {learningDb,currentBusinessAccount,OWNER_EMAIL,isOwnerAccount}=globalThis.__promotionRuntime;'),cache=new Map();
-async function load(file){
- if(cache.has(file))return cache.get(file);
- let code=ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
- for(const match of [...code.matchAll(/from ['"]([^'"]+)['"]/g)]){const spec=match[1],resolved=spec.startsWith('@/')?spec.slice(2)+'.ts':spec.startsWith('.')?path.posix.normalize(path.posix.join(path.posix.dirname(file),spec+'.ts')):null;
-  const url=spec==='next/server'?sourceUrl('export const NextResponse={json:(body,options)=>Response.json(body,options)};'):resolved&&['lib/auth.ts','lib/owner.ts','lib/learning-server.ts'].includes(resolved)?stub:spec==='cloudflare:workers'?sourceUrl('export const env={DB:globalThis.__promotionRuntime.learningDb()};'):resolved?(await load(resolved)).url:import.meta.resolve(spec);code=code.replaceAll(`'${spec}'`,`'${url}'`).replaceAll(`"${spec}"`,`"${url}"`);
- }
- const url=sourceUrl(code),value={url,module:await import(url)};cache.set(file,value);return value;
-}
+const sourceUrl=code=>'data:text/javascript;base64,'+Buffer.from(code).toString('base64'),stub=sourceUrl('export const {learningDb,currentBusinessAccount,OWNER_EMAIL,isOwnerAccount}=globalThis.__promotionRuntime;export const NextResponse={json:(body,options)=>Response.json(body,options)};'),cache=new Map();
+const load=createFixtureLoader({runtimeUrl:stub,environmentUrl:sourceUrl('export const env={DB:globalThis.__promotionRuntime.learningDb()};'),runtimeFiles:['lib/auth.ts','lib/owner.ts','lib/learning-server.ts'],transform:(file,code)=>code.replaceAll("'next/server'",JSON.stringify(stub)).replaceAll('"next/server"',JSON.stringify(stub))});
 const route=(await load('app/api/student-promotions/route.ts')).module;
 const group='promotion-group-a',foreign='promotion-group-b',now='2032-06-01T00:00:00.000Z';
 for(const id of [group,foreign])sqlite.prepare('INSERT INTO tuition_groups(id,name,join_code,active,created_at,updated_at) VALUES(?,?,?,1,?,?)').run(id,id,id,now,now);

@@ -46,17 +46,17 @@ export async function readLessonClassroom(groupId:string,lesson:LessonIdentity):
  const rooms=await groupReader(groupId).rows<PlanClassroom>(`SELECT DISTINCT c.id,c.title ${planJoins} CROSS JOIN (SELECT ? AS subject) requested JOIN classrooms c ON ${roomMatch} WHERE p.student=? AND p.teacher_name=? AND ${planSubjectLabelSql()} AND ${activePlan} ORDER BY c.id`,lesson.subject,lesson.student,lesson.teacherName);
  return rooms.length===1?rooms[0]:null;
 }
-export async function ensurePlanClassroom(groupId:string,planKey:string,actorId:string){
- await learningDb().batch(planClassroomStatements(groupId,planKey,actorId));
+export async function ensurePlanClassroom(groupId:string,planKey:string,actorId:string,mutationDb:D1Database=learningDb()){
+ await mutationDb.batch(planClassroomStatements(groupId,planKey,actorId));
  return readPlanClassroom(groupId,planKey);
 }
-export async function ensureStudentClassrooms(groupId:string,studentName:string,actorId:string){
+export async function ensureStudentClassrooms(groupId:string,studentName:string,actorId:string,mutationDb:D1Database=learningDb()){
  const plans=await groupReader(groupId).rows<{key:string}>('SELECT key FROM plans WHERE student=? AND active=1 ORDER BY key',studentName);
- if(plans.length)await learningDb().batch(plans.flatMap(plan=>[...planClassroomStatements(groupId,plan.key,actorId),...planSessionClassroomStatements(groupId,plan.key)]));
+ if(plans.length)await mutationDb.batch(plans.flatMap(plan=>[...planClassroomStatements(groupId,plan.key,actorId),...planSessionClassroomStatements(groupId,plan.key)]));
 }
-export async function ensureTeacherClassrooms(groupId:string,teacherName:string,actorId:string){
+export async function ensureTeacherClassrooms(groupId:string,teacherName:string,actorId:string,mutationDb:D1Database=learningDb()){
  const plans=await groupReader(groupId).rows<{key:string}>('SELECT key FROM plans WHERE teacher_name=? AND active=1 ORDER BY key',teacherName);
- if(plans.length)await learningDb().batch(plans.flatMap(plan=>[...planClassroomStatements(groupId,plan.key,actorId),...planSessionClassroomStatements(groupId,plan.key)]));
+ if(plans.length)await mutationDb.batch(plans.flatMap(plan=>[...planClassroomStatements(groupId,plan.key,actorId),...planSessionClassroomStatements(groupId,plan.key)]));
 }
 
 export type ClassroomContentLink={kind:'material'|'homework';id:string;ownerId:string;ownerRole:string;revision:number;classroomId:string;student:string;subject:string;teacherName:string};

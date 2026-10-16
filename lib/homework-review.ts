@@ -1,3 +1,4 @@
+import {guardedLearningReader} from "@/lib/learning-permission-read";
 import type {Account} from "./auth";
 import {groupReader,requireGroup} from "./group-data";
 import {learningDb,studentHasHomework} from "./learning-server";
@@ -10,14 +11,14 @@ export function operationId(value:unknown) {const id=str(value);if(!/^[a-zA-Z0-9
 export async function operationHash(value:unknown){const hash=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(JSON.stringify(value)));return Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,"0")).join("");}
 type Recipient=Record<string,unknown>&{id:string;studentName:string;resubmitRevision:number;activeGrantId:string|null;score:number|null;scoreRevision:number};
 export async function reviewRecipient(actor:Account,homeworkId:string,studentName:string,write=false) {
-  const record=await contentRecord(actor,"homework",homeworkId,write),{first}=groupReader(actor.groupId);
+  const record=await contentRecord(actor,"homework",homeworkId,write),{first}=guardedLearningReader(actor,"homework.view");
   if(actor.role==="student" && (studentName!==actor.studentName || !await studentHasHomework(actor,homeworkId)))throw new LearningEditError("没有权限查看这位学生的提交",403);
   const recipient=await first<Recipient>("SELECT id,student_name AS studentName,resubmit_revision AS resubmitRevision,active_grant_id AS activeGrantId,score,score_revision AS scoreRevision FROM homework_recipients WHERE homework_id=? AND student_name=?",homeworkId,studentName);
   if(!recipient)throw new LearningEditError("学生未收到这份功课",404);
   return {record,recipient};
 }
 export async function homeworkReview(actor:Account,homeworkId:string,studentName:string) {
-  const {record,recipient}=await reviewRecipient(actor,homeworkId,studentName),{rows}=groupReader(actor.groupId);
+  const {record,recipient}=await reviewRecipient(actor,homeworkId,studentName),{rows}=guardedLearningReader(actor,"homework.view");
   const [submissions,feedback,grades,grants]=await Promise.all([
     rows("SELECT s.id,s.file_id AS fileId,f.filename,s.submitted_at AS submittedAt,s.late,s.homework_revision AS homeworkRevision,s.due_at_submission AS dueAtSubmission,s.max_score_submission AS maxScoreSubmission,s.authorized_grant_id AS authorizedGrantId FROM homework_submissions s JOIN pdf_files f ON f.id=s.file_id WHERE s.homework_id=? AND s.student_name=? ORDER BY s.attempt DESC,s.submitted_at DESC,s.id DESC",homeworkId,studentName),
     rows("SELECT f.id,f.submission_id AS submissionId,f.comment,f.file_id AS fileId,f.created_at AS createdAt,coalesce(a.teacher_name,a.name,'老师') AS teacherName FROM homework_feedback f JOIN homework_submissions s ON s.id=f.submission_id LEFT JOIN accounts a ON a.id=f.teacher_id WHERE f.homework_id=? AND s.student_name=? ORDER BY f.created_at DESC,f.id DESC",homeworkId,studentName),

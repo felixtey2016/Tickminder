@@ -9,6 +9,9 @@ import { lessons } from "@/db/schema";
 import { readRoster } from "@/lib/roster";
 import { teacherMaySeeLesson, mayRequestReschedule } from "@/lib/access";
 import { findLessonConflict, generateWeekly, hoursBetween, lessonConflictReason, type LessonSlot } from "@/lib/lesson-rules";
+import {requireCorePermissions,corePermissionKeys} from '@/lib/admin-core-permissions';
+import {adminPermissionFailure,adminPermissionReadCondition} from '@/lib/admin-permission-access';
+import {and} from 'drizzle-orm';
 
 type Body = Record<string, unknown>;
 const str = (value: unknown) => typeof value === "string" ? value.trim() : "";
@@ -33,9 +36,10 @@ export async function POST(request: Request) {
   if (actor.role !== "admin" && !(actor.role === "teacher" && ["create", "proposeReschedule"].includes(action)) && !(actor.role === "student" && action === "proposeReschedule")) return bad("No permission to check this schedule", 403);
   const db = getDb();
   try {
+    const permissionKey=corePermissionKeys(action)[0];await requireCorePermissions(actor,[permissionKey]);
     const start = malaysiaIso(body.start), end = malaysiaIso(body.end);
     hoursBetween(start, end);
-    const existing = await db.select().from(lessons).where(groupWhere(lessons,actor.groupId)).all();
+    const existing = await db.select().from(lessons).where(and(groupWhere(lessons,actor.groupId),adminPermissionReadCondition(actor,permissionKey))).all();
     let slots: LessonSlot[] = [];
     let others = existing;
     if (action === "create") {
@@ -79,6 +83,7 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ available: true });
   } catch (error) {
+    const permission=adminPermissionFailure(error);if(permission)return bad(permission.error,permission.status);
     if(error instanceof ClassSessionError)return error.conflict?NextResponse.json({available:false,conflict:error.conflict}):bad(error.message,error.status);
     if (error instanceof Error && /Lesson time|Enter a Malaysia|Invalid date|Recurring range|End date precedes/.test(error.message)) return bad(error.message);
     return bad("Could not check this time. Try again.");

@@ -1,3 +1,4 @@
+import {adminPermissionFailure} from "@/lib/admin-permission-access";
 import { NextResponse } from "next/server";
 import { currentBusinessAccount as currentAccount } from "@/lib/auth";
 import { first, pdfMayRead } from "@/lib/learning-server";
@@ -31,7 +32,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       "Cross-Origin-Resource-Policy": "same-origin",
       "Referrer-Policy": "no-referrer",
     } });
-  } catch {
+  } catch(error) {
+    const denied=adminPermissionFailure(error);if(denied)return failure(denied.error,denied.status);
     return failure("PDF 暂时不可用", 503);
   }
 }

@@ -7,6 +7,8 @@ import { NextResponse } from "next/server";
 import { currentBusinessAccount as currentAccount } from "@/lib/auth";
 import { classroomMayManage, classroomMemberNames } from "@/lib/classrooms-server";
 import { change, first, learningDb, teacherMayAssign } from "@/lib/learning-server";
+import {requireCorePermissions,rejectUnknownAdminAction,guardedCoreDb,guardedCoreRun,guardedCoreChange} from '@/lib/admin-core-permissions';
+import {adminPermissionFailure} from '@/lib/admin-permission-access';
 
 class RequestError extends Error { constructor(message: string, readonly status = 400) { super(message); } }
 const str = (value: unknown) => typeof value === "string" ? value.trim() : "";
@@ -37,8 +39,10 @@ export async function POST(request: Request) {
   try { data = await request.json() as Record<string, unknown>; } catch { return fail(new RequestError("请求格式无效")); }
   const action = str(data.action), id = str(data.id), now = new Date().toISOString();
   try {
+    const permissionKeys=action==='saveTerm'||action==='createTerm'?[id?'terms.edit':'terms.create']:action==='saveClassroom'?[id?'classrooms.edit':'classrooms.create']:action==='archiveClassroom'?[data.archived===true?'classrooms.archive':'classrooms.restore']:action==='saveAnnouncement'?[id?'announcements.edit':'announcements.create']:action==='deleteAnnouncement'?['announcements.delete']:[];
+    rejectUnknownAdminAction(actor,permissionKeys);await requireCorePermissions(actor,permissionKeys);
     if (await first("SELECT 1 AS mustChange FROM local_credentials WHERE account_id = ? AND must_change_password = 1", actor.id)) throw new RequestError("请先修改初始密码", 403);
-    const db = learningDb();
+    const db = guardedCoreDb(actor,permissionKeys);
     if (action === "saveTerm" || action === "createTerm") {
       if (action === "saveTerm" && actor.role !== "admin") throw new RequestError("只有管理员可以管理学期", 403);
       if (action === "createTerm" && (id || data.isCurrent === true)) throw new RequestError("只有管理员可以管理学期", 403);
@@ -53,7 +57,7 @@ export async function POST(request: Request) {
       if (data.isCurrent === true) statements.push(groupStatement(groupId,"UPDATE academic_terms SET is_current = 0 WHERE (is_current = 1) AND group_id = ?").bind(groupId));
       statements.push(id ? groupStatement(groupId,"UPDATE academic_terms SET name = ?, is_current = ? WHERE (id = ?) AND group_id = ?").bind(name, data.isCurrent === true ? 1 : 0, termId,groupId) : groupStatement(groupId,"INSERT INTO academic_terms (group_id,id,name,is_current,created_at) VALUES (?,?,?,?,?)").bind(groupId,termId, name, data.isCurrent === true ? 1 : 0, now));
       await db.batch(statements);
-      await change(groupId,"saveTerm", actor.id, termId, {name, isCurrent: data.isCurrent === true});
+      await guardedCoreChange(actor,permissionKeys,"saveTerm", termId, {name, isCurrent: data.isCurrent === true});
       return NextResponse.json({ok: true, id: termId});
     }
     if (action === "saveClassroom") {
@@ -82,7 +86,7 @@ export async function POST(request: Request) {
           groupStatement(groupId,"INSERT INTO classrooms (group_id,id,title,description,subject,teacher_name,created_by,archived,created_at,updated_at,term_id,syllabus_id,subject_id,grade) VALUES (?,?,?,?,?,?,?,0,?,?,?,?,?,?)").bind(groupId,classId, title, description || null, subject, teacherName, actor.id, now, now, termId,classification.syllabusId,classification.subjectId,classification.grade),
           ...students.map(student => groupStatement(groupId,"INSERT INTO classroom_members (group_id,id,classroom_id,student_name,created_at) VALUES (?,?,?,?,?)").bind(groupId,crypto.randomUUID(), classId, student, now)),
         ]);
-        await change(groupId,"createClassroom", actor.id, classId, { title, subject, teacherName, studentCount: students.length });
+        await guardedCoreChange(actor,permissionKeys,"createClassroom", classId, { title, subject, teacherName, studentCount: students.length });
         return NextResponse.json({ ok: true, id: classId });
       }
       const previous = previousMembers;
@@ -103,7 +107,7 @@ export async function POST(request: Request) {
           ...(homework.results || []).map(item => groupStatement(groupId,"INSERT OR IGNORE INTO homework_recipients (group_id,id,homework_id,student_name) VALUES (?,?,?,?)").bind(groupId,crypto.randomUUID(), item.id, student)),
         ]);
       }
-      await change(groupId,"updateClassroom", actor.id, id, { title, termId, added, removed });
+      await guardedCoreChange(actor,permissionKeys,"updateClassroom", id, { title, termId, added, removed });
       return NextResponse.json({ ok: true, id });
     }
     if (action === "archiveClassroom") {
@@ -111,7 +115,7 @@ export async function POST(request: Request) {
       if (!classroom) throw new RequestError("班级不存在或无权修改", 404);
       const archived = data.archived === true ? 1 : 0;
       await db.batch([groupStatement(groupId,"UPDATE classrooms SET archived = ?, updated_at = ? WHERE (id = ?) AND group_id = ?").bind(archived, now, id,groupId),classroomCoverageGuard(groupId,archived?undefined:[])]);
-      await change(groupId,"archiveClassroom", actor.id, id, { archived: Boolean(archived) });
+      await guardedCoreChange(actor,permissionKeys,"archiveClassroom", id, { archived: Boolean(archived) });
       return NextResponse.json({ ok: true });
     }
     if (action === "saveAnnouncement") {
@@ -125,24 +129,25 @@ export async function POST(request: Request) {
       if (id) {
         const row = await first("SELECT 1 AS found FROM classroom_announcements WHERE id = ? AND classroom_id = ?", id, classroomId);
         if (!row) throw new RequestError("公告不存在", 404);
-        await groupStatement(groupId,"UPDATE classroom_announcements SET title = ?, body = ?, pinned = ?, updated_at = ? WHERE (id = ? AND classroom_id = ?) AND group_id = ?").bind(title, body, pinned, now, id, classroomId,groupId).run();
+        await guardedCoreRun(actor,permissionKeys,groupStatement(groupId,"UPDATE classroom_announcements SET title = ?, body = ?, pinned = ?, updated_at = ? WHERE (id = ? AND classroom_id = ?) AND group_id = ?").bind(title, body, pinned, now, id, classroomId,groupId));
       } else {
         const announcementId = crypto.randomUUID();
-        await groupStatement(groupId,"INSERT INTO classroom_announcements (group_id,id,classroom_id,author_id,title,body,pinned,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)").bind(groupId,announcementId, classroomId, actor.id, title, body, pinned, now, now).run();
+        await guardedCoreRun(actor,permissionKeys,groupStatement(groupId,"INSERT INTO classroom_announcements (group_id,id,classroom_id,author_id,title,body,pinned,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)").bind(groupId,announcementId, classroomId, actor.id, title, body, pinned, now, now));
       }
-      await change(groupId,id ? "updateAnnouncement" : "postAnnouncement", actor.id, classroomId, { title, pinned: Boolean(pinned) });
+      await guardedCoreChange(actor,permissionKeys,id ? "updateAnnouncement" : "postAnnouncement", classroomId, { title, pinned: Boolean(pinned) });
       return NextResponse.json({ ok: true });
     }
     if (action === "deleteAnnouncement") {
       const classroomId = str(data.classroomId);
       if (!await classroomMayManage(actor, classroomId)) throw new RequestError("没有删除权限", 403);
-      const deleted = await groupStatement(groupId,"DELETE FROM classroom_announcements WHERE (id = ? AND classroom_id = ?) AND group_id = ?").bind(id, classroomId,groupId).run();
+      const deleted = await guardedCoreRun(actor,permissionKeys,groupStatement(groupId,"DELETE FROM classroom_announcements WHERE (id = ? AND classroom_id = ?) AND group_id = ?").bind(id, classroomId,groupId));
       if (!deleted.meta.changes) throw new RequestError("公告不存在", 404);
-      await change(groupId,"deleteAnnouncement", actor.id, classroomId);
+      await guardedCoreChange(actor,permissionKeys,"deleteAnnouncement", classroomId);
       return NextResponse.json({ ok: true });
     }
     throw new RequestError("未知操作");
   } catch (error) {
+    const permissionFailure=adminPermissionFailure(error);if(permissionFailure)return NextResponse.json({error:permissionFailure.error},{status:permissionFailure.status});
     return fail(isClassroomCoverageFailure(error)?new RequestError(classroomRequiredMessage,409):error instanceof RequestError ? error : new RequestError("服务器未能确认结果，请刷新班级列表检查后再重试", 503));
   }
 }

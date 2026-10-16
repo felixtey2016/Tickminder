@@ -69,14 +69,14 @@ export function SheetSyncPanel() {
         <option value="all_completed">{t("全部已完成课时（含不收费）")}</option>
       </select>
     </label>
-    <Button disabled={busy} onClick={() => void run("preview")}>{busy ? t("正在读取并比对表格…") : t("预览写入内容")}</Button>
+    <Button adminGrant="sheetSync.preview" disabled={busy} onClick={() => void run("preview")}>{busy ? t("正在读取并比对表格…") : t("预览写入内容")}</Button>
     {message && <div className={done ? "notice" : "error"} role="status">{message}</div>}
     {preview && <div className="sheet-sync-preview">
       <h3>{t("目标月份")}：{preview.displayMonth} <small>({preview.month})</small></h3>
       <p className="muted">{t("将更新")} {preview.changes.length} {t("行，跳过")} {preview.skipped.length} {t("行。请核对后确认。")}</p>
       {preview.changes.length > 0 && <div className="sheet-sync-table-wrap"><table className="sheet-sync-table"><thead><tr><th>{t("表格行")}</th><th>{t("学生")}</th><th>{t("科目")}</th><th>{t("Total Hours 原值 → 新值")}</th></tr></thead><tbody>{preview.changes.map(item => <tr key={item.row}><td>{item.row}</td><td>{item.student}</td><td>{item.subject}</td><td>{displaySheetHours(item.before)} → <strong>{formatDurationHours(item.after, getLanguage())}</strong></td></tr>)}</tbody></table></div>}
       {preview.skipped.length > 0 && <details className="sheet-sync-skipped"><summary>{t("未匹配或已跳过的记录")} ({preview.skipped.length})</summary><ul>{preview.skipped.map((item, index) => <li key={`${item.student}|${item.subject}|${index}`}><strong>{item.student} · {item.subject}</strong> — {t(reason[item.reason] || item.reason)}</li>)}</ul></details>}
-      <Button disabled={busy || !preview.changes.length} onClick={() => void run("commit")}>{t("确认写入表格")}</Button>
+      <Button adminGrant="sheetSync.commit" disabled={busy || !preview.changes.length} onClick={() => void run("commit")}>{t("确认写入表格")}</Button>
     </div>}
   </section>;
 }

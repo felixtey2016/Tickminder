@@ -1,4 +1,5 @@
 "use client";
+import { useAdminAction } from "./admin-permission-context";
 import {groupFetch} from "@/lib/group-client";
 
 import { useRef, useState } from "react";
@@ -8,11 +9,14 @@ import { useDialogState } from "@/lib/use-dialog-state";
 import { alertActionFailure, readApiJson } from "@/lib/action-feedback";
 import { getLanguage, t } from "@/lib/i18n";
 import { formatDurationHours } from "@/lib/duration-format";
+import type {AdminGrantKey} from "@/lib/admin-permissions";
 import type { Mutate } from "./directory-tools";
 type RecordItem = {id:string;label:string};
 type Preview = { items:Array<{id:string;label:string;date?:string;effects:Array<{table:string;count:number;retained:boolean}>;hours:number;checkedIn:number}>; blocked:Array<{id:string;error:string}>; fingerprint:string;previewAt:string };
 const effectNames:Record<string,string> = {homework_feedback:"老师批改反馈",homework_resubmission_grants:"重交授权记录",learning_notifications:"教学通知",learning_versions:"内容历史版本",homework_score_history:"历史评分记录",accounts:"账号",sessions:"登录会话",assignments:"账号科目关联",study_blocks:"个人学习计划",local_credentials:"密码登录",google_identities:"Google 登录关联",login_attempts:"登录尝试记录",plans:"学生科目绑定",teachers:"老师名单",students:"学生名单",lessons:"课程",reschedule_requests:"改期申请",homework:"功课",homework_recipients:"功课分配与分数",homework_submissions:"功课提交记录",teaching_materials:"教学资料",material_recipients:"资料分配",classroom_announcements:"班级公告",classroom_members:"班级成员",classrooms:"班级",classroom_folders:"文件夹"};
 export function BulkDeleteTool({kind,records,mutate,busy,single=false,message}: {kind:string;records:RecordItem[];mutate:Mutate;busy:boolean;single?:boolean;message?:string}) {
+  const can=useAdminAction();
+  const grant=({account:"accounts.delete",teacher:"teachers.delete",student:"students.delete",plan:"plans.delete",lesson:"lessons.delete",classroom:"classrooms.delete",homework:"homework.delete"} as Record<string,AdminGrantKey>)[kind];
   const [open,setOpen] = useDialogState<boolean|null>(`delete-preview-${kind}-${single?records[0]?.id:"bulk"}`,null);
   const [selected,setSelected] = useState<string[]>([]), [preview,setPreview] = useState<Preview|null>(null), [loading,setLoading] = useState(false);
   const inFlight = useRef(false);
@@ -27,6 +31,7 @@ export function BulkDeleteTool({kind,records,mutate,busy,single=false,message}: 
     }catch(e){alertActionFailure(e);}finally{setLoading(false);inFlight.current=false;}
   }
   function start(){setSelected(single?[records[0].id]:[]);setPreview(null);setOpen(true);if(single)void loadPreview([records[0].id]);}
+  if(grant&&!can(grant))return null;
   return <><Button type="button" size="sm" variant="outline" className="danger-action" disabled={busy||!records.length} onClick={start}>{t(single?"永久删除":"批量删除…")}</Button>
     <Dialog open={Boolean(open)} onOpenChange={next=>{if(!next&&!loading&&!busy)setOpen(null);}}><DialogContent className="lesson-dialog directory-dialog deletion-dialog"><DialogHeader><DialogTitle>{t(preview?"删除影响预览":"选择要删除的记录")}</DialogTitle></DialogHeader>
       <p className="muted">{t("永久删除无法恢复。历史操作日志保留；共用 PDF 仅在没有任何引用时清理。")}</p>{message&&<p>{t(message)}</p>}

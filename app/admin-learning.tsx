@@ -1,4 +1,5 @@
 "use client";
+import { useAdminAction } from "./admin-permission-context";
 
 import { useState } from "react";
 import { LegacyOrganizer,useTeachingClasses } from "./folder-workspace";
@@ -21,7 +22,8 @@ const subjectOf = (item: Material | Homework) => "subject" in item && item.subje
 export function AdminLearning({ learning, view, inClassroom = false,onChanged }: {
   learning: LearningState; view: "materials" | "homework"; inClassroom?: boolean;onChanged?:()=>Promise<unknown>|void;
 }) {
-  const {classes,error:classError,load:loadClasses}=useTeachingClasses(!inClassroom);
+  const can=useAdminAction();
+  const {classes,error:classError,load:loadClasses}=useTeachingClasses(!inClassroom&&can("folders.placeContent"));
   const [teacher, setTeacher] = useState("");
   const [subject, setSubject] = useState("");
   const records = view === "materials" ? learning.materials : learning.homework;

@@ -1,5 +1,5 @@
-// Round 1 only stores a future configuration. Business routes still apply the
-// existing role/ownership rules until every entry point has been integrated.
+// Saved configurations remain drafts. Integrated business checks are verified
+// locally before the complete rollout is activated in a later round.
 export const ADMIN_PERMISSIONS_ROLLOUT = "preparation" as const;
 
 const currentModules = [
@@ -117,7 +117,7 @@ export type AdminPermissionProfile = {
   grants: AdminGrantKey[]; draftGrants: AdminGrantKey[] | null; updatedBy: string | null; updatedAt: string | null;
 };
 export type AdminPermissionsResponse = {
-  rollout: typeof ADMIN_PERMISSIONS_ROLLOUT; status: "pending"; runtimeEnforcement: false; currentAccess: "legacy";
+  rollout: typeof ADMIN_PERMISSIONS_ROLLOUT; status: "pending"; runtimeEnforcement: boolean; currentAccess: "legacy" | "configured";
   target: {id: string; name: string; disabledAt: string | null}; profile: AdminPermissionProfile;
   catalog: AdminPermissionModule[]; templates: AdminPermissionTemplate[];
   effectiveGrants: AdminGrantKey[]; configuredGrants: AdminGrantKey[];

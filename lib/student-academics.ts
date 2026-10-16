@@ -42,15 +42,15 @@ export async function studentSyllabusPlanUpdates(groupId:string,studentName:stri
 }
 
 // Stable catalogue IDs classify live records. Historical names and plan keys stay intact.
-export async function refreshStudentClassifications(groupId:string,studentName:string){
+export async function refreshStudentClassifications(groupId:string,studentName:string,mutationDb?:D1Database){
  const {rows}=groupReader(groupId),classes=await rows<{id:string}>('SELECT DISTINCT classroom_id AS id FROM classroom_members WHERE student_name=?',studentName);
- for(const item of classes)await inferClassroomClassification(groupId,item.id);
+ for(const item of classes)await inferClassroomClassification(groupId,item.id,mutationDb);
 }
-export async function refreshClassroomAcademicMetadata(groupId:string){
+export async function refreshClassroomAcademicMetadata(groupId:string,mutationDb?:D1Database){
  const {rows}=groupReader(groupId);
- for(const item of await rows<{id:string}>('SELECT id FROM classrooms'))await inferClassroomClassification(groupId,item.id);
+ for(const item of await rows<{id:string}>('SELECT id FROM classrooms'))await inferClassroomClassification(groupId,item.id,mutationDb);
 }
-export async function inferClassroomClassification(groupId:string,classroomId:string){
+export async function inferClassroomClassification(groupId:string,classroomId:string,mutationDb?:D1Database){
  const {rows}=groupReader(groupId);
  const members=await rows<{syllabusId:string;grade:string|null;subjectId:string|null;classGrade:string|null;classSubject:string}>(`SELECT s.syllabus_id AS syllabusId,s.grade,p.subject_id AS subjectId,c.grade AS classGrade,c.subject AS classSubject FROM classroom_members m JOIN classrooms c ON c.id=m.classroom_id JOIN students s ON s.name=m.student_name LEFT JOIN plans p ON p.student=m.student_name AND p.teacher_name=c.teacher_name AND (p.subject=c.subject OR (c.subject_id IS NOT NULL AND p.subject_id=c.subject_id)) AND p.active=1 WHERE c.id=?`,classroomId);
  if(!members.length)return;
@@ -61,5 +61,6 @@ export async function inferClassroomClassification(groupId:string,classroomId:st
  const subjectId=syllabus&&matchedSubject&&findCatalogueSubject(syllabus,matchedSubject)?matchedSubject:null;
  const existingGrade=members[0].classGrade,compatible=existingGrade&&members.every(row=>!row.grade||row.grade===existingGrade);
  const matchedGrade=syllabusId?(agreed(members.map(row=>row.grade))||(compatible?existingGrade:null)):null,grade=syllabus&&catalogueGradeValid(syllabus,matchedGrade)?matchedGrade:null;
- await groupStatement(groupId,'UPDATE classrooms SET syllabus_id=?,subject_id=?,grade=?,updated_at=? WHERE id=? AND group_id=?').bind(syllabusId,subjectId,grade,new Date().toISOString(),classroomId,groupId).run();
+ const statement=groupStatement(groupId,'UPDATE classrooms SET syllabus_id=?,subject_id=?,grade=?,updated_at=? WHERE id=? AND group_id=?').bind(syllabusId,subjectId,grade,new Date().toISOString(),classroomId,groupId);
+ if(mutationDb)await mutationDb.batch([statement]);else await statement.run();
 }

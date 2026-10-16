@@ -2,6 +2,8 @@ import {classPlanSubjectSql} from "./academic-subject-match";
 import {groupReader,groupStatement} from "@/lib/group-data";
 import type { Account } from "@/lib/auth";
 import { first, rows } from "@/lib/learning-server";
+import {requireCorePermissions,guardedCoreReader} from './admin-core-permissions';
+import {hasAdminPermission} from './admin-permission-access';
 
 export type ClassroomRow = {
   id: string; title: string; description: string | null; subject: string;syllabusId:string|null;subjectId:string|null;grade:string|null;
@@ -37,15 +39,16 @@ export async function activeClassroomMemberNames(id: string,groupId:string|null)
 }
 
 export async function classroomsState(account: Account) {
-  const {first,rows}=groupReader(account.groupId);
+  await requireCorePermissions(account,['classrooms.view']);
+  const {rows}=guardedCoreReader(account,['classrooms.view']),showAnnouncements=account.role!=='admin'||await hasAdminPermission(account,'announcements.view');
   let classes: ClassroomRow[] = [];
   if (account.role === "admin") classes = await rows<ClassroomRow>(`SELECT id,title,description,subject,syllabus_id AS syllabusId,subject_id AS subjectId,grade,teacher_name AS teacherName,term_id AS termId,archived,created_at AS createdAt,updated_at AS updatedAt FROM classrooms ORDER BY archived,updated_at DESC`);
   else if (account.role === "teacher" && account.teacherName) classes = await rows<ClassroomRow>(`SELECT DISTINCT c.id,c.title,c.description,c.subject,c.syllabus_id AS syllabusId,c.subject_id AS subjectId,c.grade,c.teacher_name AS teacherName,c.term_id AS termId,c.archived,c.created_at AS createdAt,c.updated_at AS updatedAt FROM classrooms c JOIN teachers t ON t.name = c.teacher_name AND t.active = 1 WHERE c.teacher_name = ? ORDER BY c.archived,c.updated_at DESC`, account.teacherName);
   else if (account.role === "student" && account.studentName) classes = await rows<ClassroomRow>(`SELECT DISTINCT c.id,c.title,c.description,c.subject,c.syllabus_id AS syllabusId,c.subject_id AS subjectId,c.grade,c.teacher_name AS teacherName,c.term_id AS termId,c.archived,c.created_at AS createdAt,c.updated_at AS updatedAt FROM classrooms c JOIN classroom_members m ON m.classroom_id = c.id JOIN plans p ON p.student = m.student_name AND ${classPlanSubjectSql()} AND p.teacher_name = c.teacher_name AND p.active = 1 JOIN students s ON s.name = m.student_name AND s.active = 1 JOIN teachers t ON t.name = c.teacher_name AND t.active = 1 WHERE m.student_name = ? ORDER BY c.archived,c.updated_at DESC`, account.studentName);
   return Promise.all(classes.map(async classroom => {
     const [announcements, members] = await Promise.all([
-      rows(`SELECT a.id,a.title,a.body,a.pinned,a.created_at AS createdAt,a.updated_at AS updatedAt,coalesce(u.name,'老师') AS authorName FROM classroom_announcements a LEFT JOIN accounts u ON u.id = a.author_id WHERE a.classroom_id = ? ORDER BY a.pinned DESC,a.created_at DESC`, classroom.id),
-      account.role === "student" ? undefined : account.role === "teacher" ? activeClassroomMemberNames(classroom.id,account.groupId) : classroomMemberNames(classroom.id,account.groupId),
+      showAnnouncements?guardedCoreReader(account,['classrooms.view','announcements.view']).rows(`SELECT a.id,a.title,a.body,a.pinned,a.created_at AS createdAt,a.updated_at AS updatedAt,coalesce(u.name,'老师') AS authorName FROM classroom_announcements a LEFT JOIN accounts u ON u.id = a.author_id WHERE a.classroom_id = ? ORDER BY a.pinned DESC,a.created_at DESC`, classroom.id):[],
+      account.role === "student" ? undefined : account.role === "teacher" ? activeClassroomMemberNames(classroom.id,account.groupId) : rows<{studentName:string}>('SELECT student_name AS studentName FROM classroom_members WHERE classroom_id=? ORDER BY student_name',classroom.id).then(members=>members.map(member=>member.studentName)),
     ]);
     return { ...classroom, announcements, ...(members ? { members } : {}) };
   }));

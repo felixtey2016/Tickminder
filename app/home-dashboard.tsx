@@ -1,4 +1,5 @@
 "use client";
+import { useAdminPermissionAccount } from "./admin-permission-context";
 import {uniqueSessionLessons,sessionLessonTitle,type SessionLesson} from "@/lib/class-session-display";
 
 import { useEffect, useState } from "react";
@@ -7,6 +8,7 @@ import { getLanguage, t } from "@/lib/i18n";
 import type { LearningState } from "./learning-portal";
 import { Mascot } from "@/components/page-state";
 import { Button } from "@/components/ui/button";
+import {canAdminView} from "@/lib/admin-permission-client";
 import { OnlineLessonLink } from "./online-lesson-link";
 
 type Role = "admin" | "teacher" | "student";
@@ -41,6 +43,7 @@ export function HomeDashboard({ role, name, lessons, learning, learningReady = t
   learningError?: string;
   onNavigate: (destination: string) => void;
 }) {
+  const permissionAccount=useAdminPermissionAccount();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -87,13 +90,13 @@ export function HomeDashboard({ role, name, lessons, learning, learningReady = t
     ];
   }
 
-  const overview = cards.slice(1).map(card => {
+  const overview = cards.slice(1).filter(card=>canAdminView(permissionAccount,card.destination)).map(card => {
     const needsLearning = role === "student" || (role === "teacher" && card.destination === "homework");
     return needsLearning && !learningReady ? {...card, value:"—", detail: t(learningError ? "资料暂时无法载入，请稍后刷新" : "正在加载…")} : card;
   });
   return <section className="home-dashboard" aria-label={t("主页")}>
     <div className="home-intro"><div className="home-greeting"><Mascot pose="hello" size={60}/><h2>{t("你好")}{name ? (getLanguage() === "zh" ? "，" : ", ") + name : ""}</h2></div><time className="home-date" dateTime={today}>{new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone:"Asia/Kuala_Lumpur", year:"numeric",month:"long",day:"numeric",weekday:"long" }).format(new Date(now))}</time></div>
-    <article className="home-next"><div className="home-next-heading"><span>{t("下一堂课")}</span><CalendarDays size={20} aria-hidden="true"/></div><h2>{next ? next.subject : t("暂无课程")}</h2><p className="home-next-time">{next ? lessonTime(next.plannedStart) + "–" + new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Kuala_Lumpur",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(next.plannedEnd)) : nextDetail}</p>{next && <p>{role === "student" ? next.teacherName : sessionLessonTitle(next) + " · " + next.teacherName}</p>}<div className="home-next-actions"><OnlineLessonLink href={next?.onlineLink}/><Button variant="outline" onClick={() => onNavigate(cards[0].destination)}>{t(cards[0].action)}<ChevronRight size={17} aria-hidden="true"/></Button></div></article>
+    {canAdminView(permissionAccount,cards[0].destination)&&<article className="home-next"><div className="home-next-heading"><span>{t("下一堂课")}</span><CalendarDays size={20} aria-hidden="true"/></div><h2>{next ? next.subject : t("暂无课程")}</h2><p className="home-next-time">{next ? lessonTime(next.plannedStart) + "–" + new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Kuala_Lumpur",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(next.plannedEnd)) : nextDetail}</p>{next && <p>{role === "student" ? next.teacherName : sessionLessonTitle(next) + " · " + next.teacherName}</p>}<div className="home-next-actions"><OnlineLessonLink href={next?.onlineLink}/><Button variant="outline" onClick={() => onNavigate(cards[0].destination)}>{t(cards[0].action)}<ChevronRight size={17} aria-hidden="true"/></Button></div></article>}
     <h2 className="home-overview-title">{t(role === "admin" ? "今日概览" : "学习安排")}</h2><div className="home-summary-list">{overview.map(card => <button type="button" className="home-summary-row" key={card.label} onClick={() => onNavigate(card.destination)}><card.Icon size={22} aria-hidden="true"/><span><strong>{t(card.label)}</strong>{card.detail && <small>{card.detail}</small>}</span><b>{card.value}</b><ChevronRight size={18} aria-hidden="true"/></button>)}</div>
   </section>;
 }

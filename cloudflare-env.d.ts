@@ -14,5 +14,6 @@ declare namespace Cloudflare {
     VAPID_SUBJECT?: string;
     PDF_MAX_BYTES?: string;
     PDF_TOTAL_STORAGE_LIMIT_BYTES?: string;
+    ADMIN_PERMISSIONS_MODE?: string;
   }
 }

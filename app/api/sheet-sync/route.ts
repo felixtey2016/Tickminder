@@ -5,6 +5,9 @@ import { getDb } from "@/db";
 import { lessons, plans } from "@/db/schema";
 import { currentBusinessAccount as currentAccount } from "@/lib/auth";
 import { monthlySheetPairs, serializeSheetPayload, type SyncMode } from "@/lib/sheet-sync";
+import {requireCorePermissions} from '@/lib/admin-core-permissions';
+import {adminPermissionFailure,adminPermissionReadCondition} from '@/lib/admin-permission-access';
+import {and} from 'drizzle-orm';
 
 type BridgeResponse = {
   ok: boolean;
@@ -66,17 +69,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "导入请求无效。" }, { status: 400 });
     }
     const mode = input.mode as SyncMode;
+    const permissionKey=input.action==='commit'?'sheetSync.commit':'sheetSync.preview';
+    await requireCorePermissions(actor,[permissionKey]);
     const selected = await bridge({ action: "month" });
     if (!selected.month || !selected.displayMonth) throw new Error("无法读取表格当前月份。");
     if (input.action === "commit" && (input.month !== selected.month || !input.previewToken)) {
       return NextResponse.json({ error: "表格月份已变化，请重新预览。" }, { status: 409 });
     }
     const db = getDb();
-    const [planRows, lessonRows] = await Promise.all([db.select().from(plans).where(groupWhere(plans,actor.groupId)).all(), db.select().from(lessons).where(groupWhere(lessons,actor.groupId)).all()]);
+    const [planRows, lessonRows] = await Promise.all([db.select().from(plans).where(and(groupWhere(plans,actor.groupId),adminPermissionReadCondition(actor,permissionKey))).all(), db.select().from(lessons).where(and(groupWhere(lessons,actor.groupId),adminPermissionReadCondition(actor,permissionKey))).all()]);
     const pairs = monthlySheetPairs(planRows, lessonRows, selected.month, mode);
+    await requireCorePermissions(actor,[permissionKey]);
     const result = await bridge({ action: input.action, month: selected.month, mode, pairs, previewToken: input.previewToken });
     return NextResponse.json(result, { headers: { "cache-control": "no-store" } });
   } catch (error) {
+    const permission=adminPermissionFailure(error);if(permission)return NextResponse.json({error:permission.error},{status:permission.status});
     const message = error instanceof Error ? error.message : "Google Sheet 导入失败。";
     const status = /月份已变化|重新预览|Month changed|Preview again|data changed/.test(message) ? 409 : /尚未配置|not configured/.test(message) ? 503 : 502;
     return NextResponse.json({ error: status === 409 ? "表格月份或数据已变化，请重新预览。" : status === 503 ? "Google Sheet 导入尚未配置，请联系管理员。" : "Google Sheet 导入结果未确认，请先检查表格，再重新预览。" }, { status });

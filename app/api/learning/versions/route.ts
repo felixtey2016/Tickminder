@@ -1,9 +1,11 @@
+import {adminPermissionFailure} from "@/lib/admin-permission-access";
 import { NextResponse } from "next/server";
 import { currentBusinessAccount } from "@/lib/auth";
 import { LearningEditError, editPublishedContent, versionHistory } from "@/lib/learning-versions";
 import { translate } from "@/lib/i18n";
 
 function failure(request:Request,error:unknown) {
+  const denied=adminPermissionFailure(error);if(denied)return Response.json({error:translate(denied.error,new URL(request.url).searchParams.get("lang")==="en"?"en":"zh")},{status:denied.status,headers:{"cache-control":"private, no-store"}});
   const lang=new URL(request.url).searchParams.get("lang")==="en"?"en":"zh";
   return NextResponse.json({error:translate(error instanceof LearningEditError?error.message:"内容操作失败，请稍后重试",lang)}, {status:error instanceof LearningEditError?error.status:503,headers:{"cache-control":"private, no-store"}});
 }

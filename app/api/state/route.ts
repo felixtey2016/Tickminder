@@ -17,23 +17,9 @@ import { learningState, rows } from "@/lib/learning-server";
 import { mergedAccountNames } from "@/lib/merged-account-names";
 import { classroomsState } from "@/lib/classrooms-server";
 import {studentLessonResponse,studentRescheduleResponse,studentSessionResponse} from "@/lib/student-course-response";
-
-function monthlySummary(plans: Array<{ key: string; student: string; subject: string;subjectId?:string|null;syllabusId?:string }>, rows: Array<typeof lessons.$inferSelect>, month: string,sessionSubjects:Map<string,{subjectId?:string|null;syllabusId?:string|null}>=new Map()) {
-  const now = new Date().toISOString();
-  return plans.map(p => {
-    const items = rows.filter(l => l.student === p.student && (l.subject === p.subject||Boolean(l.sessionId&&p.subjectId&&sessionSubjects.get(l.sessionId)?.subjectId===p.subjectId&&sessionSubjects.get(l.sessionId)?.syllabusId===p.syllabusId)));
-    const completed = items.filter(l => l.actualStart && inMonth(l.actualStart, month));
-    const planned = items.filter(l => inMonth(l.plannedStart, month));
-    return {
-      key: p.key,
-      completed: completed.reduce((sum, l) => sum + approvedHoursInMonth(l, month), 0),
-      lessons: completed.filter(l => approvedActualHours(l) > 0).length,
-      upcoming: planned.filter(l => l.status === "scheduled" && l.plannedStart > now).reduce((sum, l) => sum + (Date.parse(l.plannedEnd) - Date.parse(l.plannedStart)) / 3600000, 0),
-      pending: planned.filter(l => l.status !== "cancelled" && !l.reviewedAt && l.plannedStart <= now).length,
-      makeupNeeded: planned.filter(l => ["student_absent", "teacher_absent"].includes(l.status) && !rows.some(x => x.replacementFor === l.id && x.status !== "cancelled")).length,
-    };
-  });
-}
+import { adminPermissionContext, adminPermissionFailure, adminPermissionReadCondition, requireAdminPermission, AdminPermissionDenied, type AdminPermissionContext } from "@/lib/admin-permission-access";
+import { restrictedAdminCoreState, permissionAllows, adminCoreOptions } from "@/lib/admin-permission-state";
+import { monthlySummary } from "@/lib/lesson-summary";
 
 type Scope = "core" | "learning" | "classrooms" | "accounts" | "activity";
 const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -72,14 +58,20 @@ async function coreState(account: Account, selected: string) {
     lessons: visible.map(withOnlineLink), proposals: legacyRequests, records, checkins, summary: monthlySummary(roster.allPlans, visible, selected,sessionData.byId)};
 }
 
-async function extraState(account: Account, scope: Exclude<Scope, "core">) {
+async function extraState(account: Account, scope: Exclude<Scope, "core">, access?:AdminPermissionContext) {
   if (scope === "learning") return { learning: await learningState(account) };
   if (scope === "classrooms") {
-    const [classrooms, terms] = await Promise.all([classroomsState(account), groupRows(account.groupId,"SELECT id,name,is_current AS isCurrent FROM academic_terms ORDER BY created_at DESC")]);
+    if(access?.enforced&&!permissionAllows(access,"classrooms.view")) {
+      const options=await adminCoreOptions(account,access);
+      return {classrooms:[],terms:permissionAllows(access,"terms.view")?options.termOptions:[],classroomOptions:options.classroomOptions,termOptions:options.termOptions};
+    }
+    const [classrooms, terms] = await Promise.all([classroomsState(account), access?.enforced&&!permissionAllows(access,"terms.view")?Promise.resolve([]):groupRows(account.groupId,"SELECT id,name,is_current AS isCurrent FROM academic_terms ORDER BY created_at DESC")]);
     return {classrooms, terms};
   }
   const db = getDb();
-  const users = await db.select().from(accounts).where(groupWhere(accounts,account.groupId)).all();
+  if(scope==="accounts")await requireAdminPermission(account,"accounts.view");
+  if(scope==="activity")await requireAdminPermission(account,"audit.view");
+  const users = await db.select().from(accounts).where(groupWhere(accounts,account.groupId,adminPermissionReadCondition(account,scope==="accounts"?"accounts.view":"audit.view"))).all();
   if (scope === "accounts") {
     const [credentials, hierarchy] = await Promise.all([
       db.select({ accountId: localCredentials.accountId, username: localCredentials.username, mustChangePassword: localCredentials.mustChangePassword }).from(localCredentials).where(inArray(localCredentials.accountId,users.map(u=>u.id))).all(),
@@ -88,11 +80,27 @@ async function extraState(account: Account, scope: Exclude<Scope, "core">) {
     const byId = new Map(credentials.map(c => [c.accountId, c]));
     return {users: users.map(u => ({...u, ...lifecycleView(u), isOwner:isOwnerAccount(u), isGroupChief:u.role==='admin'&&!u.disabledAt&&u.id===hierarchy.chiefAdminId, username: byId.get(u.id)?.username || null, mustChangePassword: byId.get(u.id)?.mustChangePassword || false}))};
   }
-  const activityVisibility=and(isOwnerAccount(account)?undefined:notLike(audit.action,'billing.%'),or(notLike(audit.action,'adminPermissions.%'),adminManagementReadCondition(account)));
+  const activityVisibility=and(adminPermissionReadCondition(account,"audit.view"),isOwnerAccount(account)?undefined:notLike(audit.action,'billing.%'),or(notLike(audit.action,'adminPermissions.%'),adminManagementReadCondition(account)));
   const [changes, mergedNames] = await Promise.all([db.select().from(audit).where(groupWhere(audit,account.groupId,activityVisibility)).orderBy(desc(audit.at)).limit(30).all(), mergedAccountNames(account.groupId)]);
   const changedLessons = changes.length ? await db.select({id: lessons.id, student: lessons.student, subject: lessons.subject}).from(lessons).where(groupWhere(lessons,account.groupId,inArray(lessons.id, changes.map(c => c.lessonId)))).all() : [];
   const byId = new Map(changedLessons.map(l => [l.id, `${l.student} · ${l.subject}`]));
-  return {activity: changes.map(c => ({...c, actorName: (c.actorId===account.id?account.name:users.find(u => u.id === c.actorId)?.name) || mergedNames.get(c.actorId) || c.actorId, lessonName: byId.get(c.lessonId) || c.lessonId}))};
+  const readableSnapshot=(action:string)=>{
+    if(!access?.enforced)return true;
+    if(isOwnerAccount(account))return true;
+    if(action.startsWith('adminPermissions.'))return access.privileged;
+    const direct:Record<string,string>={saveTeacher:'teachers',saveStudent:'students',updateStudentProfile:'students',setStudentActive:'students',savePlan:'plans',create:'lessons',edit:'lessons',cancel:'lessons',attendance:'attendance',review:'attendance',createLocalAccount:'accounts',resetLocalPassword:'accounts',activateAccount:'accounts',deleteAccount:'accounts',restoreAccount:'accounts',bind:'accounts',proposeReschedule:'reschedules',respondReschedule:'reschedules',saveClassroom:'classrooms',archiveClassroom:'classrooms',saveTerm:'terms',createTerm:'terms',saveAnnouncement:'announcements',deleteAnnouncement:'announcements',saveSessionAttendance:'attendance',reviewSessionAttendance:'attendance',createClassSession:'lessons',editClassSession:'lessons',cancelClassSession:'lessons',proposeClassReschedule:'reschedules',respondClassReschedule:'reschedules'};
+    const module=direct[action]||(action.startsWith('quiz.')?'quizzes':action.startsWith('quizPractice.')||action.startsWith('quizAssignment.')?'quizAssignments':action.startsWith('folder.')?'folders':action.startsWith('material.')?'materials':action.startsWith('homework.')?'homework':action.startsWith('sheet')?'sheetSync':null);
+    return module?access.grants.some(key=>key===`${module}.view`):false;
+  };
+  const visibleSnapshot=(value:string|null,action:string)=>{
+    if(!readableSnapshot(action))return null;
+    if(!value||!access?.enforced||isOwnerAccount(account))return value;
+    const attendanceFields=new Set(['actualStart','actualEnd','attendanceKind','chargeable','reviewedAt','reviewedBy','teachingStatus','teachingStart','teachingEnd','personalAttendance','attendanceStatus','arrivedAt','leftAt','attendanceNote','attendanceRecordedAt','attendanceRecordedBy','attendanceReviewedAt','attendanceReviewedBy']);
+    const lessonAction=['create','edit','cancel','reschedule','createClassSession','editClassSession','cancelClassSession','updateClassSessionLink'].includes(action);
+    const filter=(input:unknown):unknown=>Array.isArray(input)?input.map(filter):input&&typeof input==='object'?Object.fromEntries(Object.entries(input).filter(([key])=>(key!=='age'||permissionAllows(access,'students.view'))&&(!attendanceFields.has(key)&&!(key==='note'&&lessonAction)||permissionAllows(access,'attendance.view'))).map(([key,item])=>[key,filter(item)])):input;
+    try{return JSON.stringify(filter(JSON.parse(value)));}catch{return null;}
+  };
+  return {activity: changes.map(c => ({...c,before:visibleSnapshot(c.before,c.action),after:visibleSnapshot(c.after,c.action), actorName: (c.actorId===account.id?account.name:users.find(u => u.id === c.actorId)?.name) || mergedNames.get(c.actorId) || c.actorId, lessonName: !access?.enforced||permissionAllows(access,"lessons.view")?byId.get(c.lessonId) || c.lessonId:c.lessonId}))};
 }
 
 export async function GET(request: Request) {
@@ -104,14 +112,18 @@ export async function GET(request: Request) {
   if (scope && !["core","learning","classrooms","accounts","activity"].includes(scope)) return json({error: "请求无效，请刷新后重试"}, 400);
   if ((scope === "accounts" || scope === "activity") && account.role !== "admin") return json({error: "没有权限执行此操作"}, 403);
   const hierarchy=account.role==='admin'?await adminAuthority(account):{isGroupChief:false,canManageAdministrators:false};
-  const identity = {groupId:account.groupId,id: account.id, name: account.name, email: account.email, role: account.role, isOwner:isOwnerAccount(account), isGroupChief:hierarchy.isGroupChief, canManageAdministrators:hierarchy.canManageAdministrators, teacherName: account.teacherName, studentName: account.studentName};
+  const access=await adminPermissionContext(account);
+  const identity = {groupId:account.groupId,id: account.id, name: account.name, email: account.email, role: account.role, isOwner:isOwnerAccount(account), isGroupChief:hierarchy.isGroupChief, canManageAdministrators:hierarchy.canManageAdministrators, teacherName: account.teacherName, studentName: account.studentName,...(account.role==="admin"?{adminPermissions:access}:{})};
   if (account.role === "pending") return json({account: {...identity, ...lifecycleView(account)}, lessons:[], classrooms:[], proposals:[], loadedScopes: ["core"]});
   try {
     // No scope preserves the existing full response for compatible clients.
-    const scopes: Scope[] = scope ? [scope as Scope] : account.role === "admin" ? ["core","learning","classrooms","accounts","activity"] : ["core","learning","classrooms"];
-    const parts = await Promise.all(scopes.map(s => s === "core" ? coreState(account, selected) : extraState(account, s)));
+    const defaults:Scope[]=account.role === "admin" ? ["core","learning","classrooms","accounts","activity"] : ["core","learning","classrooms"];
+    const scopes: Scope[] = scope ? [scope as Scope] : defaults.filter(item=>!access.enforced||item!=="accounts"&&item!=="activity"||permissionAllows(access,item==="accounts"?"accounts.view":"audit.view"));
+    const parts = await Promise.all(scopes.map(s => s === "core" ? account.role==="admin"&&access.enforced?restrictedAdminCoreState(account,selected,access):coreState(account, selected) : extraState(account, s, access)));
+    if(access.enforced&&JSON.stringify(access)!==JSON.stringify(await adminPermissionContext(account)))throw new AdminPermissionDenied();
     return json(Object.assign({account: identity, loadedScopes: scopes}, ...parts));
-  } catch {
+  } catch (error) {
+    const failure=adminPermissionFailure(error);if(failure)return json({error:failure.error},failure.status);
     return json({error: "资料暂时无法载入，请稍后刷新"}, 503);
   }
 }

@@ -1,3 +1,4 @@
+import {guardedLearningReader} from "@/lib/learning-permission-read";
 import type { Account } from "./auth";
 import { groupReader, requireGroup } from "./group-data";
 import { classroomMayManage } from "./classrooms-server";
@@ -30,12 +31,12 @@ export function requireRevision(value: unknown) {
   return Number(value);
 }
 export async function contentRecord(actor: Account, kind: ContentKind, id: string, write = false) {
-  const { first } = groupReader(actor.groupId);
+  const { first } = guardedLearningReader(actor,kind === "material" ? "materials.view" : "homework.view");
   const table = kind === "material" ? "teaching_materials" : "homework";
   const record = await first<ContentRecord>(`SELECT id,owner_id AS ownerId,title,description,${kind === "material" ? "file_id" : "attachment_file_id"} AS fileId,classroom_id AS classroomId,folder_id AS folderId,revision,updated_at AS updatedAt${kind === "homework" ? ",subject,starts_at AS startsAt,due_at AS dueAt,max_score AS maxScore" : ""} FROM ${table} WHERE id=?`, id);
   if (!record) throw new LearningEditError("内容不存在或无权访问", 404);
   if (write) {
-    // Part 03 is not installed: administrators retain their existing read-only review access.
+    // Granular administrator grants do not expand teacher-owned edit rights.
     if (actor.role !== "teacher" || record.ownerId !== actor.id) throw new LearningEditError("只有发布内容的老师可以编辑", 403);
     if (record.classroomId) {
       const classroom = await classroomMayManage(actor, record.classroomId);
@@ -50,7 +51,7 @@ export async function contentRecord(actor: Account, kind: ContentKind, id: strin
 }
 export async function versionHistory(actor: Account, kind: ContentKind, id: string) {
   const record = await contentRecord(actor, kind, id);
-  const { rows } = groupReader(actor.groupId);
+  const { rows } = guardedLearningReader(actor,kind === "material" ? "materials.view" : "homework.view");
   const versions = await rows(`SELECT v.revision,v.file_id AS fileId,v.snapshot_json AS snapshotJson,v.actor_id AS actorId,v.changed_at AS changedAt,v.reason,coalesce(a.teacher_name,a.name,'老师') AS actorName,f.filename FROM learning_versions v LEFT JOIN accounts a ON a.id=v.actor_id LEFT JOIN pdf_files f ON f.id=v.file_id WHERE v.kind=? AND v.record_id=? ORDER BY v.revision DESC`, kind, id);
   const scores = kind === "homework" ? await rows(`SELECT s.id,s.student_name AS studentName,s.submission_id AS submissionId,s.homework_revision AS homeworkRevision,s.score,s.previous_score AS previousScore,s.max_score AS maxScore,s.changed_at AS changedAt,s.reason,coalesce(a.teacher_name,a.name,'老师') AS actorName FROM homework_score_history s LEFT JOIN accounts a ON a.id=s.actor_id WHERE s.homework_id=?${actor.role === "student" ? " AND s.student_name=?" : ""} ORDER BY s.changed_at DESC,s.id DESC`, id, ...(actor.role === "student" ? [actor.studentName] : [])) : [];
   if(actor.role==="student")return {
