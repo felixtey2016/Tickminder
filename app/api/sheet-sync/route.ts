@@ -1,4 +1,4 @@
-import { groupWhere } from "@/lib/group-data";
+import { DEFAULT_GROUP_ID, groupWhere } from "@/lib/group-data";
 import { env } from "cloudflare:workers";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
@@ -56,6 +56,10 @@ export async function POST(request: Request) {
   const actor = await currentAccount();
   if (!actor) return NextResponse.json({ error: "请先登录。" }, { status: 401 });
   if (actor.role !== "admin") return NextResponse.json({ error: "只有管理员可以导入课时。" }, { status: 403 });
+  // This legacy bridge is one organisation's sheet, not a shared integration.
+  // Selecting another group must never send its records to the same sheet or
+  // expose the sheet's preview to that group's administrator.
+  if (actor.groupId !== DEFAULT_GROUP_ID) return NextResponse.json({ error: "Google Sheet 导入尚未配置，请联系管理员。" }, { status: 503, headers: {"Cache-Control":"no-store"} });
   try {
     const input = await request.json() as { action?: string; mode?: string; month?: string; previewToken?: string };
     if (!['preview', 'commit'].includes(input.action || '') || !['billable', 'all_completed'].includes(input.mode || '')) {

@@ -1,4 +1,4 @@
-export type LessonLike = { student: string; subject: string; plannedStart: string; plannedEnd: string; actualStart: string | null; actualEnd: string | null; status: string; chargeable: boolean | null; reviewedAt: string | null };
+export type LessonLike = { student: string; subject: string; plannedStart: string; plannedEnd: string; actualStart: string | null; actualEnd: string | null; status: string; chargeable?: boolean | null; reviewedAt?: string | null };
 
 const monthFormatter = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit" });
 const dateFormatter = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit" });

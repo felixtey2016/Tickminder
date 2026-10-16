@@ -19,6 +19,8 @@ const en: Record<string, string> = {
   "登录与安全": "Sign-in & security",
   "课程体系": "Syllabus",
   "班级管理": "Manage classroom",
+  "选择班级": "Choose a classroom",
+  "账号或班级权限已改变，请刷新后重试": "Your account or classroom access has changed. Refresh and try again.",
   "course.nav.title": "Courses",
   "course.nav.calendar": "Calendar",
   "列表": "List",

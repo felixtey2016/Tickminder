@@ -16,6 +16,15 @@ type ContentRecord = Record<string, unknown> & {
   subject?: string; startsAt?: string; dueAt?: string; maxScore?: number | null;
 };
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
+function studentContentSnapshot(value: unknown) {
+  const source=value && typeof value==="object" && !Array.isArray(value)?value as Record<string,unknown>:{};
+  const snapshot:Record<string,unknown>={};
+  for(const key of ["title","description","fileId","startsAt","dueAt","subject"]){
+    if(typeof source[key]==="string"||source[key]===null)snapshot[key]=source[key];
+  }
+  if(source.maxScore===null||typeof source.maxScore==="number"&&Number.isFinite(source.maxScore))snapshot.maxScore=source.maxScore;
+  return snapshot;
+}
 export function requireRevision(value: unknown) {
   if (!Number.isSafeInteger(value) || Number(value) < 1) throw new LearningEditError("请重新打开编辑窗口后保存", 409);
   return Number(value);
@@ -44,6 +53,11 @@ export async function versionHistory(actor: Account, kind: ContentKind, id: stri
   const { rows } = groupReader(actor.groupId);
   const versions = await rows(`SELECT v.revision,v.file_id AS fileId,v.snapshot_json AS snapshotJson,v.actor_id AS actorId,v.changed_at AS changedAt,v.reason,coalesce(a.teacher_name,a.name,'老师') AS actorName,f.filename FROM learning_versions v LEFT JOIN accounts a ON a.id=v.actor_id LEFT JOIN pdf_files f ON f.id=v.file_id WHERE v.kind=? AND v.record_id=? ORDER BY v.revision DESC`, kind, id);
   const scores = kind === "homework" ? await rows(`SELECT s.id,s.student_name AS studentName,s.submission_id AS submissionId,s.homework_revision AS homeworkRevision,s.score,s.previous_score AS previousScore,s.max_score AS maxScore,s.changed_at AS changedAt,s.reason,coalesce(a.teacher_name,a.name,'老师') AS actorName FROM homework_score_history s LEFT JOIN accounts a ON a.id=s.actor_id WHERE s.homework_id=?${actor.role === "student" ? " AND s.student_name=?" : ""} ORDER BY s.changed_at DESC,s.id DESC`, id, ...(actor.role === "student" ? [actor.studentName] : [])) : [];
+  if(actor.role==="student")return {
+    record:{id:record.id,title:record.title,description:record.description,fileId:record.fileId,classroomId:record.classroomId,folderId:record.folderId,revision:record.revision,updatedAt:record.updatedAt,subject:record.subject,startsAt:record.startsAt,dueAt:record.dueAt,maxScore:record.maxScore},
+    versions:versions.map(version=>({revision:version.revision,fileId:version.fileId,changedAt:version.changedAt,actorName:version.actorName,filename:version.filename,reason:["baseline","created"].includes(String(version.reason))?version.reason:"updated",snapshot:studentContentSnapshot(JSON.parse(String(version.snapshotJson)))})),
+    scores:scores.map(score=>({id:score.id,studentName:score.studentName,submissionId:score.submissionId,homeworkRevision:score.homeworkRevision,score:score.score,previousScore:score.previousScore,maxScore:score.maxScore,changedAt:score.changedAt,actorName:score.actorName})),
+  };
   return { record, versions: versions.map(v => ({ ...v, snapshotJson: undefined, snapshot: JSON.parse(String(v.snapshotJson)) })), scores };
 }
 export async function editPublishedContent(actor: Account, kind: ContentKind, data: Record<string, unknown>) {

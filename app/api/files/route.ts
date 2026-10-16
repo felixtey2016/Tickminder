@@ -8,6 +8,7 @@ import {activeResubmissionGrant} from "@/lib/homework-review";
 import {operationId} from "@/lib/learning-operations";
 import {contentRecord,LearningEditError} from "@/lib/learning-versions";
 import { classroomMayManage } from "@/lib/classrooms-server";
+import { pdfUploadAuthority } from "@/lib/pdf-upload-access";
 
 const errorResponse = (message: string, status: number) => NextResponse.json({ error: message }, { status });
 
@@ -60,21 +61,30 @@ export async function POST(request: Request) {
         return NextResponse.json({id:previous.id,filename:previous.filename,bytes:previous.bytes,replayed:true});}}
     await cleanOldStagedFiles();
     const db = learningDb();
+    const authority = () => pdfUploadAuthority(actor,kind,{classroomId,homeworkId:contextId,submissionId});
+    const guard = authority();
     await db.prepare("INSERT OR IGNORE INTO storage_quota (group_id,id, used_bytes) VALUES (?,1, 0)").bind(groupId).run();
     // Both resource families reserve against the same group limit. Quiz image
     // rows include in-flight uploads so concurrent PDF/image requests cannot
     // independently consume the final bytes of a group's allowance.
-    const reserved = await db.prepare("UPDATE storage_quota SET used_bytes = used_bytes + ? WHERE id = 1 AND group_id = ? AND used_bytes + ? + (SELECT coalesce(sum(bytes),0) FROM quiz_images WHERE group_id=?) <= ?")
-      .bind(file.size,groupId,file.size,groupId,limits.total).run();
-    if (!reserved.meta.changes) return errorResponse("PDF 储存总容量已满，请联系管理员", 409);
+    const reserved = await db.prepare(`UPDATE storage_quota SET used_bytes = used_bytes + ? WHERE id = 1 AND group_id = ? AND used_bytes + ? + (SELECT coalesce(sum(bytes),0) FROM quiz_images WHERE group_id=?) <= ? AND ${guard.sql}`)
+      .bind(file.size,groupId,file.size,groupId,limits.total,...guard.values).run();
+    if (!reserved.meta.changes) {
+      if (!await db.prepare(`SELECT 1 WHERE ${guard.sql}`).bind(...guard.values).first()) return errorResponse("账号或班级权限已改变，请刷新后重试",403);
+      return errorResponse("PDF 储存总容量已满，请联系管理员", 409);
+    }
     const id = crypto.randomUUID();
     const objectKey = `pdf/${crypto.randomUUID()}`;
     let inserted = false;
     try {
-      await db.prepare("INSERT INTO pdf_files (group_id,id, object_key, owner_id, kind, context_id, filename, bytes, status, created_at,upload_request_id,sha256) VALUES (?,?, ?, ?, ?, ?, ?, ?, 'staged', ?,?,?)")
-        .bind(groupId,id, objectKey, actor.id, kind, uploadContext,file.name.slice(0,180),file.size,new Date().toISOString(),uploadRequestId,contentHash).run();
+      const insertionGuard=authority();
+      const saved=await db.prepare(`INSERT INTO pdf_files (group_id,id, object_key, owner_id, kind, context_id, filename, bytes, status, created_at,upload_request_id,sha256) SELECT ?,?, ?, ?, ?, ?, ?, ?, 'staged', ?,?,? WHERE ${insertionGuard.sql}`)
+        .bind(groupId,id, objectKey, actor.id, kind, uploadContext,file.name.slice(0,180),file.size,new Date().toISOString(),uploadRequestId,contentHash,...insertionGuard.values).run();
+      if(!saved.meta.changes)throw new LearningEditError("账号或班级权限已改变，请刷新后重试",403);
       inserted = true;
       await bucket.put(objectKey, bytes, { httpMetadata: { contentType: "application/pdf" } });
+      const completionGuard=authority();
+      if(!await db.prepare(`SELECT 1 WHERE ${completionGuard.sql}`).bind(...completionGuard.values).first())throw new LearningEditError("账号或班级权限已改变，请刷新后重试",403);
       return NextResponse.json({ id, filename: file.name, bytes: file.size });
     } catch (error) {
       let removed = false;

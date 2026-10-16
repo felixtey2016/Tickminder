@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { currentAccount, createSession } from "@/lib/auth";
 import { first, learningDb } from "@/lib/learning-server";
 import { hashPassword, normalizeUsername, validPassword, validUsername } from "@/lib/password";
+import { DEFAULT_GROUP_ID } from "@/lib/group-data";
 
 export async function POST(request: Request) {
   if (request.headers.get("origin") !== new URL(request.url).origin) return NextResponse.json({error:"没有权限执行此操作"},{status:403});
@@ -21,7 +22,11 @@ export async function POST(request: Request) {
     await db.batch([
       db.prepare("INSERT INTO local_credentials (account_id,username,password_hash,must_change_password,updated_at) SELECT id,?,?,0,? FROM accounts WHERE id = ? AND disabled_at IS NULL AND (activated_at IS NOT NULL OR role <> 'pending' OR pending_expires_at IS NULL OR pending_expires_at > ?)").bind(username,passwordHash,now,account.id,now),
       db.prepare("DELETE FROM sessions WHERE account_id = ?").bind(account.id),
-      db.prepare("INSERT INTO audit (id,lesson_id,actor_id,action,at) VALUES (?,?,?,'setupCredentials',?)").bind(crypto.randomUUID(),`account:${account.id}`,account.id,now),
+      // Attribute setup to the stored account group, not the selected group or
+      // the audit table's legacy default. A rejected credential insert must
+      // not create a successful-setup event.
+      db.prepare("INSERT INTO audit (group_id,id,lesson_id,actor_id,action,at) SELECT coalesce(a.group_id,?),?,?,a.id,'setupCredentials',? FROM accounts a JOIN local_credentials c ON c.account_id=a.id WHERE a.id=? AND a.disabled_at IS NULL AND c.username=? AND c.updated_at=?")
+        .bind(DEFAULT_GROUP_ID,crypto.randomUUID(),`account:${account.id}`,now,account.id,username,now),
     ]);
     const saved = await first("SELECT 1 AS found FROM local_credentials WHERE account_id = ? AND username = ?",account.id,username);
     if (!saved) return NextResponse.json({error:"账号暂时不可用，请重新登录"},{status:409});

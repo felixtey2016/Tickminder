@@ -25,7 +25,8 @@ export async function homeworkReview(actor:Account,homeworkId:string,studentName
     rows("SELECT id,base_submission_id AS baseSubmissionId,granted_at AS grantedAt,used_at AS usedAt,revoked_at AS revokedAt,used_submission_id AS usedSubmissionId FROM homework_resubmission_grants WHERE homework_id=? AND student_name=? ORDER BY granted_at DESC,id DESC",homeworkId,studentName),
   ]);
   const active=grants.find(g=>g.id===recipient.activeGrantId && !g.usedAt && !g.revokedAt && g.baseSubmissionId===submissions[0]?.id);
-  return {homework:{id:record.id,title:record.title,revision:record.revision,classroomId:record.classroomId,dueAt:record.dueAt,maxScore:record.maxScore},studentName,currentScore:recipient.score,grantRevision:recipient.resubmitRevision,activeGrantId:active?.id || null,submissions,feedback,grades,grants};
+  const visibleGrades=actor.role==="student"?grades.map(grade=>({id:grade.id,submissionId:grade.submissionId,score:grade.score,previousScore:grade.previousScore,maxScore:grade.maxScore,changedAt:grade.changedAt})):grades;
+  return {homework:{id:record.id,title:record.title,revision:record.revision,classroomId:record.classroomId,dueAt:record.dueAt,maxScore:record.maxScore},studentName,currentScore:recipient.score,grantRevision:recipient.resubmitRevision,activeGrantId:active?.id || null,submissions,feedback,grades:visibleGrades,grants};
 }
 export async function activeResubmissionGrant(actor:Account,homeworkId:string) {
   if(actor.role!=="student" || !actor.studentName)return null;

@@ -14,6 +14,7 @@ import { readRevision } from "@/lib/revision";
 import { learningState, rows } from "@/lib/learning-server";
 import { mergedAccountNames } from "@/lib/merged-account-names";
 import { classroomsState } from "@/lib/classrooms-server";
+import {studentLessonResponse,studentRescheduleResponse,studentSessionResponse} from "@/lib/student-course-response";
 
 function monthlySummary(plans: Array<{ key: string; student: string; subject: string;subjectId?:string|null;syllabusId?:string }>, rows: Array<typeof lessons.$inferSelect>, month: string,sessionSubjects:Map<string,{subjectId?:string|null;syllabusId?:string|null}>=new Map()) {
   const now = new Date().toISOString();
@@ -52,11 +53,11 @@ async function coreState(account: Account, selected: string) {
     const participant=session?.participants.find(p=>p.lessonId===lesson.id);
     return { ...lesson,teachingStatus:session?.teachingStatus,teachingStart:session?.actualStart,teachingEnd:session?.actualEnd,personalAttendance:participant?.attendanceStatus, onlineLink:session?.sessionType==="group"?session.onlineLink:plan?.teacherName===lesson.teacherName?plan.onlineLink:session?.onlineLink||null,sessionType:session?.sessionType||"one_to_one",classroomId:session?.classroomId||null,classroomTitle:session?.classroomTitle,participantCount:session?.participantCount||1,sessionRevision:session?.revision,sessionStatus:session?.status,...(account.role!=="student"?{participantNames:session?.participants.map(p=>p.studentName)}:{}) };
   };
-  const base = { revision, month: selected,...(account.role!=="student"?{attendanceSessions:sessionData.allSessions}:{}),classSessions:sessionData.sessions,classSessionRequests };
+  const base = { revision, month: selected,...(account.role!=="student"?{attendanceSessions:sessionData.allSessions}:{}),classSessions:account.role==="student"?sessionData.sessions.map(session=>studentSessionResponse(session,account.studentName)):sessionData.sessions,classSessionRequests };
   if (account.role === "student") {
     const visible = allLessons.filter(l => l.status !== "cancelled");
     const ids = new Set(visible.map(l => l.id));
-    return {...base, lessons: visible.map(withOnlineLink), proposals: legacyRequests.filter(r => ids.has(r.lessonId))};
+    return {...base, lessons: visible.map(withOnlineLink).map(studentLessonResponse), proposals: legacyRequests.filter(r => ids.has(r.lessonId)).map(studentRescheduleResponse)};
   }
   const plans = roster.plans.filter(p => p.teacher === account.teacherName);
   const keys = new Set(plans.map(p => p.key));

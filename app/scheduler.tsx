@@ -93,9 +93,10 @@ type Lesson = SessionLesson & {
     actualEnd: string | null;
     status: string;
     attendanceKind?: string | null;
-    note: string | null;
-    chargeable: boolean | null;
-    reviewedAt: string | null;
+    // Staff-only fields are absent from student responses.
+    note?: string | null;
+    chargeable?: boolean | null;
+    reviewedAt?: string | null;
     kind: string;
     seriesId: string | null;
     replacementFor: string | null;

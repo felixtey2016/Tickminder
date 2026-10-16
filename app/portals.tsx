@@ -30,7 +30,7 @@ type Lesson = SessionLesson & {
     actualEnd: string | null;
     status: string;
     attendanceKind?: string | null;
-    note: string | null;
+    note?: string | null;
     onlineLink?: string | null;
 };
 type Proposal = RescheduleProposal;
