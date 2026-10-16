@@ -23,6 +23,7 @@ const currentModules = [
   { id: "statistics", actions: ["view"] },
   { id: "sheetSync", actions: ["view", "preview", "commit"] },
   { id: "audit", actions: ["view"] },
+  { id: "fees", actions: ["view"] },
 ] as const;
 
 const reservedModules = ["finance", "invoices", "parents", "resources", "progress", "publicModeration", "exports", "adminIdentity", "groups", "academicCatalogues", "backup"] as const;
@@ -62,6 +63,8 @@ export const ADMIN_PERMISSION_CATALOG: AdminPermissionModule[] = [
 
 const actions = ADMIN_PERMISSION_CATALOG.flatMap(module => module.actions);
 const supported = new Map(actions.map(action => [action.key, action]));
+// Current supported capabilities are distinct from the frozen legacy snapshot.
+export const SUPPORTED_ADMIN_GRANTS: AdminGrantKey[] = actions.map(action => action.key);
 
 export class AdminPermissionValidationError extends Error {
   constructor(message = "permissions.invalidGrants") { super(message); }

@@ -2,19 +2,22 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import ts from 'typescript';
+import {createFixtureLoader} from './fixture-loader.mjs';
 // Deterministic mid-month clock proves that calculation does not wait for month end.
 const RealDate=Date,clock=RealDate.parse('2032-06-15T04:00:00Z');
 globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}};
 const sqlite=new DatabaseSync(':memory:');
 sqlite.exec('PRAGMA foreign_keys=ON');
 for(const file of fs.readdirSync(new URL('../drizzle/',import.meta.url)).filter(n=>n.endsWith('.sql')).sort())sqlite.exec(fs.readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8'));
-let actor=null,beforeBatch=null,checks=0,queryCount=0;
-function statement(sql,values=[]){const execute=()=>{queryCount++;const s=sqlite.prepare(sql);return s.columns().length?{results:s.all(...values),meta:{changes:0}}:{results:[],meta:s.run(...values)};};return{bind:(...v)=>statement(sql,v),all:async()=>execute(),first:async()=>execute().results[0]||null,run:async()=>execute(),execute};}
+let actor=null,beforeBatch=null,beforeFeeRead=null,checks=0,queryCount=0;
+function statement(sql,values=[]){const execute=()=>{queryCount++;if(beforeFeeRead&&sql.includes('billing_students')){const hook=beforeFeeRead;beforeFeeRead=null;hook();}assert(values.length<=100,'D1 parameter limit');const s=sqlite.prepare(sql);return s.columns().length?{results:s.all(...values),meta:{changes:0}}:{results:[],meta:s.run(...values)};};return{bind:(...v)=>statement(sql,v),all:async()=>execute(),first:async()=>execute().results[0]||null,run:async()=>execute(),execute};}
 const db={prepare:statement,batch:async statements=>{beforeBatch?.();beforeBatch=null;sqlite.exec('BEGIN');try{const values=statements.map(s=>s.execute());sqlite.exec('COMMIT');return values;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
 globalThis.__billingRuntime={learningDb:()=>db,currentBusinessAccount:async()=>actor,OWNER_EMAIL:'owner@billing.example.test',isOwnerAccount:a=>a.role==='admin'&&a.email==='owner@billing.example.test'&&!a.id.startsWith('local:')};
-const dataUrl=source=>'data:text/javascript;base64,'+Buffer.from(source).toString('base64'),stub=dataUrl('export const {learningDb,currentBusinessAccount,OWNER_EMAIL,isOwnerAccount}=globalThis.__billingRuntime;'),cache=new Map();
-async function load(file){if(cache.has(file))return cache.get(file);let source=ts.transpileModule(fs.readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;for(const m of [...source.matchAll(/from ['"]([^'"]+)['"]/g)]){const spec=m[1],resolved=spec.startsWith('@/')?spec.slice(2)+'.ts':spec.startsWith('.')?path.posix.normalize(path.posix.join(path.posix.dirname(file),spec+'.ts')):null;const url=spec==='next/server'?dataUrl('export const NextResponse={json:(data,options)=>Response.json(data,options)};'):resolved&&['lib/auth.ts','lib/owner.ts','lib/learning-server.ts'].includes(resolved)?stub:resolved?(await load(resolved)).url:import.meta.resolve(spec);source=source.replaceAll(`'${spec}'`,`'${url}'`).replaceAll(`"${spec}"`,`"${url}"`);}const url=dataUrl(source),result={url,module:await import(url)};cache.set(file,result);return result;}
+const dataUrl=source=>'data:text/javascript;base64,'+Buffer.from(source).toString('base64');
+const runtimeUrl=dataUrl('export const {learningDb,currentBusinessAccount,OWNER_EMAIL,isOwnerAccount}=globalThis.__billingRuntime;');
+const environmentUrl=dataUrl("export const env={ADMIN_PERMISSIONS_MODE:'enforced'};");
+const nextUrl=dataUrl('export const NextResponse={json:(data,options)=>Response.json(data,options)};');
+const load=createFixtureLoader({runtimeUrl,environmentUrl,runtimeFiles:['lib/auth.ts','lib/owner.ts','lib/learning-server.ts'],transform:(_file,code)=>code.replaceAll("'next/server'",JSON.stringify(nextUrl)).replaceAll('"next/server"',JSON.stringify(nextUrl))});
 const route=(await load('app/api/billing/route.ts')).module,pure=(await load('lib/billing.ts')).module;
 const now=new Date().toISOString(),group='billing-school-a',foreign='billing-school-b',automatic='billing-school-auto';for(const id of [group,foreign,automatic])sqlite.prepare('INSERT INTO tuition_groups(id,name,join_code,created_at,updated_at) VALUES(?,?,?,?,?)').run(id,id,id,now,now);
 function account(id,role,email=id+'@billing.example.test',groupId=group){const a={id,role,email,groupId,name:id};sqlite.prepare('INSERT INTO accounts(id,email,name,role,group_id,created_at) VALUES(?,?,?,?,?,?)').run(id,email,id,role,groupId,now);return a;}
@@ -117,4 +120,29 @@ const personalPreview=expect(await get({month:'2032-06',studentId:durationContex
 check(()=>assert.equal(personalPreview.detail.lines.find(l=>l.lessonId==='ordinary-short-clock').amountCents,667));
 check(()=>assert.equal(personalPreview.detail.lines.find(l=>l.lessonId==='late-full-duration').amountCents,4000));
 check(()=>assert.equal(personalPreview.detail.lines.find(l=>l.lessonId==='ordinary-short-clock').durationBasis,'personal'));
-console.log(JSON.stringify({suite:'billing',passed:checks,scope:'Actual API and SQLite migrations; atomic initial default policy, live guards, mid-month accrual, scheduled duration, explicit early leave, non-invoice estimates, future pending exclusions, hourly/lesson/monthly precision, group isolation, rate history, makeup, adjustments and races; fictional data only.'}));sqlite.close();
+// A fee-only administrator can read the same calculation, without receiving
+// roster or write grants. Every request still executes the real SQL predicates.
+sqlite.prepare("INSERT INTO admin_permission_profiles(group_id,account_id,revision,grants_json,origin,updated_at) VALUES(?,?,1,?,'new',?)").run(group,admin.id,JSON.stringify(['fees.view']),now);
+const ownerFees=expect(await get({month:'2032-06',studentId:durationContext.studentId}),200,'owner fee detail remains available');
+const adminFees=expect(await get({month:'2032-06',studentId:durationContext.studentId},admin),200,'fee-only admin reads current group fees');
+check(()=>assert.deepEqual(adminFees,ownerFees,'same calculation for owner and read-only admin'));
+const financialSnapshot=()=>JSON.stringify(['billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments','audit'].map(name=>sqlite.prepare('SELECT * FROM '+name+' ORDER BY rowid').all()));
+const financialBefore=financialSnapshot();
+for(const action of ['savePolicy','saveRate','saveAdjustment','clearAdjustment'])expect(await post({action},admin),403,'fee-only admin cannot '+action);
+expect(await get({view:'rates',planKey:'Alpha-science'},admin),403,'fee-only admin cannot open rate settings');
+check(()=>assert.equal(financialSnapshot(),financialBefore,'denied writes preserve fees and audit records'));
+const foreignStudent=sqlite.prepare('SELECT id FROM billing_students WHERE group_id=? AND student_name=?').get(foreign,'Alpha');
+expect(await get({month:'2032-06',studentId:foreignStudent.id},admin),404,'fee viewer cannot read a foreign student');
+for(const as of [teacher,student])expect(await get({month:'2032-06'},as),403,'teacher and student fee access stays closed');
+beforeFeeRead=()=>sqlite.prepare('UPDATE admin_permission_profiles SET grants_json=\'[]\',revision=revision+1 WHERE account_id=?').run(admin.id);
+expect(await get({month:'2032-06'},admin),403,'revocation during fee loading returns denial instead of data or a false zero');
+sqlite.prepare('UPDATE admin_permission_profiles SET grants_json=? WHERE account_id=?').run(JSON.stringify(['fees.view','finance.view']),admin.id);
+expect(await get({month:'2032-06'},admin),403,'future finance capability cannot be smuggled into fee grants');
+sqlite.prepare('UPDATE admin_permission_profiles SET grants_json=? WHERE account_id=?').run(JSON.stringify(['fees.view']),admin.id);
+const {bindAccountSession}=(await load('lib/account-session.ts')).module,sessionHash='f'.repeat(43);bindAccountSession(admin,sessionHash);
+sqlite.prepare('INSERT INTO sessions(token_hash,account_id,expires_at) VALUES(?,?,?)').run(sessionHash,admin.id,'2099-01-01T00:00:00.000Z');
+expect(await get({month:'2032-06'},admin),200,'bound fee viewer session is accepted');
+beforeFeeRead=()=>sqlite.prepare('DELETE FROM sessions WHERE token_hash=?').run(sessionHash);
+expect(await get({month:'2032-06'},admin),403,'logout during fee loading blocks the pending response');
+check(()=>assert.equal(JSON.stringify(admin).includes(sessionHash),false,'session binding never enters account JSON'));
+console.log(JSON.stringify({suite:'billing',passed:checks,scope:'Actual API and SQLite; existing fee calculations and write controls, fee-only admin view, group and role boundaries, revoked grants/session during reads; fictional data only.'}));sqlite.close();

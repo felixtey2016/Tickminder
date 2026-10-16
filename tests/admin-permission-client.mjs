@@ -26,7 +26,10 @@ check(!canAdminView(actor(['students.view']),'accounts'),'student reading does n
 check(canAdminView(actor([], {canManageAdministrators:true}),'accounts'),'identity managers retain their protected account-management entry');
 check(!canAdminView(actor(['students.view']),'billing'),'a module grant cannot open finance');
 check(canAdminView(privileged,'billing'),'finance remains available to the platform owner');
-check(!canAdminView(actor([], {adminPermissions:{enforced:true,grants:[],privileged:true}}),'billing'),'a chief flag alone does not grant owner finance');
+check(canAdminView(actor([], {adminPermissions:{enforced:true,grants:[],privileged:true}}),'billing'),'a designated chief can view tuition fees');
+check(canAdminView(actor(['fees.view']),'billing'),'an explicit fee viewing grant opens tuition fees');
+check(!canAdminView(actor(['fees.view']),'groups'),'fee viewing does not grant platform management');
+check(!canAdminAction(privileged,'finance.edit'),'owner-only finance editing is not a configurable module grant');
 check(!canAdminView(actor(['students.view']),'invented-page'),'unknown administrator destinations are hidden');
 check(adminMutationGrant({action:'create'})==='lessons.create','lesson creation maps to its action');
 check(adminMutationGrant({action:'saveClassroom',id:'existing'})==='classrooms.edit','existing classrooms map to edit');

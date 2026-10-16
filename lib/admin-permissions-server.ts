@@ -3,7 +3,7 @@ import { adminActorGuard, adminAuthority, authorityGuard, isAdminAuthorityFailur
 import { learningDb } from "@/lib/learning-server";
 import { requireGroup } from "@/lib/group-data";
 import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
-import { ADMIN_PERMISSION_CATALOG, ADMIN_PERMISSION_TEMPLATES, ADMIN_PERMISSIONS_ROLLOUT, LEGACY_ADMIN_GRANTS, AdminPermissionValidationError, hasAdminGrant, normalizeAdminGrants, type AdminGrantKey, type AdminPermissionProfile, type AdminPermissionsResponse } from "@/lib/admin-permissions";
+import { ADMIN_PERMISSION_CATALOG, ADMIN_PERMISSION_TEMPLATES, ADMIN_PERMISSIONS_ROLLOUT, SUPPORTED_ADMIN_GRANTS, AdminPermissionValidationError, hasAdminGrant, normalizeAdminGrants, type AdminGrantKey, type AdminPermissionProfile, type AdminPermissionsResponse } from "@/lib/admin-permissions";
 import { adminPermissionContext,adminPermissionsEnforced } from "@/lib/admin-permission-access";
 import {accountSessionPredicate} from '@/lib/account-session';
 
@@ -42,7 +42,7 @@ function targetPredicate(actor: Account, accountId: string): Predicate {
 // unknown/future grants deny by default;
 // configuring an ordinary admin can never elevate it above existing ceilings.
 export function configuredAdminGrantPredicate(actor: Account, key: string): Predicate {
-  if (!hasAdminGrant(LEGACY_ADMIN_GRANTS, key)) return {sql: "0", args: []};
+  if (!hasAdminGrant(SUPPORTED_ADMIN_GRANTS, key)) return {sql: "0", args: []};
   const actions = ADMIN_PERMISSION_CATALOG.flatMap(module => module.actions);
   const known = actions.map(action => action.key);
   const dependencies = actions.flatMap(action=>action.requires.map(dependency=>({key:action.key,dependency})));

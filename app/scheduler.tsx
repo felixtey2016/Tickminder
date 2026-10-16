@@ -665,7 +665,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     changeLanguage: (next: Language) => void;
 }) {
     const role = account.role as NavigationRole;
-    const items = [...(account.isOwner?[{id:"groups",label:"平台总控制台",Icon:Building2},{id:'billing',label:'学费与账单',Icon:FileText}]:[]),...NAV_ITEMS[role],...(role!=="pending"?[{id:"courses",label:"course.nav.title",Icon:CalendarDays}]:[]),...(role==="admin"?[{id:"groupInfo",label:"集团信息",Icon:Building2},{id:"people",label:"人员与账号",Icon:UsersRound},{id:"settings",label:"设置",Icon:Settings}]:[]), { id: "notifications", label: "通知中心", Icon: Bell }].filter(item=>canAdminView(account,item.id));
+    const items = [...(account.isOwner?[{id:"groups",label:"平台总控制台",Icon:Building2}]:[]),...(role==="admin"?[{id:'billing',label:'学费核算',Icon:FileText}]:[]),...NAV_ITEMS[role],...(role!=="pending"?[{id:"courses",label:"course.nav.title",Icon:CalendarDays}]:[]),...(role==="admin"?[{id:"groupInfo",label:"集团信息",Icon:Building2},{id:"people",label:"人员与账号",Icon:UsersRound},{id:"settings",label:"设置",Icon:Settings}]:[]), { id: "notifications", label: "通知中心", Icon: Bell }].filter(item=>canAdminView(account,item.id));
     const permissionSignature=JSON.stringify(account.adminPermissions);
     const canView=(view:string)=>items.some(item=>item.id===view);
     const [badgeNow,setBadgeNow]=useState(()=>Date.now());
@@ -810,8 +810,8 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
             pageContent = <Timetable type="teacher" lessons={lessons} students={state?.students || []} teachers={((canAdminAction(account,"teachers.view")?state?.allTeachers:state?.teacherOptions) || []).map(row => row.name).sort()} month={selectedMonth} setMonth={setSelectedMonth}/>;
         } else if (activeView === "subjects") {
             pageContent = <SubjectAdmin studentProfiles={(canAdminAction(account,"students.view")?state?.allStudents:state?.studentOptions)||[]} students={state?.students || []} teachers={state?.teachers || []} plans={state?.allPlans || []} mutate={mutate} busy={busy} canFinance={Boolean(account.isOwner)} onPreview={()=>choose('billing')}/>;
-        } else if (activeView==='billing'&&account.isOwner) {
-            pageContent=<BillingWorkspace key={account.groupId} students={(state?.allStudents||[]).map(student=>student.name)} onCourses={()=>choose('subjects')}/>;
+        } else if (activeView==='billing'&&role==='admin'&&canAdminView(account,'billing')) {
+            pageContent=<BillingWorkspace key={account.groupId} students={(state?.allStudents?.length?state.allStudents:state?.studentOptions||[]).map(student=>student.name)} canManageFees={Boolean(account.isOwner)} onCourses={()=>choose('subjects')}/>;
         } else if (["teacherRoster", "studentRoster", "accounts"].includes(activeView)) {
             const view = activeView === "teacherRoster" ? "teachers" : activeView === "studentRoster" ? "students" : activeView as "binding" | "accounts";
             pageContent = <RosterAdmin account={account} state={state} mutate={mutate} busy={busy} view={view}/>;

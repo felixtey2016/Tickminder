@@ -12,7 +12,7 @@ import { approvedActualHours, checkinInMonth, inMonth } from "@/lib/lesson-rules
 import { monthlySummary } from "@/lib/lesson-summary";
 
 export const permissionAllows = (context: AdminPermissionContext, key: AdminGrantKey) => !context.enforced || hasAdminGrant(context.grants,key);
-const studentTargets: AdminGrantKey[] = ["accounts.create","accounts.assign","plans.view","lessons.view","lessons.create","lessons.edit","reschedules.create","classrooms.create","classrooms.edit","quizAssignments.assign","students.promote","statistics.view"];
+const studentTargets: AdminGrantKey[] = ["accounts.create","accounts.assign","plans.view","lessons.view","lessons.create","lessons.edit","reschedules.create","classrooms.create","classrooms.edit","quizAssignments.assign","students.promote","statistics.view","fees.view"];
 const teacherTargets: AdminGrantKey[] = ["accounts.create","accounts.assign","plans.view","lessons.view","lessons.create","lessons.edit","reschedules.create","classrooms.create","classrooms.edit","statistics.view"];
 const planTargets: AdminGrantKey[] = ["plans.view","lessons.create","lessons.edit","reschedules.create","classrooms.create","classrooms.edit","statistics.view"];
 export function adminTargetKeys(context: AdminPermissionContext, kind:"students"|"teachers"|"plans") {
@@ -20,6 +20,17 @@ export function adminTargetKeys(context: AdminPermissionContext, kind:"students"
 }
 function readCondition(account: Account, keys: AdminGrantKey[]): SQL | undefined {
   return keys.length ? or(...keys.map(key=>adminPermissionReadCondition(account,key))) : undefined;
+}
+// Each selector keeps statement-local authorization while staying below D1's
+// 100-bound-parameter limit as the permission catalogue grows.
+function permissionBatches(account:Account,keys:AdminGrantKey[]) {
+  const batches:AdminGrantKey[][]=[];let batch:AdminGrantKey[]=[],parameters=1;
+  for(const key of keys){const count=adminPermissionPredicate(account,key).args.length;if(count>99)throw Error('Permission predicate exceeds selector budget');if(parameters+count>100){batches.push(batch);batch=[];parameters=1;}batch.push(key);parameters+=count;}
+  if(batch.length)batches.push(batch);return batches;
+}
+async function selectorRows<T>(account:Account,keys:AdminGrantKey[],select:(batch:AdminGrantKey[])=>Promise<T[]>,identify:(row:T)=>string):Promise<T[]> {
+  const rows=(await Promise.all(permissionBatches(account,keys).map(select))).flat();
+  return [...new Map(rows.map(row=>[identify(row),row])).values()];
 }
 function scheduleLesson(lesson: typeof lessons.$inferSelect) {
   return {id:lesson.id,student:lesson.student,subject:lesson.subject,teacherName:lesson.teacherName,plannedStart:lesson.plannedStart,plannedEnd:lesson.plannedEnd,status:lesson.status,kind:lesson.kind,seriesId:lesson.seriesId,replacementFor:lesson.replacementFor,sessionId:lesson.sessionId,updatedAt:lesson.updatedAt};
@@ -34,15 +45,16 @@ export async function adminCoreOptions(account: Account, context: AdminPermissio
   const db=getDb(),studentKeys=adminTargetKeys(context,"students"),teacherKeys=adminTargetKeys(context,"teachers"),planKeys=adminTargetKeys(context,"plans");
   const classroomKeys=(["classrooms.view","classrooms.create","classrooms.edit","lessons.create","lessons.edit","quizAssignments.assign"] as AdminGrantKey[]).filter(key=>permissionAllows(context,key));
   const termKeys=(["terms.view","classrooms.create","classrooms.edit"] as AdminGrantKey[]).filter(key=>permissionAllows(context,key));
-  async function optionRows<T>(keys:AdminGrantKey[],query:string):Promise<T[]> {
-    if(!keys.length)return[];
-    const predicates=keys.map(key=>adminPermissionPredicate(account,key));
-    return (await learningDb().prepare(query+" AND ("+predicates.map(item=>item.sql).join(" OR ")+")").bind(account.groupId,...predicates.flatMap(item=>item.args)).all<T>()).results;
+  async function optionRows<T extends {id:string}>(keys:AdminGrantKey[],query:string):Promise<T[]> {
+    return selectorRows<T>(account,keys,async batch=>{
+      const predicates=batch.map(key=>adminPermissionPredicate(account,key));
+      return (await learningDb().prepare(query+" AND ("+predicates.map(item=>item.sql).join(" OR ")+")").bind(account.groupId,...predicates.flatMap(item=>item.args)).all<T>()).results;
+    },row=>row.id);
   }
   const [studentOptions,teacherOptions,planOptions,classroomOptions,termOptions]=await Promise.all([
-    studentKeys.length?db.select({name:students.name,active:students.active,syllabusId:students.syllabusId,grade:students.grade}).from(students).where(groupWhere(students,account.groupId,readCondition(account,studentKeys))).all():[],
-    teacherKeys.length?db.select({name:teachers.name,active:teachers.active}).from(teachers).where(groupWhere(teachers,account.groupId,readCondition(account,teacherKeys))).all():[],
-    planKeys.length?db.select({key:plans.key,student:plans.student,subject:plans.subject,subjectId:plans.subjectId,teacherName:plans.teacherName,duration:plans.duration,onlineLink:plans.onlineLink,active:plans.active}).from(plans).where(groupWhere(plans,account.groupId,readCondition(account,planKeys))).all():[],
+    selectorRows(account,studentKeys,batch=>db.select({name:students.name,active:students.active,syllabusId:students.syllabusId,grade:students.grade}).from(students).where(groupWhere(students,account.groupId,readCondition(account,batch))).all(),row=>row.name),
+    selectorRows(account,teacherKeys,batch=>db.select({name:teachers.name,active:teachers.active}).from(teachers).where(groupWhere(teachers,account.groupId,readCondition(account,batch))).all(),row=>row.name),
+    selectorRows(account,planKeys,batch=>db.select({key:plans.key,student:plans.student,subject:plans.subject,subjectId:plans.subjectId,teacherName:plans.teacherName,duration:plans.duration,onlineLink:plans.onlineLink,active:plans.active}).from(plans).where(groupWhere(plans,account.groupId,readCondition(account,batch))).all(),row=>row.key),
     optionRows<{id:string;title:string;teacherName:string;subject:string;subjectId:string|null;syllabusId:string|null;grade:string|null;termId:string|null}>(classroomKeys,"SELECT id,title,teacher_name AS teacherName,subject,subject_id AS subjectId,syllabus_id AS syllabusId,grade,term_id AS termId FROM classrooms WHERE archived=0 AND group_id=?"),
     optionRows<{id:string;name:string;isCurrent:number}>(termKeys,"SELECT id,name,is_current AS isCurrent FROM academic_terms WHERE group_id=?"),
   ]);

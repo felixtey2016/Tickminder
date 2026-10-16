@@ -5,7 +5,7 @@ import { learningDb } from "@/lib/learning-server";
 import { requireGroup } from "@/lib/group-data";
 import { OWNER_EMAIL } from "@/lib/owner";
 import { configuredAdminGrantGuard, configuredAdminGrantPredicate } from "@/lib/admin-permissions-server";
-import { LEGACY_ADMIN_GRANTS, hasAdminGrant, normalizeAdminGrants, type AdminGrantKey } from "@/lib/admin-permissions";
+import { LEGACY_ADMIN_GRANTS, SUPPORTED_ADMIN_GRANTS, hasAdminGrant, normalizeAdminGrants, type AdminGrantKey } from "@/lib/admin-permissions";
 import { accountSessionPredicate } from "@/lib/account-session";
 
 export type AdminPermissionContext = { enforced: boolean; grants: AdminGrantKey[]; privileged: boolean };
@@ -35,7 +35,7 @@ export async function adminPermissionContext(account: Pick<Account,"id"|"role"|"
     AND (lower(trim(a.email))=? AND substr(a.id,1,6)<>'local:' OR a.group_id=g.id AND g.active=1) AND ${session.sql}`)
     .bind(OWNER_EMAIL,groupId,account.id,OWNER_EMAIL,...session.args).first<{privileged:number;grantsJson:string|null}>();
   if (!row) return {enforced,grants:[],privileged:false};
-  if (row.privileged) return {enforced,grants:[...LEGACY_ADMIN_GRANTS],privileged:true};
+  if (row.privileged) return {enforced,grants:[...SUPPORTED_ADMIN_GRANTS],privileged:true};
   let grants: AdminGrantKey[] = [];
   try {
     const stored: unknown = JSON.parse(row.grantsJson || "[]"), normalized = normalizeAdminGrants(stored);
@@ -46,7 +46,7 @@ export async function adminPermissionContext(account: Pick<Account,"id"|"role"|"
 // These checks are an additional restriction on administrators. Every caller
 // retains its existing role, tenant, identity and content ownership conditions.
 export async function hasAdminPermission(account: Account, key: string) {
-  if (!hasAdminGrant(LEGACY_ADMIN_GRANTS,key)) return false;
+  if (!hasAdminGrant(SUPPORTED_ADMIN_GRANTS,key)) return false;
   if (account.role !== "admin" || !adminPermissionsEnforced()) return true;
   const predicate = configuredAdminGrantPredicate(account,key);
   return Boolean(await learningDb().prepare(`SELECT 1 AS allowed WHERE ${predicate.sql}`).bind(...predicate.args).first());
@@ -58,7 +58,7 @@ export function adminPermissionStatements(account: Account, key: string): D1Prep
   return account.role === "admin" && adminPermissionsEnforced() ? [configuredAdminGrantGuard(account,key)] : [];
 }
 export function adminPermissionPredicate(account: Account, key: string): {sql: string; args: unknown[]} {
-  if (!hasAdminGrant(LEGACY_ADMIN_GRANTS,key)) return {sql:"0",args:[]};
+  if (!hasAdminGrant(SUPPORTED_ADMIN_GRANTS,key)) return {sql:"0",args:[]};
   return account.role === "admin" && adminPermissionsEnforced() ? configuredAdminGrantPredicate(account,key) : {sql:"1",args:[]};
 }
 export function adminPermissionReadCondition(account: Account, key: string) {

@@ -24,6 +24,7 @@ for(const name of migrations.filter(name=>name<preparationMigration))migrate(nam
 let beforeStateRead=null,beforeBatch=null,beforeAuditRead=null,authorityReadsBeforeAudit=0;
 function statement(sql,values=[]){
   const execute=arrays=>{
+    assert(values.length<=100,'D1 statement exceeds 100 bound parameters: '+values.length);
     if(beforeAuditRead){
       if(/\bAS\s+canManageAdministrators\b/i.test(sql))authorityReadsBeforeAudit++;
       if(/^\s*SELECT\b[\s\S]*?\bFROM\s+(?:"audit"|audit)(?:\s|$)/i.test(sql)){const hook=beforeAuditRead;beforeAuditRead=null;hook();}
@@ -198,8 +199,12 @@ await section('malformed and incomplete stored profiles deny both SQL and contex
  }
  grant([]);
 });
+await section('fee viewing supplies minimal student selectors without roster or write access',async()=>{
+ await login('admin-a');grant(['fees.view']);const data=await ok('state',undefined,'?scope=core');assert(data.students.includes('Fixture Student'));assert.deepEqual(data.allStudents,[]);assert.deepEqual(data.allTeachers,[]);assert.deepEqual(data.allPlans,[]);assert.equal(JSON.stringify(data.studentOptions).includes('age'),false);assert.equal((await call('billing',undefined,'?month=2030-01')).status,200);assert.equal((await call('billing',{action:'savePolicy'})).status,403);
+ grant([]);assert.equal((await call('billing',undefined,'?month=2030-01')).status,403);
+});
 await section('chief and selected-group Owner retain platform ceilings and tenant scope',async()=>{
- await login('chief-a');let data=await ok('state',undefined,'?scope=core');assert.equal(data.account.adminPermissions.privileged,true);assert.equal(data.allStudents.length,1);assert.equal((await call('billing')).status,403);
+ await login('chief-a');let data=await ok('state',undefined,'?scope=core');assert.equal(data.account.adminPermissions.privileged,true);assert.equal(data.allStudents.length,1);assert.equal((await call('billing',undefined,'?month=2030-01')).status,200);
  await login('owner',groups.a);data=await ok('state',undefined,'?scope=core');assert.equal(data.account.adminPermissions.privileged,true);assert.equal(data.allStudents.length,1);
  await login('admin-b',groups.b);const own=await ok('state',undefined,'?scope=core');assert.equal(own.allStudents.length,0);assert(!JSON.stringify(own).includes('Fixture Student'));
 });

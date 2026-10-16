@@ -1,4 +1,8 @@
 export const billingEn:Record<string,string>={
+ '学费核算':'Tuition fees',
+ '本页金额为学生学费，不包含老师薪资。':'Amounts on this page are student tuition fees and do not include teacher pay.',
+ '你仅有学费查看权限。':'You have view-only access to tuition fees.',
+ '尚未设置计费规则，请联系平台最高管理员。':'Billing rules have not been set. Contact the platform owner.',
  '当前预计费用':'Current estimated fees',
  '其中已核算':'Reviewed portion',
  '预计费用':'Estimated fee',
