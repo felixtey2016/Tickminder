@@ -4,26 +4,40 @@
   "account_id": "2199d150c756b2abfd96507da5ff1d8e",
   "main": "vinext/server/fetch-handler",
   "compatibility_date": "2026-10-10",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "workers_dev": true,
   "preview_urls": false,
   "routes": [
-    { "pattern": "www.tickminder.com", "custom_domain": true },
-    { "pattern": "tickminder.com", "custom_domain": true }
+    {
+      "pattern": "www.tickminder.com",
+      "custom_domain": true
+    },
+    {
+      "pattern": "tickminder.com",
+      "custom_domain": true
+    }
   ],
-  "d1_databases": [{
-    "binding": "DB",
-    "database_name": "tickminder-recovery-db",
-    "database_id": "10893827-25a7-4a36-a823-ecb561b711b4",
-    "migrations_dir": "drizzle"
-  }],
-  "r2_buckets": [{
-    "binding": "BUCKET",
-    "bucket_name": "tickminder-recovery-files"
-  }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tickminder-recovery-db",
+      "database_id": "10893827-25a7-4a36-a823-ecb561b711b4",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "tickminder-recovery-files"
+    }
+  ],
   "vars": {
     "PDF_MAX_BYTES": "10485760",
     "PDF_TOTAL_STORAGE_LIMIT_BYTES": "1073741824",
-    "ADMIN_PERMISSIONS_MODE": "enforced"
+    "ADMIN_PERMISSIONS_MODE": "enforced",
+    "WHATSAPP_BOT_NUMBER": "60178780730",
+    "WHATSAPP_SELF_ENROLL_GROUPS": "next-genn-edu"
   }
 }
