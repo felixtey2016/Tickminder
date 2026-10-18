@@ -55,6 +55,7 @@ import { courseBadgeCount, defaultCourseView, isCourseView, normalizeCourseView 
 import { CourseNavigation } from "@/components/course-navigation";
 import { ManagementNavigation } from "@/components/management-navigation";
 import { defaultManagementView, managementArea, managementTitle, normalizeManagementView } from "@/lib/management-navigation";
+import {WhatsAppBinding} from "./whatsapp-binding";
 import { AccountSetup } from "./account-setup";
 import { DeleteButton, DirectoryFilters, PeopleDirectory } from "./directory-tools";
 import { AdminPermissionContext, useAdminAction } from "./admin-permission-context";
@@ -529,6 +530,7 @@ export function Scheduler() {
         return <NameSetup initialName={account.name} save={confirmName} logout={logout} busy={busy} message={message} language={language} changeLanguage={changeLanguage}/>;
     if (account.requiresAccountSetup)
         return <AccountSetup email={account.email} onSaved={async()=>setAuth(await request("/api/auth"))} logout={logout} language={language} changeLanguage={changeLanguage}/>;
+    if(account.role==='pending'&&account.groupId==='next-genn-edu')return <main className="auth-shell"><div className="auth-card"><h1>完成学生注册</h1><WhatsAppBinding onComplete={async()=>{setAuth(await request('/api/auth'));}}/><Button variant="outline" onClick={logout}>退出登录</Button></div></main>;
     if(account.groupUnavailable)return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><h1>{t("补习集团暂不可用")}</h1><p>{t("请联系所属集团的管理员，或稍后重试。")}</p><Button onClick={()=>window.location.reload()}>{t("刷新")}</Button><Button variant="outline" onClick={logout}>{t("退出登录")}</Button></div></main>;
     const admin = account.role === "admin";
     return <AdminPermissionContext.Provider value={account}><Workspace key={`${account.id}:${account.groupId}:${JSON.stringify(account.adminPermissions)}`} account={account} state={state} ensureScope={ensureScope} setActiveScopes={setActiveScopes} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/></AdminPermissionContext.Provider>;
@@ -850,12 +852,13 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
                     {NAV_GROUPS[role].filter(group=>group.ids.some(id=>items.some(item=>item.id===id))).map(group => <div className="menu-group" key={group.ids.join('-')}>{group.label && <h2 className="menu-group-title">{t(group.label)}</h2>}{group.ids.map(id => items.find(item => item.id === id)!).filter(Boolean).map(item => <button key={item.id} type="button" data-testid={`menu-${item.id}`} className={"menu-link" + (activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? " active" : "")} aria-current={activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? "page" : undefined} onClick={() => choose(item.id)}><item.Icon size={19} aria-hidden="true"/><span>{t(item.label)}</span><MenuBadge count={item.id === "courses" ? courseBadgeCount(role,badgeCounts) : badgeCounts[item.id as keyof typeof badgeCounts] || 0} includeUnread={item.id==="notifications"} quizOnly={item.id==="quizzes"}/></button>)}</div>)}
                 </nav>
                 <div className="menu-utilities">
+                    {account.groupId==='next-genn-edu'&&<a className="menu-link" href="/whatsapp"><ShieldCheck size={19}/><span>连接 WhatsApp</span></a>}
                     <button type="button" className="menu-link" onClick={reload}><RefreshCw size={19}/><span>{t("刷新")}</span></button>
                     <button type="button" className="menu-link" onClick={logout}><LogOut size={19}/><span>{t("退出登录")}</span></button>
                 </div>
                 <LegalLinks language={language} className="menu-legal"/>
             </aside>}
-            <main className="workspace"><FloatingBackButton context={`${account.id}:${role}:${account.groupId}`} isHome={activeView===(account.isOwner?"groups":"home")} onHome={()=>choose(account.isOwner?"groups":"home")}/><div className="group-context" aria-label={t("当前集团")}><Building2 size={16} aria-hidden="true"/><span>{account.groupName}</span></div>
+            <main className="workspace"><FloatingBackButton context={`${account.id}:${role}:${account.groupId}`} isHome={activeView===(account.isOwner?"groups":"home")} onHome={()=>choose(account.isOwner?"groups":"home")}/><div className="group-context" aria-label={t("当前集团")}><Building2 size={16} aria-hidden="true"/><span>{account.groupName}</span>{account.groupId==='next-genn-edu'&&<a href="/whatsapp" style={{marginLeft:'auto'}}>连接 WhatsApp</a>}</div>
                 <div className="page-head"><div><p className="eyebrow">{t(role === "admin" ? "管理员工作台" : role === "student" ? "学生工作台" : role === "pending" ? "待分配账号" : "老师工作台")}</p><h1>{t(title)}</h1></div>
                     {showMonth && <label className="month-select">{t("统计月份")}<input type="month" value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)}/></label>}
                 </div>

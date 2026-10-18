@@ -4,7 +4,7 @@ import {t} from './i18n';
 const selector='[role="alert"],.error,.quiz-error,.billing-error,.invoice-notice-error';
 export function installErrorDialogs(){
  const delivered=new Set<string>(),pending=new Set<string>(),seen=new WeakMap<Element,string>();
- let timer:number|undefined,focusAfter:HTMLElement|null=null,disposed=false;
+ let timer:number|undefined,focusAfter:HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement|null=null,disposed=false;
  const flush=()=>{
   timer=undefined;if(disposed||document.hidden||!pending.size)return;
   const messages=[...pending];pending.clear();for(const message of messages)delivered.add(message);
