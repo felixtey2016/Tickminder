@@ -58,6 +58,7 @@ async function call(body){const response=await route[body?'POST':'GET'](request(
 // or receiving participant Bot permissions. Global owners retain tenant checks.
 await login('next-genn-edu-admin');
 assert.equal((await call()).data.botAccess,'contact_only');
+assert.equal((await call({action:'start',phone:runtime.env.WHATSAPP_BOT_NUMBER,consent:true})).status,400);
 let adminResult=await call({action:'start',phone:'60777777777',consent:true});assert.equal(adminResult.status,200);
 assert.equal(sqlite.prepare('SELECT identity_name FROM whatsapp_challenges WHERE account_id=?').get('next-genn-edu-admin').identity_name,'next-genn-edu-admin');
 assert.equal((await call({action:'finish'})).status,409);

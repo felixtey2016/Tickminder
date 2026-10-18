@@ -60,6 +60,7 @@ export async function POST(request:Request){
     if((recent?.n||0)>=5)return json({error:'验证请求过多，请稍后再试'},429);
     const bot=String((env as unknown as Record<string,string>).WHATSAPP_BOT_NUMBER||'');
     if(!/^[1-9][0-9]{7,14}$/.test(bot))return json({error:'WhatsApp 连接暂不可用，请稍后再试'},503);
+    if(phone===bot)return json({error:'请填写你本人使用的 WhatsApp 号码，Bot 的号码不能用于绑定'},400);
     const code='NG-'+Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();
     const hash=await hashToken(code),expires=new Date(now.getTime()+8*60000).toISOString();
     await db().batch([
