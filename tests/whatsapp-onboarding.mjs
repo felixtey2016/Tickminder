@@ -54,6 +54,23 @@ const route=(await load('app/api/whatsapp/route.ts')).module;
 runtime.env.WHATSAPP_SELF_ENROLL_GROUPS='next-genn-edu';runtime.env.WHATSAPP_BOT_NUMBER='60100000000';
 const request=body=>new Request('https://test.invalid/api/whatsapp',body?{method:'POST',headers:{origin:'https://test.invalid','content-type':'application/json'},body:JSON.stringify(body)}:{});
 async function call(body){const response=await route[body?'POST':'GET'](request(body));return {status:response.status,data:await response.json()};}
+// Existing centre administrators can bind themselves without becoming students
+// or receiving participant Bot permissions. Global owners retain tenant checks.
+await login('next-genn-edu-admin');
+assert.equal((await call()).data.botAccess,'contact_only');
+let adminResult=await call({action:'start',phone:'60777777777',consent:true});assert.equal(adminResult.status,200);
+assert.equal(sqlite.prepare('SELECT identity_name FROM whatsapp_challenges WHERE account_id=?').get('next-genn-edu-admin').identity_name,'next-genn-edu-admin');
+assert.equal((await call({action:'finish'})).status,409);
+sqlite.prepare("INSERT INTO whatsapp_contacts(account_id,group_id,phone,identity_role,identity_name,verified_at) VALUES('next-genn-edu-admin','next-genn-edu','60777777777','admin','next-genn-edu-admin',?)").run(now);
+assert.equal((await call()).data.verified,true);assert.equal((await call({action:'finish'})).status,200);
+assert.equal(sqlite.prepare('SELECT role FROM accounts WHERE id=?').get('next-genn-edu-admin').role,'admin');
+assert.equal(sqlite.prepare('SELECT count(*) n FROM students WHERE name=?').get('next-genn-edu-admin').n,0);
+await login('next-genn-edu-admin','school-b');assert.equal((await call()).status,403);
+await login('school-b-admin');assert.equal((await call()).status,403);
+await login('owner');assert.equal((await call()).status,200);assert.equal((await call()).data.botAccess,'contact_only');
+await login('owner','school-b');assert.equal((await call()).status,403);
+sqlite.prepare("UPDATE tuition_groups SET active=0 WHERE id='next-genn-edu'").run();await login('owner');assert.equal((await call()).status,403);sqlite.prepare("UPDATE tuition_groups SET active=1 WHERE id='next-genn-edu'").run();
+cookieValues={};
 const pending='next-genn-edu-pending';
 let result=await call();assert.equal(result.status,403);
 await login(pending);
@@ -62,8 +79,8 @@ result=await call({action:'start',phone:'0123456789',consent:true});assert.equal
 result=await call({action:'finish'});assert.equal(result.status,409);
 result=await route.POST(new Request('https://test.invalid/api/whatsapp',{method:'POST',headers:{origin:'https://evil.invalid','content-type':'application/json'},body:'{}'}));assert.equal(result.status,403);
 result=await call({action:'start',phone:'+60 1234 56789',consent:true,role:'teacher'});assert.equal(result.status,200,JSON.stringify(result));assert.match(result.data.code,/^NG-[A-F0-9]{32}$/);assert.ok(result.data.url.startsWith('https://wa.me/60100000000?text=NG-'));
-assert.equal(sqlite.prepare('SELECT identity_role FROM whatsapp_challenges').get().identity_role,'pending');
-assert.equal(sqlite.prepare('SELECT token_hash FROM whatsapp_challenges').get().token_hash,await auth.hashToken(result.data.code));
+assert.equal(sqlite.prepare('SELECT identity_role FROM whatsapp_challenges WHERE account_id=?').get(pending).identity_role,'pending');
+assert.equal(sqlite.prepare('SELECT token_hash FROM whatsapp_challenges WHERE account_id=?').get(pending).token_hash,await auth.hashToken(result.data.code));
 assert.equal((await call()).data.verified,false);
 const stamp=new Date().toISOString();
 sqlite.prepare("INSERT INTO google_identities VALUES('fixture-google',?,'newstudent@example.test',?)").run(pending,stamp);
@@ -85,4 +102,4 @@ assert.equal((await call({action:'start',phone:'60123456789',consent:true})).sta
 await login('next-genn-edu-teacher','school-b');assert.equal((await call()).status,403);
 await login('next-genn-edu-teacher');for(let i=0;i<5;i++)assert.equal((await call({action:'start',phone:'60888888888',consent:true})).status,200);assert.equal((await call({action:'start',phone:'60888888888',consent:true})).status,429);
 sqlite.prepare("UPDATE accounts SET disabled_at='disabled' WHERE id='next-genn-edu-teacher'").run();assert.equal((await call()).status,403);
-console.log('PASS WhatsApp onboarding: origin, account setup, consent, country code, challenge hashes, duplicate phones, rate limits, group isolation, verified student self-registration, no same-name inheritance, no inferred courses.');
+console.log('PASS WhatsApp onboarding: existing admin binding, owner scope, unchanged admin role/contact-only access, origin, account setup, consent, country code, challenge hashes, duplicate phones, rate limits, group isolation, verified student self-registration, no same-name inheritance, no inferred courses.');

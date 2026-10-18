@@ -63,7 +63,7 @@ export function AccountSettings() {
     return () => { active = false; script?.removeEventListener("load", setup); };
   }, [auth, language]);
   const signInMethods = [auth?.account.username ? t("用户名与密码") : "", auth?.account.emailLoginAvailable ? t("邮箱与密码") : "", auth?.account.googleLinked ? "Google" : ""].filter(Boolean);
-  return <>{auth && auth.account.groupId === "next-genn-edu" && ["teacher","student"].includes(auth.account.role || "") && <WhatsAppBinding/>}<section className="panel account-settings"><h2>{t("登录与安全")}</h2>{auth?.account ? <>
+  return <>{auth && auth.account.groupId === "next-genn-edu" && ["admin","teacher","student","pending"].includes(auth.account.role || "") && <WhatsAppBinding/>}<section className="panel account-settings"><h2>{t("登录与安全")}</h2>{auth?.account ? <>
     <div className="account-summary"><strong className="account-summary-name">{auth.account.name}</strong><dl className="account-summary-fields">
       <div><dt>{t("用户名")}</dt><dd>{auth.account.username || "—"}</dd></div>
       <div><dt>Google</dt><dd>{auth.account.email || t("未连接 Google")}</dd></div>

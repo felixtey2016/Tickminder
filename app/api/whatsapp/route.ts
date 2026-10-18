@@ -4,6 +4,7 @@ import {currentIdentity,hashToken} from '@/lib/auth';
 import {selectedGroup} from '@/lib/groups-server';
 import {studentNameKey} from '@/lib/student-names';
 import {normalizeWhatsAppPhone,whatsappIdentity} from '@/lib/whatsapp-phone';
+import {isOwnerAccount} from '@/lib/owner';
 
 function db(){if(!env.DB)throw new Error('网站连接暂不可用');return env.DB;}
 type Contact={phone:string;identity_role:string;identity_name:string;verified_at:string};
@@ -13,7 +14,7 @@ async function actor(){
   if(!identity)throw new Error('请先登录正式站');
   if(identity.local?.mustChangePassword||(!identity.local&&identity.google)||!identity.account.nameConfirmedAt)throw new Error('请先完成姓名和登录账号设置');
   const account=identity.account,group=await selectedGroup(account);
-  if(!group||account.groupId!==group.id||!['teacher','student','pending'].includes(account.role))throw new Error('当前身份不支持师生 WhatsApp 绑定');
+  if(!group||!group.active||(!isOwnerAccount(account)&&account.groupId!==group.id)||!['admin','teacher','student','pending'].includes(account.role))throw new Error('当前身份不支持 WhatsApp 绑定');
   if(!String((env as unknown as Record<string,string>).WHATSAPP_SELF_ENROLL_GROUPS||'').split(',').includes(group.id))throw new Error('当前中心尚未连接 WhatsApp');
   const name=whatsappIdentity(account);if(!name)throw new Error('请先确认网站身份');
   return {account,group,name,google:identity.google};
@@ -24,7 +25,7 @@ export async function GET(){
     const {account,group,name}=await actor(),contact=await own(account.id,group.id);
     const verified=Boolean(contact&&contact.identity_role===account.role&&contact.identity_name===name);
     const suggestion=await db().prepare('SELECT phone FROM whatsapp_contact_requests WHERE account_id=? AND group_id=? AND identity_role=? AND identity_name=?').bind(account.id,group.id,account.role,name).first<{phone:string}>();
-    return json({verified,phone:verified?contact!.phone:'',suggestedPhone:suggestion?.phone||'',role:account.role,newStudent:account.role==='pending',website:'https://tickminder.com'});
+    return json({verified,phone:verified?contact!.phone:'',suggestedPhone:suggestion?.phone||'',role:account.role,newStudent:account.role==='pending',botAccess:account.role==='admin'?'contact_only':'participant',website:'https://tickminder.com'});
   }catch(error){return json({error:(error as Error).message},403);}
 }
 export async function POST(request:Request){
