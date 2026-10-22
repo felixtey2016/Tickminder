@@ -80,7 +80,7 @@ try {
   const database = JSON.parse(plain.toString('utf8'));
   const legacyOwnerEmail=String(expected.legacyOwnerEmail||'').trim().toLowerCase();
   if(database.tables?.accounts&&!database.tables.accounts.columns.includes('group_id')&&!legacyOwnerEmail)throw new Error('Legacy restore requires legacyOwnerEmail in the private expected-target file');
-  if (snapshotVersion(database)<7) throw new Error('Recovery branch requires a v7–v23 database snapshot');
+  if (snapshotVersion(database)<7) throw new Error('Recovery branch requires a v7–v24 database snapshot');
   const tables = orderedSnapshotTables(database.tables);
   const external=externalSnapshotSchema(database);
   const schema = readdirSync(join(root, 'drizzle')).filter(name => /^\d{4}_.*\.sql$/.test(name)).sort()
@@ -122,6 +122,14 @@ try {
     const seed=migration.match(/INSERT INTO admin_permission_profiles\b[\s\S]*?;/)?.[0];
     if(!seed)throw new Error('Permission migration lacks its legacy baseline');
     sqlParts.push(seed);
+  }
+  if(snapshotVersion(database)<24){
+    // Older snapshots have no review history. Queue their old public versions
+    // after restoring rows rather than declaring them approved or losing them.
+    const migration=readFileSync(join(root,'drizzle/0039_quiz_moderation.sql'),'utf8');
+    const legacy=migration.match(/INSERT INTO quiz_publications\b[\s\S]*?;/)?.[0];
+    if(!legacy)throw Error('Public moderation migration lacks its legacy queue');
+    sqlParts.push(legacy);
   }
   sqlParts.push(`DROP TABLE "${chunkTable}";`,...triggers.map(t=>t.sql+';'),...external.triggers.map(sql=>sql+';'));
   const sql = sqlParts.join('\n');

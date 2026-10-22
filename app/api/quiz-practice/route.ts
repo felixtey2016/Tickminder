@@ -1,9 +1,11 @@
 import {QuizError} from '@/lib/quiz';
 import {quizFailure,quizResponse,quizRequestBytes} from '@/lib/quiz-server';
 import {practiceActor,practiceState,practiceTargets,getPracticeAttempt,startPractice,assignPractice,updatePractice,gradePractice,withdrawPractice,releasePractice,accommodatePractice,discardPractice} from '@/lib/quiz-practice';
+import {quizAnalytics} from '@/lib/quiz-analytics';
 export async function GET(request:Request){try{
  const actor=await practiceActor(),url=new URL(request.url),attemptId=url.searchParams.get('attemptId');
  if(attemptId)return quizResponse(await getPracticeAttempt(actor,attemptId));
+ if(url.searchParams.get('analytics')==='1')return quizResponse(await quizAnalytics(actor,url));
  if(url.searchParams.get('targets')==='1')return quizResponse(await practiceTargets(actor,url.searchParams.get('subject')||undefined));
  return quizResponse(await practiceState(actor,url));
 }catch(error){return quizFailure(error);}}

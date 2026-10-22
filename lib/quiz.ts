@@ -1,5 +1,6 @@
 // Content and grading keys are separate types and separate persisted records.
 export type QuizType='mcq'|'true_false'|'blank'|'math'|'written';
+export type QuizSampling={count:number;types:QuizType[]};
 export type Difficulty='easy'|'medium'|'hard'|'mixed';
 export type QuizVisibility='private'|'organisation'|'public';
 export type QuizBankKind='platform'|'creator';
@@ -12,7 +13,7 @@ export type QuizText={primary:string;en:string};
 export type QuizOption={id:string;text:QuizText;imageId:string|null};
 export type QuizQuestion={id:string;type:QuizType;prompt:QuizText;imageId:string|null;extraImageIds:string[];options:QuizOption[];points:number;difficulty:Exclude<Difficulty,'mixed'>;sourceId:string;chapter:string;level:string;answerUnit?:string};
 export type QuizKey={questionId:string;mode:'choice'|'text'|'numeric'|'manual';correctOptionId:string|null;accepted:string[];caseSensitive:boolean;tolerance:number;unit:string;rubric:string;explanation:string};
-export type QuizContent={schemaVersion:1;title:string;instructions:string;subject:string;exam:string;syllabusId?:string;subjectId?:string;year:number|null;region:string;paper:string;difficulty:Difficulty;primaryLanguage:'zh'|'en'|'ms';timeLimitSeconds:number|null;shuffleQuestions:boolean;shuffleOptions:boolean;questions:QuizQuestion[];bankKind?:QuizBankKind;catalog?:QuizCatalog|null};
+export type QuizContent={schemaVersion:1;title:string;instructions:string;subject:string;exam:string;syllabusId?:string;subjectId?:string;year:number|null;region:string;paper:string;difficulty:Difficulty;primaryLanguage:'zh'|'en'|'ms';timeLimitSeconds:number|null;shuffleQuestions:boolean;shuffleOptions:boolean;questions:QuizQuestion[];bankKind?:QuizBankKind;catalog?:QuizCatalog|null;sampling?:QuizSampling};
 export type QuizDraft={id:string;revision:number;visibility:QuizVisibility;content:QuizContent;keys:QuizKey[];canEdit:boolean;sharedRevision:number|null};
 export class QuizError extends Error{constructor(public code:string,public status=400){super(code);}}
 export function quizImageMime(bytes:Uint8Array):'image/png'|'image/jpeg'|'image/webp'|null{
@@ -78,6 +79,12 @@ export function checkQuiz(input:unknown,rawKeys:unknown):{content:QuizContent;ke
   if(q.type==='math'&&key.mode==='numeric'&&key.unit)q.answerUnit=key.unit;
   return key;
  });
+ if(v.sampling!=null){
+  const sample=record(v.sampling),types=sample.types;
+  if(!Number.isSafeInteger(sample.count)||Number(sample.count)<1||Number(sample.count)>150||!Array.isArray(types)||types.length<1||types.length>5||new Set(types).size!==types.length||types.some(type=>!['mcq','true_false','blank','math','written'].includes(type)))return fail('quiz.samplingInvalid');
+  if(content.questions.filter(q=>types.includes(q.type)).length<Number(sample.count))return fail('quiz.samplingPoolTooSmall');
+  content.sampling={count:Number(sample.count),types:types as QuizType[]};
+ }
  const total=Math.round(content.questions.reduce((n,q)=>n+q.points,0)*100)/100;if(total>100000)return fail('quiz.invalidFields');
  if(content.bankKind==='platform'&&(!content.catalog||content.questions.length!==40||content.difficulty==='mixed'||content.questions.some(q=>q.difficulty!==content.difficulty)))return fail('quiz.invalidPlatformSet');
  if(JSON.stringify({content,keys}).length>450000)return fail('quiz.tooLarge');return {content,keys,images:[...images],total};

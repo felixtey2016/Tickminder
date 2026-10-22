@@ -17,6 +17,10 @@ import {useAcademicCatalogue} from '@/lib/use-academic-catalogue';
 import {findCatalogueSyllabus,findCatalogueSubject} from '@/lib/academic-catalogue';
 import './quiz.css';
 import './quiz-layout.css';
+import '@/lib/quiz-upgrade-i18n';
+const QuizModerationWorkspace=lazy(()=>import('./quiz-moderation-workspace'));
+const QuizReportDialog=lazy(()=>import('./quiz-moderation-workspace').then(module=>({default:module.QuizReportDialog})));
+const QuizComposeDialog=lazy(()=>import('./quiz-compose-dialog'));
 
 const QuizEditor=lazy(()=>import('./quiz-editor'));
 const QuizPlayer=lazy(()=>import('@/components/quiz-player'));
@@ -25,12 +29,12 @@ const QuizPracticePlayer=lazy(()=>import('@/components/quiz-practice-player'));
 type Catalog={kind:'subtopic'|'chapter_overall'|'level_overall';level:string;chapterCode:string;chapterTitle:string;subtopicCode:string;subtopicTitle:string;setNumber:number};
 type Item={id:string;title:string;subject:string;exam:string;difficulty:string;questionCount:number;totalScore:number;visibility:string;creator:string;organisation:string;canEdit:boolean|number;canShare?:boolean|number;canDelete?:boolean|number;revision?:number;sharedRevision:number|null;bankKind?:'platform'|'creator';catalog?:Catalog|null;updatedAt?:string;createdAt?:string};
 type Topic={key:string;bankKind:'platform';subject:string;exam:string;catalog:Omit<Catalog,'setNumber'>;difficulties:{easy:number;medium:number;hard:number};setCount:number;updatedAt?:string;latestAt?:string};
-type Facets={subjects:string[];levels:string[];chapters:{code:string;title:string;level:string;subject:string;exam:string}[];maintenanceImport?:boolean;manageQuizzes?:boolean};
+type Facets={subjects:string[];levels:string[];chapters:{code:string;title:string;level:string;subject:string;exam:string}[];maintenanceImport?:boolean;manageQuizzes?:boolean;canModerate?:boolean};
 type Reply={items?:Item[];topics?:Topic[];hasMore?:boolean;facets?:Facets;error?:string};
-type Filters={search:string;syllabus:string;subject:string;level:string;chapterCode:string;sort:'latest'|'oldest'|'title'};
+type Filters={search:string;syllabus:string;subject:string;level:string;chapterCode:string;difficulty:string;sort:'latest'|'oldest'|'title'};
 type CopyOperation={id:string;operationId:string;sourceId:string;bank:boolean;title:string;resultId?:string};
 type Opening={item:Item;mode:'edit'|'preview'|'copy';token:number;error:string};
-const EMPTY_FILTERS:Filters={search:'',syllabus:'',subject:'',level:'',chapterCode:'',sort:'latest'};
+const EMPTY_FILTERS:Filters={search:'',syllabus:'',subject:'',level:'',chapterCode:'',difficulty:'',sort:'latest'};
 const EMPTY_FACETS:Facets={subjects:[],levels:[],chapters:[]};
 const DIFFICULTIES=['easy','medium','hard'] as const;
 type SelectedDifficulty=typeof DIFFICULTIES[number];
@@ -40,7 +44,7 @@ async function api<T extends {error?:string}>(url:string,init?:RequestInit){cons
 function query(filters:Filters,bank:boolean,extra:Record<string,string>={}){const params=new URLSearchParams({bank:bank?'1':'0',...extra});for(const [name,value] of Object.entries(filters))if(value)params.set(name,value);return '/api/quizzes?'+params.toString();}
 function mergeFacets(values:(Facets|undefined)[]):Facets{
  const chapters=new Map<string,Facets['chapters'][number]>();for(const value of values)for(const chapter of value?.chapters||[])chapters.set(JSON.stringify([chapter.exam,chapter.subject,chapter.level,chapter.code]),chapter);
- return {maintenanceImport:values.some(value=>value?.maintenanceImport===true),manageQuizzes:values.some(value=>value?.manageQuizzes===true),subjects:[...new Set(values.flatMap(value=>value?.subjects||[]))].sort((a,b)=>a.localeCompare(b)),levels:[...new Set(values.flatMap(value=>value?.levels||[]))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})),chapters:[...chapters.values()].sort((a,b)=>a.code.localeCompare(b.code,undefined,{numeric:true}))};
+ return {canModerate:values.some(value=>value?.canModerate===true),maintenanceImport:values.some(value=>value?.maintenanceImport===true),manageQuizzes:values.some(value=>value?.manageQuizzes===true),subjects:[...new Set(values.flatMap(value=>value?.subjects||[]))].sort((a,b)=>a.localeCompare(b)),levels:[...new Set(values.flatMap(value=>value?.levels||[]))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})),chapters:[...chapters.values()].sort((a,b)=>a.code.localeCompare(b.code,undefined,{numeric:true}))};
 }
 function topicTitle(topic:Topic){const c=topic.catalog;if(c.kind==='level_overall')return c.level+' · '+t('quiz.levelOverall');if(c.kind==='chapter_overall')return [c.chapterCode,t('quiz.chapterOverall')].filter(Boolean).join(' · ');return [c.subtopicCode,c.subtopicTitle].filter(Boolean).join(' · ');}
 function topicContext(topic:Topic){return [topic.exam,topic.subject,topic.catalog.level,topic.catalog.kind==='level_overall'?'':topic.catalog.chapterTitle||topic.catalog.chapterCode].filter(Boolean).join(' · ');}
@@ -52,6 +56,7 @@ export default function QuizWorkspace({view,language,role='teacher'}:{view:'quiz
  const catalogueAllowed=can('quizzes.view'),assignmentsAllowed=can('quizAssignments.view');
  const {catalogue,loading:catalogueLoading,error:catalogueError,reload:reloadCatalogue}=useAcademicCatalogue('quiz');
  const [tab,setTab]=usePageHistoryState<'bank'|'mine'|'assigned'|'history'|'manage'>('quiz.tab','bank');
+ const [composeOpen,setComposeOpen]=useState(false),[reviewOpen,setReviewOpen]=useState(false),[reporting,setReporting]=useState<string|null>(null);
  const [source,setSource]=useState<'all'|'platform'|'creator'>('all');
  const [filters,setFilters]=useState<Filters>(EMPTY_FILTERS),[searchInput,setSearchInput]=useState('');
  const [facets,setFacets]=useState<Facets>(EMPTY_FACETS),[items,setItems]=useState<Item[]>([]),[topics,setTopics]=useState<Topic[]>([]);
@@ -76,7 +81,7 @@ export default function QuizWorkspace({view,language,role='teacher'}:{view:'quiz
  const selectedSyllabus=catalogue?findCatalogueSyllabus(catalogue,filters.syllabus):null;
  const chapters=useMemo(()=>facets.chapters.filter(chapter=>(chapter.subject===filters.subject||Boolean(selectedSyllabus&&findCatalogueSubject(selectedSyllabus,filters.subject)?.name===chapter.subject))&&(!filters.level||chapter.level===filters.level)),[facets.chapters,filters.subject,filters.level,selectedSyllabus]);
  const subjectOptions=selectedSyllabus?selectedSyllabus.subjects.filter(s=>s.active):catalogue?[...new Map(catalogue.syllabuses.filter(s=>s.active).flatMap(s=>s.subjects.filter(x=>x.active)).map(s=>[s.id,s])).values()]:[];
- const hasFilters=Boolean(filters.search||filters.syllabus||filters.subject||filters.level||filters.chapterCode);
+ const hasFilters=Boolean(filters.search||filters.syllabus||filters.subject||filters.level||filters.chapterCode||filters.difficulty);
 
  // Both legacy menu IDs resolve to this single hub.
  useEffect(()=>{setSelectedTopic(null);setSelectedDifficulty(null);},[view]);
@@ -109,7 +114,7 @@ export default function QuizWorkspace({view,language,role='teacher'}:{view:'quiz
  async function loadSets(offset=0){
   if(!selectedTopic||!selectedDifficulty||suspended)return;setsAbort.current?.abort();const controller=new AbortController();setsAbort.current=controller;const gen=++setGeneration.current;setSetsLoading(true);setSetsError('');if(!offset){setSets([]);setSetsMore(false);}
   try{
-   const c=selectedTopic.catalog,data=await api<Reply>(query({search:filters.search,syllabus:selectedTopic.exam||'__unclassified__',subject:selectedTopic.subject,level:c.level,chapterCode:c.chapterCode,sort:filters.sort},true,{bankKind:'platform',catalogKind:c.kind,subtopicCode:c.subtopicCode,difficulty:selectedDifficulty,offset:String(offset)}),{signal:controller.signal});
+   const c=selectedTopic.catalog,data=await api<Reply>(query({search:filters.search,syllabus:selectedTopic.exam||'__unclassified__',subject:selectedTopic.subject,level:c.level,chapterCode:c.chapterCode,difficulty:'',sort:filters.sort},true,{bankKind:'platform',catalogKind:c.kind,subtopicCode:c.subtopicCode,difficulty:selectedDifficulty,offset:String(offset)}),{signal:controller.signal});
    if(gen!==setGeneration.current)return;setSets(old=>offset?[...old,...(data.items||[])].filter((item,index,all)=>all.findIndex(other=>other.id===item.id)===index):data.items||[]);setSetsMore(Boolean(data.hasMore));
   }catch(error){if(gen===setGeneration.current&&!controller.signal.aborted)setSetsError(errorCode(error));}finally{if(gen===setGeneration.current)setSetsLoading(false);}
  }
@@ -152,6 +157,7 @@ export default function QuizWorkspace({view,language,role='teacher'}:{view:'quiz
     {(tab==='manage'||bank&&item.bankKind!=='platform')&&<p>{[item.creator,item.organisation].filter(Boolean).join(' · ')}</p>}{dateLabel(item.updatedAt||item.createdAt)&&<p className="quiz-card-date">{dateLabel(item.updatedAt||item.createdAt)}</p>}
    </div>
    <div className="quiz-item-actions">
+    {bank&&item.visibility==='public'&&<Button type="button" variant="outline" onClick={()=>setReporting(item.id)}>{t('quiz.report')}</Button>}
     {tab!=='manage'&&<div className="quiz-item-primary-actions"><Button adminGrant="quizzes.view" onClick={()=>setPracticeSource(source)}><Play size={17}/>{t('quiz.practice')}</Button>{author&&<Button adminGrant="quizAssignments.assign" variant="outline" onClick={()=>setAllocation(source)}><UsersRound size={17}/>{t('quiz.assign')}</Button>}</div>}
     {author&&tab!=='manage'&&<details className="quiz-item-more"><summary><MoreHorizontal size={17}/>{t('更多操作')}</summary><div className="quiz-item-secondary-actions">{!bank&&Boolean(item.canEdit)&&<Button adminGrant="quizzes.edit" variant="outline" onClick={()=>void open(item)}><SquarePen size={17}/>{t('quiz.edit')}</Button>}{Boolean(item.canShare)&&(!Boolean(item.canEdit)||!can("quizzes.edit"))&&<Button adminGrant="quizzes.share" variant="outline" onClick={()=>void open(item)}>{t("quiz.bankSettings")}</Button>}<Button variant="outline" onClick={()=>void open(item,true)}><Eye size={17}/>{t('quiz.previewQuiz')}</Button><Button adminGrant="quizzes.duplicate" variant="outline" disabled={copyBusy} onClick={()=>void duplicate(item)}><Copy size={17}/>{t(can('quizzes.edit')?'quiz.copyEdit':'quiz.duplicate')}</Button>{deleteAction}</div></details>}
     {tab==='manage'&&deleteAction}
@@ -162,10 +168,12 @@ export default function QuizWorkspace({view,language,role='teacher'}:{view:'quiz
  function emptyState(message:string){return <section className="quiz-empty"><h3>{t(message)}</h3>{hasFilters&&<div className="quiz-empty-actions"><Button variant="outline" onClick={clearFilters}>{t('quiz.clearFilters')}</Button></div>}</section>;}
 
  function openingBody(){return <>{opening?.error?<div className="quiz-error" role="alert"><p>{t(opening.error)}</p><Button variant="outline" onClick={()=>{if(opening.mode==='copy')void duplicate(opening.item);else void open(opening.item,opening.mode==='preview');}}>{t('quiz.retry')}</Button></div>:loadingState()}</>;}
+ if(reviewOpen)return <Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizModerationWorkspace owner={Boolean(facets.canModerate)} language={language} onBack={()=>{setReviewOpen(false);setReload(value=>value+1);}}/></Suspense>;
  if(editor)return <Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizEditor key={editor.id} initial={editor} onBack={()=>{setEditor(null);setReload(value=>value+1);}} onSaved={()=>{facetCache.current.clear();setReload(value=>value+1);}}/></Suspense>;
  if(opening&&opening.mode!=='preview')return <section className="quiz-editor quiz-opening" aria-busy={!opening.error}><header className="quiz-editor-header"><Button variant="outline" onClick={cancelOpening}><ArrowLeft size={17}/>{t('quiz.back')}</Button><div className="quiz-editor-title"><h2>{opening.item.title}</h2><p>{t(opening.mode==='copy'?'quiz.copying':'quiz.loading')}</p></div></header>{openingBody()}</section>;
  return <div className="quiz-workspace" data-testid="quiz-hub">
-  {author&&<div className="quiz-workspace-head"><h2 className="sr-only">{t('quiz.hubTitle')}</h2><div>{facets.maintenanceImport&&<Button adminGrant="quizzes.import" variant="outline" data-testid="quiz-import" disabled={busy==='import'} onClick={()=>importInput.current?.click()}><Upload size={17}/>{t('quiz.import')}</Button>}<Button adminGrant="quizzes.create" className="quiz-create-button" data-testid="quiz-create" disabled={busy==='import'} onClick={create}><Plus size={17}/>{t('quiz.createQuiz')}</Button></div></div>}
+  {author&&<div className="quiz-workspace-head"><h2 className="sr-only">{t('quiz.hubTitle')}</h2><div>{facets.maintenanceImport&&<Button adminGrant="quizzes.import" variant="outline" data-testid="quiz-import" disabled={busy==='import'} onClick={()=>importInput.current?.click()}><Upload size={17}/>{t('quiz.import')}</Button>}<Button adminGrant="quizzes.duplicate" variant="outline" disabled={busy!==null} onClick={()=>setComposeOpen(true)}>{t('quiz.compose')}</Button><Button adminGrant="quizzes.create" className="quiz-create-button" data-testid="quiz-create" disabled={busy==='import'} onClick={create}><Plus size={17}/>{t('quiz.createQuiz')}</Button></div></div>}
+  <div className="quiz-upgrade-tools"><Button variant="outline" onClick={()=>setReviewOpen(true)}>{t(facets.canModerate?'quiz.moderation':'quiz.reviewReports')}</Button>{facets.canModerate&&<Button variant="outline" disabled={busy!==null} onClick={()=>{setBusy('seed');void api<{id:string;error?:string}>('/api/quiz-seed',{method:'POST',headers:{'content-type':'application/json'},body:'{}'}).then(result=>api<LocalQuiz&{error?:string}>('/api/quizzes?id='+encodeURIComponent(result.id))).then(data=>{setTab('mine');setEditor(data);}).catch(error=>setActionError(errorCode(error))).finally(()=>setBusy(null));}}>{t('quiz.seedDraft')}</Button>}</div>
   {author&&can("quizzes.import")&&facets.maintenanceImport&&<input ref={importInput} className="sr-only" tabIndex={-1} type="file" accept=".zip,application/zip" aria-label={t('quiz.import')} onChange={event=>{void importFile(event.target.files?.[0]);event.target.value='';}}/>}
   <div className="quiz-hub-tabs" role="tablist" aria-label={t('quiz.hubTitle')} onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const index=tabs.indexOf(tab),next=event.key==='Home'?tabs[0]:event.key==='End'?tabs[tabs.length-1]:tabs[(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length];changeTab(next);document.getElementById('quiz-tab-'+next)?.focus();}}>{tabs.map(value=><button type="button" role="tab" key={value} className="quiz-hub-tab" id={'quiz-tab-'+value} data-testid={'quiz-tab-'+value} aria-selected={tab===value} tabIndex={tab===value?0:-1} aria-controls="quiz-hub-panel" onClick={()=>changeTab(value)}>{t(value==='bank'?'quiz.catalogTab':value==='mine'?'quiz.mineTab':value==='assigned'?'quiz.assignedTab':value==='manage'?'quiz.manageTab':'quiz.historyTab')}</button>)}</div>
   <section id="quiz-hub-panel" role="tabpanel" aria-labelledby={'quiz-tab-'+tab}>
@@ -179,6 +187,7 @@ export default function QuizWorkspace({view,language,role='teacher'}:{view:'quiz
      <FilterField label={t('quiz.subject')}>{id=><select id={id} data-testid="quiz-subject-filter" value={filters.subject} onChange={event=>setFilters(old=>({...old,subject:event.target.value,level:'',chapterCode:''}))}><option value="">{t('quiz.allSubjects')}</option>{subjectOptions.map(subject=><option key={subject.id} value={subject.id}>{subject.name}</option>)}</select>}</FilterField>
      {selectedSyllabus&&selectedSyllabus.grades.length>0&&<FilterField label={t('quiz.catalogLevel')}>{id=><select id={id} data-testid="quiz-level-filter" value={filters.level} onChange={event=>setFilters(old=>({...old,level:event.target.value,chapterCode:''}))}><option value="">{t('quiz.allLevels')}</option>{selectedSyllabus?.grades.map(level=><option value={level} key={level}>{level}</option>)}</select>}</FilterField>}
      {filters.syllabus&&filters.subject&&chapters.length>0&&<FilterField label={t('quiz.catalogChapter')}>{id=><select id={id} data-testid="quiz-chapter-filter" value={filters.chapterCode?JSON.stringify([filters.level,filters.chapterCode]):''} onChange={event=>{const chapter=chapters.find(item=>JSON.stringify([item.level,item.code])===event.target.value);setFilters(old=>({...old,chapterCode:chapter?.code||'',level:chapter?.level||old.level}));}}><option value="">{t('quiz.allChapters')}</option>{chapters.map(chapter=><option value={JSON.stringify([chapter.level,chapter.code])} key={chapter.level+':'+chapter.code}>{[chapter.code,chapter.title,!filters.level?chapter.level:''].filter(Boolean).join(' · ')}</option>)}</select>}</FilterField>}
+     <FilterField label={t('quiz.difficulty')}>{id=><select id={id} value={filters.difficulty} onChange={e=>setFilters(old=>({...old,difficulty:e.target.value}))}><option value="">{t('quiz.all')}</option>{['easy','medium','hard','mixed'].map(value=><option key={value} value={value}>{t('quiz.'+value)}</option>)}</select>}</FilterField>
      <FilterField label={t('quiz.sort')}>{id=><select id={id} data-testid="quiz-sort-filter" value={filters.sort} onChange={event=>setFilters(old=>({...old,sort:event.target.value as Filters['sort']}))}><option value="latest">{t('quiz.sortLatest')}</option><option value="oldest">{t('quiz.sortOldest')}</option><option value="title">{t('quiz.sortTitle')}</option></select>}</FilterField>
     </form>
    </>}
@@ -205,6 +214,8 @@ export default function QuizWorkspace({view,language,role='teacher'}:{view:'quiz
    </>}
   </section>
   {opening?.mode==='preview'&&<Dialog open onOpenChange={value=>{if(!value)cancelOpening();}}><DialogContent className="quiz-player-dialog quiz-opening" showCloseButton={false}><div className="quiz-player-heading"><DialogTitle>{opening.item.title}</DialogTitle><Button variant="ghost" className="quiz-player-close" aria-label={t('quiz.close')} onClick={cancelOpening}><X size={20}/></Button></div><DialogDescription>{t('quiz.previewNotice')}</DialogDescription>{openingBody()}</DialogContent></Dialog>}
+  {composeOpen&&<Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizComposeDialog onClose={()=>setComposeOpen(false)} onCreated={id=>{setComposeOpen(false);setTab('mine');facetCache.current.clear();void api<LocalQuiz&{error?:string}>('/api/quizzes?id='+encodeURIComponent(id)).then(data=>setEditor(data)).catch(error=>setActionError(errorCode(error)));setReload(value=>value+1);}}/></Suspense>}
+  {reporting&&<Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizReportDialog quizId={reporting} onClose={()=>setReporting(null)}/></Suspense>}
   {preview&&<Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizPlayer content={preview} onClose={()=>setPreview(null)}/></Suspense>}
   {practiceSource&&<QuizPracticeStart source={practiceSource} onClose={()=>setPracticeSource(null)} onOpen={id=>{setPracticeSource(null);setAttemptId(id);setReload(value=>value+1);}}/>}
   {allocation&&can("quizAssignments.assign")&&<QuizAllocateDialog source={allocation} onClose={()=>setAllocation(null)} onAssigned={()=>{setAllocation(null);setTab('assigned');setReload(value=>value+1);}}/>}

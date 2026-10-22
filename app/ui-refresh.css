@@ -252,6 +252,7 @@ form input:not([type=checkbox]):not([type=radio]), form select, form textarea { 
 }
 @media (max-width: 360px) {
   .topbar { padding-inline: 12px; gap: 8px; }
+  .topbar .menu-count-header { right: 0; }
   .brand strong { font-size: 18px; }
   .brand { gap: 8px; }
   .top-actions { gap: 4px; }

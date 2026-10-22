@@ -8,6 +8,9 @@ import {checkQuiz,QuizError,type QuizContent,type QuizKey,type QuizVisibility} f
 import {quizBankKind,quizWriteForbidden} from '@/lib/quiz-catalog';
 import {readAcademicCatalogue} from '@/lib/academic-catalogue-server';
 import {checkQuizAcademic} from '@/lib/quiz-academic';
+import {quizApprovedPublicSql} from '@/lib/quiz-moderation-types';
+import type {QuizComposeIntent,QuizQuestionSource} from '@/lib/quiz-compose-types';
+import {requestQuizPublic} from '@/lib/quiz-moderation';
 export const quizHeaders={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'};
 export function quizResponse(data:unknown,status=200){return Response.json(data,{status,headers:quizHeaders});}
 export async function quizActor(allowStudent=false){
@@ -19,21 +22,21 @@ export async function quizActor(allowStudent=false){
  const permitted=await learningDb().prepare(`SELECT 1 FROM tuition_groups g WHERE g.id=? AND g.active=1 AND (?<>'teacher' OR EXISTS(SELECT 1 FROM teachers t WHERE t.group_id=g.id AND t.name=? AND t.active=1)) AND (?<>'student' OR EXISTS(SELECT 1 FROM students s WHERE s.group_id=g.id AND s.name=? AND s.active=1))`).bind(a.groupId,a.role,a.teacherName,a.role,a.studentName).first();
  if(!permitted)throw new QuizError('quiz.forbidden',403);return a;
 }
-export function quizFailure(error:unknown){const denied=adminPermissionFailure(error);if(denied)return quizResponse({error:'quiz.forbidden'},denied.status);if(error instanceof QuizError)return quizResponse({error:error.code},error.status);if(/UNIQUE constraint|quiz group mismatch|quiz key group mismatch|quiz image grant mismatch/.test(String(error)))return quizResponse({error:'quiz.conflict'},409);console.error('Quiz request failed',error instanceof Error?error.name:'unknown');return quizResponse({error:'quiz.unavailable'},503);}
+export function quizFailure(error:unknown){const denied=adminPermissionFailure(error);if(denied)return quizResponse({error:'quiz.forbidden'},denied.status);if(/admin_authority_changed|admin_chief_changed/.test(String(error)))return quizResponse({error:'quiz.forbidden'},403);if(error instanceof QuizError)return quizResponse({error:error.code},error.status);if(/UNIQUE constraint|quiz group mismatch|quiz key group mismatch|quiz image grant mismatch/.test(String(error)))return quizResponse({error:'quiz.conflict'},409);console.error('Quiz request failed',error instanceof Error?error.name:'unknown');return quizResponse({error:'quiz.unavailable'},503);}
 export async function quizRequestBytes(request:Request,maximum:number,error='quiz.tooLarge'){
  const declared=Number(request.headers.get('content-length')||0);if(!Number.isFinite(declared)||declared>maximum)throw new QuizError(error,413);
  const reader=request.body?.getReader();if(!reader)return new Uint8Array();const chunks:Uint8Array[]=[];let size=0;
  try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>maximum){await reader.cancel();throw new QuizError(error,413);}chunks.push(value);}}finally{reader.releaseLock();}
  const result=new Uint8Array(size);let offset=0;for(const chunk of chunks){result.set(chunk,offset);offset+=chunk.length;}return result;
 }
-type QuizRow={id:string;group_id:string;owner_id:string;revision:number;shared_revision:number|null;visibility:QuizVisibility;title:string;source_key:string|null};
+type QuizRow={id:string;group_id:string;owner_id:string;revision:number;shared_revision:number|null;visibility:QuizVisibility;title:string;source_key:string|null;public_blocked_at:string|null;public_approved:number};
 export async function readQuiz(actor:Account,id:string,bank=false){
  const permission=adminPermissionPredicate(actor,'quizzes.view');
- const db=learningDb(),row=await db.prepare(`SELECT q.*,v.id AS version_id,v.content_json,v.revision AS version_revision FROM quizzes q JOIN tuition_groups g ON g.id=q.group_id AND g.active=1 JOIN quiz_versions v ON v.quiz_id=q.id AND v.group_id=q.group_id AND v.revision=CASE WHEN ?=1 THEN q.shared_revision WHEN ?<>'student' AND (?=1 OR q.group_id=? AND (q.owner_id=? OR ?='admin')) THEN q.revision ELSE q.shared_revision END WHERE q.id=? AND q.deleted_at IS NULL AND ${permission.sql}`).bind(bank?1:0,actor.role,isOwnerAccount(actor)?1:0,actor.groupId,actor.id,actor.role,id,...permission.args).first<QuizRow&{version_id:string;content_json:string;version_revision:number}>();
+ const db=learningDb(),row=await db.prepare(`SELECT q.*,CASE WHEN ${quizApprovedPublicSql()} THEN 1 ELSE 0 END AS public_approved,v.id AS version_id,v.content_json,v.revision AS version_revision FROM quizzes q JOIN tuition_groups g ON g.id=q.group_id AND g.active=1 JOIN quiz_versions v ON v.quiz_id=q.id AND v.group_id=q.group_id AND v.revision=CASE WHEN ?=1 THEN q.shared_revision WHEN ?<>'student' AND (?=1 OR q.group_id=? AND (q.owner_id=? OR ?='admin')) THEN q.revision ELSE q.shared_revision END WHERE q.id=? AND q.deleted_at IS NULL AND ${permission.sql}`).bind(bank?1:0,actor.role,isOwnerAccount(actor)?1:0,actor.groupId,actor.id,actor.role,id,...permission.args).first<QuizRow&{version_id:string;content_json:string;version_revision:number}>();
  if(!row)throw new QuizError('quiz.notFound',404);
  const {version_id,content_json,version_revision,...q}=row;
  const own=actor.role!=='student'&&(isOwnerAccount(actor)||q.group_id===actor.groupId&&(q.owner_id===actor.id||actor.role==='admin'));
- const shared=q.shared_revision!==null&&(q.visibility==='public'||q.visibility==='organisation'&&q.group_id===actor.groupId);
+ const shared=q.shared_revision!==null&&q.public_blocked_at===null&&(q.visibility==='public'&&q.public_approved===1||q.visibility==='organisation'&&q.group_id===actor.groupId);
  if(!own&&!shared||bank&&!shared)throw new QuizError('quiz.notFound',404);
  const revision=version_revision,v={id:version_id,content_json};
  const content=JSON.parse(content_json) as QuizContent;
@@ -42,7 +45,7 @@ export async function readQuiz(actor:Account,id:string,bank=false){
 export async function quizKeys(versionId:string){const r=await learningDb().prepare('SELECT answers_json FROM quiz_answer_keys WHERE version_id=?').bind(versionId).first<{answers_json:string}>();if(!r)throw new QuizError('quiz.unavailable',503);return JSON.parse(r.answers_json) as QuizKey[];}
 function mutationId(v:unknown){if(typeof v!=='string'||!/^[a-zA-Z0-9_-]{16,80}$/.test(v))throw new QuizError('quiz.invalidFields');return v;}
 export type QuizCopyRequest={sourceId:string;bank:boolean;title:string|null};
-export async function quizCopyReplay(actor:Account,data:Record<string,unknown>,intent:QuizCopyRequest){
+export async function quizCopyReplay(actor:Account,data:Record<string,unknown>,intent:QuizCopyRequest|QuizComposeIntent){
  await requireAdminPermission(actor,'quizzes.duplicate');
  const operation=mutationId(data.operationId),id=mutationId(data.id),hash=await operationHash({id,duplicate:intent});
  const prior=await learningDb().prepare('SELECT quiz_id,revision,request_hash,actor_id,group_id FROM quiz_versions WHERE operation_id=?').bind(operation).first<{quiz_id:string;revision:number;request_hash:string;actor_id:string;group_id:string}>();
@@ -51,7 +54,7 @@ export async function quizCopyReplay(actor:Account,data:Record<string,unknown>,i
 export const quizAuthority=`EXISTS(SELECT 1 FROM accounts a JOIN tuition_groups g ON g.id=? AND g.active=1 WHERE a.id=? AND a.role=? AND a.disabled_at IS NULL AND (a.group_id=? OR ?=1) AND NOT EXISTS(SELECT 1 FROM local_credentials c WHERE c.account_id=a.id AND c.must_change_password=1) AND (a.role='admin' OR EXISTS(SELECT 1 FROM teachers t WHERE t.group_id=g.id AND t.name=a.teacher_name AND t.active=1)))`;
 export function quizAuthorityValues(a:Account){return [a.groupId,a.id,a.role,a.groupId,isOwnerAccount(a)?1:0];}
 const authority=quizAuthority,authorityValues=quizAuthorityValues;
-export async function saveQuiz(actor:Account,data:Record<string,unknown>,copiedFrom?:{versionId:string;request?:QuizCopyRequest;legacyMetadata?:QuizContent},maintenance=false){
+export async function saveQuiz(actor:Account,data:Record<string,unknown>,copiedFrom?:{versionId:string;versionIds?:string[];questionSources?:QuizQuestionSource[];request?:QuizCopyRequest|QuizComposeIntent;legacyMetadata?:QuizContent},maintenance=false){
  const db=learningDb(),group=requireGroup(actor.groupId),operation=mutationId(data.operationId),quizId=mutationId(data.id),revision=data.revision as number;
  if(!Number.isSafeInteger(revision)||revision<0)throw new QuizError('quiz.invalidFields');
  const permissionKey=maintenance?'quizzes.import':copiedFrom?'quizzes.duplicate':revision>0?'quizzes.edit':'quizzes.create';
@@ -71,11 +74,15 @@ export async function saveQuiz(actor:Account,data:Record<string,unknown>,copiedF
  checked.content=checkQuizAcademic(academicCatalogue,checked.content,previousContent);
  if(previous?.revision!==revision&&!(revision===0&&!previous))throw new QuizError('quiz.conflict',409);
  if(sourceKey&&!previous){const imported=await db.prepare('SELECT id,revision FROM quizzes WHERE group_id=? AND owner_id=? AND source_key=?').bind(group,actor.id,sourceKey).first();if(imported)return {...imported,existingImport:true};}
+ const sourceIds=copiedFrom?[...new Set(copiedFrom.versionIds||[copiedFrom.versionId])]:[];
+ if(copiedFrom&&(!sourceIds.length||sourceIds.length>10||sourceIds.some(value=>typeof value!=='string'||!/^[a-zA-Z0-9_-]{1,100}$/.test(value))))throw new QuizError('quiz.invalidFields');
+ const questionSources=copiedFrom?(copiedFrom.questionSources||checked.content.questions.map(q=>({questionId:q.id,sourceVersionId:copiedFrom.versionId,sourceQuestionId:q.id}))):[];
+ if(questionSources.length>150||new Set(questionSources.map(s=>s.questionId)).size!==questionSources.length||questionSources.some(s=>!checked.content.questions.some(q=>q.id===s.questionId)||!sourceIds.includes(s.sourceVersionId)||typeof s.sourceQuestionId!=='string'||!/^[a-zA-Z0-9_-]{1,100}$/.test(s.sourceQuestionId)))throw new QuizError('quiz.invalidFields');
  // A file must be owned by the editor, granted by a prior saved version, or
  // explicitly granted by the server-authorised source of a duplicate.
- if(checked.images.length){const allowed=(await db.prepare(`SELECT i.id FROM quiz_images i WHERE i.status='ready' AND i.id IN (SELECT value FROM json_each(?)) AND ((i.group_id=? AND i.owner_id=?) OR EXISTS(SELECT 1 FROM quiz_version_images l JOIN quiz_versions v ON v.id=l.version_id WHERE l.image_id=i.id AND v.quiz_id=? AND v.group_id=?) OR EXISTS(SELECT 1 FROM quiz_version_images l WHERE l.image_id=i.id AND l.version_id=?))`).bind(JSON.stringify(checked.images),group,actor.id,quizId,group,copiedFrom?.versionId||'').all<{id:string}>()).results;if(new Set(allowed.map(x=>x.id)).size!==checked.images.length)throw new QuizError('quiz.invalidImage',403);}
- const sourceGuard=copiedFrom?` AND EXISTS(SELECT 1 FROM quiz_versions sv JOIN quizzes sq ON sq.id=sv.quiz_id JOIN tuition_groups sg ON sg.id=sq.group_id AND sg.active=1 WHERE sv.id=? AND sq.deleted_at IS NULL AND ((sq.group_id=? AND (sq.owner_id=? OR ?='admin')) OR (sv.revision=sq.shared_revision AND (sq.visibility='public' OR sq.visibility='organisation' AND sq.group_id=?))))`:'';
- const sourceValues=copiedFrom?[copiedFrom.versionId,group,actor.id,actor.role,group]:[];
+ if(checked.images.length){const allowed=(await db.prepare(`SELECT i.id FROM quiz_images i WHERE i.status='ready' AND i.id IN (SELECT value FROM json_each(?)) AND ((i.group_id=? AND i.owner_id=?) OR EXISTS(SELECT 1 FROM quiz_version_images l JOIN quiz_versions v ON v.id=l.version_id WHERE l.image_id=i.id AND v.quiz_id=? AND v.group_id=?) OR EXISTS(SELECT 1 FROM quiz_version_images l WHERE l.image_id=i.id AND l.version_id IN(SELECT value FROM json_each(?))))`).bind(JSON.stringify(checked.images),group,actor.id,quizId,group,JSON.stringify(sourceIds)).all<{id:string}>()).results;if(new Set(allowed.map(x=>x.id)).size!==checked.images.length)throw new QuizError('quiz.invalidImage',403);}
+ const sourceGuard=copiedFrom?` AND NOT EXISTS(SELECT 1 FROM json_each(?) requested_source WHERE NOT EXISTS(SELECT 1 FROM quiz_versions sv JOIN quizzes sq ON sq.id=sv.quiz_id JOIN tuition_groups sg ON sg.id=sq.group_id AND sg.active=1 WHERE sv.id=requested_source.value AND sq.deleted_at IS NULL AND sq.public_blocked_at IS NULL AND ((sv.revision=sq.revision AND sq.group_id=? AND (sq.owner_id=? OR ?='admin')) OR (sv.revision=sq.shared_revision AND (sq.visibility='public' AND ${quizApprovedPublicSql('sq','sv')} OR sq.visibility='organisation' AND sq.group_id=?)))))`:'';
+ const sourceValues=copiedFrom?[JSON.stringify(sourceIds),group,actor.id,actor.role,group]:[];
  const maintenanceGuard=maintenance?" AND EXISTS(SELECT 1 FROM accounts ma WHERE ma.id=? AND (ma.role='admin' OR ma.role='teacher' AND ?='creator'))":'',maintenanceValues=maintenance?[actor.id,quizBankKind(checked.content)]:[];
  const versionId=crypto.randomUUID(),now=new Date().toISOString(),c=checked.content,av=authorityValues(actor),statements=[];
  // Topic + difficulty + Set identifies one platform paper. Check both the
@@ -87,22 +94,29 @@ export async function saveQuiz(actor:Account,data:Record<string,unknown>,copiedF
  statements.push(db.prepare('INSERT INTO quiz_answer_keys(version_id,group_id,answers_json) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM quiz_versions WHERE id=?)').bind(versionId,group,JSON.stringify(checked.keys),versionId));
  // json_each keeps the statement count constant for large image-based papers.
  statements.push(db.prepare('INSERT INTO quiz_version_images(version_id,image_id,group_id) SELECT ?,value,? FROM json_each(?) WHERE EXISTS(SELECT 1 FROM quiz_versions WHERE id=?)').bind(versionId,group,JSON.stringify(checked.images),versionId));
+ if(copiedFrom)statements.push(db.prepare("INSERT INTO quiz_question_sources(version_id,question_id,source_version_id,source_question_id,group_id) SELECT ?,json_extract(item.value,'$.questionId'),json_extract(item.value,'$.sourceVersionId'),json_extract(item.value,'$.sourceQuestionId'),? FROM json_each(?) item WHERE EXISTS(SELECT 1 FROM quiz_versions WHERE id=?)").bind(versionId,group,JSON.stringify(questionSources),versionId));
+ else if(previous)statements.push(db.prepare("INSERT INTO quiz_question_sources(version_id,question_id,source_version_id,source_question_id,group_id) SELECT ?,origin.question_id,origin.source_version_id,origin.source_question_id,? FROM quiz_question_sources origin JOIN quiz_versions previous_version ON previous_version.id=origin.version_id WHERE previous_version.quiz_id=? AND previous_version.group_id=? AND previous_version.revision=? AND origin.question_id IN(SELECT json_extract(value,'$.id') FROM json_each(?,'$.questions')) AND EXISTS(SELECT 1 FROM quiz_versions WHERE id=?)").bind(versionId,group,quizId,group,revision,JSON.stringify(c),versionId));
  statements.push(db.prepare('UPDATE quizzes SET title=?,subject=?,exam=?,year=?,difficulty=?,question_count=?,total_score=?,time_limit_seconds=?,revision=?,updated_at=? WHERE id=? AND group_id=? AND revision=? AND EXISTS(SELECT 1 FROM quiz_versions WHERE id=?)').bind(c.title,c.subject,c.exam,c.year,c.difficulty,c.questions.length,checked.total,c.timeLimitSeconds,revision+1,now,quizId,group,revision,versionId));
  statements.push(db.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) SELECT ?,?,?,?,?,NULL,?,? WHERE EXISTS(SELECT 1 FROM quiz_versions WHERE id=?)").bind(group,crypto.randomUUID(),'quiz:'+quizId,actor.id,previous?'quiz.saveDraft':'quiz.create',JSON.stringify({revision:revision+1,questionCount:c.questions.length,sourceVersionId:copiedFrom?.versionId||null}),now,versionId));
  try{const results=await db.batch([...statements,...adminPermissionStatements(actor,permissionKey)]);if(results[previous?0:1].meta.changes!==1)throw new QuizError('quiz.conflict',409);return {id:quizId,revision:revision+1};}
  catch(error){if(adminPermissionFailure(error))throw error;const committed=await db.prepare('SELECT quiz_id,revision,request_hash,actor_id,group_id FROM quiz_versions WHERE operation_id=?').bind(operation).first<{quiz_id:string;revision:number;request_hash:string;actor_id:string;group_id:string}>();if(committed){if(committed.actor_id!==actor.id||committed.group_id!==group||committed.request_hash!==hash)throw new QuizError('quiz.conflict',409);return {id:committed.quiz_id,revision:committed.revision,replayed:true};}if(sourceKey&&!previous){const imported=await db.prepare('SELECT id,revision FROM quizzes WHERE group_id=? AND owner_id=? AND source_key=? AND revision>0').bind(group,actor.id,sourceKey).first();if(imported)return {...imported,existingImport:true};}throw error;}
 }
 export async function shareQuiz(actor:Account,data:Record<string,unknown>){
+ if(data.visibility==='public')return requestQuizPublic(actor,{...data,action:'requestPublic',quizId:data.id,quizRevision:data.revision});
  await requireAdminPermission(actor,'quizzes.share');
  const {q,content}=await readQuiz(actor,String(data.id)),scope=data.visibility as QuizVisibility;
  if(quizBankKind(content)==='platform'&&actor.role!=='admin')throw new QuizError('quiz.maintenanceOnly',403);
  if(q.owner_id!==actor.id||q.group_id!==actor.groupId)throw new QuizError('quiz.forbidden',403);
- if(!['private','organisation','public'].includes(scope))throw new QuizError('quiz.invalidFields');
+ if(!['private','organisation'].includes(scope))throw new QuizError('quiz.invalidFields');
+ if(scope!=='private'&&q.public_blocked_at!==null)throw new QuizError('quiz.publicBlocked',409);
  const now=new Date().toISOString(),op=mutationId(data.operationId),db=learningDb();
  const prior=await db.prepare('SELECT after_json FROM audit WHERE id=? AND group_id=? AND actor_id=? AND action=?').bind('quizshare:'+op,actor.groupId,actor.id,'quiz.visibility').first<{after_json:string}>();
  if(prior){const old=JSON.parse(prior.after_json);if(old.id!==q.id||old.visibility!==scope||old.revision!==Number(data.revision))throw new QuizError('quiz.conflict',409);return {ok:true};}
  if(q.revision!==Number(data.revision))throw new QuizError('quiz.conflict',409);
- try{const result=await db.batch([db.prepare(`UPDATE quizzes SET visibility=?,shared_revision=?,updated_at=? WHERE id=? AND group_id=? AND owner_id=? AND revision=? AND ${authority}`).bind(scope,scope==='private'?null:q.revision,now,q.id,actor.groupId,actor.id,q.revision,...authorityValues(actor)),db.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) SELECT ?,?,?,?,'quiz.visibility',NULL,?,? WHERE changes()=1").bind(actor.groupId,'quizshare:'+op,'quiz:'+q.id,actor.id,JSON.stringify({id:q.id,revision:q.revision,visibility:scope}),now),...adminPermissionStatements(actor,'quizzes.share')]);
+ try{const result=await db.batch([db.prepare(`UPDATE quizzes SET visibility=?,shared_revision=?,updated_at=? WHERE id=? AND group_id=? AND owner_id=? AND revision=? AND ${authority}`).bind(scope,scope==='private'?null:q.revision,now,q.id,actor.groupId,actor.id,q.revision,...authorityValues(actor)),db.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) SELECT ?,?,?,?,'quiz.visibility',NULL,?,? WHERE changes()=1").bind(actor.groupId,'quizshare:'+op,'quiz:'+q.id,actor.id,JSON.stringify({id:q.id,revision:q.revision,visibility:scope}),now),
+ db.prepare("INSERT INTO quiz_moderation_events(id,group_id,quiz_id,entity_id,actor_id,action,before_json,after_json,created_at) SELECT 'share-withdraw:'||p.id||':'||?,p.group_id,p.quiz_id,p.id,?,'withdrawRequest',json_object('status',p.status),json_object('status','withdrawn','reason',?),? FROM quiz_publications p WHERE p.quiz_id=? AND p.status IN('pending','legacy_pending') AND EXISTS(SELECT 1 FROM audit WHERE id=?)").bind(op,actor.id,'Author changed sharing to '+scope,now,q.id,'quizshare:'+op),
+ db.prepare("UPDATE quiz_publications SET status='withdrawn',revision=revision+1,review_reason=?,updated_at=? WHERE quiz_id=? AND status IN('pending','legacy_pending') AND EXISTS(SELECT 1 FROM audit WHERE id=?)").bind('Author changed sharing to '+scope,now,q.id,'quizshare:'+op),
+ ...adminPermissionStatements(actor,'quizzes.share')]);
  if(!result[0].meta.changes)throw new QuizError('quiz.conflict',409);return {ok:true};}
  catch(error){if(adminPermissionFailure(error))throw error;const committed=await db.prepare('SELECT after_json FROM audit WHERE id=? AND group_id=? AND actor_id=? AND action=?').bind('quizshare:'+op,actor.groupId,actor.id,'quiz.visibility').first<{after_json:string}>();if(committed){const old=JSON.parse(committed.after_json);if(old.id!==q.id||old.visibility!==scope||old.revision!==Number(data.revision))throw new QuizError('quiz.conflict',409);return {ok:true,replayed:true};}throw error;}
 }

@@ -73,3 +73,14 @@
  .quiz-editor .quiz-editor-tools > button { flex: 1 1 120px; }
  .quiz-workspace .quiz-practice-toolbar { gap: 12px; }
 }
+/* Quiz authoring, publication and reporting share the existing mobile rhythm. */
+.quiz-sampling-settings{display:grid;gap:16px;border:1px solid var(--border,#ddd9e8);border-radius:12px;padding:20px;margin:24px 0;min-width:0}
+.quiz-sampling-settings legend{font-weight:700;padding:0 8px}
+.quiz-upgrade-tools,.quiz-moderation .quiz-card-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:16px 0}
+.quiz-review-status{display:grid;gap:16px;margin-top:20px;padding-top:20px;border-top:1px solid var(--border,#ddd9e8);overflow-wrap:anywhere}
+.quiz-recipient-card .quiz-analysis-prompt{display:block;margin:10px 0;overflow-wrap:anywhere}
+.quiz-share-panel .quiz-fields{margin:20px 0}.quiz-review-dialog{width:min(900px,calc(100vw - 24px));max-height:90dvh;overflow-y:auto;overflow-wrap:anywhere;display:flex;flex-direction:column;gap:18px}
+.quiz-review-dialog details{min-width:0}.quiz-review-answer{padding:16px 0;border-bottom:1px solid var(--border,#ddd9e8)}
+.quiz-moderation .quiz-card{min-width:0;overflow-wrap:anywhere}.quiz-moderation .quiz-review-reason{white-space:pre-wrap;overflow-wrap:anywhere}
+.quiz-moderation input,.quiz-moderation select,.quiz-moderation button,.quiz-sampling-settings select,.quiz-share-panel input:not([type=checkbox]){min-height:44px}
+@media(max-width:480px){.quiz-review-dialog{padding:20px}.quiz-moderation .quiz-card-actions>*{flex:1 1 130px}.quiz-sampling-settings{padding:16px}.quiz-moderation .quiz-editor-header{flex-wrap:wrap;gap:14px}}
