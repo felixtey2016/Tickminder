@@ -1,0 +1,50 @@
+/* Shared by the standalone connection page and My account. Keep selectors scoped. */
+.whatsapp-page { width: 100%; max-width: 760px !important; margin: 40px auto !important; padding: 20px !important; box-sizing: border-box; }
+.whatsapp-page > .panel,
+section[aria-label="WhatsApp 号码绑定"] { padding: 32px; border: 1px solid #dedbea; border-radius: 18px; background: #fff; box-shadow: 0 8px 28px #28204406; }
+.whatsapp-page > .panel h1,
+section[aria-label="WhatsApp 号码绑定"] h2 { margin: 0 0 16px; color: #282440; font-size: 25px; font-weight: 750; line-height: 1.4; }
+.whatsapp-page > .panel p,
+section[aria-label="WhatsApp 号码绑定"] p { margin: 0 0 20px; color: #5e5c70; line-height: 1.75; overflow-wrap: anywhere; }
+section[aria-label="WhatsApp 号码绑定"] form { display: grid; gap: 18px; margin-top: 24px; }
+section[aria-label="WhatsApp 号码绑定"] label { display: grid; gap: 10px; margin: 0; color: #343047; font-size: 15px; font-weight: 600; line-height: 1.65; }
+section[aria-label="WhatsApp 号码绑定"] input[type="tel"] { display: block; width: 100%; min-width: 0; min-height: 50px; box-sizing: border-box; padding: 12px 14px; border: 1px solid #aaa5bd; border-radius: 10px; background: #fff; color: #282440; font-size: 17px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+section[aria-label="WhatsApp 号码绑定"] input::placeholder { color: #79758a; opacity: 1; }
+section[aria-label="WhatsApp 号码绑定"] label:has(input[type="checkbox"]) { display: flex; flex-direction: row !important; align-items: flex-start !important; gap: 12px !important; margin: 0 !important; padding: 14px; border: 1px solid #e3dfed; border-radius: 10px; background: #faf9fd; font-size: 14px; font-weight: 400; cursor: pointer; }
+section[aria-label="WhatsApp 号码绑定"] input[type="checkbox"] { appearance: auto; -webkit-appearance: checkbox; width: 20px !important; height: 20px; flex: 0 0 20px; margin: 2px 0 0; accent-color: #5532d6; }
+.whatsapp-page > .panel > a,
+section[aria-label="WhatsApp 号码绑定"] button,
+section[aria-label="WhatsApp 号码绑定"] a { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: fit-content; max-width: 100%; min-height: 48px; height: auto; box-sizing: border-box; padding: 12px 20px; border: 1px solid #5532d6; border-radius: 10px; background: #5532d6; color: #fff; font-size: 16px; font-weight: 650; line-height: 1.5; text-align: center; text-decoration: none; white-space: normal; overflow-wrap: anywhere; cursor: pointer; transition: background-color .15s, border-color .15s; }
+.whatsapp-page > .panel > a:hover,
+section[aria-label="WhatsApp 号码绑定"] button:hover,
+section[aria-label="WhatsApp 号码绑定"] a:hover { background: #4423bd; border-color: #4423bd; }
+section[aria-label="WhatsApp 号码绑定"] button[data-variant="outline"] { border-color: #c5bada; background: #fff; color: #503597; }
+section[aria-label="WhatsApp 号码绑定"] button[data-variant="outline"]:hover { background: #f3effc; border-color: #8064b2; }
+section[aria-label="WhatsApp 号码绑定"] button:disabled { opacity: 1; background: #e7e3f1; border-color: #d7d0e6; color: #726984; cursor: wait; }
+.whatsapp-page a:focus-visible,
+section[aria-label="WhatsApp 号码绑定"] :is(a, button, input):focus-visible { outline: 3px solid #a28de6; outline-offset: 3px; }
+section[aria-label="WhatsApp 号码绑定"] > p[role="status"] { padding: 16px 18px; border: 1px solid #d9d1ee; border-radius: 12px; background: #f6f3fc; color: #51416f; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+section[aria-label="WhatsApp 号码绑定"]:has(> button) > p[role="status"] { border-color: #98d4b7; background: #f0faf4; color: #166244; font-size: 19px; }
+section[aria-label="WhatsApp 号码绑定"] > div:has(code) { display: grid; gap: 16px; margin-top: 28px !important; padding: 22px; border: 1px solid #d9ccef; border-radius: 12px; background: #faf8ff; }
+section[aria-label="WhatsApp 号码绑定"] > div:has(code) p { margin: 0; }
+section[aria-label="WhatsApp 号码绑定"] code { display: block; padding: 16px; border: 1px dashed #9c86c8; border-radius: 10px; background: #fff; color: #39246b; font-size: 24px; font-weight: 750; letter-spacing: .08em; text-align: center; overflow-wrap: anywhere; user-select: all; }
+section[aria-label="WhatsApp 号码绑定"] > div p[role="status"] { padding: 12px 14px; border: 1px solid #edcf8c; border-radius: 9px; background: #fff9ed; color: #805b16; font-size: 14px; }
+section[aria-label="WhatsApp 号码绑定"] p[role="alert"] { margin: 20px 0; padding: 14px 16px; border: 1px solid #efb4bc; border-radius: 10px; background: #fff4f5; color: #9c2838; }
+.whatsapp-page > p:last-child { margin: 18px 0 0; }
+.whatsapp-page > p:last-child > a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 16px; border: 1px solid #c7c0d7; border-radius: 10px; background: #fff; color: #53436f; font-size: 14px; line-height: 1.5; text-decoration: none; }
+.whatsapp-page > p:last-child > a:hover { border-color: #8e79b5; background: #f4f0fb; }
+/* A successful connection and signed-out page already contain a return/sign-in button. */
+.whatsapp-page:has(> section > button):has(> section > p[role="status"]) > p:last-child,
+.whatsapp-page:has(> section > a[href="/"]) > p:last-child { display: none; }
+@media (max-width: 600px) {
+  .whatsapp-page { margin: 12px auto !important; padding: 14px !important; }
+  .whatsapp-page > .panel,
+  section[aria-label="WhatsApp 号码绑定"] { padding: 24px 20px; border-radius: 14px; }
+  .whatsapp-page > .panel h1,
+  section[aria-label="WhatsApp 号码绑定"] h2 { font-size: 23px; }
+  .whatsapp-page > .panel > a,
+  section[aria-label="WhatsApp 号码绑定"] button,
+  section[aria-label="WhatsApp 号码绑定"] a { width: 100%; }
+  section[aria-label="WhatsApp 号码绑定"] > div:has(code) { padding: 16px; }
+  section[aria-label="WhatsApp 号码绑定"]:has(> button) > p[role="status"] { font-size: 17px; }
+}

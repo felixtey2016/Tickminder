@@ -1,0 +1,30 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {createHash} from 'node:crypto';
+import {gunzipSync} from 'node:zlib';
+const here=import.meta.dirname;
+const destination=process.argv[2];
+if(!destination || !path.isAbsolute(destination))throw Error('An absolute output directory is required.');
+if(fs.existsSync(destination))throw Error('Choose a new output directory to preserve existing files.');
+const manifest=JSON.parse(fs.readFileSync(path.join(here,'manifest.json'),'utf8'));
+const archive=fs.readFileSync(path.join(here,manifest.archive));
+const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
+if(sha(archive)!==manifest.sha256)throw Error('Snapshot checksum mismatch');
+const snapshot=JSON.parse(gunzipSync(archive));
+for(const item of manifest.server)if(sha(snapshot.server[item.name])!==item.sha256)throw Error('Server checksum mismatch: '+item.name);
+for(const item of manifest.assets)if(sha(Buffer.from(snapshot.assets[item.name].base64,'base64'))!==item.sha256)throw Error('Asset checksum mismatch: '+item.name);
+const css=fs.readFileSync(path.resolve(here,'../../app/whatsapp-layout.css'),'utf8');
+const rootNeedle='children:[e,(0,J.jsx)(Bh,{})]';
+if(snapshot.server['index.js'].split(rootNeedle).length!==2)throw Error('Unexpected root layout. Obtain the current source before continuing.');
+snapshot.server['index.js']=snapshot.server['index.js'].replace(rootNeedle,`children:[(0,J.jsx)(\`style\`,{id:\`tickminder-whatsapp-layout\`,children:${JSON.stringify(css)}}),e,(0,J.jsx)(Bh,{})]`);
+const page='_next/static/page-DA0atvGs.js', pageNeedle='className:`main-container`';
+if(snapshot.server[page].split(pageNeedle).length!==2)throw Error('Unexpected WhatsApp page');
+snapshot.server[page]=snapshot.server[page].replace(pageNeedle,'className:`main-container whatsapp-page`');
+function writeFile(kind,name,content){
+ const root=path.resolve(destination,kind), file=path.resolve(root,name.replace(/^\//,''));
+ if(!file.startsWith(root+path.sep))throw Error('Invalid snapshot path');
+ fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,content);
+}
+for(const [name,code]of Object.entries(snapshot.server))writeFile('server',name,code);
+for(const [name,asset]of Object.entries(snapshot.assets))writeFile('client',name,Buffer.from(asset.base64,'base64'));
+console.log('Recovered and patched '+Object.keys(snapshot.server).length+' server modules; preserved '+Object.keys(snapshot.assets).length+' public assets.');
