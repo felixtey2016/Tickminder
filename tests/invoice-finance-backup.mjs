@@ -1,0 +1,69 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
+import {createFixtureLoader} from './fixture-loader.mjs';
+import {snapshotVersion,expectedSnapshotTables,orderedSnapshotTables,checkRestoredInvoiceFinance} from '../scripts/backup-order.mjs';
+
+globalThis.fetch=async()=>{throw Error('Network forbidden in finance backup fixture');};
+const root=path.resolve(import.meta.dirname,'..'),RealDate=Date,clock=Date.parse('2032-06-15T04:00:00Z');
+globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}};
+function database(max=999){const db=new DatabaseSync(':memory:');db.exec('PRAGMA foreign_keys=ON');for(const name of fs.readdirSync(path.join(root,'drizzle')).filter(n=>n.endsWith('.sql')&&Number(n.slice(0,4))<=max).sort())db.exec(fs.readFileSync(path.join(root,'drizzle',name),'utf8'));return db;}
+const sqlite=database();let active=sqlite;
+function statement(sql,values=[]){const execute=()=>{assert(values.length<=100,'D1 parameter limit');const s=active.prepare(sql);return s.columns().length?{results:s.all(...values),meta:{changes:0}}:{results:[],meta:s.run(...values)};};return{bind:(...v)=>statement(sql,v),first:async()=>execute().results[0]||null,all:async()=>execute(),run:async()=>execute(),execute};}
+const db={prepare:statement,batch:async statements=>{active.exec('BEGIN');try{const result=statements.map(s=>s.execute());active.exec('COMMIT');return result;}catch(e){active.exec('ROLLBACK');throw e;}}};
+const token='fictional-finance-backup-token-123456789012345',owner={id:'finance-backup-owner',email:'owner@finance.example.test',role:'admin',groupId:'finance-school',name:'Fictional owner'};
+globalThis.__financeBackupRuntime={learningDb:()=>db,currentBusinessAccount:async()=>owner,OWNER_EMAIL:owner.email,isOwnerAccount:a=>a.role==='admin'&&a.email===owner.email&&!a.id.startsWith('local:'),pdfLimits:()=>({total:10000000}),pdfBucket:()=>({}),env:{ADMIN_PERMISSIONS_MODE:'enforced',BACKUP_EXPORT_TOKEN:token}};
+const dataUrl=s=>'data:text/javascript;base64,'+Buffer.from(s).toString('base64'),runtimeUrl=dataUrl('export const {learningDb,currentBusinessAccount,OWNER_EMAIL,isOwnerAccount,pdfLimits,pdfBucket,env}=globalThis.__financeBackupRuntime;'),nextUrl=dataUrl('export const NextResponse={json:(data,options)=>Response.json(data,options)};');
+const load=createFixtureLoader({runtimeUrl,environmentUrl:runtimeUrl,runtimeFiles:['lib/auth.ts','lib/owner.ts','lib/learning-server.ts','lib/pdf-storage.ts'],transform:(_file,code)=>code.replaceAll("'next/server'",JSON.stringify(nextUrl)).replaceAll('"next/server"',JSON.stringify(nextUrl))});
+const invoices=(await load('lib/invoice-server.ts')).module,billing=(await load('lib/billing-server.ts')).module,finance=(await load('lib/invoice-finance-server.ts')).module,route=(await load('app/api/backup-export/route.ts')).module,permissions=(await load('lib/admin-permissions.ts')).module;
+const now=new Date().toISOString(),gid=owner.groupId,month='2032-06',op=()=>crypto.randomUUID();
+sqlite.prepare('INSERT INTO tuition_groups(id,name,join_code,created_at,updated_at) VALUES(?,?,?,?,?)').run(gid,'Fictional Finance School','finance-backup',now,now);
+sqlite.prepare('INSERT INTO accounts(id,email,name,role,group_id,created_at) VALUES(?,?,?,?,?,?)').run(owner.id,owner.email,owner.name,owner.role,gid,now);
+sqlite.prepare('INSERT INTO teachers(group_id,name,created_at) VALUES(?,?,?)').run(gid,'Fictional Teacher',now);
+sqlite.prepare('INSERT INTO students(group_id,name,name_key,grade,created_at) VALUES(?,?,?,?,?)').run(gid,'Fictional Student','fictionalstudent','Form 4','2020-01-01T00:00:00Z');
+sqlite.prepare('INSERT INTO plans(group_id,key,student,subject,subject_id,teacher_name,created_at) VALUES(?,?,?,?,?,?,?)').run(gid,'fictional-science','Fictional Student','Science','science','Fictional Teacher','2020-01-01T00:00:00Z');
+const student=sqlite.prepare('SELECT id FROM billing_students WHERE group_id=? AND student_name=?').get(gid,'Fictional Student').id,settings=await billing.billingRateSettings(owner,'fictional-science');
+await billing.saveBilling(owner,{action:'saveRate',studentId:student,subjectKey:settings.context.subjectKey,revision:0,mode:'hour',amount:'40.00',effectiveFrom:'2020-01-01',operationId:op()});
+sqlite.prepare("INSERT INTO lessons(id,group_id,student,subject,teacher_name,planned_start,planned_end,actual_start,actual_end,status,attendance_kind,chargeable,reviewed_at,created_by,updated_at) VALUES(?,?,?,'Science','Fictional Teacher',?,?,?,?,'completed','present',1,?,?,?)").run('finance-backup-lesson',gid,'Fictional Student','2032-06-03T02:00:00Z','2032-06-03T03:30:00Z','2032-06-03T02:00:00Z','2032-06-03T03:30:00Z',now,owner.id,now);
+sqlite.prepare("UPDATE class_sessions SET teaching_status='taught',actual_start='2032-06-03T02:00:00Z',actual_end='2032-06-03T03:30:00Z',attendance_reviewed_at=? WHERE id=(SELECT session_id FROM lessons WHERE id='finance-backup-lesson')").run(now);
+sqlite.prepare("UPDATE class_session_participants SET attendance_status='present',arrived_at='2032-06-03T02:00:00Z',left_at='2032-06-03T03:30:00Z' WHERE lesson_id='finance-backup-lesson'").run();
+const generated=await invoices.saveInvoice(owner,{action:'generate',studentId:student,month,operationId:op()}),invoiceId=generated.invoiceId,detail=await invoices.invoiceDetail(owner,invoiceId);
+assert.equal(detail.invoice.totalCents,6000);
+await invoices.saveInvoice(owner,{action:'issue',invoiceId,revision:detail.invoice.revision,expectedSourceHash:detail.invoice.sourceHash,operationId:op()});
+let revision=0;
+async function save(data){const result=await finance.saveInvoiceFinance(owner,{invoiceId,revision,operationId:op(),...data});revision=result.revision;return result;}
+const payment1=await save({action:'recordPayment',amountCents:2000,method:'bank_transfer',paidAt:now,reference:'FICT-01'});
+const payment2=await save({action:'recordPayment',amountCents:2000,method:'cash',paidAt:now});
+const payment3=await save({action:'recordPayment',amountCents:2000,method:'duitnow',paidAt:now});
+const source=sqlite.prepare("SELECT l.updated_at AS updatedAt,s.revision AS sessionRevision FROM lessons l JOIN class_sessions s ON s.group_id=l.group_id AND s.id=l.session_id WHERE l.id='finance-backup-lesson'").get();
+await save({action:'correctAttendance',lessonId:'finance-backup-lesson',expectedUpdatedAt:source.updatedAt,sessionRevision:source.sessionRevision,status:'late',arrivedAt:'2032-06-03T02:05:00.000Z',chargeable:true,amountCents:0,reason:'Fictional corrected arrival time'});
+await save({action:'refund',paymentId:payment2.paymentId,amountCents:1000,refundedAt:now,reason:'Fictional partial fee reduction',creditInvoice:true});
+await save({action:'reversePayment',paymentId:payment1.paymentId,effectiveAt:now,reason:'Fictional mistaken transfer record'});
+await save({action:'adjust',kind:'charge',amountCents:500,effectiveAt:now,reason:'Fictional additional charge'});
+await save({action:'adjust',kind:'credit',amountCents:500,effectiveAt:now,reason:'Fictional charge correction'});
+await save({action:'refund',paymentId:payment2.paymentId,amountCents:1000,refundedAt:now,reason:'Fictional remaining refund'});
+await save({action:'refund',paymentId:payment3.paymentId,amountCents:2000,refundedAt:now,reason:'Fictional full refund'});
+await save({action:'void',effectiveAt:now,reason:'Fictional cancelled enrollment'});
+const request=()=>new Request('https://fictional.test/api/backup-export',{headers:{authorization:'Bearer '+token}}),response=await route.GET(request()),snapshot=await response.json();
+let secure=fs.readFileSync(path.join(root,'scripts/secure-d1-backup.mjs'),'utf8').split('\ntry {\n')[0];secure=secure.replace("const projectRoot = resolve(import.meta.dirname, '..').toLowerCase();",'const projectRoot = '+JSON.stringify(root.toLowerCase())+';').replace("'./backup-order.mjs'",JSON.stringify(new URL('../scripts/backup-order.mjs',import.meta.url).href));const {restoreInMemory}=await import(dataUrl(secure+'\nexport {restoreInMemory};'));
+let checks=0;function check(label,fn){fn();checks++;console.log('PASS '+label);}
+check('v25 export includes the complete finance ledger',()=>{assert.equal(response.status,200);assert.equal(snapshotVersion(snapshot),25);assert.deepEqual(Object.keys(snapshot.tables).sort(),expectedSnapshotTables(25).sort());assert.equal(snapshot.tables.invoice_payments.rows.length,3);assert.equal(snapshot.tables.invoice_receipts.rows.length,3);});
+check('ledger reconciliation accepts genuine payment/refund/reversal/void records',()=>assert.doesNotThrow(()=>checkRestoredInvoiceFinance(sqlite)));
+check('real v25 restore preserves immutable ledger rows and receipt snapshots',()=>{const counts=restoreInMemory(snapshot);assert.equal(counts.invoice_payments,3);assert.equal(counts.invoice_receipts,3);assert.equal(counts.invoice_finance_events,12);assert.equal(counts.invoice_attendance_corrections,1);});
+check('restore orders invoice/account/operation/payment/receipt dependencies',()=>{const names=orderedSnapshotTables(snapshot.tables).map(([name])=>name);for(const [parent,child]of [['invoices','invoice_finance_accounts'],['invoice_finance_accounts','invoice_payments'],['invoice_finance_operations','invoice_payments'],['invoice_payments','invoice_receipts']])assert(names.indexOf(parent)<names.indexOf(child));});
+function corrupt(label,edit,pattern=/invoice[ _]finance|constraint/i){check(label,()=>{const bad=structuredClone(snapshot);edit(bad);assert.throws(()=>restoreInMemory(bad),pattern);});}
+corrupt('aggregate money tampering is rejected',s=>s.tables.invoice_finance_accounts.rows[0].refunded_cents--);
+corrupt('missing payment history is rejected',s=>s.tables.invoice_finance_events.rows.splice(0,1));
+corrupt('receipt amount mismatch is rejected',s=>{const r=s.tables.invoice_receipts.rows[0],d=JSON.parse(r.document_json);d.amountCents++;r.document_json=JSON.stringify(d);});
+corrupt('receipt historical balance tampering is rejected',s=>{const r=s.tables.invoice_receipts.rows[0],d=JSON.parse(r.document_json);d.balanceAfterCents++;r.document_json=JSON.stringify(d);});
+corrupt('receipt student identity mismatch is rejected',s=>{const r=s.tables.invoice_receipts.rows[0],d=JSON.parse(r.document_json);d.student.name='Different student';r.document_json=JSON.stringify(d);});
+corrupt('void metadata without matching event is rejected',s=>s.tables.invoice_finance_accounts.rows[0].void_reason='Unlogged change');
+corrupt('replay results cannot point to another receipt number',s=>{const row=s.tables.invoice_finance_operations.rows.find(o=>o.action==='recordPayment'),result=JSON.parse(row.result_json);result.number='RCT-2099-999999';row.result_json=JSON.stringify(result);});
+corrupt('open attendance correction windows cannot be restored',s=>{const row=s.tables.invoice_attendance_corrections.rows[0];row.active=1;row.closed_at=null;});
+corrupt('attendance correction identity mismatch is rejected',s=>s.tables.invoice_attendance_corrections.rows[0].lesson_id='different-lesson');
+corrupt('a partial finance snapshot is rejected',s=>delete s.tables.invoice_receipts,/Incomplete database export/);
+check('new finance grants include required invoice and payment views',()=>{assert.deepEqual(permissions.normalizeAdminGrants(['payments.refund']),['invoices.view','payments.view','payments.refund']);assert(!permissions.LEGACY_ADMIN_GRANTS.some(g=>g.startsWith('payments.')||['invoices.adjust','invoices.void'].includes(g)));});
+const old=database(41);active=old;const oldResponse=await route.GET(request()),oldSnapshot=await oldResponse.json();check('v24 snapshots remain fully restorable',()=>{assert.equal(oldResponse.status,200);assert.equal(snapshotVersion(oldSnapshot),24);assert.equal(restoreInMemory(oldSnapshot).accounts,0);});
+active=sqlite;sqlite.exec('PRAGMA foreign_keys=OFF;DROP TABLE invoice_receipts');check('partially migrated finance schemas return visible export failure',()=>{});assert.equal((await route.GET(request())).status,503);
+old.close();sqlite.close();console.log(JSON.stringify({suite:'invoice-finance-backup',checks,networkRequests:0,productionWrites:false}));

@@ -1,5 +1,6 @@
 import type {BillingLine} from './billing';
 import type {InvoiceInstitutionSnapshot} from './invoice-settings';
+import type {InvoiceFinanceSummary} from './invoice-finance';
 
 export type InvoiceAddition = {id:string;label:string;kind:'charge'|'discount';amountCents:number;reason:string};
 export type InvoicePrintLine = {id:string;subject:string;description:string;lessonCount:number;durationSeconds:number;mode:string|null;unitAmountCents:number|null;amountCents:number};
@@ -11,7 +12,7 @@ export type InvoiceDocument = {
  subtotalCents:number;discountCents:number;totalCents:number;lessonCount:number;durationSeconds:number;
  extension:{schemaVersion:1;receiptIds:string[];eInvoice:Record<string,unknown>|null};
 };
-export type InvoiceSummary = Pick<InvoiceDocument,'id'|'studentId'|'month'|'status'|'revision'|'number'|'issuedAt'|'createdAt'|'updatedAt'|'dueDate'|'currency'|'totalCents'|'lessonCount'|'durationSeconds'> & {student:string};
+export type InvoiceSummary = Pick<InvoiceDocument,'id'|'studentId'|'month'|'status'|'revision'|'number'|'issuedAt'|'createdAt'|'updatedAt'|'dueDate'|'currency'|'totalCents'|'lessonCount'|'durationSeconds'> & {student:string;finance?:InvoiceFinanceSummary};
 export type InvoiceReview = {blockers:string[];sourceChanged:boolean;pendingCount:number;completedUnbilledCount:number;replacementCount:number;upcomingCount:number};
 export type InvoiceDetail = {invoice:InvoiceDocument;review:InvoiceReview};
 export type InvoiceList = {items:InvoiceSummary[];total:number;page:number;pageSize:number;pages:number};

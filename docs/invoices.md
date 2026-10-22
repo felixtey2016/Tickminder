@@ -26,11 +26,13 @@ Issuance allocates an atomic group/year sequence and freezes student, institutio
 
 Issuance locks the student's billing month and the financially relevant lessons and sessions, including replacement relatives outside the billed month. New billable lessons, rescheduling, attendance or financial-source changes in a locked period are rejected by database triggers, including old/direct/bulk API paths. Non-financial note changes remain possible. The confirmation screen explains the month closure before issuance.
 
-Payments, receipts, voiding, refunds and reopening a period are later modules. This part cannot void an issued invoice or release its locks. The extension object reserves stable references; it is not an LHDN e-Invoice integration.
+Payments, partial receipts, refund records, reversals, issued-invoice amount adjustments and voiding use a separate immutable finance ledger. Each payment belongs to one invoice and produces one receipt. Refunds record returned funds; a separate fee credit can be recorded in the same transaction. Student access remains disabled.
+
+Voiding retains the original invoice, its monthly identity and all source locks. It does not allow another invoice for the same student and month. Use an amount adjustment when charges should remain, or the authorised attendance correction workflow to amend an invoiced student's attendance and record any agreed amount change. Corrections close their narrowly scoped write window in the same transaction. Student attendance corrections preserve the teacher's recorded teaching interval; changes to teacher teaching times or schedules involving several billed students remain outside this correction form. The extension object reserves stable references; it is not an LHDN e-Invoice integration.
 
 ## Data and deployment
 
-Apply additive migrations 0033_invoices.sql, 0034_invoice_attendance_locks.sql and 0035_invoice_brand_settings.sql together, after an encrypted database backup. Existing business IDs are retained. Snapshot format v22 includes all seven invoice/brand tables and private logo objects; older snapshot versions remain supported.
+Apply additive migrations 0033_invoices.sql, 0034_invoice_attendance_locks.sql and 0035_invoice_brand_settings.sql together, after an encrypted database backup. Existing business IDs are retained. Snapshot format v25 also includes payments, receipts, financial operations/events and closed attendance corrections. Older snapshot versions remain supported. Apply additive migrations 0042_invoice_finance.sql and 0043_invoice_attendance_corrections.sql for this release.
 
 A code rollback can retain the additive tables and locks. Never drop issued invoices, items, logos or source locks to roll back the interface. Reconciliation or lock release requires a separately reviewed adjustment workflow. An application rollback does not undo database changes.
 

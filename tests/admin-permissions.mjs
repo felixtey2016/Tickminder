@@ -136,13 +136,17 @@ await section('migration preserves all existing business rows and legacy access'
   for(const key of ['accounts.assign','accounts.resetPassword','lessons.create','attendance.review','students.promote','sheetSync.commit','materials.view','homework.view','quizzes.share','quizAssignments.grade'])contains(data.profile.grants,key);
 });
 
-await section('catalog and templates deny unknown future financial and unsupported powers',async()=>{
+await section('catalog exposes implemented finance actions and denies reserved or unsupported powers',async()=>{
   await login('chief-a');const data=await readProfile('admin-a'),keys=data.catalog.flatMap(module=>module.actions.map(action=>action.key));
   assert.equal(new Set(keys).size,keys.length);assert.ok(keys.length>60);
   assert.ok(keys.every(key=>/^[A-Za-z]+\.[A-Za-z]+$/.test(key)),'all grants are explicit module.action keys');
-  for(const id of ['finance','invoices','parents','resources','progress','publicModeration','exports','adminIdentity','groups','academicCatalogues','backup']){const module=data.catalog.find(item=>item.id===id);assert.ok(module,id+' reserved entry exists');assert.equal(module.availability,'reserved');assert.deepEqual(module.actions,[]);assert.deepEqual(module.supportedActions,[]);}
+  for(const id of ['finance','parents','resources','progress','publicModeration','exports','adminIdentity','groups','academicCatalogues','backup']){const module=data.catalog.find(item=>item.id===id);assert.ok(module,id+' reserved entry exists');assert.equal(module.availability,'reserved');assert.deepEqual(module.actions,[]);assert.deepEqual(module.supportedActions,[]);}
+  assert.deepEqual(data.catalog.find(module=>module.id==='invoices').supportedActions,['view','create','edit','issue','adjust','void']);
+  assert.deepEqual(data.catalog.find(module=>module.id==='payments').supportedActions,['view','record','reverse','refund']);
+  assert.deepEqual(permission.normalizeAdminGrants(['payments.record']),['invoices.view','payments.view','payments.record']);
+  assert.deepEqual(permission.normalizeAdminGrants(['invoices.adjust']),['invoices.view','invoices.adjust','payments.view']);
   assert.deepEqual(data.catalog.find(module=>module.id==='materials').supportedActions,['view']);
-  for(const key of ['materials.create','materials.edit','homework.create','homework.edit','homework.grade','finance.view','finance.edit','invoices.view','adminIdentity.assign','groups.edit','backup.export','futureWidget.view','*','lessons.*','*.view','LESSONS.view','lessons.view ']){
+  for(const key of ['materials.create','materials.edit','homework.create','homework.edit','homework.grade','finance.view','finance.edit','invoices.delete','payments.delete','payments.*','adminIdentity.assign','groups.edit','backup.export','futureWidget.view','*','lessons.*','*.view','LESSONS.view','lessons.view ']){
     assert.equal(permission.hasAdminGrant([key],key),false,'unknown/unsupported grant must default deny: '+key);
     assert.throws(()=>permission.normalizeAdminGrants([key]),permission.AdminPermissionValidationError,key);
     await unchanged('invalid grant '+key,()=>denied('admin-permissions',{accountId:'admin-a',expectedRevision:1,grants:[key]},'',[400]));
@@ -328,7 +332,7 @@ await section('unauthenticated and ordinary users receive no permission configur
   }
 });
 
-await section('deny-all draft does not enforce runtime restrictions or grant financial and teacher powers',async()=>{
+await section('deny-all draft preserves existing reads, chief fee settings and protected mutation boundaries',async()=>{
   await login('chief-a');let data=await readProfile('admin-a');data=await save('admin-a',data.profile.revision,[]);pendingState(data);assert.deepEqual(data.profile.draftGrants,[]);
   await login('admin-a');const identity=await ok('auth');assert.equal(identity.account.role,'admin');assert.equal(identity.account.canManageAdministrators,false);
   for(const scope of ['core','learning','classrooms','accounts','activity']){const state=await ok('state',undefined,'?scope='+scope);assert.ok(state.loadedScopes.includes(scope),'existing '+scope+' access remains available');}
@@ -341,10 +345,14 @@ await section('deny-all draft does not enforce runtime restrictions or grant fin
   await unchanged('admin still cannot publish teacher-owned material',()=>denied('learning',{action:'saveMaterial'},'',[403]));
   await unchanged('admin still cannot publish teacher-owned homework',()=>denied('learning',{action:'saveHomework'},'',[403]));
   for(const actor of ['admin-a','chief-a']){
-    await login(actor);assert.equal((await call('billing',undefined,'?month=2032-01')).status,403);
-    await unchanged('financial write remains Owner-only '+actor,()=>denied('billing',{action:'saveRate'},'',[403]));
+    await login(actor);assert.equal((await call('billing',undefined,'?month=2032-01')).status,200,'preparation mode preserves the existing administrator tuition read');
+    if(actor==='admin-a')await unchanged('ordinary administrator cannot change fee settings',()=>denied('billing',{action:'saveRate'},'',[403]));
     await unchanged('global course menus remain Owner-only '+actor,()=>denied('academic-catalogues',{scope:'student',expectedRevision:1,syllabuses:[]},'',[403]));
   }
+  await login('chief-a');const policy=await ok('billing',{action:'savePolicy',revision:0,operationId:crypto.randomUUID(),effectiveFrom:'2032-01-01',currency:'MYR',hourRounding:'minute',attendanceBasis:'teaching',monthlyPartial:'manual'});
+  assert.equal(policy.revision,1,'the group chief can maintain this group fee policy');
+  assert.equal(sqlite.prepare('SELECT actor_id FROM billing_policy_versions WHERE group_id=?').get(groups.a).actor_id,'chief-a');
+  account('finance-teacher-reader','teacher',groups.a,{teacherName:'Fixture Teacher'});await login('finance-teacher-reader');assert.equal((await call('billing',undefined,'?month=2032-01')).status,403,'authenticated teacher role cannot read institutional finance');
   assert.equal(sqlite.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
 });
 }finally{

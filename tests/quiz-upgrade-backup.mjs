@@ -8,7 +8,7 @@ import {expectedSnapshotTables,orderedSnapshotTables,snapshotVersion} from '../s
 globalThis.fetch=async()=>{throw Error('Network forbidden in quiz backup fixture');};
 const root=path.resolve(import.meta.dirname,'..'),now='2032-07-01T00:00:00.000Z',group='next-genn-edu',op=()=>crypto.randomUUID(),actor='local:quiz-backup-admin';
 const added=['quiz_publications','quiz_publication_reports','quiz_publication_appeals','quiz_moderation_events','quiz_moderation_operations','quiz_question_sources'];
-function database(max=999){const db=new DatabaseSync(':memory:');for(const name of fs.readdirSync(path.join(root,'drizzle')).filter(n=>n.endsWith('.sql')&&Number(n.slice(0,4))<=max).sort())db.exec(fs.readFileSync(path.join(root,'drizzle',name),'utf8'));return db;}
+function database(max=41){const db=new DatabaseSync(':memory:');for(const name of fs.readdirSync(path.join(root,'drizzle')).filter(n=>n.endsWith('.sql')&&Number(n.slice(0,4))<=max).sort())db.exec(fs.readFileSync(path.join(root,'drizzle',name),'utf8'));return db;}
 const db=database();let active=db;
 function statement(sql,values=[]){const execute=()=>{const s=active.prepare(sql);return s.columns().length?{results:s.all(...values),meta:{changes:0}}:{results:[],meta:s.run(...values)};};return{bind:(...v)=>statement(sql,v),first:async()=>execute().results[0]||null,all:async()=>execute(),execute};}
 const d1={prepare:statement,batch:async items=>{active.exec('BEGIN');try{const out=items.map(i=>i.execute());active.exec('COMMIT');return out;}catch(e){active.exec('ROLLBACK');throw e;}}};

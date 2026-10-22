@@ -14,6 +14,7 @@ const billingTables = ["billing_students", "billing_subjects", "billing_policies
 const invoiceTables = ["invoice_brand_assets","invoice_brand_settings","invoices","invoice_items","invoice_operations","invoice_sequences","invoice_source_locks"];
 const recordingContactTables = ["whatsapp_contacts","whatsapp_challenges","whatsapp_contact_requests","class_recordings","recording_recipients","recording_operations"] as const;
 const quizUpgradeTables = ["quiz_publications","quiz_publication_reports","quiz_publication_appeals","quiz_moderation_events","quiz_moderation_operations","quiz_question_sources"] as const;
+const invoiceFinanceTables = ["invoice_finance_accounts","invoice_finance_operations","invoice_payments","invoice_receipt_sequences","invoice_receipts","invoice_finance_events","invoice_attendance_corrections"] as const;
 const noStore = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" };
 
 async function authorized(request: Request): Promise<boolean> {
@@ -138,6 +139,10 @@ export async function GET(request: Request) {
     if(quizUpgradeSchema?.n&&quizUpgradeSchema.n!==quizUpgradeTables.length)throw new Error('Incomplete quiz library upgrade schema');
     const hasQuizUpgrade=quizUpgradeSchema?.n===quizUpgradeTables.length;
     if(hasQuizUpgrade){if(!hasRecordingsAndContacts)throw new Error('Quiz library upgrade foundation missing');(names as string[]).push(...quizUpgradeTables);}
+    const financeSchema=await db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name IN ("+invoiceFinanceTables.map(()=>'?').join(',')+")").bind(...invoiceFinanceTables).first<{n:number}>();
+    if(financeSchema?.n&&financeSchema.n!==invoiceFinanceTables.length)throw new Error('Incomplete invoice finance schema');
+    const hasInvoiceFinance=financeSchema?.n===invoiceFinanceTables.length;
+    if(hasInvoiceFinance){if(!hasQuizUpgrade||!hasInvoices)throw new Error('Invoice finance foundation missing');(names as string[]).push(...invoiceFinanceTables);}
     const externalSchema=(await db.prepare("SELECT name,type,sql FROM sqlite_master WHERE tbl_name IN ("+EXTERNAL_BOT_TABLES.map(()=>'?').join(',')+") AND sql IS NOT NULL ORDER BY type,name").bind(...EXTERNAL_BOT_TABLES).all<ExternalSchemaObject>()).results||[];
     const externalNames=externalSchema.filter(item=>item.type==='table').map(item=>item.name);
     const externalHashes=Object.fromEntries(await Promise.all(externalSchema.map(async item=>[item.name,Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(item.sql))),b=>b.toString(16).padStart(2,'0')).join('')])));
@@ -154,7 +159,7 @@ export async function GET(request: Request) {
     if(hasQuizUpgrade&&!tables.quizzes.columns.includes('public_blocked_at'))throw new Error('Quiz library upgrade lacks moderation state');
     const contents=await db.batch<Record<string,unknown>>(names.map(name=>db.prepare(`SELECT * FROM "${name}"`)));
     names.forEach((name,index)=>{tables[name].rows=contents[index].results;});
-    return Response.json({ format: hasQuizUpgrade ? "timelyo-d1-v24" : hasRecordingsAndContacts ? "timelyo-d1-v23" : hasInvoices ? "timelyo-d1-v22" : hasAdminPermissions ? "timelyo-d1-v21" : hasBilling ? "timelyo-d1-v20" : hasAcademicCatalogues && tables.quiz_practice_attempts.columns.includes("discarded_at") ? "timelyo-d1-v19" : hasAcademicCatalogues ? "timelyo-d1-v18" : hasFormalPractice ? "timelyo-d1-v17" : hasPractice ? "timelyo-d1-v16" : hasQuizzes ? "timelyo-d1-v15" : hasClassSessions&&tables.class_sessions.columns.includes("teaching_status") ? "timelyo-d1-v14" : hasClassSessions ? "timelyo-d1-v13" : hasReview ? "timelyo-d1-v12" : hasVersions ? "timelyo-d1-v11" : hasFolders ? "timelyo-d1-v10" : hasGroups ? "timelyo-d1-v9" : hasInbox ? "timelyo-d1-v8" : hasNotifications ? "timelyo-d1-v7" : tables.accounts.columns.includes("pending_expires_at") ? "timelyo-d1-v6" : tables.reschedule_requests.columns.includes("requested_role") ? "timelyo-d1-v5" : hasTerms ? "timelyo-d1-v4" : hasIdentities ? "timelyo-d1-v3" : hasClassrooms ? "timelyo-d1-v2" : "timelyo-d1-v1", tables,...external.names.length?{externalSchema}:{} }, { headers: noStore });
+    return Response.json({ format: hasInvoiceFinance ? "timelyo-d1-v25" : hasQuizUpgrade ? "timelyo-d1-v24" : hasRecordingsAndContacts ? "timelyo-d1-v23" : hasInvoices ? "timelyo-d1-v22" : hasAdminPermissions ? "timelyo-d1-v21" : hasBilling ? "timelyo-d1-v20" : hasAcademicCatalogues && tables.quiz_practice_attempts.columns.includes("discarded_at") ? "timelyo-d1-v19" : hasAcademicCatalogues ? "timelyo-d1-v18" : hasFormalPractice ? "timelyo-d1-v17" : hasPractice ? "timelyo-d1-v16" : hasQuizzes ? "timelyo-d1-v15" : hasClassSessions&&tables.class_sessions.columns.includes("teaching_status") ? "timelyo-d1-v14" : hasClassSessions ? "timelyo-d1-v13" : hasReview ? "timelyo-d1-v12" : hasVersions ? "timelyo-d1-v11" : hasFolders ? "timelyo-d1-v10" : hasGroups ? "timelyo-d1-v9" : hasInbox ? "timelyo-d1-v8" : hasNotifications ? "timelyo-d1-v7" : tables.accounts.columns.includes("pending_expires_at") ? "timelyo-d1-v6" : tables.reschedule_requests.columns.includes("requested_role") ? "timelyo-d1-v5" : hasTerms ? "timelyo-d1-v4" : hasIdentities ? "timelyo-d1-v3" : hasClassrooms ? "timelyo-d1-v2" : "timelyo-d1-v1", tables,...external.names.length?{externalSchema}:{} }, { headers: noStore });
   } catch {
     return Response.json({ error: "Backup export unavailable" }, { status: 503, headers: noStore });
   }

@@ -25,7 +25,8 @@ const currentModules = [
   { id: "sheetSync", actions: ["view", "preview", "commit"] },
   { id: "audit", actions: ["view"] },
   { id: "fees", actions: ["view"] },
-  { id: "invoices", actions: ["view", "create", "edit", "issue"] },
+  { id: "invoices", actions: ["view", "create", "edit", "issue", "adjust", "void"] },
+  { id: "payments", actions: ["view", "record", "reverse", "refund"] },
 ] as const;
 
 const reservedModules = ["finance", "parents", "resources", "progress", "publicModeration", "exports", "adminIdentity", "groups", "academicCatalogues", "backup"] as const;
@@ -47,6 +48,9 @@ const extraDependencies: Partial<Record<AdminGrantKey, AdminGrantKey[]>> = {
   "quizAssignments.assign": ["quizzes.view"],
   "sheetSync.commit": ["sheetSync.preview"],
   "invoices.issue": ["invoices.view"],
+  "invoices.adjust": ["payments.view"],
+  "invoices.void": ["payments.view"],
+  "payments.view": ["invoices.view"],
 };
 
 export const ADMIN_PERMISSION_CATALOG: AdminPermissionModule[] = [
