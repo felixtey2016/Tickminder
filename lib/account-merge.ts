@@ -5,12 +5,15 @@ import { authorityGuard } from "@/lib/admin-authority";
 // Account IDs are globally unique. Check every organisation because shared
 // versions and historical practice can outlive an account's group membership.
 export async function hasQuizAccountHistory(accountId: string) {
-  return Boolean(await first(`SELECT 1 AS found FROM quizzes WHERE owner_id=?
-    UNION ALL SELECT 1 FROM quiz_images WHERE owner_id=?
-    UNION ALL SELECT 1 FROM quiz_versions WHERE actor_id=?
-    UNION ALL SELECT 1 FROM quiz_practice_assignments WHERE created_by=?
-    UNION ALL SELECT 1 FROM quiz_practice_attempts WHERE account_id=?
-    UNION ALL SELECT 1 FROM quiz_practice_operations WHERE actor_id=? LIMIT 1`,
+  // D1 limits compound SELECT terms more strictly than local SQLite. Keep all
+  // six history checks in one read without a six-term UNION.
+  return Boolean(await first(`SELECT 1 AS found WHERE
+    EXISTS(SELECT 1 FROM quizzes WHERE owner_id=?)
+    OR EXISTS(SELECT 1 FROM quiz_images WHERE owner_id=?)
+    OR EXISTS(SELECT 1 FROM quiz_versions WHERE actor_id=?)
+    OR EXISTS(SELECT 1 FROM quiz_practice_assignments WHERE created_by=?)
+    OR EXISTS(SELECT 1 FROM quiz_practice_attempts WHERE account_id=?)
+    OR EXISTS(SELECT 1 FROM quiz_practice_operations WHERE actor_id=?)`,
     accountId,accountId,accountId,accountId,accountId,accountId));
 }
 
