@@ -34,6 +34,7 @@ import { ActivityLog } from "./activity-log";
 import { useLessonWebMcp } from "./webmcp";
 import { monthlyAttendanceForPair } from "@/lib/lesson-rules";
 import { StudentPortal, TeacherPortal } from "./portals";
+import {TeachingResources} from "./teaching-resources";
 import { HomeDashboard } from "./home-dashboard";
 import type { LearningState } from "./learning-portal";
 const GroupConsole=lazy(()=>import("./group-console").then(m=>({default:m.GroupConsole})));
@@ -55,6 +56,7 @@ import { courseBadgeCount, defaultCourseView, isCourseView, normalizeCourseView 
 import { CourseNavigation } from "@/components/course-navigation";
 import { ManagementNavigation } from "@/components/management-navigation";
 import { defaultManagementView, managementArea, managementTitle, normalizeManagementView } from "@/lib/management-navigation";
+import {WhatsAppBinding} from "./whatsapp-binding";
 import { AccountSetup } from "./account-setup";
 import { DeleteButton, DirectoryFilters, PeopleDirectory } from "./directory-tools";
 import { AdminPermissionContext, useAdminAction } from "./admin-permission-context";
@@ -529,6 +531,7 @@ export function Scheduler() {
         return <NameSetup initialName={account.name} save={confirmName} logout={logout} busy={busy} message={message} language={language} changeLanguage={changeLanguage}/>;
     if (account.requiresAccountSetup)
         return <AccountSetup email={account.email} onSaved={async()=>setAuth(await request("/api/auth"))} logout={logout} language={language} changeLanguage={changeLanguage}/>;
+    if(account.role==='pending'&&account.groupId==='next-genn-edu')return <main className="auth-shell"><div className="auth-card"><h1>完成学生注册</h1><WhatsAppBinding onComplete={async()=>{setAuth(await request('/api/auth'));}}/><Button variant="outline" onClick={logout}>退出登录</Button></div></main>;
     if(account.groupUnavailable)return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><h1>{t("补习集团暂不可用")}</h1><p>{t("请联系所属集团的管理员，或稍后重试。")}</p><Button onClick={()=>window.location.reload()}>{t("刷新")}</Button><Button variant="outline" onClick={logout}>{t("退出登录")}</Button></div></main>;
     const admin = account.role === "admin";
     return <AdminPermissionContext.Provider value={account}><Workspace key={`${account.id}:${account.groupId}:${JSON.stringify(account.adminPermissions)}`} account={account} state={state} ensureScope={ensureScope} setActiveScopes={setActiveScopes} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/></AdminPermissionContext.Provider>;
@@ -594,7 +597,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "classrooms", label: "班级", Icon: LibraryBig },
         { id: "homework", label: "功课总览", Icon: BookOpen },
         { id: "quizzes", label: "quiz.hubTitle", Icon: NotebookPen },
-        { id: "materials", label: "教学资料（PDF）", Icon: FileText },
+        { id: "materials", label: "教学资料", Icon: FileText },
         { id: "overview", label: "课程总览", Icon: BarChart3 },
         { id: "attention", label: "出席待处理", Icon: AlertCircle },
         { id: "schedule", label: "安排课程", Icon: SquarePen },
@@ -620,7 +623,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "reschedule", label: "改期申请", Icon: ArrowLeftRight },
         { id: "hours", label: "课时统计", Icon: Clock3 },
         { id: "students", label: "负责的学生与科目", Icon: ContactRound },
-        { id: "materials", label: "教学资料（PDF）", Icon: FileText },
+        { id: "materials", label: "教学资料", Icon: FileText },
         { id: "homework", label: "布置功课", Icon: BookOpen },
         { id: "quizzes", label: "quiz.hubTitle", Icon: NotebookPen },
     ],
@@ -739,10 +742,12 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     if (courseView) lastCourseView.current = activeView;
     if (managementView) lastManagementViews.current[managementView] = activeView as typeof lastManagementViews.current.people;
     const title = courseView ? "course.nav.title" : managementView ? managementTitle(managementView) : items.find(item => item.id === activeView)?.label || items[0].label;
-    const requiredScope: StateScope | null = activeView === "classrooms" ? "classrooms" : activeView === "accounts" ? "accounts" : activeView === "activity" ? "activity" : ["homework","materials", ...(role === "student" ? ["calendar"] : [])].includes(activeView) ? "learning" : null;
+    const requiredScope: StateScope | null = activeView === "classrooms" ? "classrooms" : activeView === "accounts" ? "accounts" : activeView === "activity" ? "activity" : ["homework", ...(role === "student" ? ["calendar"] : [])].includes(activeView) ? "learning" : null;
     const scopeLoaded = !requiredScope || state?.loadedScopes?.includes(requiredScope) || (!state?.loadedScopes && Boolean(requiredScope === "learning" ? state?.learning : requiredScope === "classrooms" ? state?.classrooms : requiredScope === "accounts" ? state?.users : state?.activity));
     const scopeError = requiredScope ? state?.scopeErrors?.[requiredScope] : undefined;
     useEffect(() => {
+        // TeachingResources selects its own live scope for the PDF tab only.
+        if(activeView === "materials") return;
         setActiveScopes(activeView === "classrooms" ? ["classrooms", "learning"] : requiredScope ? [requiredScope] : activeView === "home" && role !== "admin" ? ["learning"] : []);
         return () => setActiveScopes([]);
     }, [requiredScope, activeView, role, setActiveScopes, state?.account.id,permissionSignature]);
@@ -834,6 +839,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
             pageContent = <TeacherLearning learning={learning} mutate={learningMutate} busy={busy} view={activeView as "materials" | "homework"} onChanged={()=>ensureScope("learning",true)}/>;
         }
     }
+    if(activeView === "materials" && role !== "pending") pageContent=<TeachingResources key={account.groupId} ready={learningReady} error={state?.scopeErrors?.learning} load={force=>ensureScope("learning",force)} setActiveScopes={setActiveScopes}>{pageContent}</TeachingResources>;
     return <NotificationsProvider groupId={account.groupId || ""} key={`${account.id}:${role}:${account.groupId}`} accountId={account.id || ""} language={language}><div className="app-shell">
         <header className="topbar">
             <div className="brand"><BrandLogo small/><div><strong>{BRAND_NAME}</strong><span>{account.groupName || t("学习与协作平台")} · GMT+8</span></div></div>
@@ -850,12 +856,13 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
                     {NAV_GROUPS[role].filter(group=>group.ids.some(id=>items.some(item=>item.id===id))).map(group => <div className="menu-group" key={group.ids.join('-')}>{group.label && <h2 className="menu-group-title">{t(group.label)}</h2>}{group.ids.map(id => items.find(item => item.id === id)!).filter(Boolean).map(item => <button key={item.id} type="button" data-testid={`menu-${item.id}`} className={"menu-link" + (activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? " active" : "")} aria-current={activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? "page" : undefined} onClick={() => choose(item.id)}><item.Icon size={19} aria-hidden="true"/><span>{t(item.label)}</span><MenuBadge count={item.id === "courses" ? courseBadgeCount(role,badgeCounts) : badgeCounts[item.id as keyof typeof badgeCounts] || 0} includeUnread={item.id==="notifications"} quizOnly={item.id==="quizzes"}/></button>)}</div>)}
                 </nav>
                 <div className="menu-utilities">
+                    {account.groupId==='next-genn-edu'&&<a className="menu-link" href="/whatsapp"><ShieldCheck size={19}/><span>连接 WhatsApp</span></a>}
                     <button type="button" className="menu-link" onClick={reload}><RefreshCw size={19}/><span>{t("刷新")}</span></button>
                     <button type="button" className="menu-link" onClick={logout}><LogOut size={19}/><span>{t("退出登录")}</span></button>
                 </div>
                 <LegalLinks language={language} className="menu-legal"/>
             </aside>}
-            <main className="workspace"><FloatingBackButton context={`${account.id}:${role}:${account.groupId}`} isHome={activeView===(account.isOwner?"groups":"home")} onHome={()=>choose(account.isOwner?"groups":"home")}/><div className="group-context" aria-label={t("当前集团")}><Building2 size={16} aria-hidden="true"/><span>{account.groupName}</span></div>
+            <main className="workspace"><FloatingBackButton context={`${account.id}:${role}:${account.groupId}`} isHome={activeView===(account.isOwner?"groups":"home")} onHome={()=>choose(account.isOwner?"groups":"home")}/><div className="group-context" aria-label={t("当前集团")}><Building2 size={16} aria-hidden="true"/><span>{account.groupName}</span>{account.groupId==='next-genn-edu'&&<a href="/whatsapp" style={{marginLeft:'auto'}}>连接 WhatsApp</a>}</div>
                 <div className="page-head"><div><p className="eyebrow">{t(role === "admin" ? "管理员工作台" : role === "student" ? "学生工作台" : role === "pending" ? "待分配账号" : "老师工作台")}</p><h1>{t(title)}</h1></div>
                     {showMonth && <label className="month-select">{t("统计月份")}<input type="month" value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)}/></label>}
                 </div>

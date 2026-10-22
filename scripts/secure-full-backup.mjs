@@ -8,7 +8,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync, readdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
-import {snapshotVersion,expectedSnapshotTables,snapshotObjects,backupObjectName,validObjectSignature,matchManifestObjects} from './backup-order.mjs';
+import {snapshotVersion,expectedSnapshotTables,snapshotObjects,backupObjectName,validObjectSignature,matchManifestObjects,externalSnapshotSchema} from './backup-order.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const args = process.argv.slice(2);
@@ -145,7 +145,7 @@ async function main() {
     const dbBytes = Buffer.from(await dbResponse.arrayBuffer());
     if (dbBytes.length > 20 * 1024 * 1024) throw new Error('Database export exceeds expected size');
     const database = JSON.parse(dbBytes.toString('utf8'));
-    const version=snapshotVersion(database),expectedTables=expectedSnapshotTables(version);
+    const version=snapshotVersion(database),expectedTables=expectedSnapshotTables(version,database.tables);
     if (!version || JSON.stringify(Object.keys(database.tables || {}).sort()) !== JSON.stringify(expectedTables.sort())) {
       throw new Error(`Unexpected database export format=${String(database.format)} tables=${Object.keys(database.tables || {}).join(',')}`);
     }
@@ -158,6 +158,7 @@ async function main() {
       }
     }
     const fileRows = snapshotObjects(database);
+    externalSnapshotSchema(database);
     const recovery = args.includes('--recovery-file') ? recoverySecret(option('--recovery-file')) : null;
     const key = randomBytes(32);
     const manifest = { format: recovery ? 'timelyo-full-backup-v2' : 'timelyo-full-backup-v1', createdAt: new Date().toISOString(), site: site.origin,

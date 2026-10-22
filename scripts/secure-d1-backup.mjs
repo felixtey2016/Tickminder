@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import {orderedSnapshotTables,historicalInsertTriggers,checkRestoredFolderStructure,snapshotVersion,expectedSnapshotTables,snapshotObjects} from './backup-order.mjs';
+import {orderedSnapshotTables,historicalInsertTriggers,checkRestoredFolderStructure,snapshotVersion,expectedSnapshotTables,snapshotObjects,externalSnapshotSchema} from './backup-order.mjs';
 
 const command = process.argv[2];
 const option = process.argv[3];
@@ -49,7 +49,7 @@ function dpapi(mode, value) {
 
 function validateExport(data) {
   const version=snapshotVersion(data);
-  const expectedTables=expectedSnapshotTables(version);
+  const expectedTables=expectedSnapshotTables(version,data?.tables);
   if (!data || !version || !data.tables ||
       Object.keys(data.tables).sort().join('|') !== expectedTables.slice().sort().join('|')) {
     throw new Error('Incomplete database export');
@@ -62,6 +62,7 @@ function validateExport(data) {
     }
   }
   snapshotObjects(data);
+  externalSnapshotSchema(data);
   return expectedTables;
 }
 
@@ -70,15 +71,19 @@ function sha256(bytes) { return createHash('sha256').update(bytes).digest('hex')
 function restoreInMemory(data) {
   const expectedTables = validateExport(data);
   const version=Number(data.format.slice('timelyo-d1-v'.length));
+  const external=externalSnapshotSchema(data);
   const db = new DatabaseSync(':memory:');
   try {
-    for (const prefix of [...baseMigrations,...Array.from({length:Math.min(8,Math.max(0,version-1))},(_,index)=>String(10+index).padStart(4,'0')),...(version>=10?['0019']:[]),...(version>=11?['0020']:[]),...(version>=12?['0021']:[]),...(version>=13?['0022']:[]),...(version>=14?['0023']:[]),...(version>=15?['0024']:[]),...(version>=16?['0025','0026']:[]),...(version>=17?['0027','0028']:[]),...(version>=18?['0029']:[]),...(version>=19?['0030']:[]),...(version>=20?['0031']:[]),...(version>=21?['0032']:[]),...(version>=22?['0033','0034','0035']:[])]) {
-      const file = readdirSync(resolve(projectRoot, 'drizzle')).find((name) => name.startsWith(prefix + '_') && name.endsWith('.sql'));
-      if (!file) throw new Error(`Missing migration ${prefix}`);
-      db.exec(readFileSync(resolve(projectRoot, 'drizzle', file), 'utf8'));
+    for (const prefix of [...baseMigrations,...Array.from({length:Math.min(8,Math.max(0,version-1))},(_,index)=>String(10+index).padStart(4,'0')),...(version>=10?['0019']:[]),...(version>=11?['0020']:[]),...(version>=12?['0021']:[]),...(version>=13?['0022']:[]),...(version>=14?['0023']:[]),...(version>=15?['0024']:[]),...(version>=16?['0025','0026']:[]),...(version>=17?['0027','0028']:[]),...(version>=18?['0029']:[]),...(version>=19?['0030']:[]),...(version>=20?['0031']:[]),...(version>=21?['0032']:[]),...(version>=22?['0033','0034','0035']:[]),...(version>=23?['0036','0037']:[])]) {
+      // Independent releases can share a numeric prefix (both 0036 migrations
+      // are deployed). Replay every matching migration in filename order.
+      const files = readdirSync(resolve(projectRoot, 'drizzle')).filter((name) => name.startsWith(prefix + '_') && name.endsWith('.sql')).sort();
+      if (!files.length) throw new Error(`Missing migration ${prefix}`);
+      for(const file of files)db.exec(readFileSync(resolve(projectRoot, 'drizzle', file), 'utf8'));
     }
     if(version>=9)db.exec('DELETE FROM tuition_groups');
     if(version>=18)db.exec('DELETE FROM academic_catalogues');
+    for(const sql of external.tables)db.exec(sql);
     const triggers=historicalInsertTriggers.map(name=>db.prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND name=?").get(name)).filter(Boolean);
     db.exec('BEGIN');
     try {
@@ -96,6 +101,8 @@ function restoreInMemory(data) {
         for (const row of rows) insert.run(...columns.map((column) => row[column]));
       }
       for(const trigger of triggers)db.exec(trigger.sql);
+      // Replay external history without firing registration/revocation effects.
+      for(const sql of external.triggers)db.exec(sql);
       checkRestoredFolderStructure(db);
       db.exec('COMMIT');
     } catch (error) { db.exec('ROLLBACK'); throw error; }

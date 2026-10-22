@@ -31,6 +31,8 @@ const token='fictional-permissions-backup-token-123456789';globalThis.__permissi
 const stub='data:text/javascript;base64,'+Buffer.from('export const {env,learningDb,pdfBucket}=globalThis.__permissionBackup;').toString('base64');
 let routeSource=ts.transpileModule(fs.readFileSync(path.join(root,'app/api/backup-export/route.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
 for(const spec of ['cloudflare:workers','@/lib/learning-server','@/lib/pdf-storage'])routeSource=routeSource.replaceAll('"'+spec+'"','"'+stub+'"').replaceAll("'"+spec+"'","'"+stub+"'");
+const externalModule='data:text/javascript;base64,'+Buffer.from(ts.transpileModule(fs.readFileSync(path.join(root,'lib/backup-external-schema.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64');
+routeSource=routeSource.replaceAll('"@/lib/backup-external-schema"',JSON.stringify(externalModule)).replaceAll("'@/lib/backup-external-schema'",JSON.stringify(externalModule));
 const route=await import('data:text/javascript;base64,'+Buffer.from(routeSource).toString('base64'));
 const request=provided=>new Request('https://fixture.invalid/api/backup-export',{headers:provided?{authorization:'Bearer '+provided}:{}});
 check('anonymous export is hidden',()=>{});assert.equal((await route.GET(request())).status,404);

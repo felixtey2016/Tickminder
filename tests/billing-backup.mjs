@@ -101,6 +101,8 @@ const token='fictional-billing-export-token-at-least-thirty-two-characters';
 const stub=sourceUrl(`export const env={BACKUP_EXPORT_TOKEN:${JSON.stringify(token)}};export const learningDb=()=>globalThis.__billingBackupD1;export const pdfBucket=()=>({});`);
 let routeSource=ts.transpileModule(fs.readFileSync(path.join(root,'app/api/backup-export/route.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
 for(const name of ['cloudflare:workers','@/lib/learning-server','@/lib/pdf-storage'])routeSource=routeSource.replaceAll('"'+name+'"',JSON.stringify(stub));
+const externalModule='data:text/javascript;base64,'+Buffer.from(ts.transpileModule(fs.readFileSync(path.join(root,'lib/backup-external-schema.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64');
+routeSource=routeSource.replaceAll('"@/lib/backup-external-schema"',JSON.stringify(externalModule)).replaceAll("'@/lib/backup-external-schema'",JSON.stringify(externalModule));
 const route=await import(sourceUrl(routeSource));
 const request=secret=>new Request('https://fictional-billing.example.test/api/backup-export',{headers:secret?{authorization:'Bearer '+secret}:{}});
 let response=await route.GET(request(token)),payload=await response.json();

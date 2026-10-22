@@ -15,6 +15,7 @@ const currentModules = [
   { id: "announcements", actions: ["view", "create", "edit", "delete"] },
   { id: "folders", actions: ["view", "create", "edit", "delete", "placeContent"] },
   { id: "materials", actions: ["view"] },
+  { id: "recordings", actions: ["view", "create", "edit", "delete"] },
   // Publishing, editing, feedback and scoring remain the owning teacher's work.
   { id: "homework", actions: ["view", "delete"] },
   // Quiz writes retain their existing creator / bank / group ceilings.

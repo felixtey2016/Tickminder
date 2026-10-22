@@ -78,6 +78,8 @@ const statement=(sql,values=[])=>{const execute=()=>{const result=globalThis.__d
 globalThis.__discardBackupD1={prepare:statement,batch:async statements=>statements.map(item=>item.execute())};
 const stub=url(`export const env={BACKUP_EXPORT_TOKEN:${JSON.stringify(token)}};export const learningDb=()=>globalThis.__discardBackupD1;export const pdfBucket=()=>({});`);
 routeSource=routeSource.replaceAll('"cloudflare:workers"',JSON.stringify(stub)).replaceAll('"@/lib/learning-server"',JSON.stringify(stub)).replaceAll('"@/lib/pdf-storage"',JSON.stringify(stub));
+const externalModule='data:text/javascript;base64,'+Buffer.from(ts.transpileModule(fs.readFileSync(path.join(root,'lib/backup-external-schema.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64');
+routeSource=routeSource.replaceAll('"@/lib/backup-external-schema"',JSON.stringify(externalModule)).replaceAll("'@/lib/backup-external-schema'",JSON.stringify(externalModule));
 const route=await import(url(routeSource)),request=()=>new Request('https://fictional.example.test/api/backup-export',{headers:{authorization:'Bearer '+token}});
 let response=await route.GET(request()),payload=await response.json();
 check(()=>assert.equal(response.status,200));check(()=>assert.equal(payload.format,'timelyo-d1-v19'));check(()=>assert.equal(payload.tables.quiz_practice_attempts.rows[0].discarded_at,discarded));

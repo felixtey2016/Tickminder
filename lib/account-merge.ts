@@ -25,6 +25,7 @@ export async function prepareAccountMerge(actor: Account, duplicateId: string, c
   if (duplicate.role !== "pending" && !same) return { error: "两个账号的身份不同，请联系管理员核对后再连接", statements: [] };
   if (await first("SELECT 1 AS found FROM local_credentials WHERE account_id = ?", duplicate.id)) return { error: "Google 已连接另一个密码账号，请联系管理员", statements: [] };
   if (await hasQuizAccountHistory(duplicate.id)) return {error:"account.quizHistoryMergeBlocked",statements:[]};
+  if(await first("SELECT 1 FROM class_recordings WHERE created_by=? LIMIT 1",duplicate.id))return{error:"此账号拥有课堂录影，请联系管理员处理后再合并",statements:[]};
   if (!confirmed) return { mergeName: duplicate.name, error: "发现已有 Google 账号，确认后会合并登录方式并保留资料", statements: [] };
   const statements = [authorityGuard({
     sql: `EXISTS(SELECT 1 FROM accounts d JOIN tuition_groups g ON g.id=d.group_id

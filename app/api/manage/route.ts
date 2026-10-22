@@ -45,6 +45,7 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
       await assertAccountAuthority(actor,id,authority);
       statements.push(accountAuthorityGuard(actor,id,authority));
       if (await hasQuizAccountHistory(id)) throw new DeleteError("account.quizHistoryDeleteBlocked");
+      if(await first("SELECT 1 FROM class_recordings WHERE created_by=? LIMIT 1",id))throw new DeleteError("此账号仍拥有课堂录影，请先处理这些录影后再永久删除");
       if (await first("SELECT 1 AS found FROM teaching_materials WHERE owner_id = ? UNION SELECT 1 FROM homework WHERE owner_id = ? LIMIT 1", id, id)) throw new DeleteError("此账号仍拥有教学资料或功课，请先处理这些资料后再永久删除");
       const local = await first<{ username: string }>("SELECT username FROM local_credentials WHERE account_id = ?", id);
       statements.push(db.prepare("DELETE FROM notification_deliveries WHERE item_id IN (SELECT id FROM notification_items WHERE account_id=?) OR subscription_id IN (SELECT id FROM push_subscriptions WHERE account_id=?)").bind(id,id));
@@ -65,6 +66,7 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
       if(kind==="student")statements.push(db.prepare("DELETE FROM billing_rates WHERE group_id=? AND student_id IN(SELECT id FROM billing_students WHERE group_id=? AND student_name=?) AND NOT EXISTS(SELECT 1 FROM billing_rate_versions v WHERE v.group_id=billing_rates.group_id AND v.rate_id=billing_rates.id)").bind(groupId,groupId,id));
       statements.push(db.prepare(`DELETE FROM assignments WHERE (plan_key IN (SELECT key FROM plans WHERE ${column} = ?)) AND group_id = ?`).bind(id,groupId));
       statements.push(db.prepare(`DELETE FROM plans WHERE (${column} = ?) AND group_id = ?`).bind(id,groupId));
+      if(kind==="student")statements.push(db.prepare("DELETE FROM recording_recipients WHERE student_name=? AND group_id=?").bind(id,groupId));
       statements.push(db.prepare(`DELETE FROM ${table} WHERE (name = ?) AND group_id = ?`).bind(id,groupId));
     } else if (kind === "plan") {
       const plan = await first<{ student: string; subject: string }>("SELECT student,subject FROM plans WHERE key = ?", id);
@@ -114,6 +116,8 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
       for (const table of ["homework_submissions", "homework_recipients"]) statements.push(db.prepare(`DELETE FROM ${table} WHERE (homework_id IN (SELECT id FROM homework WHERE classroom_id = ?)) AND group_id = ?`).bind(id,groupId));
       statements.push(db.prepare("DELETE FROM material_recipients WHERE (material_id IN (SELECT id FROM teaching_materials WHERE classroom_id = ?)) AND group_id = ?").bind(id,groupId));
       for (const table of ["homework", "teaching_materials", "classroom_announcements", "classroom_members", "classroom_folders"]) statements.push(db.prepare(`DELETE FROM ${table} WHERE (classroom_id = ?) AND group_id = ?`).bind(id,groupId));
+      statements.push(db.prepare("DELETE FROM recording_recipients WHERE recording_id IN(SELECT id FROM class_recordings WHERE classroom_id=?) AND group_id=?").bind(id,groupId));
+      statements.push(db.prepare("DELETE FROM class_recordings WHERE classroom_id=? AND group_id=?").bind(id,groupId));
       statements.push(db.prepare("DELETE FROM classrooms WHERE (id = ?) AND group_id = ?").bind(id,groupId));
       statements.push(classroomCoverageGuard(groupId));
     }

@@ -1,15 +1,27 @@
 import {readFileSync} from 'node:fs';
 import {stripTypeScriptTypes} from 'node:module';
+import {createHash} from 'node:crypto';
 // The source catalogue is self-contained. Reuse its strict parser so restored
 // settings cannot admit unknown actions, future modules or missing dependencies.
 const permissionSource=stripTypeScriptTypes(readFileSync(new URL('../lib/admin-permissions.ts',import.meta.url),'utf8'));
 const {normalizeAdminGrants:normalizeRestoredAdminGrants}=await import('data:text/javascript;base64,'+Buffer.from(permissionSource).toString('base64'));
+const recordingSource=stripTypeScriptTypes(readFileSync(new URL('../lib/recordings.ts',import.meta.url),'utf8'),{mode:'transform'});
+const {recordingDriveUrl,recordingDate}=await import('data:text/javascript;base64,'+Buffer.from(recordingSource).toString('base64'));
+const externalSource=stripTypeScriptTypes(readFileSync(new URL('../lib/backup-external-schema.ts',import.meta.url),'utf8'));
+const {EXTERNAL_BOT_TABLES,externalSchemaPlan}=await import('data:text/javascript;base64,'+Buffer.from(externalSource).toString('base64'));
+export function externalSnapshotSchema(database){
+ const objects=database?.externalSchema;
+ const hashes=Object.fromEntries((Array.isArray(objects)?objects:[]).filter(item=>item&&typeof item.name==='string'&&typeof item.sql==='string').map(item=>[item.name,createHash('sha256').update(item.sql).digest('hex')]));
+ const result=externalSchemaPlan(Object.keys(database?.tables||{}),objects,hashes);
+ if(result.names.length&&snapshotVersion(database)<23)throw Error('External Bot schema requires snapshot v23');
+ return result;
+}
 
 // Restore structural parents before content. Replay historical rows without
 // applying current publishing rules (an archived class may contain PDFs).
 export const historicalInsertTriggers=['attendance_teaching_conflict','attendance_student_conflict','folder_parent_insert','material_active_class_insert','homework_active_class_insert','material_initial_version','homework_initial_version','class_session_auto_insert','class_session_conflict_insert','class_session_link_insert','billing_student_identity_insert','billing_subject_identity_insert','invoice_issued_item_insert'];
 export function orderedSnapshotTables(tables) {
- const names=Object.keys(tables),priority=['academic_catalogues','tuition_groups','teachers','students','plans','accounts','classrooms','classroom_folders','class_sessions','lessons','class_session_participants','pdf_files','teaching_materials','homework','homework_recipients','homework_submissions','homework_resubmission_grants','homework_feedback','push_subscriptions','learning_notifications','learning_notification_deliveries','quizzes','quiz_images','quiz_versions','quiz_answer_keys','quiz_version_images','quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations','quiz_practice_events','quiz_assignment_notifications','student_grade_promotions','billing_students','billing_subjects','billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments','admin_permission_profiles','invoice_brand_assets','invoice_brand_settings','invoices','invoice_items','invoice_operations','invoice_sequences','invoice_source_locks'];
+ const names=Object.keys(tables),priority=['academic_catalogues','tuition_groups','teachers','students','plans','accounts','whatsapp_contacts','whatsapp_challenges','whatsapp_contact_requests','classrooms','classroom_folders','class_sessions','lessons','class_session_participants','class_recordings','recording_recipients','recording_operations','pdf_files','teaching_materials','homework','homework_recipients','homework_submissions','homework_resubmission_grants','homework_feedback','push_subscriptions','learning_notifications','learning_notification_deliveries','quizzes','quiz_images','quiz_versions','quiz_answer_keys','quiz_version_images','quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations','quiz_practice_events','quiz_assignment_notifications','student_grade_promotions','billing_students','billing_subjects','billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments','admin_permission_profiles','invoice_brand_assets','invoice_brand_settings','invoices','invoice_items','invoice_operations','invoice_sequences','invoice_source_locks'];
  const ordered=[...priority.filter(name=>names.includes(name)),...names.filter(name=>!priority.includes(name)&&name!=='classroom_content_state'),...(names.includes('classroom_content_state')?['classroom_content_state']:[])];
  return ordered.map(name=>{
   const table=tables[name];if(name!=='classroom_folders')return [name,table];
@@ -113,7 +125,36 @@ export function checkRestoredAdminPermissionsStructure(db) {
   }
  }
 }
+export function checkRestoredRecordingsAndContacts(db) {
+ const count=names=>db.prepare(`SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name IN (${names.map(()=>'?').join(',')})`).get(...names).n;
+ const contacts=['whatsapp_contacts','whatsapp_challenges','whatsapp_contact_requests'],recordings=['class_recordings','recording_recipients','recording_operations'];
+ const contactCount=count(contacts),recordingCount=count(recordings);
+ const fail=()=>{throw Error('Restored recordings or WhatsApp relationships are invalid');};
+ if(contactCount&&contactCount!==contacts.length||recordingCount&&recordingCount!==recordings.length)fail();
+ if(contactCount)for(const name of contacts){
+  // Contacts/challenges retain their historical identity snapshot after role or
+  // name changes; restoring them must not silently rebind a different person.
+  if(db.prepare(`SELECT 1 FROM ${name} w LEFT JOIN accounts a ON a.id=w.account_id LEFT JOIN tuition_groups g ON g.id=w.group_id WHERE a.id IS NULL OR g.id IS NULL LIMIT 1`).get())fail();
+ }
+ if(!recordingCount)return;
+ if(db.prepare(`SELECT 1 FROM class_recordings r LEFT JOIN classrooms c ON c.id=r.classroom_id AND c.group_id=r.group_id
+  LEFT JOIN accounts a ON a.id=r.created_by LEFT JOIN class_sessions s ON s.id=r.session_id AND s.group_id=r.group_id AND s.classroom_id=r.classroom_id
+  WHERE c.id IS NULL OR a.id IS NULL OR (r.session_id IS NOT NULL AND s.id IS NULL)
+  UNION ALL SELECT 1 FROM recording_recipients x LEFT JOIN class_recordings r ON r.id=x.recording_id AND r.group_id=x.group_id WHERE r.id IS NULL OR r.audience_mode<>'selected'
+  UNION ALL SELECT 1 FROM recording_operations o LEFT JOIN accounts a ON a.id=o.actor_id LEFT JOIN tuition_groups g ON g.id=o.group_id WHERE a.id IS NULL OR g.id IS NULL LIMIT 1`).get())fail();
+ for(const row of db.prepare('SELECT * FROM class_recordings').all()){
+  if(typeof row.title!=='string'||!row.title.trim()||row.title.length>200||typeof row.description!=='string'||row.description.length>4000||!['draft','published'].includes(row.status)||!['classroom','selected'].includes(row.audience_mode)||!Number.isSafeInteger(row.revision)||row.revision<1||!Number.isFinite(Date.parse(row.created_at))||!Number.isFinite(Date.parse(row.updated_at)))fail();
+  try{if(recordingDriveUrl(row.drive_url)!==row.drive_url||recordingDate(row.lesson_date)!==row.lesson_date)fail();}catch{fail();}
+ }
+ // Students may since have left a class; preserve the original recipient list.
+ for(const row of db.prepare('SELECT student_name FROM recording_recipients').all())if(typeof row.student_name!=='string'||!row.student_name.trim()||row.student_name.length>80)fail();
+ for(const row of db.prepare('SELECT * FROM recording_operations').all()){
+  if(typeof row.request_hash!=='string'||!/^[a-f0-9]{64}$/.test(row.request_hash)||!Number.isFinite(Date.parse(row.created_at)))fail();
+  try{const result=JSON.parse(row.result_json);if(!result||typeof result!=='object'||Array.isArray(result))fail();}catch{fail();}
+ }
+}
 export function checkRestoredFolderStructure(db) {
+ checkRestoredRecordingsAndContacts(db);
  checkRestoredAdminPermissionsStructure(db);
  checkRestoredBillingStructure(db);
  checkRestoredInvoiceStructure(db);
@@ -200,10 +241,10 @@ export function checkRestoredFolderStructure(db) {
  if(invalid||db.prepare('PRAGMA foreign_key_check').all().length)throw Error('Restored folder relationships are invalid');
 }
 
-export function snapshotVersion(data){return Number(data?.format?.match(/^timelyo-d1-v(22|21|20|19|18|17|16|15|14|13|12|11|10|[1-9])$/)?.[1]||0);}
-export function expectedSnapshotTables(version){
+export function snapshotVersion(data){return Number(data?.format?.match(/^timelyo-d1-v(23|22|21|20|19|18|17|16|15|14|13|12|11|10|[1-9])$/)?.[1]||0);}
+export function expectedSnapshotTables(version,tables={}){
  const base=['accounts','assignments','audit','lessons','local_credentials','login_attempts','plans','reschedule_requests','sessions','students','teachers','pdf_files','storage_quota','teaching_materials','material_recipients','homework','homework_recipients','homework_submissions','study_blocks'];
- return [...(version>=9?['tuition_groups']:[]),...base,...(version>=2?['classrooms','classroom_members','classroom_announcements']:[]),...(version>=3?['google_identities']:[]),...(version>=4?['academic_terms']:[]),...(version>=7?['notification_items','notification_deliveries','push_subscriptions','notification_runtime']:[]),...(version>=8?['site_notifications']:[]),...(version>=10?['classroom_folders','classroom_content_state']:[]),...(version>=11?['learning_versions','homework_score_history']:[]),...(version>=12?['homework_resubmission_grants','homework_feedback','learning_notifications','learning_notification_deliveries']:[]),...(version>=13?['class_sessions','class_session_participants']:[]),...(version>=15?['quizzes','quiz_versions','quiz_answer_keys','quiz_images','quiz_version_images']:[]),...(version>=16?['quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations']:[]),...(version>=17?['quiz_practice_events','quiz_assignment_notifications']:[]),...(version>=18?['academic_catalogues','student_grade_promotions']:[]),...(version>=20?['billing_students','billing_subjects','billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments']:[]),...(version>=21?['admin_permission_profiles']:[]),...(version>=22?['invoice_brand_assets','invoice_brand_settings','invoices','invoice_items','invoice_operations','invoice_sequences','invoice_source_locks']:[])];
+ return [...(version>=9?['tuition_groups']:[]),...base,...(version>=2?['classrooms','classroom_members','classroom_announcements']:[]),...(version>=3?['google_identities']:[]),...(version>=4?['academic_terms']:[]),...(version>=7?['notification_items','notification_deliveries','push_subscriptions','notification_runtime']:[]),...(version>=8?['site_notifications']:[]),...(version>=10?['classroom_folders','classroom_content_state']:[]),...(version>=11?['learning_versions','homework_score_history']:[]),...(version>=12?['homework_resubmission_grants','homework_feedback','learning_notifications','learning_notification_deliveries']:[]),...(version>=13?['class_sessions','class_session_participants']:[]),...(version>=15?['quizzes','quiz_versions','quiz_answer_keys','quiz_images','quiz_version_images']:[]),...(version>=16?['quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations']:[]),...(version>=17?['quiz_practice_events','quiz_assignment_notifications']:[]),...(version>=18?['academic_catalogues','student_grade_promotions']:[]),...(version>=20?['billing_students','billing_subjects','billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments']:[]),...(version>=21?['admin_permission_profiles']:[]),...(version>=22?['invoice_brand_assets','invoice_brand_settings','invoices','invoice_items','invoice_operations','invoice_sequences','invoice_source_locks']:[]),...(version>=23?['whatsapp_contacts','whatsapp_challenges','whatsapp_contact_requests','class_recordings','recording_recipients','recording_operations',...EXTERNAL_BOT_TABLES.filter(name=>Object.hasOwn(tables,name))]:[])];
 }
 export function snapshotObjects(database){
  const pdfs=database?.tables?.pdf_files?.rows;if(!Array.isArray(pdfs))throw Error('Database export lacks PDF metadata');

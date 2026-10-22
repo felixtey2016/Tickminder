@@ -10,6 +10,7 @@ import "./invoice-layout.css";
 import "./finance-workspace.css";
 import "./navigation-feedback.css";
 import "./whatsapp-layout.css";
+import "./recordings-layout.css";
 import { ActionToastHost } from "@/components/action-toast";
 
 export const metadata: Metadata = {

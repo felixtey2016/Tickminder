@@ -6,7 +6,7 @@ import { readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from 'n
 import { resolve, join, relative, isAbsolute, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
-import {orderedSnapshotTables,historicalInsertTriggers,checkRestoredFolderStructure,matchManifestObjects,backupObjectName,validObjectSignature} from './backup-order.mjs';
+import {orderedSnapshotTables,historicalInsertTriggers,checkRestoredFolderStructure,matchManifestObjects,backupObjectName,validObjectSignature,snapshotVersion,externalSnapshotSchema} from './backup-order.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const args = process.argv.slice(2);
@@ -80,8 +80,9 @@ try {
   const database = JSON.parse(plain.toString('utf8'));
   const legacyOwnerEmail=String(expected.legacyOwnerEmail||'').trim().toLowerCase();
   if(database.tables?.accounts&&!database.tables.accounts.columns.includes('group_id')&&!legacyOwnerEmail)throw new Error('Legacy restore requires legacyOwnerEmail in the private expected-target file');
-  if (!['timelyo-d1-v7','timelyo-d1-v8','timelyo-d1-v9','timelyo-d1-v10','timelyo-d1-v11','timelyo-d1-v12','timelyo-d1-v13','timelyo-d1-v14','timelyo-d1-v15','timelyo-d1-v16','timelyo-d1-v17','timelyo-d1-v18','timelyo-d1-v19','timelyo-d1-v20','timelyo-d1-v21'].includes(database.format)) throw new Error('Recovery branch requires a v7–v21 database snapshot');
+  if (snapshotVersion(database)<7) throw new Error('Recovery branch requires a v7–v23 database snapshot');
   const tables = orderedSnapshotTables(database.tables);
+  const external=externalSnapshotSchema(database);
   const schema = readdirSync(join(root, 'drizzle')).filter(name => /^\d{4}_.*\.sql$/.test(name)).sort()
     .map(name => readFileSync(join(root, 'drizzle', name), 'utf8')).join('\n');
   const schemaCheck=new DatabaseSync(':memory:');let triggers;
@@ -89,7 +90,7 @@ try {
   // Large bilingual quiz JSON can exceed D1's per-statement SQL limit after
   // UTF-8 hex encoding. Assemble bounded chunks before inserting the final row.
   const chunkTable='_tickminder_restore_large_text';let textSequence=0;
-  const sqlParts = [schema,'PRAGMA defer_foreign_keys=ON;',...triggers.map(t=>`DROP TRIGGER "${t.name}";`),`CREATE TABLE "${chunkTable}" (entry TEXT NOT NULL,part INTEGER NOT NULL,body TEXT NOT NULL,PRIMARY KEY(entry,part));`];
+  const sqlParts = [schema,'PRAGMA defer_foreign_keys=ON;',...external.tables.map(sql=>sql+';'),...triggers.map(t=>`DROP TRIGGER "${t.name}";`),`CREATE TABLE "${chunkTable}" (entry TEXT NOT NULL,part INTEGER NOT NULL,body TEXT NOT NULL,PRIMARY KEY(entry,part));`];
   for (const [name, table] of tables) {
     sqlParts.push(`DELETE FROM ${identifier(name)};`);
     const columns = table.columns.map(identifier).join(',');
@@ -122,7 +123,7 @@ try {
     if(!seed)throw new Error('Permission migration lacks its legacy baseline');
     sqlParts.push(seed);
   }
-  sqlParts.push(`DROP TABLE "${chunkTable}";`,...triggers.map(t=>t.sql+';'));
+  sqlParts.push(`DROP TABLE "${chunkTable}";`,...triggers.map(t=>t.sql+';'),...external.triggers.map(sql=>sql+';'));
   const sql = sqlParts.join('\n');
   const local = new DatabaseSync(':memory:');
   try {

@@ -29,11 +29,13 @@ function account(db,id,role='admin'){
  db.prepare('INSERT INTO accounts(id,group_id,email,name,role,created_at) VALUES(?,?,?,?,?,?)').run(id,group,id+'@example.invalid',id,role,now);
 }
 function snapshot(db,version){
- const tables=Object.fromEntries(expectedSnapshotTables(version).map(name=>[name,{
+ const present=Object.fromEntries(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row=>[row.name,true]));
+ const tables=Object.fromEntries(expectedSnapshotTables(version,present).map(name=>[name,{
   columns:db.prepare('PRAGMA table_info("'+name+'")').all().map(column=>column.name),
   rows:db.prepare('SELECT * FROM "'+name+'"').all(),
  }]));
- return{format:'timelyo-d1-v'+version,tables};
+ const externalSchema=db.prepare("SELECT name,type,sql FROM sqlite_master WHERE tbl_name IN ('admin_phone_activations','admin_phone_revocations','console_plan_deactivations') AND sql IS NOT NULL ORDER BY type,name").all();
+ return{format:'timelyo-d1-v'+version,tables,...externalSchema.length?{externalSchema}:{}};
 }
 function encryptedFixture(name,contents){
  const directory=path.join(temporary,name),key=randomBytes(32),iv=randomBytes(12);
@@ -57,7 +59,8 @@ async function recover(fixture,expectedTarget){
    const names=db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row=>row.name);
    if(!names.includes('admin_permission_profiles'))return;
    const accounts=db.prepare('SELECT id,role FROM accounts ORDER BY id').all();
-   if(accounts.length)captures.push({accounts,profiles:db.prepare('SELECT * FROM admin_permission_profiles ORDER BY account_id').all(),integrity:db.prepare('PRAGMA integrity_check').get().integrity_check});
+   const extended=Object.fromEntries(['whatsapp_contacts','whatsapp_challenges','whatsapp_contact_requests','class_recordings','recording_recipients','recording_operations','admin_phone_activations','admin_phone_revocations','console_plan_deactivations'].filter(table=>names.includes(table)).map(table=>[table,db.prepare('SELECT * FROM '+table).all()]));
+   if(accounts.length)captures.push({accounts,extended,profiles:db.prepare('SELECT * FROM admin_permission_profiles ORDER BY account_id').all(),integrity:db.prepare('PRAGMA integrity_check').get().integrity_check});
   },
  };
  const processStub=dataUrl(`const state=globalThis[${JSON.stringify(name)}];
@@ -132,14 +135,39 @@ try{
  check('actual v21 recovery preserves every stored permission profile field',()=>{assert.equal(restoredModern.integrity,'ok');assert.deepEqual(restoredModern.profiles,modern.tables.admin_permission_profiles.rows.toSorted((left,right)=>left.account_id.localeCompare(right.account_id)));});
  check('v21 administrators without a profile remain absent after recovery',()=>{assert.ok(restoredModern.accounts.some(account=>account.id==='fixture-v21-new'&&account.role==='admin'));assert.equal(restoredModern.profiles.some(profile=>profile.account_id==='fixture-v21-new'),false);});
  check('v21 saved permission draft and revision survive actual SQL replay',()=>{const profile=restoredModern.profiles.find(profile=>profile.account_id==='fixture-v21-draft');assert.equal(profile.draft_grants_json,'["lessons.view","lessons.edit"]');assert.equal(profile.revision,3);assert.equal(profile.updated_by,'fixture-v21-chief');assert.equal(profile.updated_at,now);});
- check('both recovery runs finish local dry runs without cloud or real child processes',()=>{
-  for(const result of [restoredOld,restoredModern]){
+ const invoiceDb=database(35);account(invoiceDb,'fixture-v22-admin');const invoiceSnapshot=snapshot(invoiceDb,22);invoiceDb.close();
+ const invoiceFixture=encryptedFixture('v22',invoiceSnapshot);keys.push(invoiceFixture.key);const restoredInvoice=await recover(invoiceFixture,expectedTarget);
+ check('actual v22 recovery upgrades with empty WhatsApp and recording tables',()=>{assert.equal(restoredInvoice.integrity,'ok');assert.equal(Object.keys(restoredInvoice.extended).length,6);for(const rows of Object.values(restoredInvoice.extended))assert.equal(rows.length,0);});
+ const recordingDb=database(37);account(recordingDb,'fixture-v23-admin');
+ recordingDb.prepare('INSERT INTO teachers(group_id,name,created_at) VALUES(?,?,?)').run(group,'Recovery Teacher',now);
+ recordingDb.prepare('INSERT INTO classrooms(id,group_id,title,subject,teacher_name,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').run('recovery-class',group,'Recovery Class','Mathematics','Recovery Teacher','fixture-v23-admin',now,now);
+ recordingDb.prepare('INSERT INTO class_recordings(id,group_id,classroom_id,title,drive_url,lesson_date,status,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run('recovery-recording',group,'recovery-class','Recording','https://drive.google.com/file/d/fictional-recovery-1234/view','2032-06-01','published','fixture-v23-admin',now,now);
+ recordingDb.prepare("UPDATE class_recordings SET audience_mode='selected' WHERE id=?").run('recovery-recording');
+ recordingDb.prepare('INSERT INTO recording_recipients(group_id,recording_id,student_name) VALUES(?,?,?)').run(group,'recovery-recording','Former Member');
+ recordingDb.prepare('INSERT INTO recording_operations(group_id,operation_id,actor_id,request_hash,execution_id,result_json,created_at) VALUES(?,?,?,?,?,?,?)').run(group,'fixture-operation','fixture-v23-admin','a'.repeat(64),'fixture-execution','{"id":"recovery-recording"}',now);
+ recordingDb.prepare('INSERT INTO whatsapp_contacts(account_id,group_id,phone,identity_role,identity_name,verified_at) VALUES(?,?,?,?,?,?)').run('fixture-v23-admin',group,'60123456789','admin','fixture-v23-admin',now);
+ recordingDb.prepare('INSERT INTO whatsapp_challenges(token_hash,account_id,group_id,phone,identity_role,identity_name,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)').run('b'.repeat(64),'fixture-v23-admin',group,'60123456789','admin','fixture-v23-admin',now,'2032-06-01T00:08:00.000Z');
+ recordingDb.prepare('INSERT INTO whatsapp_contact_requests(account_id,group_id,phone,identity_role,identity_name,collected_from,updated_at) VALUES(?,?,?,?,?,?,?)').run('fixture-v23-admin',group,'60123456789','admin','fixture-v23-admin','fictional-fixture',now);
+ const externalOption=process.argv.indexOf('--external-schema');
+ if(externalOption>=0){
+  const external=JSON.parse(fs.readFileSync(process.argv[externalOption+1],'utf8'));
+  for(const object of external.filter(item=>item.type==='table')){
+   recordingDb.exec(object.sql);const columns=recordingDb.prepare('PRAGMA table_info('+object.name+')').all().map(row=>row.name);
+   recordingDb.prepare('INSERT INTO '+object.name+'('+columns.join(',')+') VALUES('+columns.map(()=>'?').join(',')+')').run(...columns.map(column=>column==='enforced'?1:column==='at'?now:column.endsWith('_json')?'{}':'fictional-'+column));
+  }
+  for(const object of external.filter(item=>item.type==='trigger'))recordingDb.exec(object.sql);
+ }
+ const recordingSnapshot=snapshot(recordingDb,23);recordingDb.close();
+ const recordingFixture=encryptedFixture('v23',recordingSnapshot);keys.push(recordingFixture.key);const restoredRecording=await recover(recordingFixture,expectedTarget);
+ check('actual encrypted v23 recovery preserves populated new and optional external tables',()=>{assert.equal(restoredRecording.integrity,'ok');for(const [table,rows]of Object.entries(restoredRecording.extended)){assert.equal(rows.length,1);assert.deepEqual(rows,recordingSnapshot.tables[table].rows);}});
+ check('all recovery runs finish local dry runs without cloud or real child processes',()=>{
+  for(const result of [restoredOld,restoredModern,restoredInvoice,restoredRecording]){
    assert.equal(result.calls.length,2);assert.deepEqual(result.calls.map(call=>call.kind),['spawn','exec']);
    assert.ok(result.printed.some(line=>{try{return JSON.parse(line).mode==='local-dry-run';}catch{return false;}}));
    assert.equal(result.calls.some(call=>call.args.includes('--remote')),false);
   }
  });
- console.log(JSON.stringify({suite:'admin-permissions-recovery',passed:checks,networkRequests:0,productionWrites:false,coverage:'actual encrypted v20/v21 recovery script, current SQL replay and pre-close database capture'}));
+ console.log(JSON.stringify({suite:'admin-permissions-recovery',passed:checks,networkRequests:0,productionWrites:false,coverage:'actual encrypted v20/v21/v22/v23 recovery script, current SQL replay and pre-close database capture'}));
 }finally{
  globalThis.fetch=previousFetch;
  keys.forEach(key=>key.fill(0));
