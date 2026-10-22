@@ -59,6 +59,7 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
       const table = kind === "teacher" ? "teachers" : "students";
       if (!await first(`SELECT 1 AS found FROM ${table} WHERE name = ?`, id)) throw new DeleteError("记录不存在", 404);
       if(kind==="student"&&await raw.prepare(studentFinancialHistory).bind(groupId,id).first())throw new DeleteError(financialHistoryMessage);
+      if(kind==="teacher"&&await raw.prepare("SELECT 1 FROM payroll_teachers WHERE group_id=? AND teacher_name=?").bind(groupId,id).first())throw new DeleteError("此老师已有时薪设置或薪资历史，不能永久删除。请改为停用，以保留薪资核算记录。");
       if (await first(`SELECT 1 AS found FROM accounts WHERE ${accountColumn} = ?`, id)) throw new DeleteError("此姓名仍关联登录账号，请先删除或重新绑定账号");
       if (await first(`SELECT 1 AS found FROM lessons WHERE ${column} = ? AND status = 'scheduled'`, id)) throw new DeleteError("仍有已安排的课程，请先取消或删除这些课程");
       const member = kind === "teacher" ? await first("SELECT 1 AS found FROM classrooms WHERE teacher_name = ?", id) : await first("SELECT 1 AS found FROM classroom_members WHERE student_name = ?", id);
@@ -102,6 +103,7 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
       statements.push(db.prepare("DELETE FROM homework WHERE (id = ?) AND group_id = ?").bind(id,groupId));
     } else {
       if (!await classroomMayManage(actor, id)) throw new DeleteError("班级不存在或无权修改", 404);
+      if(await raw.prepare("SELECT 1 FROM payroll_rate_scopes WHERE group_id=? AND classroom_id=? LIMIT 1").bind(groupId,id).first())throw new DeleteError("此班级已有老师时薪设置，不能永久删除。请改为封存，以保留薪资核算记录。");
       if(await first("SELECT 1 FROM class_sessions WHERE classroom_id=? LIMIT 1",id))throw new DeleteError("班级已有课程记录，不能永久删除。请保留历史课次并封存班级。");
       statements.push(groupStatement(groupId,"SELECT CASE WHEN EXISTS(SELECT 1 FROM class_sessions WHERE classroom_id=?) THEN json('classroom_has_sessions') ELSE 1 END AS history_clear").bind(id));
       const fileRows = await rows<{ fileId: string }>("SELECT file_id AS fileId FROM teaching_materials WHERE classroom_id = ? UNION SELECT attachment_file_id AS fileId FROM homework WHERE classroom_id = ? AND attachment_file_id IS NOT NULL UNION SELECT s.file_id AS fileId FROM homework_submissions s JOIN homework h ON h.id = s.homework_id WHERE h.classroom_id = ?", id, id, id);

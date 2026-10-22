@@ -1,6 +1,7 @@
 import {SessionAttendanceBoard,SessionAttendanceDialog,TeachingHoursPanel} from "./session-attendance";
 import type {AttendanceSession} from "@/lib/attendance-types";
 "use client";
+import '@/lib/finance-round2-i18n';
 import {GroupSessionPlanner,GroupSessionBoard,type GroupSession,type GroupSessionRequest} from "./class-session-schedule";
 import {uniqueSessionLessons} from "@/lib/class-session-display";
 import type {SessionLesson} from "@/lib/class-session-display";

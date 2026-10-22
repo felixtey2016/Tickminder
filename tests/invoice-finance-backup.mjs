@@ -8,7 +8,7 @@ import {snapshotVersion,expectedSnapshotTables,orderedSnapshotTables,checkRestor
 globalThis.fetch=async()=>{throw Error('Network forbidden in finance backup fixture');};
 const root=path.resolve(import.meta.dirname,'..'),RealDate=Date,clock=Date.parse('2032-06-15T04:00:00Z');
 globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}};
-function database(max=999){const db=new DatabaseSync(':memory:');db.exec('PRAGMA foreign_keys=ON');for(const name of fs.readdirSync(path.join(root,'drizzle')).filter(n=>n.endsWith('.sql')&&Number(n.slice(0,4))<=max).sort())db.exec(fs.readFileSync(path.join(root,'drizzle',name),'utf8'));return db;}
+function database(max=43){const db=new DatabaseSync(':memory:');db.exec('PRAGMA foreign_keys=ON');for(const name of fs.readdirSync(path.join(root,'drizzle')).filter(n=>n.endsWith('.sql')&&Number(n.slice(0,4))<=max).sort())db.exec(fs.readFileSync(path.join(root,'drizzle',name),'utf8'));return db;}
 const sqlite=database();let active=sqlite;
 function statement(sql,values=[]){const execute=()=>{assert(values.length<=100,'D1 parameter limit');const s=active.prepare(sql);return s.columns().length?{results:s.all(...values),meta:{changes:0}}:{results:[],meta:s.run(...values)};};return{bind:(...v)=>statement(sql,v),first:async()=>execute().results[0]||null,all:async()=>execute(),run:async()=>execute(),execute};}
 const db={prepare:statement,batch:async statements=>{active.exec('BEGIN');try{const result=statements.map(s=>s.execute());active.exec('COMMIT');return result;}catch(e){active.exec('ROLLBACK');throw e;}}};

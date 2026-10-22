@@ -140,13 +140,17 @@ await section('catalog exposes implemented finance actions and denies reserved o
   await login('chief-a');const data=await readProfile('admin-a'),keys=data.catalog.flatMap(module=>module.actions.map(action=>action.key));
   assert.equal(new Set(keys).size,keys.length);assert.ok(keys.length>60);
   assert.ok(keys.every(key=>/^[A-Za-z]+\.[A-Za-z]+$/.test(key)),'all grants are explicit module.action keys');
-  for(const id of ['finance','parents','resources','progress','publicModeration','exports','adminIdentity','groups','academicCatalogues','backup']){const module=data.catalog.find(item=>item.id===id);assert.ok(module,id+' reserved entry exists');assert.equal(module.availability,'reserved');assert.deepEqual(module.actions,[]);assert.deepEqual(module.supportedActions,[]);}
+  for(const id of ['parents','resources','progress','publicModeration','adminIdentity','groups','academicCatalogues','backup']){const module=data.catalog.find(item=>item.id===id);assert.ok(module,id+' reserved entry exists');assert.equal(module.availability,'reserved');assert.deepEqual(module.actions,[]);assert.deepEqual(module.supportedActions,[]);}
   assert.deepEqual(data.catalog.find(module=>module.id==='invoices').supportedActions,['view','create','edit','issue','adjust','void']);
   assert.deepEqual(data.catalog.find(module=>module.id==='payments').supportedActions,['view','record','reverse','refund']);
   assert.deepEqual(permission.normalizeAdminGrants(['payments.record']),['invoices.view','payments.view','payments.record']);
   assert.deepEqual(permission.normalizeAdminGrants(['invoices.adjust']),['invoices.view','invoices.adjust','payments.view']);
   assert.deepEqual(data.catalog.find(module=>module.id==='materials').supportedActions,['view']);
-  for(const key of ['materials.create','materials.edit','homework.create','homework.edit','homework.grade','finance.view','finance.edit','invoices.delete','payments.delete','payments.*','adminIdentity.assign','groups.edit','backup.export','futureWidget.view','*','lessons.*','*.view','LESSONS.view','lessons.view ']){
+  assert.deepEqual(data.catalog.find(module=>module.id==='finance').supportedActions,['view']);
+  assert.deepEqual(data.catalog.find(module=>module.id==='payroll').supportedActions,['view','rates','edit','confirm','pay','reverse']);
+  assert.deepEqual(data.catalog.find(module=>module.id==='expenses').supportedActions,['view','record','reverse']);
+  assert.deepEqual(data.catalog.find(module=>module.id==='exports').supportedActions,['view','finance']);
+  for(const key of ['materials.create','materials.edit','homework.create','homework.edit','homework.grade','finance.edit','invoices.delete','payments.delete','payments.*','adminIdentity.assign','groups.edit','backup.export','futureWidget.view','*','lessons.*','*.view','LESSONS.view','lessons.view ']){
     assert.equal(permission.hasAdminGrant([key],key),false,'unknown/unsupported grant must default deny: '+key);
     assert.throws(()=>permission.normalizeAdminGrants([key]),permission.AdminPermissionValidationError,key);
     await unchanged('invalid grant '+key,()=>denied('admin-permissions',{accountId:'admin-a',expectedRevision:1,grants:[key]},'',[400]));
@@ -154,7 +158,7 @@ await section('catalog exposes implemented finance actions and denies reserved o
   assert.deepEqual(data.templates.map(template=>template.id),['none','readOnly','scheduling','academicSupport','legacy']);
   assert.deepEqual(data.templates.find(template=>template.id==='none').grants,[]);
   assert.ok(data.templates.find(template=>template.id==='readOnly').grants.every(key=>key.endsWith('.view')));
-  for(const template of data.templates){assert.ok(template.grants.every(key=>keys.includes(key)));assert.equal(template.grants.some(key=>/^(finance|invoices|adminIdentity|groups|backup)\./.test(key)),false);}
+  for(const template of data.templates){assert.ok(template.grants.every(key=>keys.includes(key)));assert.equal(template.grants.some(key=>/^(finance|payroll|expenses|exports|invoices|adminIdentity|groups|backup)\./.test(key)),false);}
   assert.equal(permission.hasAdminGrant([], 'students.view'),false);
 });
 
@@ -194,7 +198,7 @@ await section('future configured-access predicate denies absent profiles wildcar
   }finally{sqlite.prepare('UPDATE admin_permission_profiles SET grants_json=? WHERE account_id=?').run(original.grants_json,'admin-a');}
   for(const id of ['chief-a','owner']){
     await login(id,id==='owner'?groups.a:undefined);actor=await auth.currentBusinessAccount();assert.equal(allowed(actor,'students.view'),1);
-    for(const key of ['finance.view','adminIdentity.assign','futureWidget.view','*'])assert.equal(allowed(actor,key),0,'unsupported key is denied even for '+id);
+    for(const key of ['finance.edit','adminIdentity.assign','futureWidget.view','*'])assert.equal(allowed(actor,key),0,'unsupported key is denied even for '+id);
   }
   await login('teacher-a');assert.equal(allowed(await auth.currentBusinessAccount(),'students.view'),0,'future configuration never converts teachers to administrators');
 });

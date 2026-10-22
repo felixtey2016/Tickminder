@@ -29,7 +29,7 @@ const viewGrants: Record<string, AdminGrantKey[]> = {
 export function canAdminView(account: AdminPermissionAccount | null | undefined, view: string): boolean {
   if (account?.role !== "admin") return true;
   if (view === "groups") return account.isOwner === true;
-  if (view === "billing") return account.isOwner === true || canAdminAction(account,"fees.view") || canAdminAction(account,"invoices.view");
+  if (view === "billing") return account.isOwner === true || ["fees.view","invoices.view","finance.view","payroll.view","expenses.view"].some(key=>canAdminAction(account,key as AdminGrantKey));
   if (view === "accounts" || view === "people") {
     if (account.canManageAdministrators === true) return true;
   }

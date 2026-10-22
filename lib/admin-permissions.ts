@@ -27,9 +27,13 @@ const currentModules = [
   { id: "fees", actions: ["view"] },
   { id: "invoices", actions: ["view", "create", "edit", "issue", "adjust", "void"] },
   { id: "payments", actions: ["view", "record", "reverse", "refund"] },
+  { id: "finance", actions: ["view"] },
+  { id: "payroll", actions: ["view", "rates", "edit", "confirm", "pay", "reverse"] },
+  { id: "expenses", actions: ["view", "record", "reverse"] },
+  { id: "exports", actions: ["view", "finance"] },
 ] as const;
 
-const reservedModules = ["finance", "parents", "resources", "progress", "publicModeration", "exports", "adminIdentity", "groups", "academicCatalogues", "backup"] as const;
+const reservedModules = ["parents", "resources", "progress", "publicModeration", "adminIdentity", "groups", "academicCatalogues", "backup"] as const;
 type GrantOf<T> = T extends { id: infer I extends string; actions: readonly (infer A extends string)[] } ? `${I}.${A}` : never;
 export type AdminGrantKey = GrantOf<typeof currentModules[number]>;
 export type AdminPermissionModuleId = typeof currentModules[number]["id"] | typeof reservedModules[number];
@@ -51,6 +55,7 @@ const extraDependencies: Partial<Record<AdminGrantKey, AdminGrantKey[]>> = {
   "invoices.adjust": ["payments.view"],
   "invoices.void": ["payments.view"],
   "payments.view": ["invoices.view"],
+  "finance.view": ["invoices.view", "payments.view"],
 };
 
 export const ADMIN_PERMISSION_CATALOG: AdminPermissionModule[] = [

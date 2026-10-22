@@ -1,0 +1,14 @@
+export const PAYROLL_METHODS=['cash','bank_transfer','duitnow','tng','other'] as const;
+export type PayrollMethod=typeof PAYROLL_METHODS[number];
+export type PayrollTeacher={teacherId:string;teacherName:string;active:boolean};
+export type PayrollRate={id:string;scopeId:string;teacherId:string;classroomId:string|null;classroomTitle:string|null;revision:number;scopeRevision:number;amountCents:number;currency:'MYR';effectiveFrom:string;createdAt:string};
+export type PayrollSourceLine={sessionId:string;classroomId:string|null;classroomTitle:string|null;subject:string;teacherName:string;plannedStart:string;plannedEnd:string;actualStart:string|null;actualEnd:string|null;durationSeconds:number;minutes:number;rateVersionId:string|null;hourlyRateCents:number|null;amountCents:number|null;status:'ready'|'pending'|'excluded'|'upcoming';warnings:string[];teachingStatus:string;attendanceReviewedAt:string|null;sessionRevision:number};
+export type PayrollDocument={id:string;groupId:string;teacherId:string;teacherName:string;month:string;currency:'MYR';status:'draft'|'confirmed';revision:number;sourceHash:string;sourceLines:PayrollSourceLine[];baseTotalCents:number;durationSeconds:number;lessonCount:number;createdAt:string;updatedAt:string;confirmedAt:string|null};
+export type PayrollReview={sourceChanged:boolean;pendingCount:number;missingRateCount:number;upcomingCount:number;excludedCount:number};
+export type PayrollSummary={id:string;teacherId:string;teacherName:string;month:string;status:'draft'|'confirmed';revision:number;baseTotalCents:number;bonusCents:number;deductionCents:number;totalCents:number;paidCents:number;remainingCents:number;lessonCount:number;durationSeconds:number;confirmedAt:string|null;createdAt:string;updatedAt:string};
+export type PayrollEvent={id:string;kind:'bonus'|'deduction'|'payment'|'reverse';amountCents:number;paymentId:string|null;occurredAt:string;method:PayrollMethod|'';reference:string;notes:string;reason:string;actorId:string;createdAt:string;reversedAt?:string|null};
+export type PayrollDetail={payroll:PayrollDocument;summary:PayrollSummary;review:PayrollReview;events:PayrollEvent[];page:number;pageSize:number;pages:number;total:number};
+export type PayrollList={items:PayrollSummary[];page:number;pageSize:number;pages:number;total:number};
+export type PayrollRatesResponse={teacher:PayrollTeacher;classrooms:{id:string;title:string}[];rates:PayrollRate[]};
+export type PayrollResult={ok:true;payrollId?:string;teacherId?:string;revision:number;eventId?:string;rateId?:string};
+export class PayrollError extends Error{constructor(message:string,readonly status=400){super(message);}}
