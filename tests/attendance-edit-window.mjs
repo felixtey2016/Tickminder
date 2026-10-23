@@ -45,74 +45,62 @@ const getSession=async id=>(await sessions.classSessionState(admin)).allSessions
 const bodyFor=async(id,patch={})=>{const s=await getSession(id);return{action:'saveSessionAttendance',sessionId:id,revision:s.revision,operationId:op(),teachingStatus:'taught',actualStart:s.plannedStart.slice(0,10)+'T12:00',actualEnd:s.plannedEnd.slice(0,10)+'T13:30',participants:s.participants.map(p=>({lessonId:p.lessonId,status:'present',chargeable:true})),...patch};};
 
 const RealDate=globalThis.Date;let clock=RealDate.now();class ControlledDate extends RealDate{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}}globalThis.Date=ControlledDate;
-const firstClock=clock,sid=one.session_id;
-const fresh=(patch={})=>bodyFor(sid,{reason:'Corrected fictional attendance',...patch});
-await attendance.attendanceAction(teacher,await bodyFor(sid,{firstSubmissionAt:'2099-01-01T00:00:00.000Z'}));
-const first=session(sid).first_submission_at;
-check(first===new Date(firstClock).toISOString(),'First timestamp comes from the server clock, ignoring supplied time');
-check(session(sid).first_submission_by===teacher.id&&session(sid).attendance_reviewed_by===teacher.id,'First actor and automatic confirmation are persisted');
-const initialCounts=counts();
-await assert.rejects(async()=>attendance.attendanceAction(teacher,await bodyFor(sid)),e=>e.status===400);checks++;
-check(JSON.stringify(initialCounts)===JSON.stringify(counts()),'A correction without a reason writes nothing');
-clock=firstClock+23*3600000;
-const correction=await fresh();await attendance.attendanceAction(teacher,correction);
-check(session(sid).first_submission_at===first,'23-hour correction never resets the first timestamp');
-const event=sqlite.prepare("SELECT before_json,after_json FROM audit WHERE id LIKE 'attendance:%' AND action='saveSessionAttendance' ORDER BY rowid DESC LIMIT 1").get(),after=JSON.parse(event.after_json);
-check(after.reason==='Corrected fictional attendance'&&after.firstSubmissionAt===first&&after.deadline===new Date(firstClock+24*3600000).toISOString(),'Correction history retains reason, original clock and deadline');
-await post({action:'attendance',id:one.id,sessionRevision:session(sid).revision,operationId:op(),status:'completed',actualStart:'2020-03-02T12:00',actualEnd:'2020-03-02T13:30',reason:'Legacy route correction within window'},teacher);check(session(sid).first_submission_at===first,'Legacy attendance entry uses the same immutable clock');
-clock=firstClock+24*3600000-1;await attendance.attendanceAction(teacher,await fresh());
-check(session(sid).first_submission_at===first,'One millisecond before deadline is accepted without extension');
-clock=firstClock+24*3600000;
-await assert.rejects(async()=>attendance.attendanceAction(teacher,await fresh()),e=>e.status===409&&/24/.test(e.message));checks++;
-await post({action:'attendance',id:one.id,sessionRevision:session(sid).revision,operationId:op(),status:'completed',actualStart:'2020-03-02T12:00',actualEnd:'2020-03-02T13:30',reason:'Legacy bypass attempt'},teacher,409);
-const beforeReplay=counts();check((await attendance.attendanceAction(teacher,correction)).replayed,'A retry after expiry returns the previously accepted result');check(JSON.stringify(beforeReplay)===JSON.stringify(counts()),'Retry after expiry never duplicates history');
-await attendance.attendanceAction(admin,await fresh({reason:'Administrator handles expired attendance'}));
-check(session(sid).first_submission_at===first&&session(sid).attendance_reviewed_by===admin.id,'Expired attendance can be corrected and freshly confirmed by an administrator with a reason');
-// Explicit locks require review permission, and unlocking cannot revive the clock.
+const sid=one.session_id,fresh=(patch={})=>bodyFor(sid,{reason:'Corrected fictional attendance',...patch}),firstBody=await bodyFor(sid,{firstSubmissionAt:'2099-01-01T00:00:00.000Z'});
+await attendance.attendanceAction(teacher,firstBody);const first=session(sid).first_submission_at;
+check(first===new Date(clock).toISOString()&&session(sid).first_submission_by===teacher.id,'First submission uses server time and actor');
+check(session(sid).attendance_reviewed_by===teacher.id,'First submission is automatically confirmed');
+const saved=JSON.stringify(counts());
+for(const hours of [0,1,23,24,48]){clock=RealDate.now()+hours*3600000;await assert.rejects(async()=>attendance.attendanceAction(teacher,await fresh()),e=>e.status===409&&/已提交/.test(e.message));checks++;}
+check(saved===JSON.stringify(counts()),'Teachers cannot write after submission even during the former 24-hour window');
+check((await attendance.attendanceAction(teacher,firstBody)).replayed,'Retry of the original accepted submission remains idempotent');
+await post({action:'attendance',id:one.id,sessionRevision:session(sid).revision,operationId:op(),status:'completed',actualStart:'2020-03-02T12:00',actualEnd:'2020-03-02T13:30',reason:'Legacy correction attempt'},teacher,409);
+await post({action:'attendance',id:one.id,sessionRevision:session(sid).revision,operationId:op(),status:'pending',reason:'Legacy teacher reset attempt'},teacher,403);
+clock=RealDate.now()+366*86400000;
+await assert.rejects(async()=>attendance.attendanceAction(admin,await bodyFor(sid)),e=>e.status===400);checks++;
+await attendance.attendanceAction(admin,await fresh());check(session(sid).first_submission_at===first,'Authorised administrator can correct older records without changing the first submission');
 sqlite.prepare('UPDATE tuition_groups SET chief_admin_id=? WHERE id=?').run(admin.id,group);
 const editOnly=account('window-edit-only','admin','Edit Only'),reviewer=account('window-reviewer','admin','Reviewer');
 for(const[a,keys]of[[editOnly,['lessons.view','attendance.view','attendance.edit']],[reviewer,['lessons.view','attendance.view','attendance.review']]])sqlite.prepare("INSERT INTO admin_permission_profiles(group_id,account_id,revision,grants_json,origin,updated_at) VALUES(?,?,1,?,'new',?)").run(group,a.id,JSON.stringify(keys),new Date().toISOString());
 globalThis.__classroomSessions.env.ADMIN_PERMISSIONS_MODE='enforced';
-const lockBody=()=>({action:'lockSessionAttendance',sessionId:sid,revision:session(sid).revision,operationId:op(),reason:'School record checked and explicitly locked'});
+const lockBody=()=>({action:'lockSessionAttendance',sessionId:sid,revision:session(sid).revision,operationId:op(),reason:'Fixture explicit lock'});
 await assert.rejects(()=>attendance.attendanceAction(editOnly,lockBody()),e=>e.status===403);checks++;
-await assert.rejects(()=>attendance.attendanceAction(teacher,lockBody()),e=>e.status===403);checks++;
-await attendance.attendanceAction(reviewer,lockBody());
-check(Boolean(session(sid).explicit_locked_at)&&session(sid).explicit_locked_by===reviewer.id,'Review-only administrator may explicitly lock attendance');
-await assert.rejects(async()=>attendance.attendanceAction(editOnly,await fresh()),e=>e.status===409&&/锁定/.test(e.message));checks++;
-await assert.rejects(()=>attendance.attendanceAction(reviewer,{action:'unlockSessionAttendance',sessionId:sid,revision:session(sid).revision,operationId:op()}),e=>e.status===400);checks++;
-await attendance.attendanceAction(reviewer,{action:'unlockSessionAttendance',sessionId:sid,revision:session(sid).revision,operationId:op(),reason:'Release explicit lock while retaining fixed deadline'});
-check(session(sid).explicit_locked_at===null&&session(sid).first_submission_at===first,'Unlock clears explicit lock without moving the first clock');
+await attendance.attendanceAction(reviewer,lockBody());await attendance.attendanceAction(editOnly,await fresh());
+check(Boolean(session(sid).explicit_locked_at)&&session(sid).first_submission_at===first,'Attendance edit grant permits an administrator correction while preserving the explicit lock');
+const reset=()=>({action:'adminResetSessionAttendance',sessionId:sid,revision:session(sid).revision,operationId:op(),reason:'An administrator mis-clicked taught; restore unrecorded'});
+await assert.rejects(()=>attendance.attendanceAction(reviewer,reset()),e=>e.status===403);checks++;
+await assert.rejects(()=>attendance.attendanceAction(editOnly,{...reset(),reason:''}),e=>e.status===400);checks++;
+const resetBody=reset(),recordedAt=session(sid).attendance_recorded_at;await attendance.attendanceAction(editOnly,resetBody);
+const resetSession=session(sid),resetLesson=lesson(one.id),resetParticipant=sqlite.prepare('SELECT * FROM class_session_participants WHERE lesson_id=?').get(one.id);
+check(resetSession.teaching_status==='pending'&&resetSession.actual_start===null&&resetSession.actual_end===null&&resetSession.attendance_reviewed_at===null,'Reset clears actual teaching and confirmation');
+check(resetLesson.status==='scheduled'&&resetLesson.attendance_kind==='pending'&&resetLesson.actual_start===null&&resetLesson.chargeable===null&&resetLesson.reviewed_at===null,'Reset atomically restores lesson status and removes the charge decision');
+check(resetParticipant.attendance_status==='pending'&&resetParticipant.arrived_at===null&&resetParticipant.left_at===null,'Reset clears personal attendance');
+check(resetSession.first_submission_at===first&&resetSession.attendance_recorded_at===recordedAt,'Reset keeps immutable first submission and historical recording evidence');
+check((await attendance.attendanceAction(editOnly,resetBody)).replayed,'Reset retry is idempotent');
 await assert.rejects(async()=>attendance.attendanceAction(teacher,await fresh()),e=>e.status===409);checks++;
-// Review permission alone cannot change a charge decision.
-await assert.rejects(async()=>attendance.attendanceAction(reviewer,await fresh({action:'reviewSessionAttendance',participants:[{lessonId:one.id,status:'present',chargeable:false}]})),e=>e.status===403);checks++;
-clock=firstClock+3600000;
-const stale=await fresh();await attendance.attendanceAction(teacher,await fresh());await assert.rejects(()=>attendance.attendanceAction(teacher,stale),e=>e.status===409);checks++;
-function onWrite(effect){const hook=statements=>{if(statements.some(s=>/UPDATE class_sessions SET first_submission_at/.test(s.sql)))effect();else beforeBatch=hook;};beforeBatch=hook;}
-const raceBefore=lesson(one.id),auditBefore=sqlite.prepare('SELECT count(*) n FROM audit').get().n;
-onWrite(()=>sqlite.prepare("UPDATE class_sessions SET explicit_locked_at=?,explicit_locked_by=?,explicit_lock_reason='Concurrent administrator lock' WHERE id=?").run(new Date().toISOString(),admin.id,sid));
-await assert.rejects(async()=>attendance.attendanceAction(teacher,await fresh()),e=>e.status===409);checks++;
-check(JSON.stringify(raceBefore)===JSON.stringify(lesson(one.id))&&sqlite.prepare('SELECT count(*) n FROM audit').get().n===auditBefore,'A lock inside the write boundary prevents every participant and audit write');
 await attendance.attendanceAction(reviewer,{action:'unlockSessionAttendance',sessionId:sid,revision:session(sid).revision,operationId:op(),reason:'Fixture unlock'});
-const rollback=JSON.stringify(session(sid)),lessonRollback=JSON.stringify(lesson(one.id));const badBatch=await fresh();const failHook=statements=>{if(statements.some(s=>/UPDATE class_sessions SET first_submission_at/.test(s.sql)))throw Error('fixture injected write rejection');else beforeBatch=failHook;};beforeBatch=failHook;
-await assert.rejects(()=>attendance.attendanceAction(teacher,badBatch),/fixture injected/);checks++;
-check(JSON.stringify(session(sid))===rollback&&JSON.stringify(lesson(one.id))===lessonRollback,'Injected failure preserves session and student facts');
-onWrite(()=>{failBatchAt=3;});await assert.rejects(async()=>attendance.attendanceAction(teacher,await fresh()),/injected batch failure/);checks++;check(JSON.stringify(session(sid))===rollback&&JSON.stringify(lesson(one.id))===lessonRollback,'Failure after session/participant writes rolls back the entire batch');
+await assert.rejects(async()=>attendance.attendanceAction(teacher,await fresh()),e=>e.status===409&&/已提交/.test(e.message));checks++;
+await attendance.attendanceAction(editOnly,await fresh());check(lesson(one.id).status==='completed'&&session(sid).first_submission_at===first,'Administrator can record a reset session again');
+await post({action:'attendance',id:one.id,sessionRevision:session(sid).revision,operationId:op(),status:'scheduled',reason:'Legacy administrator reset'},admin);check(session(sid).teaching_status==='pending','Legacy scheduled reset delegates to the audited administrator reset');
+await attendance.attendanceAction(admin,await fresh());
+await assert.rejects(async()=>attendance.attendanceAction(reviewer,await fresh({action:'reviewSessionAttendance',participants:[{lessonId:one.id,status:'present',chargeable:false}]})),e=>e.status===403);checks++;
+const stale=await fresh();await attendance.attendanceAction(admin,await fresh());await assert.rejects(()=>attendance.attendanceAction(admin,stale),e=>e.status===409);checks++;
+function onWrite(effect){const hook=statements=>{if(statements.some(s=>/UPDATE class_sessions SET first_submission_at/.test(s.sql)))effect();else beforeBatch=hook;};beforeBatch=hook;}
+const rollback=JSON.stringify(session(sid)),lessonRollback=JSON.stringify(lesson(one.id));onWrite(()=>{failBatchAt=3;});await assert.rejects(async()=>attendance.attendanceAction(admin,await fresh()),/injected batch failure/);checks++;
+check(JSON.stringify(session(sid))===rollback&&JSON.stringify(lesson(one.id))===lessonRollback,'Failed correction rolls back all attendance and audit writes');
 assert.throws(()=>sqlite.prepare('UPDATE class_sessions SET first_submission_at=? WHERE id=?').run(new Date().toISOString(),sid),/attendance_first_submission_immutable/);checks++;
-
-const {bindAccountSession}=await import(compile('lib/account-session.ts')),sessionHash='window-fixture-session-hash-123456789012345678901';
-sqlite.prepare('INSERT INTO sessions(token_hash,account_id,expires_at) VALUES(?,?,?)').run(sessionHash,teacher.id,new RealDate(RealDate.now()+3600000).toISOString());bindAccountSession(teacher,sessionHash);
-const logoutBefore=JSON.stringify(lesson(one.id));onWrite(()=>sqlite.prepare('DELETE FROM sessions WHERE token_hash=?').run(sessionHash));
-await assert.rejects(async()=>attendance.attendanceAction(teacher,await fresh()),e=>e.status===409);checks++;check(JSON.stringify(lesson(one.id))===logoutBefore,'Teacher logout at write boundary prevents the correction atomically');
+clock=RealDate.now();
+async function freshLesson(day){await post({action:'create',student:student.name,subject:'Science',teacherName:teacher.name,classroomId:classId,start:'2020-07-'+day+'T12:00',end:'2020-07-'+day+'T13:30'});return sqlite.prepare("SELECT * FROM lessons WHERE planned_start=?").get('2020-07-'+day+'T04:00:00.000Z');}
+const racing=await freshLesson('02'),raceBody=await bodyFor(racing.session_id),raceBefore=JSON.stringify(lesson(racing.id));
+onWrite(()=>sqlite.prepare("UPDATE class_sessions SET first_submission_at=?,first_submission_by=?,attendance_recorded_at=?,attendance_recorded_by=?,teaching_status='not_taught' WHERE id=?").run(new Date().toISOString(),admin.id,new Date().toISOString(),admin.id,racing.session_id));
+await assert.rejects(()=>attendance.attendanceAction(teacher,raceBody),e=>e.status===409);checks++;check(JSON.stringify(lesson(racing.id))===raceBefore,'An intervening submission is fenced atomically even without a revision change');
+const logout=await freshLesson('03'),logoutBody=await bodyFor(logout.session_id),{bindAccountSession}=await import(compile('lib/account-session.ts')),sessionHash='window-fixture-session-hash-123456789012345678901';
+sqlite.prepare('INSERT INTO sessions(token_hash,account_id,expires_at) VALUES(?,?,?)').run(sessionHash,teacher.id,new RealDate(RealDate.now()+3600000).toISOString());bindAccountSession(teacher,sessionHash);onWrite(()=>sqlite.prepare('DELETE FROM sessions WHERE token_hash=?').run(sessionHash));
+await assert.rejects(()=>attendance.attendanceAction(teacher,logoutBody),e=>e.status===409);checks++;check(lesson(logout.id).status==='scheduled','Teacher logout at write boundary prevents even the first submission');
 sqlite.prepare('INSERT INTO sessions(token_hash,account_id,expires_at) VALUES(?,?,?)').run(sessionHash,teacher.id,new RealDate(RealDate.now()+3600000).toISOString());
-clock=RealDate.now();await post({action:'create',student:student.name,subject:'Science',teacherName:teacher.name,classroomId:classId,start:'2020-07-02T12:00',end:'2020-07-02T13:30'});const edgeLesson=sqlite.prepare("SELECT * FROM lessons WHERE planned_start='2020-07-02T04:00:00.000Z'").get(),edgeFirst=new RealDate(RealDate.now()-24*3600000+1500).toISOString();
-sqlite.prepare("UPDATE class_sessions SET first_submission_at=?,first_submission_by=?,teaching_status='not_taught',attendance_recorded_at=?,attendance_recorded_by=? WHERE id=?").run(edgeFirst,teacher.id,edgeFirst,teacher.id,edgeLesson.session_id);sqlite.prepare("UPDATE class_session_participants SET attendance_status='absent' WHERE lesson_id=?").run(edgeLesson.id);
-const queued=await bodyFor(edgeLesson.session_id,{reason:'Queued just before the real database deadline'}),queuedBefore=JSON.stringify(lesson(edgeLesson.id));
-onWrite(()=>Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,1700));await assert.rejects(()=>attendance.attendanceAction(teacher,queued),e=>e.status===409);checks++;check(JSON.stringify(lesson(edgeLesson.id))===queuedBefore,'Request queued past the real write-time deadline cannot use an earlier captured timestamp');
-
-// Unknown historical submissions are never guessed from a latest write time.
-const older=await post({action:'create',student:student.name,subject:'Science',teacherName:teacher.name,classroomId:classId,start:'2020-06-02T12:00',end:'2020-06-02T13:30'});const oldLesson=sqlite.prepare("SELECT * FROM lessons WHERE planned_start='2020-06-02T04:00:00.000Z'").get();
-sqlite.prepare("UPDATE class_sessions SET teaching_status='not_taught',attendance_recorded_at=?,attendance_recorded_by=? WHERE id=?").run(new Date().toISOString(),teacher.id,oldLesson.session_id);sqlite.prepare("UPDATE class_session_participants SET attendance_status='absent' WHERE lesson_id=?").run(oldLesson.id);
-await assert.rejects(async()=>attendance.attendanceAction(teacher,await bodyFor(oldLesson.session_id,{reason:'Unknown historical source'})),e=>e.status===409&&/旧考勤/.test(e.message));checks++;
+const oldLesson=await freshLesson('04');sqlite.prepare("UPDATE class_sessions SET teaching_status='not_taught',attendance_recorded_at=?,attendance_recorded_by=? WHERE id=?").run(new Date().toISOString(),teacher.id,oldLesson.session_id);sqlite.prepare("UPDATE class_session_participants SET attendance_status='absent' WHERE lesson_id=?").run(oldLesson.id);
+await attendance.attendanceAction(admin,{action:'adminResetSessionAttendance',sessionId:oldLesson.session_id,revision:session(oldLesson.session_id).revision,operationId:op(),reason:'Reset old record with no reliable first submission'});
+check(session(oldLesson.session_id).first_submission_at===null&&Boolean(session(oldLesson.session_id).attendance_recorded_at),'Legacy reset never fabricates a first submission timestamp');
+await assert.rejects(async()=>attendance.attendanceAction(teacher,await bodyFor(oldLesson.session_id,{reason:'Attempt to reopen old attendance'})),e=>e.status===409&&/已提交/.test(e.message));checks++;
 // A separate pre-migration database proves backfill only accepts reliable audit transitions.
 const legacyDb=new DatabaseSync(':memory:');for(const file of fs.readdirSync(new URL('../drizzle/',import.meta.url)).filter(n=>/^\d{4}_.*\.sql$/.test(n)&&Number(n.slice(0,4))<52).sort())legacyDb.exec(fs.readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8'));
 legacyDb.prepare("INSERT INTO accounts(id,group_id,email,name,role,created_at) VALUES('history-teacher',?,'history@example.test','History Teacher','teacher',?)").run(group,now);

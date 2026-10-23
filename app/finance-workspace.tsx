@@ -19,12 +19,13 @@ registerTranslations(invoiceZh,invoiceEn);
 function changeAllowed(){return window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true}));}
 type FinanceAccount=AdminPermissionAccount&{isGroupChief?:boolean};
 type FinanceView='overview'|'tuition'|'invoices'|'payroll'|'expenses'|'prepayments'|'settings';
-export default function FinanceWorkspace({account,students,onCourses}:{account:FinanceAccount;students:string[];onCourses:()=>void}){
+export default function FinanceWorkspace({account,students,onCourses,openInvoiceList=false,onInvoiceListOpened}:{openInvoiceList?:boolean;onInvoiceListOpened?:()=>void;account:FinanceAccount;students:string[];onCourses:()=>void}){
  const canFees=canAdminAction(account,'fees.view'),canInvoices=canAdminAction(account,'invoices.view'),canManage=Boolean(account.isOwner||account.isGroupChief),canOverview=canAdminAction(account,'finance.view'),canPayroll=canAdminAction(account,'payroll.view'),canExpenses=canAdminAction(account,'expenses.view'),canExport=canAdminAction(account,'exports.finance'),canPrepayments=canAdminAction(account,'prepayments.view');
  const allowed=([['overview',canOverview],['tuition',canFees],['invoices',canInvoices],['payroll',canPayroll],['expenses',canExpenses],['prepayments',canPrepayments],['settings',canManage]] as [FinanceView,boolean][]).filter(([,value])=>value).map(([key])=>key),fallback=allowed[0]||'overview';
  const [view,setView]=usePageHistoryState<FinanceView>('finance.view',fallback);
  const [context,setContext]=useState<{studentId?:string;month?:string;studentName?:string;invoiceId?:string}|null>(null),[payrollId,setPayrollId]=useState<string|undefined>(),[payrollMonth,setPayrollMonth]=useState<string|undefined>();
  useEffect(()=>{if(!allowed.includes(view))setView(fallback);},[view,fallback,allowed.join('|')]);
+ useEffect(()=>{if(openInvoiceList&&canInvoices){setContext(null);setView('invoices');onInvoiceListOpened?.();}},[openInvoiceList,canInvoices,onInvoiceListOpened,setView]);
  const financePermissions={view:canAdminAction(account,'payments.view'),record:canAdminAction(account,'payments.record'),reverse:canAdminAction(account,'payments.reverse'),refund:canAdminAction(account,'payments.refund'),adjust:canAdminAction(account,'invoices.adjust'),void:canAdminAction(account,'invoices.void'),correctAttendance:canAdminAction(account,'attendance.edit')&&canAdminAction(account,'invoices.adjust'),prepayments:{view:canPrepayments,apply:canAdminAction(account,'prepayments.apply'),reverse:canAdminAction(account,'prepayments.reverse')}};
  const openInvoice=(studentId:string,month:string,studentName?:string)=>{if(!changeAllowed())return;setContext({studentId,month,studentName});setView('invoices');};
  const navigate=(next:FinanceView)=>{if(!changeAllowed())return;if(next==='invoices')setContext(null);if(next==='payroll'){setPayrollId(undefined);setPayrollMonth(undefined);}setView(next);};

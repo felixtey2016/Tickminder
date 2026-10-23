@@ -5,16 +5,18 @@ import {adminPermissionPredicate} from './admin-permission-access';
 import {accountSessionPredicate,transferAccountSession} from './account-session';
 
 const invoiceReadGrants=new WeakMap<object,string>();
+type ParentReadCapability={studentId:string;studentName:string;scope:{sql:string;args:unknown[]}};
+const parentReadGrants=new WeakMap<object,ParentReadCapability>();
 import {BillingError,DEFAULT_BILLING_POLICY,billingDate,billingMonth,malaysiaDate,parseBillingAmount,policyOnDate,rateOnDate,billHourlyCents,roundRatioCents,type BillingContext,type BillingPolicy,type BillingRate,type BillingRateResponse,type BillingLine,type BillingPreview,type BillingSummary} from './billing';
 
 const ownerSql=`EXISTS(SELECT 1 FROM accounts ba JOIN tuition_groups bg ON bg.id=? AND bg.active=1 WHERE ba.id=? AND ba.role='admin' AND ba.disabled_at IS NULL AND lower(trim(ba.email))=? AND substr(ba.id,1,6)<>'local:' AND NOT EXISTS(SELECT 1 FROM local_credentials lc WHERE lc.account_id=ba.id AND lc.must_change_password=1))`;
 const managerSql=`EXISTS(SELECT 1 FROM accounts ba JOIN tuition_groups bg ON bg.id=? AND bg.active=1 WHERE ba.id=? AND ba.role='admin' AND ba.disabled_at IS NULL AND ((lower(trim(ba.email))=? AND substr(ba.id,1,6)<>'local:') OR (ba.group_id=bg.id AND bg.chief_admin_id=ba.id)) AND NOT EXISTS(SELECT 1 FROM local_credentials lc WHERE lc.account_id=ba.id AND lc.must_change_password=1))`;
 const str=(v:unknown)=>typeof v==='string'?v.trim():'';
-function context(actor:Account){if(actor.role!=='admin'||!actor.groupId||!/^[a-z0-9-]{1,64}$/.test(actor.groupId))throw new BillingError('没有权限查看或修改财务资料',403);return{group:actor.groupId,args:[actor.groupId,actor.id,OWNER_EMAIL]};}
-function readAuthority(actor:Account){const c=context(actor),session=accountSessionPredicate(actor);if(isOwnerAccount(actor))return{sql:`(${ownerSql}) AND (${session.sql})`,args:[...c.args,...session.args]};const permission=adminPermissionPredicate(actor,invoiceReadGrants.get(actor)||'fees.view');return{sql:`EXISTS(SELECT 1 FROM accounts fee_actor JOIN tuition_groups fee_group ON fee_group.id=fee_actor.group_id AND fee_group.active=1 WHERE fee_actor.id=? AND fee_actor.group_id=? AND fee_actor.role='admin' AND fee_actor.disabled_at IS NULL AND NOT EXISTS(SELECT 1 FROM local_credentials fee_credential WHERE fee_credential.account_id=fee_actor.id AND fee_credential.must_change_password=1)) AND (${permission.sql}) AND (${session.sql})`,args:[actor.id,c.group,...permission.args,...session.args]};}
+function context(actor:Account){if((actor.role!=='admin'&&!(actor.role==='parent'&&parentReadGrants.has(actor)))||!actor.groupId||!/^[a-z0-9-]{1,64}$/.test(actor.groupId))throw new BillingError('没有权限查看或修改财务资料',403);return{group:actor.groupId,args:[actor.groupId,actor.id,OWNER_EMAIL]};}
+function readAuthority(actor:Account){const c=context(actor),session=accountSessionPredicate(actor),parent=parentReadGrants.get(actor);if(parent)return parent.scope;if(isOwnerAccount(actor))return{sql:`(${ownerSql}) AND (${session.sql})`,args:[...c.args,...session.args]};const permission=adminPermissionPredicate(actor,invoiceReadGrants.get(actor)||'fees.view');return{sql:`EXISTS(SELECT 1 FROM accounts fee_actor JOIN tuition_groups fee_group ON fee_group.id=fee_actor.group_id AND fee_group.active=1 WHERE fee_actor.id=? AND fee_actor.group_id=? AND fee_actor.role='admin' AND fee_actor.disabled_at IS NULL AND NOT EXISTS(SELECT 1 FROM local_credentials fee_credential WHERE fee_credential.account_id=fee_actor.id AND fee_credential.must_change_password=1)) AND (${permission.sql}) AND (${session.sql})`,args:[actor.id,c.group,...permission.args,...session.args]};}
 async function read<T>(actor:Account,sql:string,...args:unknown[]):Promise<T[]>{const permission=readAuthority(actor);return(await learningDb().prepare(`SELECT * FROM (${sql}) WHERE ${permission.sql}`).bind(...args,...permission.args).all<T>()).results||[];}
 export async function requireBillingViewer(actor:Account){const c=context(actor),permission=readAuthority(actor),allowed=await learningDb().prepare(`SELECT 1 AS allowed WHERE ${permission.sql}`).bind(...permission.args).first();if(!allowed)throw new BillingError('没有权限查看或修改财务资料',403);return c.group;}
-function writeAuthority(actor:Account){const c=context(actor),session=accountSessionPredicate(actor);return{sql:`(${managerSql}) AND (${session.sql})`,args:[...c.args,...session.args]};}
+function writeAuthority(actor:Account){if(actor.role!=='admin')throw new BillingError('没有权限查看或修改财务资料',403);const c=context(actor),session=accountSessionPredicate(actor);return{sql:`(${managerSql}) AND (${session.sql})`,args:[...c.args,...session.args]};}
 export async function requireBillingManager(actor:Account){const c=context(actor),permission=writeAuthority(actor),allowed=await learningDb().prepare(`SELECT 1 AS allowed WHERE ${permission.sql}`).bind(...permission.args).first();if(!allowed)throw new BillingError('收费设置仅对平台最高管理员及本集团最高管理员开放。',403);return c.group;}
 const policyColumns='id,revision,currency,hour_rounding AS hourRounding,attendance_basis AS attendanceBasis,monthly_partial AS monthlyPartial,effective_from AS effectiveFrom,created_at AS createdAt';
 const rateColumns='v.id,v.rate_id AS rateId,v.revision,v.mode,v.amount_cents AS amountCents,v.currency,v.effective_from AS effectiveFrom,v.created_at AS createdAt,v.subject_snapshot AS subject';
@@ -170,6 +172,7 @@ function lessonLine(studentId:string,subject:Subject|null,source:Source,rates:Bi
 }
 
 export async function billingPreview(actor:Account,monthValue:string,pageValue=1,pageSizeValue=20,studentId?:string,studentName?:string,snapshots?:Map<string,string>):Promise<BillingPreview>{
+ const parent=parentReadGrants.get(actor);if(parent&&(studentId!==parent.studentId||studentName!==parent.studentName))throw new BillingError('没有权限查看或修改财务资料',403);
  const group=await requireBillingViewer(actor),month=billingMonth(monthValue),pageSize=Math.min(20,Math.max(1,Math.trunc(pageSizeValue)||20)),requestedPage=Math.max(1,Math.trunc(pageValue)||1),from=month+'-01',last=new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5,7)),0)).toISOString().slice(0,10),until=new Date(Date.parse(last+'T00:00:00Z')+86400000).toISOString().slice(0,10),start=from+'T00:00:00+08:00',end=until+'T00:00:00+08:00',policies=await billingPolicies(actor);
  const eligible=`b.group_id=? AND (s.active=1 OR EXISTS(SELECT 1 FROM lessons l LEFT JOIN class_sessions cs ON cs.group_id=l.group_id AND cs.id=l.session_id WHERE l.group_id=b.group_id AND l.student=b.student_name AND coalesce(cs.actual_start,l.actual_start,l.planned_start)>=? AND coalesce(cs.actual_start,l.actual_start,l.planned_start)<?) OR EXISTS(SELECT 1 FROM billing_rates r WHERE r.group_id=b.group_id AND r.student_id=b.id))${studentName?' AND b.student_name=?':''}`,eligibleArgs=[group,new Date(start).toISOString(),new Date(end).toISOString(),...(studentName?[studentName]:[])];
  const total=(await read<{total:number}>(actor,`SELECT count(*) AS total FROM billing_students b JOIN students s ON s.group_id=b.group_id AND s.name=b.student_name WHERE ${eligible}`,...eligibleArgs))[0]?.total||0,pages=Math.max(1,Math.ceil(total/pageSize)),page=Math.min(requestedPage,pages);
@@ -219,4 +222,11 @@ export async function billingPreview(actor:Account,monthValue:string,pageValue=1
 export async function invoiceBillingPreview(actor:Account,grant:'invoices.create'|'invoices.edit'|'invoices.issue',month:string,studentId:string,snapshots?:Map<string,string>){
  const scoped=transferAccountSession(actor,{...actor});invoiceReadGrants.set(scoped,grant);
  return billingPreview(scoped,month,1,1,studentId,undefined,snapshots);
+}
+
+/** Server-only read capability: the caller has verified this exact parent/child financial epoch. */
+export async function parentBillingPreview(actor:Account,month:string,studentId:string,studentName:string,scope:{sql:string;args:unknown[]}){
+ if(actor.role!=='parent'||!studentId||!studentName||!scope.sql)throw new BillingError('没有权限查看或修改财务资料',403);
+ const scoped=transferAccountSession(actor,{...actor});parentReadGrants.set(scoped,{studentId,studentName,scope:{sql:scope.sql,args:[...scope.args]}});
+ try{return await billingPreview(scoped,month,1,1,studentId,studentName);}finally{parentReadGrants.delete(scoped);}
 }

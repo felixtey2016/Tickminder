@@ -53,7 +53,7 @@ check(lesson(one.id).reviewed_at===session(one.session_id).attendance_reviewed_a
 check(lesson(one.id).actual_start===one.planned_start&&lesson(one.id).actual_end===one.planned_end,'Normal attendance uses the full supplied scheduled period');
 const savedCounts=counts();check((await attendance.attendanceAction(teacher,oneBody)).replayed,'Confirmation retry is idempotent');
 check(JSON.stringify(savedCounts)===JSON.stringify(counts()),'Retry never adds duplicate history');
-const initialSubmission=session(one.session_id).first_submission_at;await attendance.attendanceAction(teacher,await bodyFor(one.session_id,{reason:'Correcting within the fixed 24-hour window'}));check(session(one.session_id).first_submission_at===initialSubmission,'Immediate teacher correction retains the first submission clock');
+const initialSubmission=session(one.session_id).first_submission_at;await assert.rejects(async()=>attendance.attendanceAction(teacher,await bodyFor(one.session_id,{reason:'Teacher correction immediately after submission'})),e=>e.status===409);checks++;check(session(one.session_id).first_submission_at===initialSubmission,'Immediate teacher correction is rejected and first submission remains unchanged');
 // Billing and invoice issuance consume the teacher confirmation directly.
 sqlite.prepare('UPDATE tuition_groups SET chief_admin_id=? WHERE id=?').run(admin.id,group);
 const billing=await import(compile('lib/billing-server.ts')),invoices=await import(compile('lib/invoice-server.ts'));
@@ -96,6 +96,15 @@ check(JSON.stringify(lesson(one.id))===lockedBefore,'Issued invoice sources rema
 const auditCount=sqlite.prepare("SELECT count(*) n FROM audit WHERE action='autoConfirmAttendance'").get().n;
 check(auditCount===2,'Backfill records explicit confirmation history for each affected lesson');
 sqlite.exec(migration);check(sqlite.prepare("SELECT count(*) n FROM audit WHERE action='autoConfirmAttendance'").get().n===auditCount,'Backfill is safe to rerun');
+const groupFirst=session(gid).first_submission_at;
+await attendance.attendanceAction(admin,{action:'adminResetSessionAttendance',sessionId:gid,revision:session(gid).revision,operationId:op(),reason:'Restore the whole fictional group after a mistaken taught save'});
+check(session(gid).teaching_status==='pending'&&session(gid).actual_start===null&&session(gid).attendance_reviewed_at===null,'Group reset removes shared teaching and confirmation');
+check(sqlite.prepare("SELECT count(*) n FROM lessons WHERE session_id=? AND status='scheduled' AND attendance_kind='pending' AND actual_start IS NULL AND actual_end IS NULL AND chargeable IS NULL AND reviewed_at IS NULL").get(gid).n===2,'Group reset restores every student lesson atomically');
+check(sqlite.prepare("SELECT count(*) n FROM class_session_participants WHERE session_id=? AND attendance_status='pending' AND arrived_at IS NULL AND left_at IS NULL").get(gid).n===2,'Group reset removes every personal attendance');
+check(session(gid).first_submission_at===groupFirst&&Boolean(session(gid).attendance_recorded_at),'Group reset preserves the original submission evidence');
+await assert.rejects(async()=>attendance.attendanceAction(teacher,await bodyFor(gid)),e=>e.status===409);checks++;
+const resetPreview=await billing.billingPreview(admin,'2020-04',1,20,rate.context.studentId);check(resetPreview.detail.lines.find(l=>l.lessonId==='auto-group-a')?.status==='pending','Unissued fee generation treats restored attendance as pending');
+await attendance.attendanceAction(admin,await bodyFor(gid,{reason:'Administrator re-records the verified group attendance'}));check(session(gid).teaching_status==='taught'&&session(gid).first_submission_at===groupFirst,'Administrator may record the restored group again');
 check(sqlite.prepare('PRAGMA foreign_key_check').all().length===0,'Attendance confirmation retains all foreign keys');
 console.log(JSON.stringify({suite:'attendance-auto-confirm',passed:checks,productionWrites:false}));sqlite.close();
 

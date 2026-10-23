@@ -407,6 +407,7 @@ export async function POST(request: Request) {
       if(!session)return bad("课次不存在或无权访问",404);
       if(session.sessionType==="group")return bad("整班考勤请在班级课次中统一登记",409);
       const legacyStatus=str(data.status),completed=["completed","early_dismissal"].includes(legacyStatus);
+      if(action==='attendance'&&['pending','scheduled'].includes(legacyStatus))return NextResponse.json(await attendanceAction(actor,{action:'adminResetSessionAttendance',sessionId:session.id,revision:data.sessionRevision,operationId:data.operationId,reason:data.reason}));
       const start=completed?malaysiaIso(data.actualStart):null;
       const end=completed?(data.actualEnd?malaysiaIso(data.actualEnd):new Date(Date.parse(start!)+Number(data.totalHours)*3600000).toISOString()):null;
       const local=(value:string|null)=>value?new Date(Date.parse(value)+8*3600_000).toISOString().slice(0,16):"";

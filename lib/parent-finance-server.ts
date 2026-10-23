@@ -5,7 +5,10 @@ import {childScope,selectedChild,recheckChild,requireParentManagement} from './p
 import {configuredAdminGrantPredicate} from './admin-permissions-server';
 import {authorityGuard} from './admin-authority';
 import {ParentsError,parentPage,parentMonth,parentOperationId,parentReasonForStorage,parentText as str,type ParentChild} from './parents';
-import type {ParentFinancialAccessResponse,ParentInvoice,ParentInvoiceDetail,ParentInvoiceList,ParentPayment,ParentFinanceEvent,ParentPrepayments,ParentPrepaymentRequest} from './parent-finance-types';
+import type {ParentFinancialAccessResponse,ParentInvoice,ParentInvoiceDetail,ParentInvoiceList,ParentPayment,ParentFinanceEvent,ParentPrepayments,ParentPrepaymentRequest,ParentAccruedFees,ParentAccruedFeeLine} from './parent-finance-types';
+import {parentBillingPreview} from './billing-server';
+import {BillingError,type BillingLine} from './billing';
+import {invoiceLessonDuration} from './invoice';
 import type {InvoiceDocument} from './invoice';
 import {defaultInvoiceSettings,type InvoiceInstitutionSnapshot} from './invoice-settings';
 import type {ReceiptDocument,InvoiceFinanceSummary} from './invoice-finance';
@@ -52,18 +55,52 @@ export async function saveParentFinancialAccess(actor:Account,data:Record<string
  return result;
 }
 async function rows<T>(scope:Guard,sql:string,args:unknown[]=[]){return(await learningDb().prepare(`SELECT * FROM (${sql}) WHERE ${scope.sql}`).bind(...args,...scope.args).all<T>()).results||[];}
+async function pinFinanceScope(actor:Account,child:ParentChild,scope:Guard):Promise<Guard>{
+ const epoch=(await rows<{revision:number;linkRevision:number}>(scope,'SELECT revision,link_revision AS linkRevision FROM parent_financial_access WHERE group_id=? AND parent_account_id=? AND student_id=? AND active=1',[actor.groupId,actor.id,child.studentId]))[0];
+ if(!epoch)throw new ParentsError('家长财务授权已改变或没有查看权限',403);
+ return{sql:`(${scope.sql}) AND EXISTS(SELECT 1 FROM parent_financial_access current_finance WHERE current_finance.group_id=? AND current_finance.parent_account_id=? AND current_finance.student_id=? AND current_finance.active=1 AND current_finance.revision=? AND current_finance.link_revision=?)`,args:[...scope.args,actor.groupId,actor.id,child.studentId,epoch.revision,epoch.linkRevision]};
+}
 async function page<T>(scope:Guard,sql:string,args:unknown[],value:unknown){const n=parentPage(value),total=(await rows<{n:number}>(scope,`SELECT count(*) n FROM (${sql})`,args))[0]?.n||0,items=await rows<T>(scope,sql+' LIMIT 20 OFFSET ?',[...args,(n-1)*20]);return{items,page:n,pages:Math.max(1,Math.ceil(total/20)),total,pageSize:20 as const};}
 const invoiceSql=`SELECT i.id,i.number,i.month,i.issued_at AS issuedAt,json_extract(i.document_json,'$.dueDate') AS dueDate,json_extract(i.document_json,'$.lessonCount') AS lessonCount,json_extract(i.document_json,'$.durationSeconds') AS durationSeconds,i.total_cents+coalesce(f.charge_cents,0)-coalesce(f.credit_cents,0) AS totalCents,coalesce(f.received_cents,0)-coalesce(f.reversed_cents,0)-coalesce(f.refunded_cents,0)+coalesce(f.prepayment_cents,0) AS paidCents,coalesce(f.received_cents,0) AS receivedCents,coalesce(f.reversed_cents,0) AS reversedCents,coalesce(f.refunded_cents,0) AS refundedCents,coalesce(f.prepayment_cents,0) AS prepaymentCents,coalesce(f.charge_cents,0) AS chargeCents,coalesce(f.credit_cents,0) AS creditCents,f.voided_at AS voidedAt FROM invoices i LEFT JOIN invoice_finance_accounts f ON f.group_id=i.group_id AND f.invoice_id=i.id WHERE i.group_id=? AND i.student_id=? AND i.status='issued'`;
 type InvoiceRow=Omit<ParentInvoice,'status'|'remainingCents'|'creditBalanceCents'|'printUrl'>&{voidedAt:string|null;receivedCents:number;reversedCents:number;refundedCents:number;prepaymentCents:number;chargeCents:number;creditCents:number};
 function printUrl(child:ParentChild,kind:string,id:string){return'/api/parents/documents/'+kind+'/'+encodeURIComponent(id)+'?studentId='+encodeURIComponent(child.studentId);}
 function invoiceResult(child:ParentChild,row:InvoiceRow):ParentInvoice{return{id:row.id,number:row.number,month:row.month,issuedAt:row.issuedAt,dueDate:row.dueDate,lessonCount:row.lessonCount,durationSeconds:row.durationSeconds,totalCents:row.totalCents,paidCents:row.paidCents,remainingCents:row.voidedAt?0:Math.max(0,row.totalCents-row.paidCents),creditBalanceCents:row.voidedAt?0:Math.max(0,row.paidCents-row.totalCents),status:row.voidedAt?'void':row.paidCents>=row.totalCents?'paid':row.paidCents>0?'partially_paid':'unpaid',printUrl:printUrl(child,'invoice',row.id)};}
 function monthFilter(params:URLSearchParams){const raw=str(params.get('month'));return raw?parentMonth(raw):'';}
+async function parentAccruedFees(actor:Account,child:ParentChild,month:string,scope:Guard):Promise<ParentAccruedFees>{
+ let preview;
+ try{preview=await parentBillingPreview(actor,month,child.studentId,child.student,scope);}catch(error){if(error instanceof BillingError&&[403,404].includes(error.status))throw new ParentsError('家长财务授权已改变或没有查看权限',403);throw error;}
+ // Issued snapshots cover their original sources only. Later lessons in the
+ // same month remain unbilled; a monthly package is covered by subject/month.
+ const coverage=await rows<{source:string;sourceId:string|null}>(scope,`SELECT item.snapshot_json AS source,item.source_id AS sourceId FROM invoice_items item JOIN invoices i ON i.group_id=item.group_id AND i.id=item.invoice_id LEFT JOIN invoice_finance_accounts f ON f.group_id=i.group_id AND f.invoice_id=i.id WHERE i.group_id=? AND i.student_id=? AND i.month=? AND i.status='issued' AND f.voided_at IS NULL AND item.kind='fee' UNION ALL SELECT source.value AS source,NULL AS sourceId FROM invoices i LEFT JOIN invoice_finance_accounts f ON f.group_id=i.group_id AND f.invoice_id=i.id JOIN json_each(i.document_json,'$.sourceLines') source WHERE i.group_id=? AND i.student_id=? AND i.month=? AND i.status='issued' AND f.voided_at IS NULL`,[actor.groupId,child.studentId,month,actor.groupId,child.studentId,month]);
+ const lineIds=new Set<string>(),lessonIds=new Set<string>(),monthlySubjects=new Set<string>();
+ for(const item of coverage){if(item.sourceId)lineIds.add(item.sourceId);try{const value=JSON.parse(item.source) as Partial<BillingLine>;if(typeof value.id==='string')lineIds.add(value.id);if(typeof value.lessonId==='string')lessonIds.add(value.lessonId);if(value.mode==='month'&&!value.lessonId&&typeof value.subjectKey==='string')monthlySubjects.add(value.subjectKey);}catch{/* Legacy malformed source metadata grants no new access or coverage. */}}
+ const source=preview.detail?.lines||[],groups=new Map<string,{line:ParentAccruedFeeLine;known:number;unknown:number;unbilledKnown:number;unbilledUnknown:number}>(),reviewReasons=new Set<ParentAccruedFees['reviewReasons'][number]>();
+ let accrued=0,unbilled=0,known=0,unknown=0,unbilledKnown=0,unbilledUnknown=0,lessonAmountCents=0,monthlyAmountCents=0,lessonCount=0,durationSeconds=0,pendingCount=0;
+ for(const fee of source){
+  // Unrecorded lessons do not form part of recorded fees. Independent monthly
+  // package lines have no lessonId and retain the calculator's agreed rules.
+  if(fee.lessonId&&(fee.lessonStatus==='scheduled'||['pending','scheduled'].includes(fee.attendanceStatus)))continue;
+  const kind=fee.mode==='month'?'monthly' as const:'lessons' as const,key=JSON.stringify([fee.subject,kind]),group=groups.get(key)||{line:{subject:fee.subject,kind,lessonCount:0,durationSeconds:0,amountCents:0,unbilledAmountCents:0,pendingCount:0},known:0,unknown:0,unbilledKnown:0,unbilledUnknown:0};
+  const amount=fee.amountCents??fee.estimatedAmountCents,covered=lineIds.has(fee.id)||Boolean(fee.lessonId&&lessonIds.has(fee.lessonId))||fee.mode==='month'&&monthlySubjects.has(fee.subjectKey);
+  if(amount!==null){accrued+=amount;known++;group.known++;group.line.amountCents!+=amount;if(kind==='monthly')monthlyAmountCents+=amount;else lessonAmountCents+=amount;if(!covered){unbilled+=amount;unbilledKnown++;group.unbilledKnown++;group.line.unbilledAmountCents!+=amount;}}
+  else{unknown++;group.unknown++;if(!covered){unbilledUnknown++;group.unbilledUnknown++;}}
+  const attended=fee.lessonId&&fee.lessonStatus!=='cancelled'&&fee.sessionStatus!=='cancelled'&&(fee.lessonStatus==='completed'||['present','late','early_leave','late_early','late_early_leave'].includes(fee.attendanceStatus)||Boolean(amount&&amount>0));
+  if(attended){const duration=fee.durationSeconds||invoiceLessonDuration(fee);lessonCount++;durationSeconds+=duration;group.line.lessonCount++;group.line.durationSeconds+=duration;}
+  if(fee.status==='pending'){pendingCount++;group.line.pendingCount++;for(const warning of fee.warnings){if(warning.startsWith('monthly_'))reviewReasons.add('monthly');else if(warning.startsWith('adjustment_'))reviewReasons.add('adjustment');else if(warning.startsWith('replacement_'))reviewReasons.add('replacement');else if(['missing_rate','missing_policy','subject_unmatched'].includes(warning))reviewReasons.add('pricing');else reviewReasons.add('attendance');}}
+  groups.set(key,group);
+ }
+ const lines=[...groups.values()].map(group=>({...group.line,amountCents:!group.known&&group.unknown?null:group.line.amountCents,unbilledAmountCents:!group.unbilledKnown&&group.unbilledUnknown?null:group.line.unbilledAmountCents}));
+ await assert(scope);
+ return{month,asOf:new Date().toISOString(),currency:'MYR',accruedAmountCents:!known&&unknown?null:accrued,unbilledAmountCents:!unbilledKnown&&unbilledUnknown?null:unbilled,lessonAmountCents,monthlyAmountCents,lessonCount,durationSeconds,pendingCount,unpricedCount:unknown,reviewReasons:[...reviewReasons],lines};
+}
 export async function parentInvoiceList(actor:Account,params:URLSearchParams):Promise<ParentInvoiceList>{
- const child=await selectedChild(actor,id(params.get('studentId'))),scope=parentFinanceScope(actor,child),month=monthFilter(params),p=parentPage(params.get('page'));
- if(!await allowed(scope)){await recheckChild(actor,child);return{child,authorized:false,items:[],page:p,pages:1,total:0,pageSize:20,totals:null};}
+ const child=await selectedChild(actor,id(params.get('studentId'))),month=monthFilter(params),p=parentPage(params.get('page'));let scope=parentFinanceScope(actor,child);
+ if(!await allowed(scope)){await recheckChild(actor,child);return{child,authorized:false,items:[],page:p,pages:1,total:0,pageSize:20,totals:null,accrual:null};}
+ scope=await pinFinanceScope(actor,child,scope);await assert(scope);
  const sql=invoiceSql+" AND (?='' OR i.month=?)",args=[actor.groupId,child.studentId,month,month],list=await page<InvoiceRow>(scope,sql+' ORDER BY i.issued_at DESC,i.id DESC',args,p);
  const aggregate=(await rows<{remainingCents:number;paidCents:number;overdueCents:number}>(scope,`SELECT coalesce(sum(CASE WHEN voidedAt IS NULL THEN max(0,totalCents-paidCents) ELSE 0 END),0) remainingCents,coalesce(sum(CASE WHEN voidedAt IS NULL THEN paidCents ELSE 0 END),0) paidCents,coalesce(sum(CASE WHEN voidedAt IS NULL AND dueDate<date('now','+8 hours') THEN max(0,totalCents-paidCents) ELSE 0 END),0) overdueCents FROM (${sql})`,args))[0];await assert(scope);
- return{...list,child,authorized:true,items:list.items.map(r=>invoiceResult(child,r)),totals:{...aggregate,currency:'MYR'}};
+ const accrual=await parentAccruedFees(actor,child,month||parentMonth(null),scope);await assert(scope);
+ return{...list,child,authorized:true,items:list.items.map(r=>invoiceResult(child,r)),totals:{...aggregate,currency:'MYR'},accrual};
 }
 const paymentSql=`SELECT p.id,r.id AS receiptId,r.number,p.amount_cents AS amountCents,p.paid_at AS paidAt,p.method,p.reference,(SELECT e.occurred_at FROM invoice_finance_events e WHERE e.group_id=p.group_id AND e.payment_id=p.id AND e.kind='reverse') AS reversedAt,coalesce((SELECT sum(e.amount_cents) FROM invoice_finance_events e WHERE e.group_id=p.group_id AND e.payment_id=p.id AND e.kind='refund'),0) AS refundedCents FROM invoice_payments p JOIN invoice_receipts r ON r.group_id=p.group_id AND r.payment_id=p.id WHERE p.group_id=? AND p.student_id=? AND p.invoice_id=? ORDER BY p.created_at DESC,p.id DESC`;
 export async function parentInvoiceDetail(actor:Account,params:URLSearchParams):Promise<ParentInvoiceDetail>{

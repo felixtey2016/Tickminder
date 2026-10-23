@@ -87,8 +87,23 @@ export function checkRestoredInvoiceFinance(db){
   const event=events.find(e=>e.group_id===row.group_id&&e.id===row.event_id),op=operations.get(identity(row.group_id,row.operation_id)),before=json(row.before_json),after=json(row.after_json);
   const invoice=db.prepare('SELECT document_json FROM invoices WHERE group_id=? AND id=?').get(row.group_id,row.invoice_id),doc=invoice&&json(invoice.document_json);
   if(row.active!==0||!timestamp(row.closed_at)||!timestamp(row.created_at)||row.closed_at<row.created_at||!event||event.kind!=='attendance_correction'||event.invoice_id!==row.invoice_id||event.operation_id!==row.operation_id||event.actor_id!==row.actor_id||event.reason!==row.reason||!op||op.action!=='correctAttendance'||op.actor_id!==row.actor_id||!before||!after||!doc||!doc.sourceLines.some(l=>l.lessonId===row.lesson_id))fail();
-  if(before.id!==row.lesson_id||before.sessionId!==row.session_id||!Number.isSafeInteger(before.sessionRevision)||before.sessionRevision<1||before.student!==doc.student.name||after.reviewedBy!==row.actor_id||after.reviewedAt!==row.created_at||!['present','absent','late','early_leave','late_early'].includes(after.attendanceKind)||!['completed','student_absent'].includes(after.status)||![0,1].includes(after.chargeable))fail();
-  if(after.attendanceKind==='absent'?(after.status!=='student_absent'||after.actualStart!==null||after.actualEnd!==null):(after.status!=='completed'||!inheritedInstant(after.actualStart)||!inheritedInstant(after.actualEnd)||Date.parse(after.actualStart)>=Date.parse(after.actualEnd)))fail();
+  if(before.id!==row.lesson_id||before.sessionId!==row.session_id||!Number.isSafeInteger(before.sessionRevision)||before.sessionRevision<1||before.student!==doc.student.name)fail();
+  const reset=after.attendanceKind==='pending',teaching=after.teachingStatus;
+  if(reset){if(after.status!=='scheduled'||after.chargeable!==null||after.reviewedAt!==null||after.reviewedBy!==null||after.actualStart!==null||after.actualEnd!==null||teaching===undefined)fail();}
+  else{
+   if(after.reviewedBy!==row.actor_id||after.reviewedAt!==row.created_at||!['present','absent','late','early_leave','late_early'].includes(after.attendanceKind)||![0,1].includes(after.chargeable))fail();
+   if(after.attendanceKind==='absent'?(after.status!==(teaching==='teacher_absent'?'teacher_absent':'student_absent')||after.actualStart!==null||after.actualEnd!==null):(after.status!=='completed'||!inheritedInstant(after.actualStart)||!inheritedInstant(after.actualEnd)||Date.parse(after.actualStart)>=Date.parse(after.actualEnd)))fail();
+  }
+  // Old corrections have no shared teaching projection. New corrections must
+  // preserve the complete projection that the issued-source guards validated.
+  if(teaching!==undefined){
+   if(!['pending','taught','not_taught','teacher_absent'].includes(teaching)||!['scheduled','completed'].includes(after.sessionStatus))fail();
+   if(teaching==='taught'){if(!inheritedInstant(after.teachingStart)||!inheritedInstant(after.teachingEnd)||Date.parse(after.teachingStart)>=Date.parse(after.teachingEnd)||Date.parse(after.teachingEnd)-Date.parse(after.teachingStart)>12*3600000)fail();}
+   else if(after.teachingStart!==null||after.teachingEnd!==null)fail();
+   if(teaching==='pending'?(after.sessionReviewedAt!==null||after.sessionReviewedBy!==null||after.sessionStatus!=='scheduled'||!reset):(after.sessionReviewedAt!==row.created_at||after.sessionReviewedBy!==row.actor_id))fail();
+   if(!reset&&teaching!=='taught'&&after.attendanceKind!=='absent'||teaching==='teacher_absent'&&!reset&&after.chargeable!==0)fail();
+   if(after.actualStart!==null&&(Date.parse(after.actualStart)<Date.parse(after.teachingStart)||Date.parse(after.actualEnd)>Date.parse(after.teachingEnd)))fail();
+  }
  }
  for(const event of events.filter(e=>e.kind==='attendance_correction'))if(corrections.filter(c=>c.group_id===event.group_id&&c.event_id===event.id).length!==1)fail();
  if(db.prepare('PRAGMA foreign_key_check').all().length)fail();
