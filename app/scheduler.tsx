@@ -239,6 +239,7 @@ export function Scheduler() {
     const googleButton = useRef<HTMLDivElement>(null);
     const latestStateRequest = useRef(0);
     const revisionRef = useRef<number | null>(null);
+    const coreFailureMessage=useRef('');
     const channelRef = useRef<BroadcastChannel | null>(null);
     const loadedScopes = useRef(new Set<StateScope>());
     const wantedScopes = useRef(new Set<StateScope>());
@@ -300,6 +301,7 @@ export function Scheduler() {
                 revisionRef.current = null;
                 return;
             }
+            if(coreFailureMessage.current){const prior=coreFailureMessage.current;setMessage(current=>current===prior?"":current);coreFailureMessage.current="";}
             revisionRef.current = typeof next.revision === "number" ? next.revision : null;
             // Non-visible scopes become stale, rather than being reread after
             // every mutation for the rest of this signed-in session.
@@ -323,7 +325,7 @@ export function Scheduler() {
             if (status === 401 || status === 403) {
                 try { setAuth(await request("/api/auth")); setState(null); revisionRef.current = null; }
                 catch { /* Retry on the next foreground check. */ }
-            } else {setState(previous=>previous?{...previous,coreError:actionFailureMessage(error)}:previous);if(!silent)setMessage((error as Error).message);}
+            } else {setState(previous=>previous?{...previous,coreError:actionFailureMessage(error)}:previous);if(!silent){coreFailureMessage.current=(error as Error).message;setMessage(coreFailureMessage.current);}}
         }
     }, [selectedMonth, calendarRange.from,calendarRange.to,auth?.account?.id, ensureScope]);
     useEffect(() => { const refreshAuth = () => { void request("/api/auth").then(setAuth).catch(alertActionFailure); }; window.addEventListener("timelyo:auth-refresh", refreshAuth); return () => window.removeEventListener("timelyo:auth-refresh", refreshAuth); }, []);
