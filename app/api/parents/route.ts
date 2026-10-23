@@ -18,7 +18,7 @@ export async function GET(request:Request){
   if(view==='links')return json(await parentLinks(actor,params));
   if(view==='students')return json(await parentStudentSearch(actor,params));
   if(view==='studentParents')return json(await studentParents(actor,params));
-  if(['child','lessons','homework','materials','recordings'].includes(view))return json(await parentChildView(actor,params));
+  if(['child','calendar','lessons','homework','materials','recordings'].includes(view))return json(await parentChildView(actor,params));
   throw new ParentsError('家长页面不存在',404);
  }catch(error){return failure(error);}
 }

@@ -1,1 +1,43 @@
-.parent-shell .topbar{gap:16px}.parent-shell .brand{min-width:0}.parent-shell .brand>div{min-width:0}.parent-shell .brand span{overflow-wrap:anywhere}.parent-shell .brand-logo{flex-shrink:0}.parent-shell .top-actions{flex-shrink:0}.parent-shell-main{max-width:1160px;margin:0 auto;padding:24px;width:100%;min-width:0}.parent-shell-main :is(h1,h2,h3,p,strong,dd,dt){overflow-wrap:anywhere}.parent-shell-intro{display:grid;gap:8px;margin:16px 0 24px}.parent-shell-intro h1,.parent-shell-intro p{margin:0}.parent-shell-intro p{color:#695f7d}.parent-shell-navigation{display:flex;gap:12px;flex-wrap:wrap;margin:0 0 24px}.parent-shell-navigation button{min-height:44px;white-space:normal;max-width:100%}.parent-shell .account-settings{max-width:100%;min-width:0}.parent-shell .workspace-backbar{top:calc(var(--parent-header-height,72px) + env(safe-area-inset-top,0px));background:#f8f7fc;padding:4px 0}@media(max-width:650px){.parent-shell-main{padding:16px}.parent-shell .brand strong{font-size:18px}.parent-shell .brand span{font-size:11px}.parent-shell .topbar{padding:12px 16px}.parent-shell .language-switch button{min-width:44px;padding:10px}.parent-shell-navigation button{flex:1 1 110px}}
+.parent-shell .topbar{gap:16px}
+.parent-shell .brand,.parent-shell .brand>div{min-width:0}
+.parent-shell .brand-logo,.parent-shell .top-actions{flex-shrink:0}
+.parent-shell .top-actions{gap:12px}
+.parent-shell .language-switch{gap:8px;padding:2px}
+.parent-shell .language-switch button{min-width:44px;min-height:44px;padding:8px}
+.parent-shell-body{display:grid;grid-template-columns:244px minmax(0,1fr);min-height:calc(100dvh - var(--parent-header-height,72px))}
+.parent-workspace-menu{position:sticky;width:100%;top:var(--parent-header-height,72px);height:calc(100dvh - var(--parent-header-height,72px));display:flex;flex-direction:column;min-width:0;gap:16px;padding:18px 12px 20px}
+.parent-menu-heading{display:flex;align-items:flex-start;gap:8px;min-width:0}
+.parent-workspace-menu .signed-in-identity{flex:1;min-width:0;margin:0;padding:12px 12px 16px}
+.parent-workspace-menu .menu-links{gap:8px}
+.parent-workspace-menu .menu-link{min-height:44px;gap:12px;font-size:14px;white-space:normal;overflow-wrap:anywhere}
+.parent-workspace-menu .menu-link>span:not(.menu-count){min-width:0}
+.parent-workspace-menu .menu-utilities{margin-top:auto;padding-top:16px;gap:12px}
+.parent-workspace-menu .menu-legal{justify-content:flex-start;flex-wrap:wrap;gap:8px;margin:0;padding:0 12px}
+.parent-workspace-menu .menu-legal a{display:inline-flex;align-items:center;min-height:44px;color:#d5d0e5}
+.parent-shell .parent-menu-toggle,.parent-menu-close{display:none}
+.parent-shell-main{grid-column:2;max-width:1160px;margin:0 auto;padding:24px;width:100%;min-width:0}
+.parent-shell-main :is(h1,h2,h3,p,strong,dd,dt){overflow-wrap:anywhere}
+.parent-page-head{margin:12px 0 24px}
+.parent-shell .account-settings{max-width:100%;min-width:0}
+.parent-shell .workspace-backbar{top:var(--parent-header-height,72px);background:#f8f7fc;padding:4px 0}
+@media(max-width:900px){
+  .parent-shell-body{display:block}
+  .parent-shell .parent-menu-toggle{display:inline-flex;min-width:44px;min-height:44px;padding:10px}
+  .parent-workspace-menu{position:fixed;z-index:92;top:var(--parent-header-height,68px);bottom:0;left:0;width:min(320px,calc(100vw - 32px));height:auto;padding-bottom:max(20px,env(safe-area-inset-bottom,0px))}
+  .parent-menu-close{display:inline-flex;flex-shrink:0;min-width:44px;min-height:44px;padding:10px;color:#fff}
+  .parent-menu-close:hover{background:#ffffff18;color:#fff}
+  .parent-shell .parent-menu-backdrop{display:block;inset:var(--parent-header-height,68px) 0 0}
+  .parent-shell-main{padding:20px}
+}
+@media(max-width:650px){
+  .parent-shell .topbar{gap:8px;padding:0 12px}
+  .parent-shell .brand{gap:8px}
+  .parent-shell .brand strong{font-size:18px}
+  .parent-shell .top-actions{gap:8px}
+  .parent-shell .language-switch button{padding:8px 4px}
+  .parent-shell .language-switch>span{display:none}
+  .parent-shell-main{padding:16px}
+  .parent-page-head{margin:12px 0 20px}
+}
+@media(max-width:360px){.parent-shell .brand strong{font-size:16px}}
+@media(prefers-reduced-motion:no-preference){.parent-workspace-menu{animation:parent-menu-enter .15s ease-out}@keyframes parent-menu-enter{from{opacity:.6;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}}

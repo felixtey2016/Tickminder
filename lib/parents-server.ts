@@ -5,7 +5,8 @@ import {accountSessionPredicate} from './account-session';
 import {authorityGuard} from './admin-authority';
 import {requireGroup} from './group-data';
 import {classPlanSubjectSql} from './academic-subject-match';
-import {ParentsError,parentText as str,parentPage,parentMonth,parentOperationId,type ParentChild,type ParentPage,type ParentLink,type ParentLesson,type ParentHomework,type ParentMaterial,type ParentRecording} from './parents';
+import {ParentsError,parentText as str,parentPage,parentMonth,parentOperationId,parentReasonForStorage,type ParentChild,type ParentPage,type ParentLink,type ParentLesson,type ParentCalendarDay,type ParentHomework,type ParentMaterial,type ParentRecording} from './parents';
+import {parentLessonRange,parentLessonOverlap} from './parent-calendar';
 
 type Predicate={sql:string;args:unknown[]};
 const columns='l.id,l.student_id AS studentId,b.student_name AS student,l.active,l.revision,l.updated_at AS updatedAt';
@@ -77,7 +78,8 @@ export async function saveParentLink(actor:Account,data:Record<string,unknown>){
  if('groupId' in data&&data.groupId!==actor.groupId)throw new ParentsError('没有跨集团操作权限',403);
  const parentId=queryId(data.parentId),studentId=queryId(data.studentId),operation=parentOperationId(data.operationId),reason=str(data.reason),revision=Number(data.revision),group=requireGroup(actor.groupId);
  if(!Number.isSafeInteger(revision)||revision<0)throw new ParentsError('关联资料已更新，请刷新后重试',409);
- if(reason.length<2||reason.length>500)throw new ParentsError('请填写 2 至 500 字的核实或解除原因');
+ if(reason.length>500)throw new ParentsError('核实记录或原因最多 500 字');
+ const storedReason=parentReasonForStorage(reason);
  if(action==='grant'&&data.verified!==true)throw new ParentsError('请先确认已核实家长与孩子的关系');
  const {guard}=await managedParent(actor,parentId,'parents.manage'),requestHash=await hash({action,parentId,studentId,revision,reason,verified:action==='grant'});
  const replay=await learningDb().prepare(`SELECT actor_id AS actorId,request_hash AS requestHash,result_json AS resultJson FROM parent_operations WHERE group_id=? AND operation_id=? AND ${guard.sql}`).bind(group,operation,...guard.args).first<{actorId:string;requestHash:string;resultJson:string}>();
@@ -94,7 +96,7 @@ export async function saveParentLink(actor:Account,data:Record<string,unknown>){
   const db=learningDb();await db.batch([
    authorityGuard(guard,'parents_authority_changed'),authorityGuard(target,'parents_link_changed'),
    db.prepare('INSERT INTO parent_operations(group_id,operation_id,actor_id,request_hash,execution_id,result_json,created_at) VALUES(?,?,?,?,?,?,?)').bind(group,operation,actor.id,requestHash,execution,JSON.stringify(result),now),
-   existing?db.prepare(`UPDATE parent_child_links SET active=?,revision=revision+1,updated_by=?,updated_at=?,operation_id=?,reason=? WHERE group_id=? AND id=? AND revision=? AND ${claim}`).bind(active,actor.id,now,operation,reason,group,id,revision,...claimArgs):db.prepare(`INSERT INTO parent_child_links(id,group_id,parent_account_id,student_id,active,revision,updated_by,updated_at,operation_id,reason) SELECT ?,?,?,?,?,1,?,?,?,? WHERE ${claim}`).bind(id,group,parentId,studentId,active,actor.id,now,operation,reason,...claimArgs),
+   existing?db.prepare(`UPDATE parent_child_links SET active=?,revision=revision+1,updated_by=?,updated_at=?,operation_id=?,reason=? WHERE group_id=? AND id=? AND revision=? AND ${claim}`).bind(active,actor.id,now,operation,storedReason,group,id,revision,...claimArgs):db.prepare(`INSERT INTO parent_child_links(id,group_id,parent_account_id,student_id,active,revision,updated_by,updated_at,operation_id,reason) SELECT ?,?,?,?,?,1,?,?,?,? WHERE ${claim}`).bind(id,group,parentId,studentId,active,actor.id,now,operation,storedReason,...claimArgs),
    authorityGuard({sql:'EXISTS(SELECT 1 FROM parent_child_links WHERE group_id=? AND id=? AND revision=? AND operation_id=?)',args:[group,id,revision+1,operation]},'parents_link_changed'),
    db.prepare(`INSERT INTO audit(id,group_id,lesson_id,actor_id,action,before_json,after_json,at) SELECT ?,?,?,?, ?,?,?,? WHERE ${claim}`).bind(crypto.randomUUID(),group,'parent:'+parentId,actor.id,'parents.'+action,existing?JSON.stringify({studentId,active:Boolean(existing.active),revision}):null,JSON.stringify({...result.link,reason}),now,...claimArgs),
   ]);
@@ -113,8 +115,26 @@ async function paged<T>(select:string,from:string,where:string,args:unknown[],pa
  return{items,page,pages:Math.max(1,Math.ceil(total/20)),total,pageSize:20};
 }
 async function lessonsFor(actor:Account,child:ParentChild,params:URLSearchParams):Promise<ParentPage<ParentLesson>>{
- const scope=childScope(actor,child.studentId,child.student),month=parentMonth(params.get('month'));
- return paged<ParentLesson>(`l.id,l.subject,l.teacher_name AS teacherName,c.title AS classroomTitle,l.planned_start AS plannedStart,l.planned_end AS plannedEnd,l.status,coalesce(p.attendance_status,'pending') AS attendanceStatus,p.arrived_at AS arrivedAt,p.left_at AS leftAt`,`FROM lessons l LEFT JOIN class_sessions cs ON cs.id=l.session_id AND cs.group_id=l.group_id LEFT JOIN classrooms c ON c.id=cs.classroom_id AND c.group_id=l.group_id LEFT JOIN class_session_participants p ON p.lesson_id=l.id AND p.group_id=l.group_id AND p.student_name=l.student`,`l.group_id=? AND l.student=? AND substr(datetime(l.planned_start,'+8 hours'),1,7)=? AND ${scope.sql}`,[actor.groupId,child.student,month,...scope.args],parentPage(params.get('page')),'l.planned_start,l.id');
+ const scope=childScope(actor,child.studentId,child.student),range=parentLessonRange(params);
+ return paged<ParentLesson>(`l.id,l.subject,l.teacher_name AS teacherName,c.title AS classroomTitle,l.planned_start AS plannedStart,l.planned_end AS plannedEnd,l.status,coalesce(p.attendance_status,'pending') AS attendanceStatus,p.arrived_at AS arrivedAt,p.left_at AS leftAt`,`FROM lessons l LEFT JOIN class_sessions cs ON cs.id=l.session_id AND cs.group_id=l.group_id LEFT JOIN classrooms c ON c.id=cs.classroom_id AND c.group_id=l.group_id LEFT JOIN class_session_participants p ON p.lesson_id=l.id AND p.group_id=l.group_id AND p.student_name=l.student`,`l.group_id=? AND l.student=? AND ${parentLessonOverlap('?','?')} AND ${scope.sql}`,[actor.groupId,child.student,range.end,range.start,...scope.args],parentPage(params.get('page')),'l.planned_start,l.id');
+}
+async function calendarFor(actor:Account,child:ParentChild,month:string):Promise<ParentCalendarDay[]>{
+ const scope=childScope(actor,child.studentId,child.student),range=parentLessonRange(new URLSearchParams({month}));
+ // Return at most 31 aggregates. Pagination of the lesson details never truncates a day.
+ return(await learningDb().prepare(`WITH RECURSIVE calendar_days(date) AS (
+  SELECT ? UNION ALL SELECT date(date,'+1 day') FROM calendar_days WHERE date<?
+ ), selected_lessons AS (
+  SELECT l.id,l.planned_start,l.planned_end,CASE
+   WHEN l.status='cancelled' THEN 'cancelled'
+   WHEN l.status IN ('student_absent','teacher_absent') OR p.attendance_status='absent' THEN 'absent'
+   WHEN l.status='completed' THEN 'completed' ELSE 'scheduled' END AS category
+  FROM lessons l LEFT JOIN class_session_participants p ON p.lesson_id=l.id AND p.group_id=l.group_id AND p.student_name=l.student
+  WHERE l.group_id=? AND l.student=? AND ${parentLessonOverlap('?','?')} AND ${scope.sql}
+ ) SELECT day.date,count(l.id) AS total,coalesce(sum(l.category='scheduled'),0) AS scheduled,
+  coalesce(sum(l.category='completed'),0) AS completed,coalesce(sum(l.category='absent'),0) AS absent,
+  coalesce(sum(l.category='cancelled'),0) AS cancelled
+ FROM calendar_days day LEFT JOIN selected_lessons l ON ${parentLessonOverlap("datetime(day.date,'-8 hours')","datetime(day.date,'+1 day','-8 hours')")}
+ GROUP BY day.date ORDER BY day.date`).bind(range.firstDate,range.lastDate,actor.groupId,child.student,range.end,range.start,...scope.args).all<ParentCalendarDay>()).results||[];
 }
 async function homeworkFor(actor:Account,child:ParentChild,params:URLSearchParams):Promise<ParentPage<ParentHomework>>{
  const scope=childScope(actor,child.studentId,child.student),month=parentMonth(params.get('month'));
@@ -136,7 +156,8 @@ async function recordingsFor(actor:Account,child:ParentChild,params:URLSearchPar
 export async function parentChildView(actor:Account,params:URLSearchParams){
  const child=await selectedChild(actor,queryId(params.get('studentId'))),view=str(params.get('view')),month=parentMonth(params.get('month'));
  let result:unknown;
- if(view==='lessons')result={child,month,...await lessonsFor(actor,child,params)};
+ if(view==='calendar')result={child,month,days:await calendarFor(actor,child,month)};
+ else if(view==='lessons'){const range=parentLessonRange(params);result={child,month,...range.date?{date:range.date}:{},...await lessonsFor(actor,child,params)};}
  else if(view==='homework')result={child,month,...await homeworkFor(actor,child,params)};
  else if(view==='materials')result={child,...await materialsFor(actor,child,params)};
  else if(view==='recordings')result={child,...await recordingsFor(actor,child,params)};
