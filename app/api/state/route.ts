@@ -22,6 +22,10 @@ import { adminPermissionContext, adminPermissionFailure, adminPermissionReadCond
 import { restrictedAdminCoreState, permissionAllows, adminCoreOptions } from "@/lib/admin-permission-state";
 import { monthlySummary } from "@/lib/lesson-summary";
 import {configuredAdminGrantPredicate} from '@/lib/admin-permissions-server';
+import {courseRange,courseRangeState,courseAggregates,assertCourseActor,CourseQueryError,type CourseRange} from '@/lib/course-query';
+
+import {readAuditHistory} from "@/lib/audit-history-server";
+import {AuditHistoryError} from "@/lib/audit-history";
 
 type Scope = "core" | "learning" | "classrooms" | "accounts" | "activity";
 const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -33,38 +37,14 @@ function restrictedActivityCondition(account:Account,key:'payroll.view'|'expense
   return sql.join(parts.flatMap((part,index)=>index<predicate.args.length?[sql.raw(part),sql`${predicate.args[index]}`]:[sql.raw(part)]),sql.raw(''));
 }
 
-async function coreState(account: Account, selected: string) {
-  const db = getDb();
-  const lessonFilter = account.role === "teacher" ? eq(lessons.teacherName, account.teacherName || "") : account.role === "student" ? eq(lessons.student, account.studentName || "") : undefined;
-  const [revision, roster, allLessons, allRequests, sessionData] = await Promise.all([
-    readRevision(account.groupId), readRoster(account), db.select().from(lessons).where(groupWhere(lessons,account.groupId,lessonFilter)).all(),
-    lessonFilter ? db.select({request: rescheduleRequests}).from(rescheduleRequests).innerJoin(lessons, eq(lessons.id, rescheduleRequests.lessonId)).where(groupWhere(rescheduleRequests,account.groupId,lessonFilter)).all().then(items => items.map(item => item.request)) : db.select().from(rescheduleRequests).where(groupWhere(rescheduleRequests,account.groupId)).all(),
-    classSessionState(account),
-  ]);
-  const groupIds=new Set(sessionData.sessions.map(s=>s.id)),legacyRequests=allRequests.filter(r=>!r.sessionId||!groupIds.has(r.sessionId));
-  const classSessionRequests=account.role==="student"?[]:allRequests.filter(r=>r.sessionId&&groupIds.has(r.sessionId));
-  const linkByPlan = new Map(roster.allPlans.map(plan => [plan.key, plan]));
-  const withOnlineLink = (lesson: typeof lessons.$inferSelect) => {
-    const plan = linkByPlan.get(`${lesson.student}|${lesson.subject}`);
-    const session=lesson.sessionId?sessionData.byId.get(lesson.sessionId):null;
-    const participant=session?.participants.find(p=>p.lessonId===lesson.id);
-    return { ...lesson,teachingStatus:session?.teachingStatus,teachingStart:session?.actualStart,teachingEnd:session?.actualEnd,personalAttendance:participant?.attendanceStatus, onlineLink:session?.sessionType==="group"?session.onlineLink:plan?.teacherName===lesson.teacherName?plan.onlineLink:session?.onlineLink||null,sessionType:session?.sessionType||"one_to_one",classroomId:session?.classroomId||null,classroomTitle:session?.classroomTitle,participantCount:session?.participantCount||1,sessionRevision:session?.revision,sessionStatus:session?.status,...(account.role!=="student"?{participantNames:session?.participants.map(p=>p.studentName)}:{}) };
-  };
-  const base = { revision, month: selected,...(account.role!=="student"?{attendanceSessions:sessionData.allSessions}:{}),classSessions:account.role==="student"?sessionData.sessions.map(session=>studentSessionResponse(session,account.studentName)):sessionData.sessions,classSessionRequests };
-  if (account.role === "student") {
-    const visible = allLessons.filter(l => l.status !== "cancelled");
-    const ids = new Set(visible.map(l => l.id));
-    return {...base, lessons: visible.map(withOnlineLink).map(studentLessonResponse), proposals: legacyRequests.filter(r => ids.has(r.lessonId)).map(studentRescheduleResponse)};
-  }
-  const plans = roster.plans.filter(p => p.teacher === account.teacherName);
-  const keys = new Set(plans.map(p => p.key));
-  const visible = account.role === "teacher" ? allLessons.filter(l => teacherMaySeeLesson(account, l, keys)||Boolean(l.sessionId&&groupIds.has(l.sessionId)&&l.teacherName===account.teacherName)) : allLessons;
-  const ids = new Set(visible.map(l => l.id));
-  const records = visible.filter(l => l.actualStart && inMonth(l.actualStart, selected) && approvedActualHours(l) > 0).sort((a,b) => a.actualStart!.localeCompare(b.actualStart!));
-  const checkins = visible.filter(l => checkinInMonth(l, selected)).sort((a,b) => (a.actualStart || a.plannedStart).localeCompare(b.actualStart || b.plannedStart)).map(withOnlineLink);
-  if (account.role === "teacher") return {...base, plans, lessons: visible.map(withOnlineLink), proposals: legacyRequests.filter(r => ids.has(r.lessonId)), records, checkins, summary: monthlySummary(plans, visible, selected,sessionData.byId)};
-  return {...base, plans: roster.plans, allPlans: roster.allPlans, students: roster.students, allStudents: roster.allStudents, teachers: roster.teachers, allTeachers: roster.allTeachers,
-    lessons: visible.map(withOnlineLink), proposals: legacyRequests, records, checkins, summary: monthlySummary(roster.allPlans, visible, selected,sessionData.byId)};
+async function coreState(account: Account, selected: string, range:CourseRange) {
+  const [revision,roster]=await Promise.all([readRevision(account.groupId),readRoster(account)]);
+  const plans=account.role==='teacher'?roster.plans.filter(p=>p.teacher===account.teacherName):roster.allPlans;
+  const [courses,aggregates]=await Promise.all([courseRangeState(account,range),courseAggregates(account,selected,plans)]);
+  const base={revision,month:selected,courseRange:{from:range.from,to:range.to},...courses,...aggregates};
+  if(account.role==='student')return base;
+  if(account.role==='teacher')return{...base,plans};
+  return{...base,plans:roster.plans,allPlans:roster.allPlans,students:roster.students,allStudents:roster.allStudents,teachers:roster.teachers,allTeachers:roster.allTeachers};
 }
 
 async function extraState(account: Account, scope: Exclude<Scope, "core">, access?:AdminPermissionContext) {
@@ -77,9 +57,10 @@ async function extraState(account: Account, scope: Exclude<Scope, "core">, acces
     const [classrooms, terms] = await Promise.all([classroomsState(account), access?.enforced&&!permissionAllows(access,"terms.view")?Promise.resolve([]):groupRows(account.groupId,"SELECT id,name,is_current AS isCurrent FROM academic_terms ORDER BY created_at DESC")]);
     return {classrooms, terms};
   }
+  if(scope==="activity"){const result=await readAuditHistory(account,new URLSearchParams());return {activity:result.entries,activityPage:result};}
   const db = getDb();
   if(scope==="accounts")await requireAdminPermission(account,"accounts.view");
-  if(scope==="activity")await requireAdminPermission(account,"audit.view");
+
   const users = await db.select().from(accounts).where(groupWhere(accounts,account.groupId,adminPermissionReadCondition(account,scope==="accounts"?"accounts.view":"audit.view"))).all();
   if (scope === "accounts") {
     const [credentials, hierarchy] = await Promise.all([
@@ -98,31 +79,7 @@ async function extraState(account: Account, scope: Exclude<Scope, "core">, acces
     if(showParentChildren&&!await mayReadParents())throw new AdminPermissionDenied();
     return {users: users.map(u => ({...u, ...lifecycleView(u), isOwner:isOwnerAccount(u), isGroupChief:u.role==='admin'&&!u.disabledAt&&u.id===hierarchy.chiefAdminId, username: byId.get(u.id)?.username || null, mustChangePassword: byId.get(u.id)?.mustChangePassword || false,...(showParentChildren&&u.role==='parent'?{parentChildren:parentChildren.get(u.id)||[]}: {})}))};
   }
-  const activityVisibility=and(adminPermissionReadCondition(account,"audit.view"),isOwnerAccount(account)?undefined:notLike(audit.action,'billing.%'),or(notLike(audit.action,'invoice.%'),adminPermissionReadCondition(account,'invoices.view')),or(and(notLike(audit.action,'invoice.finance.%'),notLike(audit.action,'invoice.correctAttendance')),restrictedActivityCondition(account,'payments.view')),or(notLike(audit.action,'payroll.%'),restrictedActivityCondition(account,'payroll.view')),or(notLike(audit.action,'finance.%'),restrictedActivityCondition(account,'expenses.view')),or(notLike(audit.action,'prepayments.%'),restrictedActivityCondition(account,'prepayments.view')),or(notLike(audit.action,'parents.%'),restrictedActivityCondition(account,'parents.view')),or(notLike(audit.action,'adminPermissions.%'),adminManagementReadCondition(account)));
-  const [changes, mergedNames] = await Promise.all([db.select().from(audit).where(groupWhere(audit,account.groupId,activityVisibility)).orderBy(desc(audit.at)).limit(30).all(), mergedAccountNames(account.groupId)]);
-  if(changes.some(change=>change.action.startsWith('parents.'))){
-    const parentPermission=configuredAdminGrantPredicate(account,'parents.view');
-    if(!await learningDb().prepare('SELECT 1 WHERE '+parentPermission.sql).bind(...parentPermission.args).first())throw new AdminPermissionDenied();
-  }
-  const changedLessons = changes.length ? await db.select({id: lessons.id, student: lessons.student, subject: lessons.subject}).from(lessons).where(groupWhere(lessons,account.groupId,inArray(lessons.id, changes.map(c => c.lessonId)))).all() : [];
-  const byId = new Map(changedLessons.map(l => [l.id, `${l.student} · ${l.subject}`]));
-  const readableSnapshot=(action:string)=>{
-    if(!access?.enforced)return true;
-    if(isOwnerAccount(account))return true;
-    if(action.startsWith('adminPermissions.'))return access.privileged;
-    const direct:Record<string,string>={saveTeacher:'teachers',saveStudent:'students',updateStudentProfile:'students',setStudentActive:'students',savePlan:'plans',create:'lessons',edit:'lessons',cancel:'lessons',attendance:'attendance',review:'attendance',createLocalAccount:'accounts',resetLocalPassword:'accounts',activateAccount:'accounts',deleteAccount:'accounts',restoreAccount:'accounts',bind:'accounts',proposeReschedule:'reschedules',respondReschedule:'reschedules',saveClassroom:'classrooms',archiveClassroom:'classrooms',saveTerm:'terms',createTerm:'terms',saveAnnouncement:'announcements',deleteAnnouncement:'announcements',saveSessionAttendance:'attendance',reviewSessionAttendance:'attendance',autoConfirmAttendance:'attendance',createClassSession:'lessons',editClassSession:'lessons',cancelClassSession:'lessons',proposeClassReschedule:'reschedules',respondClassReschedule:'reschedules'};
-    const module=direct[action]||(action.startsWith('parents.')?'parents':action.startsWith('prepayments.')?'prepayments':action.startsWith('payroll.')?'payroll':action.startsWith('finance.')?'expenses':action.startsWith('invoice.')?'invoices':action.startsWith('quiz.')?'quizzes':action.startsWith('quizPractice.')||action.startsWith('quizAssignment.')?'quizAssignments':action.startsWith('folder.')?'folders':action.startsWith('material.')?'materials':action.startsWith('homework.')?'homework':action.startsWith('sheet')?'sheetSync':null);
-    return module?access.grants.some(key=>key===`${module}.view`):false;
-  };
-  const visibleSnapshot=(value:string|null,action:string)=>{
-    if(!readableSnapshot(action))return null;
-    if(!value||!access?.enforced||isOwnerAccount(account))return value;
-    const attendanceFields=new Set(['actualStart','actualEnd','attendanceKind','chargeable','reviewedAt','reviewedBy','teachingStatus','teachingStart','teachingEnd','personalAttendance','attendanceStatus','arrivedAt','leftAt','attendanceNote','attendanceRecordedAt','attendanceRecordedBy','attendanceReviewedAt','attendanceReviewedBy']);
-    const lessonAction=['create','edit','cancel','reschedule','createClassSession','editClassSession','cancelClassSession','updateClassSessionLink'].includes(action);
-    const filter=(input:unknown):unknown=>Array.isArray(input)?input.map(filter):input&&typeof input==='object'?Object.fromEntries(Object.entries(input).filter(([key])=>(key!=='age'||permissionAllows(access,'students.view'))&&(!attendanceFields.has(key)&&!(key==='note'&&lessonAction)||permissionAllows(access,'attendance.view'))).map(([key,item])=>[key,filter(item)])):input;
-    try{return JSON.stringify(filter(JSON.parse(value)));}catch{return null;}
-  };
-  return {activity: changes.map(c => ({...c,before:visibleSnapshot(c.before,c.action),after:visibleSnapshot(c.after,c.action), actorName: (c.actorId===account.id?account.name:users.find(u => u.id === c.actorId)?.name) || mergedNames.get(c.actorId) || c.actorId, lessonName: !access?.enforced||permissionAllows(access,"lessons.view")?byId.get(c.lessonId) || c.lessonId:c.lessonId}))};
+  return {};
 }
 
 export async function GET(request: Request) {
@@ -139,13 +96,17 @@ export async function GET(request: Request) {
   const identity = {groupId:account.groupId,id: account.id, name: account.name, email: account.email, role: account.role, isOwner:isOwnerAccount(account), isGroupChief:hierarchy.isGroupChief, canManageAdministrators:hierarchy.canManageAdministrators, teacherName: account.teacherName, studentName: account.studentName,...(account.role==="admin"?{adminPermissions:access}:{})};
   if (account.role === "pending") return json({account: {...identity, ...lifecycleView(account)}, lessons:[], classrooms:[], proposals:[], loadedScopes: ["core"]});
   try {
-    // No scope preserves the existing full response for compatible clients.
-    const defaults:Scope[]=account.role === "admin" ? ["core","learning","classrooms","accounts","activity"] : ["core","learning","classrooms"];
+    const range=courseRange(url.searchParams,selected);
+    // Compatible clients receive a bounded month; long history is an explicit paged request.
+    const defaults:Scope[]=account.role === "admin" ? ["core","learning","classrooms","accounts"] : ["core","learning","classrooms"];
     const scopes: Scope[] = scope ? [scope as Scope] : defaults.filter(item=>!access.enforced||item!=="accounts"&&item!=="activity"||permissionAllows(access,item==="accounts"?"accounts.view":"audit.view"));
-    const parts = await Promise.all(scopes.map(s => s === "core" ? account.role==="admin"&&access.enforced?restrictedAdminCoreState(account,selected,access):coreState(account, selected) : extraState(account, s, access)));
+    const parts = await Promise.all(scopes.map(s => s === "core" ? account.role==="admin"&&access.enforced?restrictedAdminCoreState(account,selected,access,range):coreState(account, selected,range) : extraState(account, s, access)));
+    await assertCourseActor(account,[]);
     if(access.enforced&&JSON.stringify(access)!==JSON.stringify(await adminPermissionContext(account)))throw new AdminPermissionDenied();
     return json(Object.assign({account: identity, loadedScopes: scopes}, ...parts));
   } catch (error) {
+    if(error instanceof AuditHistoryError)return json({error:error.message},error.status);
+    if(error instanceof CourseQueryError)return json({error:error.message},error.status);
     const failure=adminPermissionFailure(error);if(failure)return json({error:failure.error},failure.status);
     return json({error: "资料暂时无法载入，请稍后刷新"}, 503);
   }

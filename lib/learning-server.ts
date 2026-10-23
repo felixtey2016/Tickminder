@@ -1,4 +1,5 @@
 import {hasAdminPermission} from "@/lib/admin-permission-access";
+import {appendAudit} from './audit-log';
 import {guardedLearningReader} from "@/lib/learning-permission-read";
 import {classPlanSubjectSql,planSubjectLabelSql} from "./academic-subject-match";
 import {groupReader,groupStatement} from "@/lib/group-data";
@@ -23,8 +24,8 @@ export async function first<T extends Row = Row>(query: string, ...values: unkno
 }
 
 export async function change(groupId:string, action: string, actorId: string, recordId: string, after: Record<string, unknown> | null = null) {
-  await learningDb().prepare("INSERT INTO audit (group_id,id, lesson_id, actor_id, action, before_json, after_json, at) VALUES (?,?, ?, ?, ?, NULL, ?, ?)")
-    .bind(groupId,crypto.randomUUID(), `learning:${recordId}`, actorId, action, after ? JSON.stringify(after) : null, new Date().toISOString()).run();
+  const actor=await learningDb().prepare('SELECT name FROM accounts WHERE id=? AND (group_id=? OR group_id IS NULL)').bind(actorId,groupId).first<{name:string}>();
+  await appendAudit(learningDb(),{groupId,lessonId:`learning:${recordId}`,actorId,actorName:actor?.name,action,after,objectName:typeof after?.title==='string'?after.title:undefined}).run();
 }
 
 export async function teacherMayAssign(account: Account, student: string, subject: string) {

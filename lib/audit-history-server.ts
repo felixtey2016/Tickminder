@@ -1,0 +1,83 @@
+import type {Account} from './auth';
+import {learningDb} from './learning-server';
+import {OWNER_EMAIL} from './owner';
+import {requireGroup} from './group-data';
+import {accountSessionPredicate} from './account-session';
+import {configuredAdminGrantPredicate} from './admin-permissions-server';
+import {adminPermissionContext,adminPermissionPredicate,type AdminPermissionContext} from './admin-permission-access';
+import {sanitizeAuditValue,sensitiveAuditKey} from './audit-log';
+import {auditNames,historicalAccountLabel} from './audit-names';
+import {AuditHistoryError,type AuditHistoryResponse,type AuditSummaryField} from './audit-history';
+type Predicate={sql:string;args:unknown[]};
+type Row={id:string;lessonId:string;actorId:string;action:string;beforeJson:string|null;afterJson:string|null;at:string};
+type Access={context:AdminPermissionContext;flags:Record<string,number>;signature:string};
+const text=(value:unknown)=>typeof value==='string'?value.trim():'';
+const owner=(actor:Account):Predicate=>({sql:"EXISTS(SELECT 1 FROM accounts audit_owner WHERE audit_owner.id=? AND audit_owner.role='admin' AND audit_owner.disabled_at IS NULL AND lower(trim(audit_owner.email))=? AND substr(audit_owner.id,1,6)<>'local:')",args:[actor.id,OWNER_EMAIL]});
+function identity(actor:Account,management=false):Predicate{
+ const session=accountSessionPredicate(actor);return{sql:`EXISTS(SELECT 1 FROM accounts audit_actor JOIN tuition_groups audit_group ON audit_group.id=? WHERE audit_actor.id=? AND audit_actor.role='admin' AND audit_actor.disabled_at IS NULL AND NOT EXISTS(SELECT 1 FROM local_credentials c WHERE c.account_id=audit_actor.id AND c.must_change_password=1) AND ((lower(trim(audit_actor.email))=? AND substr(audit_actor.id,1,6)<>'local:') OR (audit_actor.group_id=audit_group.id AND audit_group.active=1 ${management?'AND audit_group.chief_admin_id=audit_actor.id':''})) AND ${session.sql})`,args:[actor.groupId,actor.id,OWNER_EMAIL,...session.args]};
+}
+function conditions(actor:Account){return{
+ identity:identity(actor),audit:adminPermissionPredicate(actor,'audit.view'),owner:owner(actor),invoices:adminPermissionPredicate(actor,'invoices.view'),payments:configuredAdminGrantPredicate(actor,'payments.view'),payroll:configuredAdminGrantPredicate(actor,'payroll.view'),expenses:configuredAdminGrantPredicate(actor,'expenses.view'),prepayments:configuredAdminGrantPredicate(actor,'prepayments.view'),parents:configuredAdminGrantPredicate(actor,'parents.view'),management:identity(actor,true),
+};}
+async function accessState(actor:Account):Promise<Access>{
+ const context=await adminPermissionContext(actor),checks=conditions(actor),entries=Object.entries(checks);
+ const flags=await learningDb().prepare('SELECT '+entries.map(([key,p])=>`CASE WHEN ${p.sql} THEN 1 ELSE 0 END AS ${key}`).join(',')).bind(...entries.flatMap(([,p])=>p.args)).first<Record<string,number>>();
+ if(!flags?.identity||!flags.audit)throw new AuditHistoryError('没有权限查看操作日志',403);
+ return{context,flags,signature:JSON.stringify({context,flags})};
+}
+function visible(actor:Account):Predicate{
+ const p=conditions(actor),parts:Predicate[]=[{sql:'a.group_id=?',args:[actor.groupId]},p.identity,p.audit];
+ for(const [pattern,predicate]of [['billing.%',p.owner],['invoice.%',p.invoices],['invoice.finance.%',p.payments],['payroll.%',p.payroll],['finance.%',p.expenses],['prepayments.%',p.prepayments],['parents.%',p.parents],['adminPermissions.%',p.management]] as [string,Predicate][])parts.push({sql:`(a.action NOT LIKE ? OR (${predicate.sql}))`,args:[pattern,...predicate.args]});
+ parts.push({sql:`(a.action<>'invoice.correctAttendance' OR (${p.payments.sql}))`,args:p.payments.args});
+ return{sql:parts.map(p=>'('+p.sql+')').join(' AND '),args:parts.flatMap(p=>p.args)};
+}
+function parsed(value:string|null):Record<string,unknown>{try{const result=JSON.parse(value||'null');return result&&typeof result==='object'&&!Array.isArray(result)?result:{};}catch{return{};}}
+const direct:Record<string,string>={saveTeacher:'teachers',saveStudent:'students',updateStudentProfile:'students',setStudentActive:'students',savePlan:'plans',create:'lessons',edit:'lessons',cancel:'lessons',attendance:'attendance',review:'attendance',createLocalAccount:'accounts',resetLocalPassword:'accounts',activateAccount:'accounts',deleteAccount:'accounts',restoreAccount:'accounts',permanentDelete:'accounts',bind:'accounts',proposeReschedule:'reschedules',respondReschedule:'reschedules',reschedule:'reschedules',saveClassroom:'classrooms',archiveClassroom:'classrooms',saveTerm:'terms',createTerm:'terms',saveAnnouncement:'announcements',deleteAnnouncement:'announcements',saveSessionAttendance:'attendance',reviewSessionAttendance:'attendance',autoConfirmAttendance:'attendance',lockSessionAttendance:'attendance',unlockSessionAttendance:'attendance',createClassSession:'lessons',editClassSession:'lessons',cancelClassSession:'lessons',proposeClassReschedule:'reschedules',respondClassReschedule:'reschedules',saveMaterial:'materials',updateMaterial:'materials',deleteMaterial:'materials',publishHomework:'homework',setHomeworkScore:'homework',publishFeedback:'homework'};
+function moduleFor(action:string,lessonId=''){if(action==='permanentDelete'){const type=lessonId.split(':')[0];return({account:'accounts',teacher:'teachers',student:'students',plan:'plans',lesson:'lessons',homework:'homework',classroom:'classrooms'} as Record<string,string>)[type]||'accounts';}return direct[action]||(action==='sessionAttendanceOperation'?'attendance':action==='mergeAccount'?'accounts':action.startsWith('adminPermissions.')?'adminPermissions':action.startsWith('parents.')?'parents':action.startsWith('billing.')?'fees':action.startsWith('prepayments.')?'prepayments':action.startsWith('payroll.')?'payroll':action.startsWith('finance.')?'expenses':action.startsWith('invoice.')?'invoices':action.startsWith('quiz.')?'quizzes':action.startsWith('quizPractice.')||action.startsWith('quizAssignment.')?'quizAssignments':action.startsWith('folder.')?'folders':action.startsWith('recordings.')?'recordings':action.startsWith('material.')?'materials':action.startsWith('homework.')?'homework':action.startsWith('sheet')?'sheetSync':null);}
+function allowed(access:Access,module:string){return!access.context.enforced||access.context.privileged||access.context.grants.includes((module+'.view') as never);}
+const fields=new Set(['name','key','teacherName','student','studentName','subject','subjectName','title','classroomTitle','active','status','role','disabledAt','plannedStart','plannedEnd','start','end','actualStart','actualEnd','attendanceKind','teachingStatus','teachingStart','teachingEnd','arrivedAt','leftAt','chargeable','reviewedAt','count','revision','score','maxScore','gradingEnabled','dueAt','startsAt','endsAt','publishedAt','number','month','totalCents','amountCents','financialAmountCents','financialKind','currency','kind','mode','duration','reason','firstSubmissionAt','firstSubmissionBy','explicitLockedAt','explicitLockedBy','explicitLockReason','lockReason','deadline','lockedAt','lockedBy','chiefAdminId']);
+const attendanceFields=new Set(['actualStart','actualEnd','attendanceKind','teachingStatus','teachingStart','teachingEnd','arrivedAt','leftAt','chargeable','reviewedAt','firstSubmissionAt','firstSubmissionBy','explicitLockedAt','explicitLockedBy','explicitLockReason','lockReason','deadline','lockedAt','lockedBy']);
+const nested=new Set(['before','after','details','changes','participants','profile','result','link','access','value']);
+const moneyFields=new Set(['amountCents','totalCents','financialAmountCents','financialKind','currency','mode']);
+const personFields=new Set(['firstSubmissionBy','explicitLockedBy','lockedBy','chiefAdminId']);
+for(const field of ['age','grade','syllabusId','syllabusName','subjectId','grants','draftGrants','effectiveGrants','rollout','effectiveChanged','origin'])fields.add(field);
+const grantFields=new Set(['grants','draftGrants','effectiveGrants']);
+const redactText=(value:string)=>value.replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi,'[已隐藏]').replace(/\b(password|token|secret|api[_-]?key)\s*[:=]\s*[^\s;,]+/gi,'$1=[已隐藏]');
+function summary(raw:string|null,action:string,access:Access,lessonId=''):AuditSummaryField[]{
+ const module=moduleFor(action,lessonId);if(!module)return[];if(module==='adminPermissions'?!access.flags.management:!allowed(access,module))return[];
+ const result:AuditSummaryField[]=[];
+ const walk=(value:unknown,depth=0)=>{if(depth>6||result.length>=40||!value||typeof value!=='object')return;if(Array.isArray(value)){for(const item of value.slice(0,20))walk(item,depth+1);return;}
+  for(const[key,item]of Object.entries(value)){if(result.length>=40)break;if(sensitiveAuditKey(key)||key==='_audit')continue;if(fields.has(key)&&(key!=='age'||allowed(access,'students'))&&(!grantFields.has(key)||Boolean(access.flags.management))&&(!attendanceFields.has(key)||allowed(access,'attendance'))&&(!moneyFields.has(key)||['fees','invoices','payroll','expenses','prepayments'].includes(module))){if(grantFields.has(key)&&Array.isArray(item)&&item.every(value=>typeof value==='string'))result.push({field:key,value:item.join(', ').slice(0,2000)});else if(['string','number','boolean'].includes(typeof item)||item===null)result.push({field:key,value:typeof item==='string'?redactText(item.slice(0,500)):item as number|boolean|null});}else if(nested.has(key))walk(item,depth+1);}
+ };
+ walk(sanitizeAuditValue(parsed(raw)));return result;
+}
+function day(value:string){if(!/^\d{4}-\d{2}-\d{2}$/.test(value)||!Number.isFinite(Date.parse(value+'T00:00:00Z'))||new Date(value+'T00:00:00Z').toISOString().slice(0,10)!==value)throw new AuditHistoryError('请选择有效的日志日期');return new Date(value+'T00:00:00+08:00').toISOString();}
+function positive(value:string|null,fallback:number,max:number){if(value===null||value==='')return fallback;const n=Number(value);if(!Number.isSafeInteger(n)||n<1||n>max)throw new AuditHistoryError('日志分页信息无效');return n;}
+type Snapshot={v:number;group:string;actor:string;rowid:number;signature:string;filters:string};
+function snapshotCode(value:Snapshot){return btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(value)))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+function decodeSnapshot(value:string):Snapshot{try{if(value.length>18000||!/^[a-zA-Z0-9_-]+$/.test(value))throw Error();return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0))));}catch{throw new AuditHistoryError('日志分页已失效，请刷新后重试',409);}}
+export async function readAuditHistory(actor:Account,query:URLSearchParams):Promise<AuditHistoryResponse>{
+ if(actor.role!=='admin')throw new AuditHistoryError('没有权限查看操作日志',403);const group=requireGroup(actor.groupId),initial=await accessState(actor),base=visible(actor),db=learningDb();
+ const from=text(query.get('from')),to=text(query.get('to')),operatorId=text(query.get('operatorId')),action=text(query.get('action')),pageSize=positive(query.get('pageSize'),30,100),requestedPage=positive(query.get('page'),1,1000000);
+ if(operatorId.length>160||action.length>160||/[^a-zA-Z0-9_.:-]/.test(action))throw new AuditHistoryError('日志筛选信息无效');
+ const filters:Predicate[]=[];if(from)filters.push({sql:'a.at>=?',args:[day(from)]});if(to)filters.push({sql:'a.at<?',args:[new Date(Date.parse(day(to))+86400000).toISOString()]});if(from&&to&&from>to)throw new AuditHistoryError('日志开始日期不能晚于结束日期');if(operatorId)filters.push({sql:'a.actor_id=?',args:[operatorId]});if(action)filters.push({sql:'a.action=?',args:[action]});
+ const filterSignature=JSON.stringify({from,to,operatorId,action,pageSize});let snapshot:Snapshot;
+ if(query.has('snapshot')){snapshot=decodeSnapshot(query.get('snapshot')||'');if(snapshot.v!==1||snapshot.group!==group||snapshot.actor!==actor.id||snapshot.signature!==initial.signature||snapshot.filters!==filterSignature||!Number.isSafeInteger(snapshot.rowid)||snapshot.rowid<0)throw new AuditHistoryError('日志分页已失效，请刷新后重试',409);}
+ else{const latest=await db.prepare('SELECT coalesce(max(a.rowid),0) AS cutoff FROM audit a WHERE '+base.sql).bind(...base.args).first<{cutoff:number}>();snapshot={v:1,group,actor:actor.id,rowid:latest?.cutoff||0,signature:initial.signature,filters:filterSignature};}
+ const common:Predicate={sql:base.sql+' AND a.rowid<=?',args:[...base.args,snapshot.rowid]},where={sql:common.sql+filters.map(p=>' AND ('+p.sql+')').join(''),args:[...common.args,...filters.flatMap(p=>p.args)]};
+ const count=await db.prepare('SELECT count(*) AS total FROM audit a WHERE '+where.sql).bind(...where.args).first<{total:number}>(),total=count?.total||0,pages=Math.max(1,Math.ceil(total/pageSize)),page=Math.min(requestedPage,pages);
+ const [records,operators,actions]=await Promise.all([
+  db.prepare('SELECT a.id,a.lesson_id AS lessonId,a.actor_id AS actorId,a.action,a.before_json AS beforeJson,a.after_json AS afterJson,a.at FROM audit a WHERE '+where.sql+' ORDER BY a.at DESC,a.id DESC LIMIT ? OFFSET ?').bind(...where.args,pageSize,(page-1)*pageSize).all<Row>(),
+  db.prepare('SELECT DISTINCT a.actor_id AS id FROM audit a WHERE '+common.sql+' ORDER BY a.actor_id').bind(...common.args).all<{id:string}>(),
+  db.prepare('SELECT DISTINCT a.action FROM audit a WHERE '+common.sql+' ORDER BY a.action').bind(...common.args).all<{action:string}>(),
+ ]);
+ const rows=records.results||[],summaries=new Map(rows.map(row=>[row.id,{before:summary(row.beforeJson,row.action,initial,row.lessonId),after:summary(row.afterJson,row.action,initial,row.lessonId)}])),personIds=[...summaries.values()].flatMap(s=>[...s.before,...s.after].filter(f=>personFields.has(f.field)&&typeof f.value==='string').map(f=>f.value as string)),names=await auditNames(actor,[...(operators.results||[]).map(r=>r.id),...rows.filter(r=>r.lessonId.startsWith('account:')).map(r=>r.lessonId.slice(8)),...personIds]);
+ const namePeople=(items:AuditSummaryField[])=>items.map(item=>personFields.has(item.field)&&typeof item.value==='string'&&item.value?{...item,value:historicalAccountLabel(item.value,names)}:item);
+ const lessonIds=rows.filter(r=>allowed(initial,'lessons')&&moduleFor(r.action)!=='accounts').map(r=>r.lessonId),lessonNames=new Map<string,string>();if(lessonIds.length){const lessons=await db.prepare('SELECT id,student,subject FROM lessons WHERE group_id=? AND id IN(SELECT value FROM json_each(?))').bind(group,JSON.stringify(lessonIds)).all<{id:string;student:string;subject:string}>();for(const l of lessons.results||[])lessonNames.set(l.id,l.student+' · '+l.subject);}
+ const entries=rows.map(row=>{const after=parsed(row.afterJson),before=parsed(row.beforeJson),meta=after._audit&&typeof after._audit==='object'?after._audit as Record<string,unknown>:{},module=moduleFor(row.action,row.lessonId),mayName=module==='adminPermissions'?Boolean(initial.flags.management):module?allowed(initial,module):false;let lessonName=row.lessonId;
+  if(mayName){if(row.lessonId.startsWith('account:'))lessonName=historicalAccountLabel(row.lessonId.slice(8),names);else if(typeof meta.objectName==='string'&&meta.objectName.trim())lessonName=meta.objectName.slice(0,240);else if(allowed(initial,'lessons')&&lessonNames.has(row.lessonId))lessonName=lessonNames.get(row.lessonId)!;else{const value=typeof after.name==='string'?after.name:typeof after.title==='string'?after.title:typeof before.name==='string'?before.name:typeof before.title==='string'?before.title:null;if(value)lessonName=value.slice(0,240);else if(/^(teacher|student|plan):/.test(row.lessonId))lessonName=row.lessonId.slice(row.lessonId.indexOf(':')+1);}}
+  const snapshot=summaries.get(row.id)!;return{id:row.id,lessonId:row.lessonId,lessonName,actorId:row.actorId,actorName:names.get(row.actorId)||historicalAccountLabel(row.actorId,names),action:row.action,at:row.at,beforeSummary:namePeople(snapshot.before),afterSummary:namePeople(snapshot.after)};
+ });
+ const final=await accessState(actor);if(initial.signature!==final.signature)throw new AuditHistoryError('日志查看权限已改变，请刷新后重试',403);
+ return{entries,total,page,pages,pageSize,snapshot:snapshotCode(snapshot),operators:(operators.results||[]).map(row=>({id:row.id,name:names.get(row.id)||historicalAccountLabel(row.id,names)})),actions:(actions.results||[]).map(row=>row.action)};
+}

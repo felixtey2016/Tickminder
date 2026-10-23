@@ -28,7 +28,7 @@ export function monthDays(month: string) {
 }
 
 export function activeLessonsOnDay<T extends StudentCalendarLesson>(lessons: readonly T[], day: string) {
-  return lessons.filter(lesson => lesson.status !== "cancelled" && malaysiaDay(lesson.plannedStart) === day)
+  return lessons.filter(lesson => lesson.status !== "cancelled" && Date.parse(lesson.plannedStart)<Date.parse(day+"T00:00:00+08:00")+86400000 && Date.parse(lesson.plannedEnd)>Date.parse(day+"T00:00:00+08:00"))
     .sort((a, b) => a.plannedStart.localeCompare(b.plannedStart));
 }
 

@@ -1,75 +1,42 @@
-import { isLegacyBusinessRole } from '@/lib/legacy-business-access';
-import {groupReader} from "@/lib/group-data";
-import { groupWhere } from "@/lib/group-data";
-import { NextResponse } from "next/server";
-import { and,or,eq,inArray } from "drizzle-orm";
-import { currentBusinessAccount as currentAccount } from "@/lib/auth";
-import { getDb } from "@/db";
-import { accounts, audit, lessons, rescheduleRequests } from "@/db/schema";
-import { readRoster } from "@/lib/roster";
-import { teacherMaySeeLesson } from "@/lib/access";
-import { mergedAccountNames } from "@/lib/merged-account-names";
-import {studentAttendanceSnapshot} from "@/lib/student-course-response";
-import {requireCorePermissions,guardedCoreReader} from '@/lib/admin-core-permissions';
-import {adminPermissionFailure,adminPermissionReadCondition,hasAdminPermission} from '@/lib/admin-permission-access';
+import {NextResponse} from 'next/server';
+import {currentBusinessAccount} from '@/lib/auth';
+import {guardedCoreReader,requireCorePermissions} from '@/lib/admin-core-permissions';
+import {adminPermissionFailure,hasAdminPermission} from '@/lib/admin-permission-access';
+import {studentAttendanceSnapshot} from '@/lib/student-course-response';
+import {mergedAccountNames} from '@/lib/merged-account-names';
+import {assertCourseActor,courseLessonScope,coursePage,CourseQueryError} from '@/lib/course-query';
 
-const responseHeaders = { "Cache-Control": "private, no-store" };
-const bad = (error: string, status: number) => NextResponse.json({ error }, { status, headers: responseHeaders });
-type TimePair = { plannedStart?: unknown; plannedEnd?: unknown };
-
-export async function GET(request: Request) {
-  const actor = await currentAccount();
-  if (!actor) return bad("Sign in required", 401);
-  if (!isLegacyBusinessRole(actor.role)) return bad("You cannot view this lesson", 403);
-  try{
-  await requireCorePermissions(actor,['lessons.view']);
-  const showReschedules=actor.role!=='admin'||await hasAdminPermission(actor,'reschedules.view'),showAttendance=actor.role!=='admin'||await hasAdminPermission(actor,'attendance.view');
-  const id = new URL(request.url).searchParams.get("lessonId") || "";
-  if (!id) return bad("Choose a lesson", 400);
-  const db = getDb();
-  const lesson = await db.select().from(lessons).where(and(groupWhere(lessons,actor.groupId,eq(lessons.id, id)),adminPermissionReadCondition(actor,'lessons.view'))).get();
-  if (!lesson) return bad("Lesson not found", 404);
-  if (actor.role === "student" && actor.studentName !== lesson.student) return bad("You cannot view this lesson", 403);
-  if (actor.role === "teacher") {
-    const roster = await readRoster(actor);
-    const active = new Set(roster.plans.filter(p => p.teacher === actor.teacherName).map(p => p.key));
-    if (!teacherMaySeeLesson(actor, lesson, active)&&!await groupReader(actor.groupId).first("SELECT 1 FROM class_sessions WHERE id=? AND session_type='group' AND teacher_name=?",lesson.sessionId,actor.teacherName)) return bad("You cannot view this lesson", 403);
-  }
-
-  const [requests, changes] = await Promise.all([
-    showReschedules?guardedCoreReader(actor,['reschedules.view']).rows<typeof rescheduleRequests.$inferSelect>("SELECT id,original_start AS originalStart,original_end AS originalEnd,proposed_start AS proposedStart,proposed_end AS proposedEnd,status,note,requested_role AS requestedRole,requested_by AS requestedBy,requested_at AS requestedAt,responded_by AS respondedBy,responded_at AS respondedAt FROM reschedule_requests WHERE lesson_id=? OR (session_id=? AND EXISTS(SELECT 1 FROM class_sessions WHERE id=? AND session_type='group'))",id,lesson.sessionId,lesson.sessionId):[],
-    db.select().from(audit).where(and(groupWhere(audit,actor.groupId,eq(audit.lessonId,id)),or(and(eq(audit.action,'reschedule'),adminPermissionReadCondition(actor,'reschedules.view')),and(inArray(audit.action,['saveSessionAttendance','reviewSessionAttendance','attendance','review','autoConfirmAttendance']),adminPermissionReadCondition(actor,'attendance.view'))))).all(),
-  ]);
-  const relevant = showReschedules?changes.filter(change => change.action === "reschedule"):[];
-  const actorIds = new Set([...requests.flatMap(row => [row.requestedBy, row.respondedBy]), ...changes.map(row => row.actorId)].filter(Boolean));
-  const studentView = actor.role === "student";
-  const names = new Map((studentView ? [] : await db.select({ id: accounts.id, name: accounts.name }).from(accounts).where(groupWhere(accounts,actor.groupId)).all())
-    .filter(row => actorIds.has(row.id)).map(row => [row.id, row.name]));
-  const mergedNames = studentView ? new Map<string,string>() : await mergedAccountNames(actor.groupId);
-  const nameOf = (accountId: string | null) => accountId ? names.get(accountId) || mergedNames.get(accountId) || "已删除账号" : null;
-  const entries = [
-    ...requests.map(row => ({
-      id: row.id, type: "request", originalStart: row.originalStart, originalEnd: row.originalEnd,
-      proposedStart: row.proposedStart, proposedEnd: row.proposedEnd, status: row.status,
-      requestedBy: studentView ? row.requestedBy===actor.id ? actor.name : row.requestedRole==="teacher" ? lesson.teacherName : null : nameOf(row.requestedBy), requestedAt: row.requestedAt,
-      respondedBy: studentView ? null : nameOf(row.respondedBy), respondedAt: row.respondedAt,
-      note: row.note,
-    })),
-    ...relevant.flatMap(change => {
-      try {
-        const before = JSON.parse(change.before || "{}") as TimePair;
-        const after = JSON.parse(change.after || "{}") as TimePair;
-        if (typeof before.plannedStart !== "string" || typeof before.plannedEnd !== "string" ||
-            typeof after.plannedStart !== "string" || typeof after.plannedEnd !== "string") return [];
-        return [{
-          id: change.id, type: "direct", originalStart: before.plannedStart, originalEnd: before.plannedEnd,
-          proposedStart: after.plannedStart, proposedEnd: after.plannedEnd, status: "applied",
-          requestedBy: studentView ? null : nameOf(change.actorId), requestedAt: change.at, respondedBy: null, respondedAt: null,
-        }];
-      } catch { return []; }
-    }),
-  ].sort((a, b) => b.requestedAt.localeCompare(a.requestedAt) || b.id.localeCompare(a.id));
-  const attendanceEntries=(showAttendance?changes:[]).filter(c=>['saveSessionAttendance','reviewSessionAttendance','attendance','review','autoConfirmAttendance'].includes(c.action)).map(c=>{let before:unknown={},after:unknown={};try{before=JSON.parse(c.before||'{}');after=JSON.parse(c.after||'{}');}catch{}return studentView ? {id:c.id,action:c.action,at:c.at,before:studentAttendanceSnapshot(before),after:studentAttendanceSnapshot(after)} : {id:c.id,action:c.action,at:c.at,actor:nameOf(c.actorId),before,after};}).sort((a,b)=>b.at.localeCompare(a.at)||b.id.localeCompare(a.id));
-  return NextResponse.json({studentView,attendanceEntries, currentStart: lesson.plannedStart, currentEnd: lesson.plannedEnd, entries }, {headers:responseHeaders});
-  }catch(error){const permission=adminPermissionFailure(error);return bad(permission?.error||'课程历史暂时无法加载',permission?.status||503);}
+const headers={'Cache-Control':'private, no-store'};
+const json=(value:unknown,status=200)=>NextResponse.json(value,{status,headers});
+type HistoryEntry={id:string;type:string;originalStart:string;originalEnd:string;proposedStart:string;proposedEnd:string;status:string;requestedBy:string|null;requestedAt:string;respondedBy:string|null;respondedAt:string|null;note:string|null;requestedRole:string|null};
+type AttendanceEntry={id:string;action:string;at:string;actorId:string;beforeJson:string|null;afterJson:string|null};
+export async function GET(request:Request){
+ const actor=await currentBusinessAccount();if(!actor)return json({error:'请先登录'},401);
+ try{
+  await assertCourseActor(actor);
+  const params=new URL(request.url).searchParams,id=params.get('lessonId')||'';
+  let page=coursePage(params.get('page')),attendancePage=coursePage(params.get('attendancePage'));
+  if(!id||id.length>200)throw new CourseQueryError('请选择课程');
+  const scope=courseLessonScope(actor),base=guardedCoreReader(actor,['lessons.view']);
+  const lesson=await base.first<{sessionId:string|null;teacherName:string;plannedStart:string;plannedEnd:string}>('SELECT l.session_id AS sessionId,l.teacher_name AS teacherName,l.planned_start AS plannedStart,l.planned_end AS plannedEnd FROM lessons l WHERE l.id=? AND '+scope.sql,id,...scope.args);
+  if(!lesson)return json({error:'课程不存在或没有查看权限'},404);
+  const showReschedules=await hasAdminPermission(actor,'reschedules.view'),showAttendance=await hasAdminPermission(actor,'attendance.view'),studentView=actor.role==='student';
+  const requestSource="SELECT r.id,'request' AS type,r.original_start AS originalStart,r.original_end AS originalEnd,r.proposed_start AS proposedStart,r.proposed_end AS proposedEnd,r.status,r.requested_by AS requestedBy,r.requested_at AS requestedAt,r.responded_by AS respondedBy,r.responded_at AS respondedAt,r.note,r.requested_role AS requestedRole FROM reschedule_requests r WHERE r.lesson_id=? OR (r.session_id=? AND EXISTS(SELECT 1 FROM class_sessions s WHERE s.id=? AND s.session_type='group')) UNION ALL SELECT a.id,'direct' AS type,json_extract(a.before_json,'$.plannedStart') AS originalStart,json_extract(a.before_json,'$.plannedEnd') AS originalEnd,json_extract(a.after_json,'$.plannedStart') AS proposedStart,json_extract(a.after_json,'$.plannedEnd') AS proposedEnd,'applied' AS status,a.actor_id AS requestedBy,a.at AS requestedAt,NULL AS respondedBy,NULL AS respondedAt,NULL AS note,NULL AS requestedRole FROM audit a WHERE a.lesson_id=? AND a.action='reschedule' AND json_valid(a.before_json) AND json_valid(a.after_json) AND json_type(a.before_json,'$.plannedStart')='text' AND json_type(a.before_json,'$.plannedEnd')='text' AND json_type(a.after_json,'$.plannedStart')='text' AND json_type(a.after_json,'$.plannedEnd')='text'";
+  const requestArgs=[id,lesson.sessionId,lesson.sessionId,id],attendanceWhere="a.lesson_id=? AND a.action IN('saveSessionAttendance','reviewSessionAttendance','attendance','review','autoConfirmAttendance','lockSessionAttendance','unlockSessionAttendance')";
+  let entries:HistoryEntry[]=[],attendanceEntries:AttendanceEntry[]=[],total=0,attendanceTotal=0;
+  if(showReschedules){const reader=guardedCoreReader(actor,['reschedules.view']);total=Number((await reader.first<{total:number}>(`SELECT count(*) AS total FROM (${requestSource})`,...requestArgs))?.total||0);page=Math.min(page,Math.max(1,Math.ceil(total/20)));entries=await reader.rows<HistoryEntry>(`SELECT * FROM (${requestSource}) ORDER BY requestedAt DESC,id DESC LIMIT 20 OFFSET ?`,...requestArgs,(page-1)*20);}
+  if(showAttendance){const reader=guardedCoreReader(actor,['attendance.view']);attendanceTotal=Number((await reader.first<{total:number}>(`SELECT count(*) AS total FROM audit a WHERE ${attendanceWhere}`,id))?.total||0);attendancePage=Math.min(attendancePage,Math.max(1,Math.ceil(attendanceTotal/20)));attendanceEntries=await reader.rows<AttendanceEntry>(`SELECT a.id,a.action,a.at,a.actor_id AS actorId,a.before_json AS beforeJson,a.after_json AS afterJson FROM audit a WHERE ${attendanceWhere} ORDER BY a.at DESC,a.id DESC LIMIT 20 OFFSET ?`,id,(attendancePage-1)*20);}
+  const actorIds=[...new Set([...entries.flatMap(e=>[e.requestedBy,e.respondedBy]),...attendanceEntries.map(e=>e.actorId)].filter((v):v is string=>Boolean(v)))];
+  const names=studentView||!actorIds.length?[]:await base.rows<{id:string;name:string}>('SELECT id,name FROM accounts WHERE id IN(SELECT value FROM json_each(?))',JSON.stringify(actorIds)),nameMap=new Map(names.map(n=>[n.id,n.name])),merged=studentView||!actorIds.length?new Map<string,string>():await mergedAccountNames(actor.groupId);
+  const nameOf=(id:string|null)=>id?nameMap.get(id)||merged.get(id)||'已删除账号':null;
+  const readJson=(value:string|null)=>{try{return JSON.parse(value||'{}') as Record<string,unknown>;}catch{return{};}};
+  await requireCorePermissions(actor,['lessons.view',...showReschedules?['reschedules.view']:[],...showAttendance?['attendance.view']:[]]);await assertCourseActor(actor);
+  if(!await base.first('SELECT 1 FROM lessons l WHERE l.id=? AND '+scope.sql,id,...scope.args))throw new CourseQueryError('课程权限已改变，请刷新后重试',403);
+  return json({studentView,currentStart:lesson.plannedStart,currentEnd:lesson.plannedEnd,
+   entries:entries.map(e=>({...e,requestedRole:undefined,requestedBy:studentView?(e.type==='direct'?null:e.requestedBy===actor.id?actor.name:e.requestedRole==='teacher'?lesson.teacherName:null):nameOf(e.requestedBy),respondedBy:studentView?null:nameOf(e.respondedBy)})),
+   page,pages:Math.max(1,Math.ceil(total/20)),total,pageSize:20,
+   attendanceEntries:attendanceEntries.map(e=>{const before=readJson(e.beforeJson),after=readJson(e.afterJson);return studentView?{id:e.id,action:e.action,at:e.at,before:studentAttendanceSnapshot(before),after:studentAttendanceSnapshot(after)}:{id:e.id,action:e.action,at:e.at,actor:nameOf(e.actorId),before,after};}),
+   attendancePage,attendancePages:Math.max(1,Math.ceil(attendanceTotal/20)),attendanceTotal,attendancePageSize:20});
+ }catch(error){const permission=adminPermissionFailure(error);return json({error:permission?.error||(error instanceof CourseQueryError?error.message:'课程历史暂时无法加载')},permission?.status||(error instanceof CourseQueryError?error.status:503));}
 }
+

@@ -1,0 +1,15 @@
+# Bounded course reads
+
+Core state receives a reporting `month` independently of the visible calendar's GMT+8 `from` (inclusive) and `to` (exclusive). The maximum range is 62 days. Without a range it reads only the reporting month. Month calendars request their full grid, including adjacent month cells. Day and week navigation requests their visible dates. Cross-midnight lessons overlap both days; an exact midnight end does not occupy the next day.
+
+`GET /api/courses` serves server-filtered pages of 20 lessons, sessions or reschedule requests. Filters run before count and pagination. Historical pending attendance, review, makeup and reschedule modes span all relevant dates; upcoming courses also load independently of the current month. The timetable returns a SQL summary for the complete filter. Teacher group sessions are deduplicated before the page limit. Individual course history has separate 20-row pages for schedule and attendance events.
+
+Monthly student hours and teaching duration are aggregated in SQL; group teaching duration counts once. Menu and home task badges use independent SQL counts. They are never inferred from the current calendar or list page. Reporting-month changes do not move the calendar. Course pages clear stale data on filter changes, abort superseded requests, and refresh after mutations. Read failures remain distinguishable from empty results. Every read rechecks the authenticated session, group and current module access.
+
+Migration 0053 adds expression indexes matching the GMT+8 overlap and actual-date queries. The fictional-history comparison in `tests/course-ranges.mjs` records response volume, statement count, duration and query-plan index usage. Its old baseline consists of three unrestricted source-table reads; the new measurement is the actual permission-checked core endpoint, so the timings describe different work and are not a production latency guarantee. The original rows are not migrated or deleted by these indexes.
+
+## Attendance and restore
+
+Migration 0052 adds the immutable original submission time/actor and an independent explicit lock. Only unambiguous first-submission audit evidence is backfilled; `updated_at` is not evidence of a first submission. Unknown historical submission times require administrator handling. Teachers retain the 24-hour correction window after automatic confirmation; issued invoice locks remain independent. Unlocking an explicit lock does not reset that window. Backup format v32 preserves these fields and validates complete submission/lock pairs; v31 remains supported without inventing timestamps.
+
+Local gates: `tests/course-ranges.mjs`, `tests/audit-history.mjs`, `tests/attendance-edit-window.mjs`, `tests/attendance-window-backup.mjs`, `tests/admin-permissions-state.mjs`, `tests/financial-activity-privacy.mjs`, and existing invoice attendance regressions. Combined fictional browser checks cover calendar ranges, filters, paging, role access, mobile layout and the correction dialog. Production recovery uses archived Worker/settings and D1 Time Travel metadata; no production database content is downloaded for this release.

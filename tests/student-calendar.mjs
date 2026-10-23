@@ -18,4 +18,6 @@ const lessons = [
 ];
 assert.deepEqual(activeLessonsOnDay(lessons, "2026-09-26").map(x => x.id), ["a", "b"]);
 assert.equal(nextScheduledLesson(lessons, "2026-09-25T15:30:00.000Z")?.id, "b");
+const crossing=[{id:"crossing",plannedStart:"2026-10-31T15:30:00Z",plannedEnd:"2026-10-31T16:30:00Z",status:"scheduled"},{id:"ends-midnight",plannedStart:"2026-10-31T15:00:00Z",plannedEnd:"2026-10-31T16:00:00Z",status:"scheduled"}];
+assert.deepEqual(activeLessonsOnDay(crossing,"2026-11-01").map(l=>l.id),["crossing"]);
 console.log("student calendar dates and lesson selection passed");

@@ -97,6 +97,7 @@ const snapshotTables=names=>JSON.stringify(names.map(name=>[name,sqlite.prepare(
 const oldTables=tableNames(),beforeMigration=snapshotTables(oldTables);
 migrate(preparationMigration);
 const afterMigration=snapshotTables(oldTables);
+for(const name of migrations.filter(name=>name>preparationMigration))migrate(name);
 const snapshot=()=>snapshotTables(tableNames());
 const profileRow=id=>sqlite.prepare('SELECT * FROM admin_permission_profiles WHERE account_id=?').get(id);
 const auditCount=()=>sqlite.prepare('SELECT count(*) AS n FROM audit').get().n;
@@ -107,6 +108,7 @@ async function login(id,groupId){
 }
 function logout(){cookieValues={};requestHeaders=new Headers();}
 function request(name,body,query='',options={}){
+  if(name==='state'&&!new URLSearchParams(query.slice(1)).has('month'))query+=(query?'&':'?')+'month=2030-01';
   return new Request('https://test.invalid/api/'+name+query,{...(body===undefined?{}:{method:'POST',headers:{origin:'https://test.invalid','content-type':'application/json'},body:JSON.stringify(body)}),...options});
 }
 async function call(name,body,query='',options){const response=await routes[name][body===undefined?'GET':'POST'](request(name,body,query,options));return {status:response.status,data:await response.json(),headers:response.headers};}
@@ -138,14 +140,14 @@ sqlite.prepare('UPDATE students SET age=14 WHERE name=?').run('Fixture Student')
 sqlite.prepare('INSERT INTO plans(group_id,key,student,subject,teacher_name,duration,created_at) VALUES(?,?,?,?,?,?,?)').run(groups.a,'Fixture Student|Mathematics','Fixture Student','Mathematics','Fixture Teacher',1.5,now);
 sqlite.prepare('INSERT INTO lessons(id,group_id,student,subject,teacher_name,planned_start,planned_end,actual_start,actual_end,status,note,created_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').run('fixture-private-lesson',groups.a,'Fixture Student','Mathematics','Fixture Teacher','2030-01-04T02:00:00.000Z','2030-01-04T03:30:00.000Z','2030-01-04T02:00:00.000Z','2030-01-04T03:30:00.000Z','completed','ATTENDANCE_PRIVATE_NOTE','chief-a',now);
 sqlite.prepare('UPDATE lessons SET reviewed_at=? WHERE id=?').run(now,'fixture-private-lesson');
-sqlite.prepare('INSERT INTO audit(id,group_id,lesson_id,actor_id,action,before_json,after_json,at) VALUES(?,?,?,?,?,?,?,?)').run('fixture-private-audit',groups.a,'fixture-private-lesson','chief-a','saveStudent','{"age":14}','{"private":"PROFILE_PRIVATE_NOTE"}',now);
+sqlite.prepare('INSERT INTO audit(id,group_id,lesson_id,actor_id,action,before_json,after_json,at) VALUES(?,?,?,?,?,?,?,?)').run('fixture-private-audit',groups.a,'fixture-private-lesson','chief-a','saveStudent','{"age":14}','{"name":"PROFILE_PRIVATE_NOTE","private":"UNKNOWN_PRIVATE_NOTE"}',now);
 sqlite.prepare('INSERT INTO audit(id,group_id,lesson_id,actor_id,action,before_json,after_json,at) VALUES(?,?,?,?,?,?,?,?)').run('fixture-plan-audit',groups.a,'fixture-private-lesson','chief-a','savePlan',null,'{"teacherName":"Fixture Teacher","profile":{"age":82}}',now);
 sqlite.prepare('INSERT INTO audit(id,group_id,lesson_id,actor_id,action,before_json,after_json,at) VALUES(?,?,?,?,?,?,?,?)').run('fixture-lesson-audit',groups.a,'fixture-private-lesson','chief-a','edit','{"note":"ATTENDANCE_PRIVATE_NOTE","actualStart":"2030-01-04T02:00:00.000Z","plannedStart":"2030-01-04T02:00:00.000Z"}',null,now);
 await login('admin-a');
 try {
 await section('zero grants cannot recover datasets through the default full-state endpoint',async()=>{
  grant([]);const data=await ok('state');assert.equal(data.account.adminPermissions.enforced,true);assert.deepEqual(data.account.adminPermissions.grants,[]);
- for(const key of ['lessons','plans','allPlans','students','allStudents','teachers','allTeachers','attendanceSessions','classSessions','records','checkins','summary'])assert.deepEqual(data[key],[],key);
+ for(const key of ['lessons','plans','allPlans','students','allStudents','teachers','allTeachers','attendanceSessions','classSessions','summary'])assert.deepEqual(data[key],[],key);
  assert.equal(data.users,undefined);assert.equal(data.activity,undefined);assert.deepEqual(data.learning.materials,[]);assert.deepEqual(data.learning.homework,[]);
  for(const scope of ['accounts','activity'])await denied('state',undefined,'?scope='+scope,[403]);
  assert(!JSON.stringify(data).includes('ATTENDANCE_PRIVATE_NOTE'));assert(!JSON.stringify(data).includes('PROFILE_PRIVATE_NOTE'));
@@ -166,8 +168,8 @@ await section('read-only schedules retain their filters and online links without
  grant(['lessons.view']);const data=await ok('state',undefined,'?scope=core');assert.equal(data.lessons[0].onlineLink,'https://example.invalid/schedule-link');assert.deepEqual(data.planOptions,[]);assert.deepEqual(data.allPlans,[]);assert(data.teacherOptions.some(row=>row.name==='Fixture Teacher'));assert(data.students.includes('Fixture Student'));
 });
 await section('statistics-only access returns aggregates without attendance notes or profiles',async()=>{
- grant(['statistics.view']);const data=await ok('state',undefined,'?scope=core&month=2030-01');assert.equal(data.summary.length,1);assert.equal(data.summary[0].completed,1.5);assert.equal(data.records.length,1);
- assert.equal(data.records[0].note,undefined);assert.deepEqual(data.lessons,[]);assert.deepEqual(data.attendanceSessions,[]);assert.deepEqual(data.allStudents,[]);
+ grant(['statistics.view']);const data=await ok('state',undefined,'?scope=core&month=2030-01');assert.equal(data.summary.length,1);assert.equal(data.summary[0].completed,1.5);assert.equal(data.records,undefined);assert.equal(data.checkins,undefined);
+ assert(!JSON.stringify(data).includes('ATTENDANCE_PRIVATE_NOTE'));assert.deepEqual(data.lessons,[]);assert.deepEqual(data.attendanceSessions,[]);assert.deepEqual(data.allStudents,[]);
 });
 await section('statistics use canonical class subject identities without lesson-view access',async()=>{
  sqlite.prepare('UPDATE plans SET subject_id=? WHERE key=?').run('math-fixture','Fixture Student|Mathematics');
@@ -182,9 +184,9 @@ await section('term-only settings survive the compatible full-state response',as
  grant(['terms.view']);const data=await ok('state');assert(data.terms.some(term=>term.id==='fixture-term'));assert.deepEqual(data.classrooms,[]);assert.deepEqual(data.allStudents,[]);
 });
 await section('activity access does not disclose unrelated profile snapshots',async()=>{
- grant(['audit.view']);const data=await ok('state',undefined,'?scope=activity');const item=data.activity.find(row=>row.id==='fixture-private-audit');assert(item);assert.equal(item.before,null);assert.equal(item.after,null);assert.equal(item.lessonName,'fixture-private-lesson');assert(!JSON.stringify(data).includes('PROFILE_PRIVATE_NOTE'));
- grant(['audit.view','students.view']);const full=await ok('state',undefined,'?scope=activity');assert(full.activity.find(row=>row.id==='fixture-private-audit').after.includes('PROFILE_PRIVATE_NOTE'));
- grant(['audit.view','plans.view','lessons.view']);const limited=await ok('state',undefined,'?scope=activity');const plan=JSON.parse(limited.activity.find(row=>row.id==='fixture-plan-audit').after),lesson=JSON.parse(limited.activity.find(row=>row.id==='fixture-lesson-audit').before);assert.equal(plan.profile.age,undefined);assert.equal(plan.teacherName,'Fixture Teacher');assert.equal(lesson.note,undefined);assert.equal(lesson.actualStart,undefined);assert.equal(lesson.plannedStart,'2030-01-04T02:00:00.000Z');
+ grant(['audit.view']);const data=await ok('state',undefined,'?scope=activity');const item=data.activity.find(row=>row.id==='fixture-private-audit');assert(item);assert.deepEqual(item.beforeSummary,[]);assert.deepEqual(item.afterSummary,[]);assert.equal(item.lessonName,'fixture-private-lesson');assert(!JSON.stringify(data).includes('PROFILE_PRIVATE_NOTE'));
+ grant(['audit.view','students.view']);const full=await ok('state',undefined,'?scope=activity');assert(full.activity.find(row=>row.id==='fixture-private-audit').afterSummary.some(field=>field.field==='name'&&field.value==='PROFILE_PRIVATE_NOTE'));assert(!JSON.stringify(full).includes('UNKNOWN_PRIVATE_NOTE'));
+ grant(['audit.view','plans.view','lessons.view']);const limited=await ok('state',undefined,'?scope=activity');const plan=limited.activity.find(row=>row.id==='fixture-plan-audit').afterSummary,lesson=limited.activity.find(row=>row.id==='fixture-lesson-audit').beforeSummary;assert(!plan.some(field=>field.field==='age'));assert(plan.some(field=>field.field==='teacherName'&&field.value==='Fixture Teacher'));assert(!lesson.some(field=>field.field==='note'||field.field==='actualStart'));assert(lesson.some(field=>field.field==='plannedStart'&&field.value==='2030-01-04T02:00:00.000Z'));
 });
 await section('live read guards reject a grant revoked after request preflight',async()=>{
  grant(['students.view']);beforeStateRead=()=>grant([]);const result=await call('state',undefined,'?scope=core');assert.equal(result.status,403);assert.equal(result.data.allStudents,undefined);beforeStateRead=null;
@@ -218,3 +220,4 @@ const failed=results.filter(result=>result.status!=='passed');
 console.log(JSON.stringify({suite:'admin-permissions-state',sections:results.length,failed:failed.length,productionWrites:false,actualAuthentication:true}));
 writeFileSync(new URL('state-results.json',resultDirectory),JSON.stringify({results,productionWrites:false},null,2));
 if(failed.length)process.exitCode=1;
+

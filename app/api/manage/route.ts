@@ -1,4 +1,5 @@
 import {isInvoiceLocked,invoiceLockedMessage} from '@/lib/invoice-locks';
+import {appendAudit} from '@/lib/audit-log';
 import {classroomCoverageGuard,classroomRequiredMessage,isClassroomCoverageFailure} from '@/lib/classroom-coverage';
 import {groupReader,groupStatement,requireGroup} from "@/lib/group-data";
 import { NextResponse } from "next/server";
@@ -180,7 +181,8 @@ export async function POST(request: Request) {
     const statements = plans.flatMap(p=>p.statements);
     for (const entry of entries) {
       const account=entry.kind==='account'?plans.find(p=>p.summary.id===entry.id)?.snapshots.find(s=>s.table==='accounts')?.records[0]:null;
-      statements.push(db.prepare("INSERT INTO audit (group_id,id,lesson_id,actor_id,action,before_json,after_json,at) VALUES (?,?,?,?,'permanentDelete',?,?,?)").bind(groupId,crypto.randomUUID(),entry.kind+':'+entry.id,actor.id,account?JSON.stringify({id:account.id,role:account.role,disabledAt:account.disabled_at}):null,JSON.stringify(entry),new Date().toISOString()));
+      const label=plans.find(p=>p.summary.id===entry.id&&p.summary.kind===entry.kind)?.summary.label;
+      statements.push(appendAudit(db,{groupId,lessonId:entry.kind+':'+entry.id,actorId:actor.id,actorName:actor.name,objectName:label,action:'permanentDelete',before:account?{id:account.id,name:account.name,role:account.role,disabledAt:account.disabled_at}:null,after:entry}));
     }
     await db.batch(statements);
     let cleanupPending=false;

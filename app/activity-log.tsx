@@ -1,32 +1,28 @@
 "use client";
-import { getLanguage, t } from "@/lib/i18n";
-type Change = {
-    id: string;
-    lessonId: string;
-    lessonName: string;
-    actorName: string;
-    action: string;
-    before: string | null;
-    after: string | null;
-    at: string;
-};
-const actionLabel: Record<string, string> = {"adminPermissions.saveDraft":"admin.permissionsDraftSaved","adminPermissions.applyDraft":"admin.permissionsApplied","adminPermissions.discardDraft":"admin.permissionsDraftDiscarded","create":"课程已安排","attendance":"出席记录已更新","review":"复核结果已保存","reschedule":"课程时间已更新","cancel":"课程已取消","saveTeacher":"老师名单已更新","saveStudent":"学生名单已更新","setStudentActive":"学生名单已更新","savePlan":"科目配对已保存","bind":"身份分配已保存","createLocalAccount":"账号已创建","deleteAccount":"admin.accountSuspended","restoreAccount":"admin.accountRestored","activateAccount":"admin.accountActivated","group.setChief":"admin.chiefSaved","permanentDelete":"admin.accountPermanentlyDeleted","resetLocalPassword":"密码已重置","proposeReschedule":"改期申请已提交","acceptReschedule":"改期申请已接受","rejectReschedule":"改期申请已拒绝","reassignTeacher":"负责老师已更换"};
-function describe(json: string | null, action: string) {
-    if (!json)
-        return t("\u65E0");
-    try {
-        const value = JSON.parse(json);
-        const status: Record<string, string> = { scheduled: "已安排", completed: "已上课", student_absent: "学生缺席", teacher_absent: "老师缺席", cancelled: "已取消" };
-        const personLabel = action === "saveTeacher" ? t("老师") : action === "saveStudent" ? t("学生") : t("姓名");
-        const parts = [value.name && `${personLabel} ${value.name}`, value.key && `${t("科目")} ${value.key}`, value.teacherName && `${t("负责")} ${value.teacherName}`, typeof value.active === "boolean" && `${t("启用")} ${value.active ? t("\u662F") : t("\u5426")}`, value.plannedStart && `${t("排课")} ${value.plannedStart}`, value.plannedEnd && `${t("结束")} ${value.plannedEnd}`, value.status && `${t("状态")} ${t(status[value.status] || value.status)}`, value.actualStart && `${t("实际")} ${value.actualStart}`, value.actualEnd && `${t("至")} ${value.actualEnd}`, typeof value.chargeable === "boolean" && `${t("收费")} ${value.chargeable ? t("\u662F") : t("\u5426")}`].filter(Boolean);
-        return parts.join(getLanguage() === "zh" ? "；" : "; ") || json;
-    }
-    catch {
-        return json;
-    }
-}
-export function ActivityLog({ items }: {
-    items: Change[];
-}) {
-    return <section className="panel"><div className="section-head"><h2>{t("操作日志")}</h2><span>{t("\u6700\u8FD1 30 \u6761")}</span></div>{items.length ? items.map(c => <details className="activity-item" key={c.id}><summary><strong>{c.lessonName} · {t(actionLabel[c.action] || c.action)}</strong><span>{c.actorName} · {new Date(c.at).toLocaleString(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur" })}</span></summary><small>{t("\u8BFE\u7A0B ID\uFF1A")}{c.lessonId}</small><p>{t("\u4E4B\u524D\uFF1A")}{describe(c.before, c.action)}</p><p>{t("\u4E4B\u540E\uFF1A")}{describe(c.after, c.action)}</p></details>) : <div className="empty">{t("\u6682\u65E0\u4FEE\u6539\u8BB0\u5F55\u3002")}</div>}</section>;
+import {useEffect,useRef,useState,type FormEvent} from 'react';
+import {Button} from '@/components/ui/button';
+import {groupFetch} from '@/lib/group-client';
+import {readApiJson,actionFailureMessage} from '@/lib/action-feedback';
+import {getLanguage,t} from '@/lib/i18n';
+import {AL,auditActionLabel,auditValueLabel} from '@/lib/audit-i18n';
+import type {AuditHistoryResponse,AuditSummaryField} from '@/lib/audit-history';
+import './audit-history.css';
+type Filters={from:string;to:string;operatorId:string;action:string};
+const empty:Filters={from:'',to:'',operatorId:'',action:''};
+function stamp(value:string){const date=new Date(value);return Number.isFinite(date.getTime())?date.toLocaleString(getLanguage()==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur'}):value;}
+function valueText(field:AuditSummaryField){if(field.value===null||field.value==='')return AL('none');if(typeof field.value==='boolean')return AL(field.value?'yes':'no');if(typeof field.value==='number'&&field.field.endsWith('Cents'))return (field.value/100).toFixed(2);if(typeof field.value==='string'&&/At$|Start$|End$|^deadline$/.test(field.field))return stamp(field.value);return auditValueLabel(field.field,String(field.value));}
+function Summary({fields}:{fields:AuditSummaryField[]}){return fields.length?<dl className="audit-summary">{fields.map((field,index)=><div key={field.field+':'+index}><dt>{AL('field.'+field.field)}</dt><dd>{valueText(field)}</dd></div>)}</dl>:<p className="muted">{AL('noSummary')}</p>;}
+export function ActivityLog({accountKey=''}:{accountKey?:string}={}){
+ const [draft,setDraft]=useState<Filters>(empty),[filters,setFilters]=useState<Filters>(empty),[page,setPage]=useState(1),[version,setVersion]=useState(0),[data,setData]=useState<AuditHistoryResponse|null>(null),[dataKey,setDataKey]=useState(accountKey),[loading,setLoading]=useState(true),[error,setError]=useState('');
+ const snapshot=useRef(''),sequence=useRef(0),scope=useRef(accountKey);
+ if(scope.current!==accountKey){scope.current=accountKey;snapshot.current='';}
+ function reset(next:Filters){snapshot.current='';setData(null);setFilters(next);setPage(1);setVersion(value=>value+1);}
+ function apply(event:FormEvent){event.preventDefault();reset({...draft});}
+ useEffect(()=>{const reload=()=>setVersion(value=>value+1);window.addEventListener('tickminder:data-changed',reload);window.addEventListener('focus',reload);return()=>{window.removeEventListener('tickminder:data-changed',reload);window.removeEventListener('focus',reload);};},[]);
+ useEffect(()=>{const request=++sequence.current,controller=new AbortController();setLoading(true);setError('');setData(null);const query=new URLSearchParams({...filters,page:String(page),pageSize:'30'});if(snapshot.current)query.set('snapshot',snapshot.current);
+  void(async()=>{try{const response=await groupFetch('/api/audit-history?'+query,{cache:'no-store',signal:controller.signal});const body=await readApiJson<AuditHistoryResponse&{error?:string}>(response);if(!response.ok)throw Object.assign(new Error(typeof body.error==='string'?body.error:AL('failed')),{status:response.status});if(request!==sequence.current||controller.signal.aborted)return;const next=body as AuditHistoryResponse;snapshot.current=next.snapshot;setData(next);setDataKey(accountKey);if(next.page!==page)setPage(next.page);
+   }catch(failure){if(controller.signal.aborted||request!==sequence.current)return;if((failure as{status?:number}).status===409&&snapshot.current){snapshot.current='';setPage(1);setVersion(value=>value+1);}else{setData(null);setError(actionFailureMessage(failure));}}finally{if(request===sequence.current&&!controller.signal.aborted)setLoading(false);}})();return()=>controller.abort();
+ },[accountKey,filters,page,version]);
+ const current=dataKey===accountKey?data:null;
+ return <section className="panel audit-history" aria-busy={loading}><div className="section-head"><h2>{AL('title')}</h2><Button type="button" variant="outline" disabled={loading} onClick={()=>reset({...filters})}>{AL('refresh')}</Button></div><form className="audit-filters" onSubmit={apply}><label>{AL('from')}<input type="date" aria-label={AL('from')} value={draft.from} onChange={event=>setDraft(value=>({...value,from:event.target.value}))}/></label><label>{AL('to')}<input type="date" aria-label={AL('to')} value={draft.to} onChange={event=>setDraft(value=>({...value,to:event.target.value}))}/></label><label>{AL('operator')}<select aria-label={AL('operator')} value={draft.operatorId} onChange={event=>setDraft(value=>({...value,operatorId:event.target.value}))}><option value="">{AL('allOperators')}</option>{draft.operatorId&&!current?.operators.some(row=>row.id===draft.operatorId)&&<option value={draft.operatorId}>{draft.operatorId}</option>}{current?.operators.map(row=><option value={row.id} key={row.id}>{t(row.name)}</option>)}</select></label><label>{AL('action')}<select aria-label={AL('action')} value={draft.action} onChange={event=>setDraft(value=>({...value,action:event.target.value}))}><option value="">{AL('allActions')}</option>{draft.action&&!current?.actions.includes(draft.action)&&<option value={draft.action}>{auditActionLabel(draft.action)}</option>}{current?.actions.map(action=><option value={action} key={action}>{auditActionLabel(action)}</option>)}</select></label><div className="audit-filter-actions"><Button type="submit" disabled={loading}>{AL('apply')}</Button><Button type="button" variant="outline" disabled={loading} onClick={()=>{setDraft(empty);reset(empty);}}>{AL('clear')}</Button></div></form><p className="muted audit-help">{AL('timezone')}</p>{loading?<p role="status">{AL('loading')}</p>:error?<div role="alert" className="notice"><p>{error}</p><Button type="button" variant="outline" onClick={()=>setVersion(value=>value+1)}>{AL('retry')}</Button></div>:current&&<><div className="audit-page-status"><span>{AL('total').replace('{total}',String(current.total))}</span><span>{AL('page').replace('{page}',String(current.page)).replace('{pages}',String(current.pages))}</span></div>{current.entries.length?current.entries.map(entry=><details className="activity-item" key={entry.id}><summary><strong>{entry.lessonName} · {auditActionLabel(entry.action)}</strong><span>{t(entry.actorName)} · {stamp(entry.at)}</span></summary><small>{AL('target')}：{entry.lessonId}</small><div className="audit-change"><section><h3>{AL('before')}</h3><Summary fields={entry.beforeSummary}/></section><section><h3>{AL('after')}</h3><Summary fields={entry.afterSummary}/></section></div></details>):<div className="empty">{AL('empty')}</div>}<div className="audit-pagination"><Button type="button" variant="outline" disabled={current.page<=1} onClick={()=>setPage(value=>value-1)}>{AL('previous')}</Button><span>{AL('page').replace('{page}',String(current.page)).replace('{pages}',String(current.pages))}</span><Button type="button" variant="outline" disabled={current.page>=current.pages} onClick={()=>setPage(value=>value+1)}>{AL('next')}</Button></div><p className="muted audit-help">{AL('snapshot')}</p></>}</section>;
 }

@@ -1,3 +1,5 @@
+import {checkRestoredAttendanceWindow} from './attendance-window-backup.mjs';
+export {checkRestoredAttendanceWindow} from './attendance-window-backup.mjs';
 import {checkRestoredParentNotifications,PARENT_NOTIFICATION_TABLES,PARENT_NOTIFICATION_REPLAY_TRIGGERS} from './parent-notifications-backup.mjs';
 export {checkRestoredParentNotifications} from './parent-notifications-backup.mjs';
 import {checkRestoredParentFinance,PARENT_FINANCIAL_TABLES,PARENT_FINANCIAL_REPLAY_TRIGGERS} from './parent-finance-backup.mjs';
@@ -200,6 +202,7 @@ export function checkRestoredFolderStructure(db) {
  checkRestoredParents(db);
  checkRestoredParentFinance(db);
  checkRestoredParentNotifications(db);
+ checkRestoredAttendanceWindow(db);
  checkRestoredAcademicStructure(db);
  if(!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='classroom_folders'").get())return;
  const invalid=db.prepare(`SELECT 1 FROM classroom_folders f LEFT JOIN classrooms c ON c.id=f.classroom_id LEFT JOIN classroom_folders p ON p.id=f.parent_id WHERE c.id IS NULL OR c.group_id<>f.group_id OR (f.parent_id IS NOT NULL AND (p.id IS NULL OR p.classroom_id<>f.classroom_id OR p.group_id<>f.group_id)) LIMIT 1`).get();
@@ -294,7 +297,7 @@ export function checkRestoredFolderStructure(db) {
  if(invalid||db.prepare('PRAGMA foreign_key_check').all().length)throw Error('Restored folder relationships are invalid');
 }
 
-export function snapshotVersion(data){return Number(data?.format?.match(/^timelyo-d1-v(31|30|29|28|27|26|25|24|23|22|21|20|19|18|17|16|15|14|13|12|11|10|[1-9])$/)?.[1]||0);}
+export function snapshotVersion(data){return Number(data?.format?.match(/^timelyo-d1-v(32|31|30|29|28|27|26|25|24|23|22|21|20|19|18|17|16|15|14|13|12|11|10|[1-9])$/)?.[1]||0);}
 export function expectedSnapshotTables(version,tables={}){
  const base=['accounts','assignments','audit','lessons','local_credentials','login_attempts','plans','reschedule_requests','sessions','students','teachers','pdf_files','storage_quota','teaching_materials','material_recipients','homework','homework_recipients','homework_submissions','study_blocks'];
  return [...(version>=9?['tuition_groups']:[]),...base,...(version>=2?['classrooms','classroom_members','classroom_announcements']:[]),...(version>=3?['google_identities']:[]),...(version>=4?['academic_terms']:[]),...(version>=7?['notification_items','notification_deliveries','push_subscriptions','notification_runtime']:[]),...(version>=8?['site_notifications']:[]),...(version>=10?['classroom_folders','classroom_content_state']:[]),...(version>=11?['learning_versions','homework_score_history']:[]),...(version>=12?['homework_resubmission_grants','homework_feedback','learning_notifications','learning_notification_deliveries']:[]),...(version>=13?['class_sessions','class_session_participants']:[]),...(version>=15?['quizzes','quiz_versions','quiz_answer_keys','quiz_images','quiz_version_images']:[]),...(version>=16?['quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations']:[]),...(version>=17?['quiz_practice_events','quiz_assignment_notifications']:[]),...(version>=18?['academic_catalogues','student_grade_promotions']:[]),...(version>=20?['billing_students','billing_subjects','billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments']:[]),...(version>=21?['admin_permission_profiles']:[]),...(version>=22?['invoice_brand_assets','invoice_brand_settings','invoices','invoice_items','invoice_operations','invoice_sequences','invoice_source_locks']:[]),...(version>=23?['whatsapp_contacts','whatsapp_challenges','whatsapp_contact_requests','class_recordings','recording_recipients','recording_operations',...EXTERNAL_BOT_TABLES.filter(name=>Object.hasOwn(tables,name))]:[]),...(version>=24?['quiz_publications','quiz_publication_reports','quiz_publication_appeals','quiz_moderation_events','quiz_moderation_operations','quiz_question_sources']:[]),...(version>=25?['invoice_finance_accounts','invoice_finance_operations','invoice_payments','invoice_receipt_sequences','invoice_receipts','invoice_finance_events','invoice_attendance_corrections']:[]),...(version>=26?FINANCE_ROUND2_TABLES:[]),...(version>=27?CLASS_PAYROLL_TABLES:[]),...(version>=28?PREPAYMENT_TABLES:[]),...(version>=29?PARENT_TABLES:[]),...(version>=30?PARENT_FINANCIAL_TABLES:[]),...(version>=31?PARENT_NOTIFICATION_TABLES:[])];

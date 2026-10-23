@@ -53,7 +53,7 @@ check(lesson(one.id).reviewed_at===session(one.session_id).attendance_reviewed_a
 check(lesson(one.id).actual_start===one.planned_start&&lesson(one.id).actual_end===one.planned_end,'Normal attendance uses the full supplied scheduled period');
 const savedCounts=counts();check((await attendance.attendanceAction(teacher,oneBody)).replayed,'Confirmation retry is idempotent');
 check(JSON.stringify(savedCounts)===JSON.stringify(counts()),'Retry never adds duplicate history');
-await assert.rejects(async()=>attendance.attendanceAction(teacher,await bodyFor(one.session_id)),e=>e.status===409);checks++;
+const initialSubmission=session(one.session_id).first_submission_at;await attendance.attendanceAction(teacher,await bodyFor(one.session_id,{reason:'Correcting within the fixed 24-hour window'}));check(session(one.session_id).first_submission_at===initialSubmission,'Immediate teacher correction retains the first submission clock');
 // Billing and invoice issuance consume the teacher confirmation directly.
 sqlite.prepare('UPDATE tuition_groups SET chief_admin_id=? WHERE id=?').run(admin.id,group);
 const billing=await import(compile('lib/billing-server.ts')),invoices=await import(compile('lib/invoice-server.ts'));
@@ -67,7 +67,7 @@ const detail=await invoices.invoiceDetail(admin,generated.invoiceId);
 check(detail.review.blockers.length===0,'Teacher-confirmed source does not block invoice issuance');
 await invoices.saveInvoice(admin,{action:'issue',invoiceId:generated.invoiceId,revision:detail.invoice.revision,expectedSourceHash:detail.invoice.sourceHash,operationId:op()});
 check(sqlite.prepare('SELECT status FROM invoices WHERE id=?').get(generated.invoiceId).status==='issued','Invoice can issue without a second attendance confirmation');
-await assert.rejects(async()=>attendance.attendanceAction(admin,await bodyFor(one.session_id)),e=>String(e).includes('invoice_source_locked'));checks++;
+await assert.rejects(async()=>attendance.attendanceAction(admin,await bodyFor(one.session_id)),e=>e.status===409&&/已正式开单/.test(e.message));checks++;
 // Group save confirms every participant, including a valid late/absence record.
 const gid='auto-confirm-group',start='2020-04-02T04:00:00.000Z',end='2020-04-02T05:30:00.000Z';
 sqlite.prepare("INSERT INTO class_sessions(id,group_id,session_type,classroom_id,classroom_title,teacher_name,subject,planned_start,planned_end,status,created_by,created_at,updated_at) VALUES(?,?,'group',?,'Fixture Class',?,'Science',?,?,'scheduled',?,?,?)").run(gid,group,classId,teacher.name,start,end,admin.id,now,now);
@@ -78,7 +78,7 @@ await attendance.attendanceAction(teacher,await bodyFor(gid,{participants:[{less
 check(Boolean(session(gid).attendance_reviewed_at),'Teacher confirms valid group attendance once');
 check(lesson('auto-group-a').reviewed_by===teacher.id&&lesson('auto-group-b').reviewed_by===teacher.id,'All group students are confirmed under the actual teacher');
 check(lesson('auto-group-a').actual_end==='2020-04-02T05:00:00.000Z'&&lesson('auto-group-b').chargeable===0,'Early departure and absent charge decisions are preserved');
-await attendance.attendanceAction(admin,await bodyFor(gid));
+await attendance.attendanceAction(admin,await bodyFor(gid,{reason:'Administrator corrected the group attendance'}));
 check(session(gid).attendance_reviewed_by===admin.id&&lesson('auto-group-b').status==='completed','Administrator can correct confirmed, uninvoiced group attendance');
 // Backfill complete old saves; skip incomplete and locked sources, preserve times.
 sqlite.prepare("UPDATE class_sessions SET attendance_reviewed_at=NULL,attendance_reviewed_by=NULL WHERE id=?").run(gid);

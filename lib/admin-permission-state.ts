@@ -10,6 +10,7 @@ import { readRevision } from "@/lib/revision";
 import { classSessionState } from "@/lib/class-sessions";
 import { approvedActualHours, checkinInMonth, inMonth } from "@/lib/lesson-rules";
 import { monthlySummary } from "@/lib/lesson-summary";
+import {courseRange,courseRangeState,courseAggregates,type CourseRange} from './course-query';
 
 export const permissionAllows = (context: AdminPermissionContext, key: AdminGrantKey) => !context.enforced || hasAdminGrant(context.grants,key);
 const studentTargets: AdminGrantKey[] = ["accounts.create","accounts.assign","plans.view","lessons.view","lessons.create","lessons.edit","reschedules.create","classrooms.create","classrooms.edit","quizAssignments.assign","students.promote","statistics.view","fees.view"];
@@ -62,35 +63,20 @@ export async function adminCoreOptions(account: Account, context: AdminPermissio
   return {studentOptions,teacherOptions,classroomOptions,termOptions,planOptions:planOptions.map(plan=>({...plan,teacher:plan.teacherName,syllabusId:profiles.get(plan.student)?.syllabusId||null,grade:profiles.get(plan.student)?.grade||null}))};
 }
 
-export async function restrictedAdminCoreState(account: Account, month: string, context: AdminPermissionContext) {
+export async function restrictedAdminCoreState(account: Account, month: string, context: AdminPermissionContext, range:CourseRange=courseRange(new URLSearchParams({month}))) {
   const db=getDb(),can=(key:AdminGrantKey)=>permissionAllows(context,key);
-  const lessonKeys=(["lessons.view","statistics.view"] as AdminGrantKey[]).filter(can);
-  const [revision,options,studentRows,teacherRows,planRows,lessonRows,sessionData,requests,lessonLinks,statisticalSubjects]=await Promise.all([
+  const [revision,options,studentRows,teacherRows,planRows]=await Promise.all([
     readRevision(account.groupId),adminCoreOptions(account,context),
     can("students.view")?db.select().from(students).where(groupWhere(students,account.groupId,adminPermissionReadCondition(account,"students.view"))).all():[],
     can("teachers.view")?db.select().from(teachers).where(groupWhere(teachers,account.groupId,adminPermissionReadCondition(account,"teachers.view"))).all():[],
     can("plans.view")?db.select().from(plans).where(groupWhere(plans,account.groupId,adminPermissionReadCondition(account,"plans.view"))).all():[],
-    lessonKeys.length?db.select().from(lessons).where(groupWhere(lessons,account.groupId,readCondition(account,lessonKeys))).all():[],
-    can("lessons.view")?classSessionState(account):{allSessions:[],sessions:[],byId:new Map()},
-    can("reschedules.view")?db.select().from(rescheduleRequests).where(groupWhere(rescheduleRequests,account.groupId,adminPermissionReadCondition(account,"reschedules.view"))).all():[],
-    can("lessons.view")?db.select({id:lessons.id,onlineLink:plans.onlineLink}).from(lessons).innerJoin(plans,and(eq(plans.groupId,lessons.groupId),eq(plans.student,lessons.student),eq(plans.subject,lessons.subject),eq(plans.teacherName,lessons.teacherName))).where(groupWhere(lessons,account.groupId,adminPermissionReadCondition(account,"lessons.view"))).all():[],
-    can("statistics.view")?db.select({id:classSessions.id,subjectId:classrooms.subjectId,syllabusId:classrooms.syllabusId}).from(classSessions).leftJoin(classrooms,and(eq(classrooms.id,classSessions.classroomId),eq(classrooms.groupId,classSessions.groupId))).where(groupWhere(classSessions,account.groupId,adminPermissionReadCondition(account,"statistics.view"))).all():[],
   ]);
   const completeStudents=can("students.view")?studentRows:options.studentOptions,completeTeachers=can("teachers.view")?teacherRows:options.teacherOptions;
   const activeStudents=new Set(completeStudents.filter(row=>row.active).map(row=>row.name)),activeTeachers=new Set(completeTeachers.filter(row=>row.active).map(row=>row.name));
   const profiles=new Map(completeStudents.map(row=>[row.name,row]));
   const planData=planRows.map(plan=>({...plan,syllabusId:profiles.get(plan.student)?.syllabusId||null,grade:profiles.get(plan.student)?.grade||null}));
-  const linkByLesson=new Map(lessonLinks.map(link=>[link.id,link.onlineLink]));
-  const decorate=(lesson:typeof lessons.$inferSelect)=>{
-    const session=lesson.sessionId?sessionData.byId.get(lesson.sessionId):undefined;
-    const link=linkByLesson.get(lesson.id)||null;
-    return {...(can("attendance.view")?lesson:scheduleLesson(lesson)),onlineLink:session?.onlineLink||link,sessionType:session?.sessionType||"one_to_one",classroomId:session?.classroomId||null,classroomTitle:session?.classroomTitle||null,participantCount:session?.participantCount||1,sessionRevision:session?.revision,sessionStatus:session?.status};
-  };
-  const records=can("statistics.view")||can("attendance.view")?lessonRows.filter(lesson=>lesson.actualStart&&inMonth(lesson.actualStart,month)&&approvedActualHours(lesson)>0).map(statisticalLesson):[];
-  const summary=can("statistics.view")?monthlySummary(options.planOptions,lessonRows,month,new Map(statisticalSubjects.map(subject=>[subject.id,subject]))):[];
-  const sessionIds=new Set(sessionData.sessions.map(session=>session.id));
+  const [courses,aggregates]=await Promise.all([can('lessons.view')?courseRangeState(account,range):(async()=>({lessons:[],attendanceSessions:can('attendance.view')?(await classSessionState(account,{from:range.start,to:range.end,permissionKey:'attendance.view'})).allSessions:[],classSessions:[],proposals:[],classSessionRequests:[]}))(),courseAggregates(account,month,options.planOptions)]);
   return {revision,month,...options,students:[...activeStudents].sort(),teachers:[...activeTeachers].sort(),allStudents:studentRows,allTeachers:teacherRows,
     plans:planData.filter(plan=>plan.active&&activeStudents.has(plan.student)&&activeTeachers.has(plan.teacherName)).map(plan=>({...plan,teacher:plan.teacherName})),allPlans:planData,
-    lessons:can("lessons.view")?lessonRows.map(decorate):[],attendanceSessions:can("attendance.view")?sessionData.allSessions:[],classSessions:sessionData.sessions,
-    records,checkins:can("attendance.view")?lessonRows.filter(lesson=>checkinInMonth(lesson,month)).map(decorate):[],summary,terms:can("terms.view")?options.termOptions:[],proposals:requests.filter(request=>!request.sessionId||!sessionIds.has(request.sessionId)),classSessionRequests:requests.filter(request=>request.sessionId&&sessionIds.has(request.sessionId))};
+    ...courses,attendanceSessions:can('attendance.view')?courses.attendanceSessions:[],...aggregates,courseRange:{from:range.from,to:range.to},terms:can("terms.view")?options.termOptions:[]};
 }

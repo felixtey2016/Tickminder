@@ -1,0 +1,26 @@
+import {registerTranslations} from './i18n';
+const entries:Record<string,string>={
+ '首次提交':'First submission',
+ '正在核对最新课次与操作权限':'Checking the latest lesson and your access',
+ '老师可更正至':'Teacher edits until',
+ '再次更正不会延长24小时窗口。':'Further corrections do not extend the 24-hour window.',
+ '锁定原因':'Lock reason',
+ '课程考勤与更正':'Lesson attendance and corrections',
+ '本次操作原因':'Reason for this action',
+ '更正、锁定或解锁必须填写原因，最多500字。':'A reason is required for corrections, locking and unlocking, up to 500 characters.',
+ '锁定考勤':'Lock attendance',
+ '解锁考勤':'Unlock attendance',
+ '更正或锁定原因最多500字':'The correction or lock reason must not exceed 500 characters.',
+ '请填写本次考勤更正原因':'Enter the reason for this attendance correction.',
+ '请填写锁定或解锁原因':'Enter the reason for locking or unlocking attendance.',
+ '只有获授权的管理员可以锁定或解锁考勤':'Only authorised administrators may lock or unlock attendance.',
+ '课次、锁定状态或操作权限已改变，请重新载入':'The lesson, lock or your access has changed. Reload to continue.',
+ '考勤已经锁定，请重新载入':'Attendance is already locked. Reload to continue.',
+ '考勤目前没有显式锁定，请重新载入':'Attendance is not explicitly locked. Reload to continue.',
+ '考勤已由管理员锁定，请联系管理员解锁后更正':'An administrator has locked attendance. Ask an administrator to unlock it before making corrections.',
+ '旧考勤无法确认首次提交时间，请联系管理员更正':'The first submission time for this older record cannot be verified. Ask an administrator to correct it.',
+ '首次提交已超过24小时，请联系管理员更正':'The 24-hour window has ended. Ask an administrator to make corrections.',
+ '首次提交时间需要核对，请联系管理员更正':'The first submission time needs checking. Ask an administrator to make corrections.',
+ '课程已正式开单，请由管理员通过已开单考勤更正流程处理':'This lesson has an issued invoice. An administrator must use the invoiced attendance correction process.',
+};
+export function registerAttendanceWindowTranslations(){registerTranslations(Object.fromEntries(Object.keys(entries).map(key=>[key,key])),entries);}

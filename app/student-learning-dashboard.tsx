@@ -6,6 +6,7 @@ import { t } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { StudentCalendar } from "./student-calendar";
+import type {CalendarRange} from "@/lib/course-calendar-range";
 import { StudentLearning, type Homework, type LearningMutate, type LearningState, type StudyBlock } from "./learning-portal";
 
 type Lesson = { id: string; subject: string; teacherName: string; plannedStart: string; plannedEnd: string; actualStart: string | null; actualEnd: string | null; status: string; attendanceKind?: string | null; onlineLink?: string | null };
@@ -13,7 +14,7 @@ type Proposal = { lessonId: string; status: string; proposedStart: string; propo
 const local = (iso: string) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso)).replace(" ", "T");
 type Form = { id: string; title: string; date: string; start: string; end: string; subject: string; note: string; homeworkId: string };
 
-export function StudentLearningDashboard({ lessons, proposals, learning, mutate, busy, view, onRequestReschedule, onCalendar }: { lessons: Lesson[]; proposals: Proposal[]; learning: LearningState; mutate: LearningMutate; busy: boolean; view: "calendar" | "homework" | "materials"; onRequestReschedule?: (id: string) => void; onCalendar?: () => void }) {
+export function StudentLearningDashboard({ lessons, proposals, learning, mutate, busy, view, onRequestReschedule, onCalendar,calendarDate,onCalendarDateChange,onCalendarRangeChange,calendarLoading }: { calendarLoading?:boolean;calendarDate?:string;onCalendarDateChange?:(date:string)=>void;onCalendarRangeChange?:(range:CalendarRange)=>void;lessons: Lesson[]; proposals: Proposal[]; learning: LearningState; mutate: LearningMutate; busy: boolean; view: "calendar" | "homework" | "materials"; onRequestReschedule?: (id: string) => void; onCalendar?: () => void }) {
   const [form, setForm] = useDialogState<Form | null>("student-study", null);
   const [saving, setSaving] = useState(false);
   function add(day: string) { setForm({ id: "", title: "", date: day, start: "18:00", end: "19:00", subject: "", note: "", homeworkId: "" }); }
@@ -32,7 +33,7 @@ export function StudentLearningDashboard({ lessons, proposals, learning, mutate,
     setSaving(false); if (ok) setForm(null);
   }
   return <div className="student-learning-dashboard">
-    {view === "calendar" && <StudentCalendar busy={busy} onRequestReschedule={onRequestReschedule} lessons={lessons} proposals={proposals} studyBlocks={learning.studyBlocks} onAddStudy={add} onEditStudy={edit}/>}
+    {view === "calendar" && <StudentCalendar loading={calendarLoading} selectedDate={calendarDate} onDateChange={onCalendarDateChange} onRangeChange={onCalendarRangeChange} busy={busy} onRequestReschedule={onRequestReschedule} lessons={lessons} proposals={proposals} studyBlocks={learning.studyBlocks} onAddStudy={add} onEditStudy={edit}/>}
     {(view === "homework" || view === "materials") && <StudentLearning learning={learning} mutate={mutate} busy={busy} onPlan={plan} view={view} onCalendar={onCalendar}/>}
     <Dialog open={Boolean(form)} onOpenChange={open => { if (!open) setForm(null); }}><DialogContent className="lesson-dialog"><DialogHeader><DialogTitle>{form?.id ? t("编辑学习计划") : t("新增学习计划")}</DialogTitle></DialogHeader>{form && <form className="learning-form" onSubmit={save}>
       {form.homeworkId && <p className="muted">{t("此计划已关联功课。安排学习时间不会提交功课，请在功课页面上传并提交 PDF。")}</p>}

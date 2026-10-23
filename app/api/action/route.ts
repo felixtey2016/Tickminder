@@ -1,4 +1,5 @@
 import {isInvoiceLocked,invoiceLockedMessage} from '@/lib/invoice-locks';
+import {appendAudit} from '@/lib/audit-log';
 import {readAcademicCatalogue} from "@/lib/academic-catalogue-server";
 import {findCatalogueSubject,findCatalogueSyllabus} from "@/lib/academic-catalogue";
 import {StudentAcademicError,studentProfileInput,allocationSubject,refreshStudentClassifications,studentSyllabusPlanUpdates,studentAcademicSnapshot,studentAcademicGuard} from "@/lib/student-academics";
@@ -151,7 +152,7 @@ export async function POST(request: Request) {
         accountAuthorityGuard(actor,userId,authority),
         raw.prepare("UPDATE accounts SET disabled_at=? WHERE id=? AND group_id=?").bind(action==='deleteAccount'?now:null,userId,groupId),
         raw.prepare("DELETE FROM sessions WHERE account_id=?").bind(userId),
-        raw.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) VALUES(?,?,?,?,?,?,?,?)").bind(groupId,crypto.randomUUID(),`account:${userId}`,actor.id,action,JSON.stringify({disabledAt:target.disabledAt,role:target.role}),JSON.stringify({disabledAt:action==='deleteAccount'?now:null,role:target.role}),now),
+        appendAudit(raw,{groupId,lessonId:`account:${userId}`,actorId:actor.id,actorName:actor.name,objectName:target.name,action,before:{id:target.id,name:target.name,disabledAt:target.disabledAt,role:target.role},after:{id:target.id,name:target.name,disabledAt:action==='deleteAccount'?now:null,role:target.role},at:now}),
         ...classroomStatements,
       ]);
       return NextResponse.json({ ok: true });
@@ -409,7 +410,7 @@ export async function POST(request: Request) {
       const start=completed?malaysiaIso(data.actualStart):null;
       const end=completed?(data.actualEnd?malaysiaIso(data.actualEnd):new Date(Date.parse(start!)+Number(data.totalHours)*3600000).toISOString()):null;
       const local=(value:string|null)=>value?new Date(Date.parse(value)+8*3600_000).toISOString().slice(0,16):"";
-      return NextResponse.json(await attendanceAction(actor,{action:action==="review"?"reviewSessionAttendance":"saveSessionAttendance",sessionId:session.id,revision:data.sessionRevision,operationId:data.operationId,teachingStatus:completed?"taught":legacyStatus==="teacher_absent"?"teacher_absent":"not_taught",actualStart:local(start),actualEnd:local(end),note:data.note,participants:[{lessonId:existing.id,status:completed?"present":"absent",note:data.note,chargeable:action==="review"?data.chargeable:completed}]}));
+      return NextResponse.json(await attendanceAction(actor,{action:action==="review"?"reviewSessionAttendance":"saveSessionAttendance",sessionId:session.id,revision:data.sessionRevision,operationId:data.operationId,teachingStatus:completed?"taught":legacyStatus==="teacher_absent"?"teacher_absent":"not_taught",actualStart:local(start),actualEnd:local(end),note:data.note,reason:data.reason,participants:[{lessonId:existing.id,status:completed?"present":"absent",note:data.note,chargeable:action==="review"?data.chargeable:completed}]}));
     }
     if (actor.role !== "admin") return bad("Administrator access required", 403);
     if (action === "cancel" || action === "edit") {

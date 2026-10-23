@@ -1,4 +1,4 @@
-import {SessionAttendanceBoard,SessionAttendanceDialog,TeachingHoursPanel} from "./session-attendance";
+import {SessionAttendanceBoard,SessionAttendanceDialog,SessionAttendanceLoaderDialog,TeachingHoursPanel} from "./session-attendance";
 import type {AttendanceSession} from "@/lib/attendance-types";
 "use client";
 import '@/lib/finance-round2-i18n';
@@ -54,7 +54,9 @@ const TermManager = lazy(() => import("./term-manager").then(module => ({default
 const AccountDirectory = lazy(() => import("./account-directory").then(module => ({default: module.AccountDirectory})));
 import { AccountSettings } from "./account-settings";
 import { NotificationsProvider, NotificationCentre, MenuBadge, detachPushOnLogout } from "./notifications";
-import { navigationBadges } from "@/lib/navigation-badges";
+import type {CourseTaskCounts,CourseTeachingSummary} from "@/lib/course-query";
+import {monthCalendarRange,type CalendarRange} from "@/lib/course-calendar-range";
+import {PagedAttendanceBoard,PagedGroupSessions,PagedLessonRows,PagedReschedules,TeachingSummary,MakeupOriginalPicker} from "./course-panels";
 import { courseBadgeCount, defaultCourseView, isCourseView, normalizeCourseView } from "@/lib/course-navigation";
 import { CourseNavigation } from "@/components/course-navigation";
 import { ManagementNavigation } from "@/components/management-navigation";
@@ -115,8 +117,9 @@ type Lesson = SessionLesson & {
     replacementFor: string | null;
     onlineLink?: string | null;
 };
-type StateScope = "learning" | "classrooms" | "accounts" | "activity";
+type StateScope = "learning" | "classrooms" | "accounts";
 type State = {
+    coreError?:string;courseRange?:CalendarRange;taskCounts?:CourseTaskCounts;teachingSummary?:CourseTeachingSummary;
     attendanceSessions?:AttendanceSession[];
     classSessions?:GroupSession[];classSessionRequests?:GroupSessionRequest[];
     loadedScopes?: string[];
@@ -223,6 +226,9 @@ export function Scheduler() {
     useEffect(()=>{const code=new URLSearchParams(location.search).get("group");if(code)void request(`/api/groups?code=${encodeURIComponent(code)}`).then(r=>setInvitedGroup(r.group.name)).catch(e=>setMessage(e.message));},[]);
     const [state, setState] = useState<State | null>(null);
     const [selectedMonth, setSelectedMonth] = useFilterPreference<string>("reporting-month", local(new Date().toISOString()).slice(0, 7), auth?.account?.id?`${auth.account.id}:${auth.account.groupId}`:undefined);
+    const [calendarDate,setCalendarDate]=useState(()=>local(new Date().toISOString()).slice(0,10));
+    const [calendarRange,setCalendarRange]=useState<CalendarRange>(()=>monthCalendarRange(local(new Date().toISOString()).slice(0,10)));
+    const onCalendarRangeChange=useCallback((next:CalendarRange)=>setCalendarRange(previous=>previous.from===next.from&&previous.to===next.to?previous:next),[]);
     const [message, setMessage] = useState("");
     const [busy, setBusy] = useState(false);
     const mutationInFlight = useRef(false);
@@ -283,9 +289,10 @@ export function Scheduler() {
     const refreshState = useCallback(async (silent: boolean) => {
         if(auth?.account?.role==='parent'){setState(null);return;}
         const requestId = ++latestStateRequest.current;
+        setState(previous=>previous?{...previous,coreError:undefined}:previous);
         scopeRequests.current.clear();
         try {
-            const next = await request(`/api/state?scope=core&month=${selectedMonth}`) as State;
+            const next = await request(`/api/state?scope=core&${new URLSearchParams({month:selectedMonth,...calendarRange})}`) as State;
             if (requestId !== latestStateRequest.current) return;
             if (next.account?.id && next.account.id !== auth?.account?.id) {
                 setAuth(await request("/api/auth"));
@@ -301,7 +308,7 @@ export function Scheduler() {
             setState(previous => {
                 const sameIdentity = JSON.stringify(previous?.account.adminPermissions)===JSON.stringify(next.account.adminPermissions) && previous?.account.id === next.account.id && previous?.account.groupId === next.account.groupId && previous?.account.role === next.account.role && previous?.account.teacherName === next.account.teacherName && previous?.account.studentName === next.account.studentName;
                 if (!sameIdentity) loadedScopes.current.clear();
-                return sameIdentity ? {...previous, ...next, loadedScopes: [...new Set([...(next.loadedScopes || ["core"]), ...retainedScopes])]} : next;
+                return sameIdentity ? {...previous, ...next, coreError:undefined,loadedScopes: [...new Set([...(next.loadedScopes || ["core"]), ...retainedScopes])]} : next;
             });
             setAuth(previous => {
                 if (!previous?.account || !next.account || previous.account.id !== next.account.id) return previous;
@@ -316,9 +323,9 @@ export function Scheduler() {
             if (status === 401 || status === 403) {
                 try { setAuth(await request("/api/auth")); setState(null); revisionRef.current = null; }
                 catch { /* Retry on the next foreground check. */ }
-            } else if (!silent) setMessage((error as Error).message);
+            } else {setState(previous=>previous?{...previous,coreError:actionFailureMessage(error)}:previous);if(!silent)setMessage((error as Error).message);}
         }
-    }, [selectedMonth, auth?.account?.id, ensureScope]);
+    }, [selectedMonth, calendarRange.from,calendarRange.to,auth?.account?.id, ensureScope]);
     useEffect(() => { const refreshAuth = () => { void request("/api/auth").then(setAuth).catch(alertActionFailure); }; window.addEventListener("timelyo:auth-refresh", refreshAuth); return () => window.removeEventListener("timelyo:auth-refresh", refreshAuth); }, []);
     const reload = useCallback(() => refreshState(false), [refreshState]);
     useEffect(() => { const refresh = () => { void refreshState(true); }; window.addEventListener('tickminder-roster-updated', refresh); return () => window.removeEventListener('tickminder-roster-updated', refresh); }, [refreshState]);
@@ -539,7 +546,7 @@ export function Scheduler() {
     if(account.groupUnavailable)return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><h1>{t("补习集团暂不可用")}</h1><p>{t("请联系所属集团的管理员，或稍后重试。")}</p><Button onClick={()=>window.location.reload()}>{t("刷新")}</Button><Button variant="outline" onClick={logout}>{t("退出登录")}</Button></div></main>;
     if(account.role==='parent')return <Suspense fallback={<p role="status">{t('正在加载…')}</p>}><ParentShell account={account} language={language} changeLanguage={changeLanguage} logout={logout} refreshIdentity={async()=>setAuth(await request('/api/auth'))}/></Suspense>;
     const admin = account.role === "admin";
-    return <AdminPermissionContext.Provider value={account}><Workspace key={`${account.id}:${account.groupId}:${JSON.stringify(account.adminPermissions)}`} account={account} state={state} ensureScope={ensureScope} setActiveScopes={setActiveScopes} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/></AdminPermissionContext.Provider>;
+    return <AdminPermissionContext.Provider value={account}><Workspace key={`${account.id}:${account.groupId}:${JSON.stringify(account.adminPermissions)}`} account={account} state={state} ensureScope={ensureScope} setActiveScopes={setActiveScopes} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} calendarDate={calendarDate} setCalendarDate={setCalendarDate} calendarRange={calendarRange} onCalendarRangeChange={onCalendarRangeChange} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/></AdminPermissionContext.Provider>;
 }
 function BrandLogo({ small = false }: { small?: boolean }) { return <span className={`brand-logo ${small ? "small" : ""}`}><img src="/tickminder-logo.svg" width={small ? 40 : 80} height={small ? 40 : 80} alt={BRAND_NAME} /></span>; }
 function LanguageSwitcher({ language, change }: { language: Language; change: (next: Language) => void }) { return <div className="language-switch" role="group" aria-label={t("语言")}><button type="button" aria-pressed={language === "zh"} onClick={() => change("zh")}>中文</button><span className="language-separator" aria-hidden="true">|</span><button type="button" aria-pressed={language === "en"} onClick={() => change("en")}>EN</button></div>; }
@@ -652,7 +659,8 @@ const NAV_GROUPS: Record<NavigationRole, Array<{ label: string; ids: string[] }>
  pending: [{label:"",ids:["home"]},{label:"我的账号",ids:["notifications","myAccount"]}],
 };
 
-function Workspace({ account, state, ensureScope, setActiveScopes, lessons, message, setMessage, reload, logout, modal, setModal, mutate, learningMutate, classroomMutate, busy, selectedMonth, setSelectedMonth, language, changeLanguage }: {
+function Workspace({ account, state, ensureScope, setActiveScopes, lessons, message, setMessage, reload, logout, modal, setModal, mutate, learningMutate, classroomMutate, busy, selectedMonth, setSelectedMonth, language, changeLanguage,calendarDate,setCalendarDate,calendarRange,onCalendarRangeChange }: {
+    calendarDate:string;setCalendarDate:(date:string)=>void;calendarRange:CalendarRange;onCalendarRangeChange:(range:CalendarRange)=>void;
     account: Account;
     state: State | null;
     ensureScope: (scope: StateScope, force?: boolean) => Promise<void>;
@@ -679,7 +687,9 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     const canView=(view:string)=>items.some(item=>item.id===view);
     const [badgeNow,setBadgeNow]=useState(()=>Date.now());
     useEffect(()=>{const timer=window.setInterval(()=>setBadgeNow(Date.now()),30_000);return()=>window.clearInterval(timer);},[]);
-    const rawBadgeCounts=navigationBadges(role,account.id || "",lessons,state?.proposals || [],badgeNow);
+    const rawBadgeCounts=state?.taskCounts||{lessons:0,reschedule:0,overview:0,attention:0,pendingAttendance:0,pendingReview:0,makeupNeeded:0};
+    const calendarReady=state?.courseRange?.from===calendarRange.from&&state?.courseRange?.to===calendarRange.to;
+    const calendarLessons=calendarReady?lessons:[];
     const badgeCounts=role==="admin"&&!canAdminAction(account,"attendance.view")?{...rawBadgeCounts,attention:0,overview:0}:rawBadgeCounts;
     const taskCount=badgeCounts.lessons+badgeCounts.reschedule+badgeCounts.attention;
     const [selectedView, setSelectedView] = useState(items[0].id);
@@ -747,8 +757,8 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     if (courseView) lastCourseView.current = activeView;
     if (managementView) lastManagementViews.current[managementView] = activeView as typeof lastManagementViews.current.people;
     const title = courseView ? "course.nav.title" : managementView ? managementTitle(managementView) : items.find(item => item.id === activeView)?.label || items[0].label;
-    const requiredScope: StateScope | null = activeView === "classrooms" ? "classrooms" : activeView === "accounts" ? "accounts" : activeView === "activity" ? "activity" : ["homework", ...(role === "student" ? ["calendar"] : [])].includes(activeView) ? "learning" : null;
-    const scopeLoaded = !requiredScope || state?.loadedScopes?.includes(requiredScope) || (!state?.loadedScopes && Boolean(requiredScope === "learning" ? state?.learning : requiredScope === "classrooms" ? state?.classrooms : requiredScope === "accounts" ? state?.users : state?.activity));
+    const requiredScope: StateScope | null = activeView === "classrooms" ? "classrooms" : activeView === "accounts" ? "accounts" : ["homework", ...(role === "student" ? ["calendar"] : [])].includes(activeView) ? "learning" : null;
+    const scopeLoaded = !requiredScope || state?.loadedScopes?.includes(requiredScope) || (!state?.loadedScopes && Boolean(requiredScope === "learning" ? state?.learning : requiredScope === "classrooms" ? state?.classrooms : requiredScope === "accounts" ? state?.users : state?.users));
     const scopeError = requiredScope ? state?.scopeErrors?.[requiredScope] : undefined;
     useEffect(() => {
         // TeachingResources selects its own live scope for the PDF tab only.
@@ -763,7 +773,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     }, [state?.account.id, state?.loadedScopes, state?.scopeErrors?.learning, requiredScope, scopeLoaded, scopeError, activeView, role, ensureScope]);
     const learning = state?.learning || { materials: [], homework: [], submissions: [], studyBlocks: [], eligible: [] };
     const learningReady = Boolean(state?.learning && (!state.loadedScopes || state.loadedScopes.includes("learning")));
-    const showMonth = (role === "teacher" && activeView === "hours") || (role === "admin" && ["overview", "attention", "schedule", "calendar", "list"].includes(activeView));
+    const showMonth = (role === "student" && activeView === "list") || (role === "teacher" && ["hours","lessons","attendance"].includes(activeView)) || (role === "admin" && ["overview", "list"].includes(activeView));
     const closeMobileMenu = () => {
         if (desktop) return;
         if (window.history.state?.timelyoMenu) window.history.back();
@@ -800,7 +810,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     else if (activeView === "home" && role === "pending") {
         pageContent = <section className="panel pending-home"><h2>{t(account.assignmentStatus === "ACTIVE" ? "账号已启用" : "等待分配")}</h2><p>{t("管理员分配身份后，课程、功课及班级会显示在这里。")}</p>{account.pendingExpiresAt && <p className="notice">{t("待分配期限")} · {new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-GB",{timeZone:"Asia/Kuala_Lumpur",dateStyle:"medium",timeStyle:"short"}).format(new Date(account.pendingExpiresAt))}<br/>{t("新注册账号在 7 天内未启用或绑定，会到期清理。请联系管理员。")}</p>}<Button variant="outline" onClick={()=>choose("myAccount")}>{t("我的账号")}</Button></section>;
     } else if (activeView === "home" && role !== "pending") {
-        pageContent = <HomeDashboard role={role} name={account.name} lessons={lessons} learning={learning} learningReady={learningReady || role === "admin"} learningError={state?.scopeErrors?.learning} onNavigate={choose}/>;
+        pageContent = <HomeDashboard role={role} name={account.name} taskCounts={state?.taskCounts} lessons={lessons} learning={learning} learningReady={learningReady || role === "admin"} learningError={state?.scopeErrors?.learning} onNavigate={choose}/>;
     } else if (activeView === "notifications") {
         pageContent = <NotificationCentre onQuiz={()=>choose("quizzes")} onLearning={kind=>choose(kind==="homework"?"homework":"materials")} language={language} onLesson={() => choose(role === "teacher" ? "lessons" : role === "pending" ? "home" : "calendar")}/>;
     } else if (activeView === "myAccount") {
@@ -814,7 +824,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
         } else if (["overview", "attention", "activity"].includes(activeView)) {
             pageContent = <AdminDashboard mutate={mutate} busy={busy} state={state} lessons={lessons} open={setModal} view={activeView as "overview" | "attention" | "activity"}/>;
         } else if (["schedule", "calendar", "list"].includes(activeView)) {
-            pageContent = <Schedule state={state} lessons={lessons} mutate={mutate} open={setModal} busy={busy} view={activeView === "schedule" ? "create" : activeView as "calendar" | "list"}/>;
+            pageContent = <Schedule calendarDate={calendarDate} onCalendarDateChange={setCalendarDate} onCalendarRangeChange={onCalendarRangeChange} calendarLoading={!calendarReady} state={state?{...state,month:selectedMonth}:state} lessons={activeView==="calendar"?calendarLessons:lessons} mutate={mutate} open={setModal} busy={busy} view={activeView === "schedule" ? "create" : activeView as "calendar" | "list"}/>;
         } else if (activeView === "students") {
             pageContent = <Timetable type="student" lessons={lessons} students={state?.students || []} teachers={state?.teachers || []} month={selectedMonth} setMonth={setSelectedMonth}/>;
         } else if (activeView === "teachers") {
@@ -830,20 +840,22 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
             pageContent = <SheetSyncPanel/>;
         }
     } else if (role === "student") {
-        pageContent = <StudentPortal onCalendar={() => choose("calendar")} lessons={lessons} proposals={state?.proposals || []} mutate={mutate} learningMutate={learningMutate} learning={learning} busy={busy} view={activeView as "calendar" | "list" | "homework" | "materials" | "reschedule"}/>;
+        pageContent = <StudentPortal month={selectedMonth} calendarDate={calendarDate} onCalendarDateChange={setCalendarDate} onCalendarRangeChange={onCalendarRangeChange} calendarLoading={!calendarReady} onCalendar={() => choose("calendar")} lessons={activeView==="calendar"?calendarLessons:lessons} proposals={state?.proposals || []} mutate={mutate} learningMutate={learningMutate} learning={learning} busy={busy} view={activeView as "calendar" | "list" | "homework" | "materials" | "reschedule"}/>;
     } else if (role === "teacher") {
         if (activeView === "schedule") {
             const ownedPlans = (state?.plans || []).filter(plan => plan.teacher === account.teacherName);
             const schedulingState = state ? { ...state, plans: ownedPlans, students: [...new Set(ownedPlans.map(plan => plan.student))].sort(), teachers: account.teacherName ? [account.teacherName] : [] } : null;
             pageContent = <Schedule state={schedulingState} lessons={lessons} mutate={mutate} open={setModal} busy={busy} view="create"/>;
         } else if (["calendar", "lessons", "attendance", "students", "reschedule"].includes(activeView)) {
-            pageContent = <TeacherPortal attendanceSessions={state?.attendanceSessions} onReschedule={() => choose("reschedule")} lessons={lessons} plans={state?.plans || []} proposals={state?.proposals || []} classSessions={state?.classSessions||[]} classSessionRequests={state?.classSessionRequests||[]} mutate={mutate} busy={busy} view={activeView as "calendar" | "lessons" | "attendance" | "students" | "reschedule"}/>;
+            pageContent = <TeacherPortal pendingAttendance={state?.taskCounts?.pendingAttendance} month={selectedMonth} calendarDate={calendarDate} onCalendarDateChange={setCalendarDate} onCalendarRangeChange={onCalendarRangeChange} calendarLoading={!calendarReady} attendanceSessions={calendarReady?state?.attendanceSessions:[]} onReschedule={() => choose("reschedule")} lessons={activeView==="calendar"?calendarLessons:lessons} plans={state?.plans || []} proposals={state?.proposals || []} classSessions={state?.classSessions||[]} classSessionRequests={state?.classSessionRequests||[]} mutate={mutate} busy={busy} view={activeView as "calendar" | "lessons" | "attendance" | "students" | "reschedule"}/>;
         } else if (activeView === "hours") {
             pageContent = <StatsPanel state={state}/>;
         } else {
             pageContent = <TeacherLearning learning={learning} mutate={learningMutate} busy={busy} view={activeView as "materials" | "homework"} onChanged={()=>ensureScope("learning",true)}/>;
         }
     }
+    if(["overview","hours"].includes(activeView)&&state?.month!==selectedMonth)pageContent=<PageState kind={state?.coreError?"error":"loading"} title={state?.coreError?"页面加载失败":"正在加载…"} description={state?.coreError} action={state?.coreError?"重试":undefined} onAction={()=>void reload()}/>;
+    if(activeView==="calendar"&&!calendarReady&&state?.coreError)pageContent=<><PageState kind="error" title="页面加载失败" description={state.coreError} action="重试" onAction={()=>void reload()}/>{pageContent}</>;
     if(activeView === "materials" && role !== "pending") pageContent=<TeachingResources key={account.groupId} ready={learningReady} error={state?.scopeErrors?.learning} load={force=>ensureScope("learning",force)} setActiveScopes={setActiveScopes}>{pageContent}</TeachingResources>;
     return <NotificationsProvider groupId={account.groupId || ""} key={`${account.id}:${role}:${account.groupId}`} accountId={account.id || ""} language={language}><div className="app-shell">
         <header className="topbar">
@@ -879,10 +891,10 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
                 <FilterScope.Provider value={`${account.id || "anonymous"}:${account.groupId || "none"}`}>{role !== "pending" && activeView !== "quizzes" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "页面加载失败" : "正在加载…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : !scopeLoaded ? <PageState kind={scopeError ? "error" : "loading"} title={scopeError ? "页面加载失败" : "正在加载…"} description={scopeError} action={scopeError ? "重试" : undefined} onAction={() => { if (requiredScope) void ensureScope(requiredScope, true); }}/> : <Suspense fallback={<PageState kind="loading" title="正在加载…"/>}>{courseView ? <div id="course-view-content" data-testid="course-view-content" data-course-leaf={activeView}>{pageContent}</div> : managementView ? <div id="management-view-content" data-testid="management-view-content" data-management-leaf={activeView}>{pageContent}</div> : pageContent}</Suspense>}</FilterScope.Provider>
             </main>
         </div>
-        {modal && ["attendance","review"].includes(modal.type)&&state?.attendanceSessions?.find(s=>s.id===modal.lesson.sessionId)?<SessionAttendanceDialog session={state.attendanceSessions.find(s=>s.id===modal.lesson.sessionId)!} review={modal.type==="review"} role="admin" close={()=>setModal(null)} mutate={mutate} busy={busy}/>:modal&&<LessonDialog modal={modal} close={() => setModal(null)} mutate={mutate} busy={busy}/>}
+        {modal && ["attendance","review"].includes(modal.type)&&modal.lesson.sessionId?<SessionAttendanceLoaderDialog key={modal.lesson.sessionId} sessionId={modal.lesson.sessionId} review={modal.type==="review"} role="admin" close={()=>setModal(null)} mutate={mutate} busy={busy}/>:modal&&<LessonDialog modal={modal} close={() => setModal(null)} mutate={mutate} busy={busy}/>}
     </div></NotificationsProvider>;
 }
-function StatsPanel({state}:{state:State|null}) {return <TeachingHoursPanel sessions={state?.attendanceSessions} month={state?.month||""}/>;}
+function StatsPanel({state}:{state:State|null}) {return <TeachingSummary summary={state?.teachingSummary}/>;}
 function AttentionPanel({ lessons, open,pendingReviewCount=0 }: { pendingReviewCount?:number;
     lessons: Lesson[];
     open: Open;
@@ -906,14 +918,12 @@ function AdminDashboard({ state, lessons, open, view,mutate,busy }: {
     open: Open;
     view: "overview" | "attention" | "activity";
 }) {
-    const can=useAdminAction();
-    const summary = state?.summary || [];
-    const review = uniqueSessionLessons(lessons.filter(l => ["completed", "student_absent", "teacher_absent"].includes(l.status) && !l.reviewedAt));
-    const upcoming = lessons.filter(l => l.status === "scheduled" && l.plannedStart >= new Date().toISOString()).slice(0, 8);
-    if (view === "attention") return <><SessionAttendanceBoard sessions={state?.attendanceSessions} role="admin" mode="review" mutate={mutate} busy={busy}/><AttentionPanel lessons={lessons} open={open} pendingReviewCount={review.length}/></>;
-    if (view === "activity") return <ActivityLog items={state?.activity || []}/>;
-    return <div className="dashboard">{can("attendance.view")&&<TeachingHoursPanel sessions={state?.attendanceSessions} month={state?.month||""}/>}<div className="metric-grid"><div className="metric"><span>{t("学生累计出席课时")}</span><strong>{formatDurationHours(summary.reduce((s,x)=>s+x.completed,0),getLanguage())}</strong><p>{state?.month}{t(" · 已记录出席")}</p></div><div className="metric"><span>{t("\u672A\u6765\u5DF2\u5B89\u6392\u8BFE\u65F6")}</span><strong>{formatDurationHours(summary.reduce((s,x)=>s+x.upcoming,0),getLanguage())}</strong><p>{t("\u6240\u9009\u6708\u4EFD")}</p></div><div className="metric attention"><span>{t("待复核记录")}</span><strong>{review.length}</strong><p>{t("已完成课时按实际时长计入统计")}</p></div></div><div className="dashboard-columns"><section className="panel"><div className="section-head"><h2>{t("待复核记录")}</h2><span>{review.length}{t(" \u6761")}</span></div><div className="lesson-stack">{review.length ? review.map(l => <LessonCard key={l.id} lesson={l} admin open={open}/>) : <div className="empty">{t("目前没有待复核记录。")}</div>}</div></section><section className="panel"><div className="section-head"><h2>{t("\u5373\u5C06\u4E0A\u8BFE")}</h2></div>{upcoming.length ? upcoming.map(l => <div className="upcoming-item" key={l.id}><span>{day(l.plannedStart)}</span><strong>{l.student} · {l.subject}</strong><small>{time(l.plannedStart)}–{time(l.plannedEnd)} · {l.teacherName}</small></div>) : <div className="empty">{t("\u6682\u65E0\u8BFE\u7A0B\u3002")}</div>}</section></div><section className="panel"><div className="section-head"><h2>{t("\u5B66\u751F\u79D1\u76EE\u7EDF\u8BA1")}</h2><span>{t("按实际开始日期归属月份")}</span></div><div className="summary-grid">{summary.map(s => <div className="summary-row" key={s.key}><strong>{s.key.replace("|", " · ")}</strong><span>{formatDurationHours(s.completed,getLanguage())} · {s.lessons}{t(" \u5802\u5DF2\u4E0A\u8BFE")}</span><span>{formatDurationHours(s.upcoming,getLanguage())} · {t("未来已安排")}</span><span>{s.pending}{t(" 待记录出席 · ")}{s.makeupNeeded}{t(" \u5F85\u8865")}</span></div>)}</div></section></div>;
+    const can=useAdminAction(),summary=state?.summary||[],month=state?.month||'',teachers=state?.teachers||[],students=state?.students||[];
+    if(view==='activity')return <ActivityLog accountKey={state?.account.id+':'+state?.account.groupId}/>;
+    if(view==='attention')return <div className="course-query-stack">{can('attendance.view')&&<><PagedAttendanceBoard mode="review" role="admin" month={month} mutate={mutate} busy={busy} teachers={teachers}/><PagedAttendanceBoard mode="pending" role="admin" month={month} mutate={mutate} busy={busy} teachers={teachers}/>{can('lessons.view')&&<PagedLessonRows mode="makeup" month={month} sessionType="" title="缺席待处理" renderLesson={l=><LessonCard key={l.id} lesson={l} admin open={open}/>}/>}</>}</div>;
+    return <div className="dashboard">{can('attendance.view')&&<TeachingSummary summary={state?.teachingSummary}/>}<div className="metric-grid">{can('statistics.view')&&<><div className="metric"><span>{t('学生累计出席课时')}</span><strong>{formatDurationHours(summary.reduce((n,x)=>n+x.completed,0),getLanguage())}</strong><p>{month} · {t('已记录出席')}</p></div><div className="metric"><span>{t('未来已安排课时')}</span><strong>{formatDurationHours(summary.reduce((n,x)=>n+x.upcoming,0),getLanguage())}</strong><p>{t('所选月份')}</p></div></>}<div className="metric attention"><span>{t('待复核记录')}</span><strong>{state?.taskCounts?.pendingReview??'—'}</strong></div></div>{can('attendance.view')&&<PagedAttendanceBoard mode="review" role="admin" month={month} mutate={mutate} busy={busy} teachers={teachers}/ >}{can('lessons.view')&&<PagedLessonRows mode="upcoming" month={month} sessionType="" title="即将上课" renderLesson={l=><LessonCard key={l.id} lesson={l} admin open={open}/>}/ >}{can('statistics.view')&&<section className="panel"><h2>{t('学生科目统计')}</h2><p className="muted">{t('按实际开始日期归属月份')}</p><div className="summary-grid">{summary.map(row=><div className="summary-row" key={row.key}><strong>{row.key.replace('|',' · ')}</strong><span>{formatDurationHours(row.completed,getLanguage())} · {row.lessons} {t('堂已上课')}</span><span>{formatDurationHours(row.upcoming,getLanguage())} · {t('未来已安排')}</span><span>{row.pending} {t('待记录出席')} · {row.makeupNeeded} {t('待补')}</span></div>)}</div></section>}</div>;
 }
+
 function RosterAdmin({ account, state, mutate, busy, view,onAccountsChanged }: { onAccountsChanged?:()=>void; account: Account; state: State | null; mutate: (x: Record<string, unknown>) => Promise<boolean>; busy: boolean; view: "teachers" | "students" | "binding" | "accounts" }) {
     if (view === "teachers" || view === "students") return <PeopleDirectory kind={view === "teachers" ? "teacher" : "student"} people={view === "teachers" ? state?.allTeachers || [] : state?.allStudents || []} mutate={mutate} busy={busy}/>;
     return <AccountDirectory onAccountsChanged={onAccountsChanged} actor={account} users={state?.users || []} teachers={state?.teachers || []} students={state?.students || []} mutate={mutate} busy={busy} createForm={<LocalAccountAdmin account={account} state={state} mutate={mutate} busy={busy}/>}/>;
@@ -976,7 +986,8 @@ function TeacherHome({ lessons, plans, open }: {
     plans: Plan[];
     open: Open;
 }) { const today = local(new Date().toISOString()).slice(0, 10); const current = lessons.filter(l => local(l.plannedStart).slice(0, 10) === today && l.status !== "cancelled"); const pending = lessons.filter(l => l.plannedStart < new Date().toISOString() && l.status === "scheduled"); const upcoming = lessons.filter(l => l.plannedStart > new Date().toISOString() && local(l.plannedStart).slice(0, 10) !== today && l.status !== "cancelled").slice(0, 10); return <div className="teacher-layout"><div><div className="section-head"><div><p className="eyebrow">TODAY</p><h2>{t("\u4ECA\u5929\u7684\u8BFE ")}<span>{current.length}</span></h2></div><span>{day(new Date().toISOString())}</span></div><div className="lesson-stack">{current.length ? current.map(l => <LessonCard key={l.id} lesson={l} admin={false} open={open}/>) : <div className="empty">{t("\u4ECA\u5929\u6CA1\u6709\u5B89\u6392\u8BFE\u7A0B\u3002")}</div>}</div>{pending.length > 0 && <><div className="section-head"><h2>{t("\u5F85\u786E\u8BA4 ")}<span>{pending.length}</span></h2></div><div className="lesson-stack">{pending.map(l => <LessonCard key={l.id} lesson={l} admin={false} open={open}/>)}</div></>}</div><aside><section className="panel"><p className="eyebrow">UP NEXT</p><h2>{t("\u63A5\u4E0B\u6765\u7684\u8BFE")}</h2>{upcoming.length ? upcoming.map(l => <button className="upcoming-item" key={l.id} onClick={() => open({ type: "attendance", lesson: l })}><span>{day(l.plannedStart)}</span><strong>{l.student} · {l.subject}</strong><small>{time(l.plannedStart)}–{time(l.plannedEnd)}</small></button>) : <p className="muted">{t("\u6682\u65E0\u540E\u7EED\u8BFE\u7A0B\u3002")}</p>}</section><section className="panel"><p className="eyebrow">MY STUDENTS</p><h2>{t("\u8D1F\u8D23\u7684\u5B66\u751F\u4E0E\u79D1\u76EE")}</h2>{plans.map(p => <div key={p.key} className="plan-row"><span>{p.student}</span><strong>{p.subject}</strong></div>)}</section></aside></div>; }
-function Schedule({ state, lessons, mutate, open, busy, view }: {
+function Schedule({ state, lessons, mutate, open, busy, view,calendarDate,onCalendarDateChange,onCalendarRangeChange,calendarLoading }: {
+    calendarDate?:string;onCalendarDateChange?:(date:string)=>void;onCalendarRangeChange?:(range:CalendarRange)=>void;calendarLoading?:boolean;
     state: State | null;
     lessons: Lesson[];
     mutate: (x: Record<string, unknown>) => Promise<boolean>;
@@ -1017,6 +1028,7 @@ function Schedule({ state, lessons, mutate, open, busy, view }: {
             setEndTime(""); setUntil(""); setReplacementFor("");setClassroomId("");
         }
     }
+    if(view==="list")return <div className="course-query-stack">{can("reschedules.view")&&<PagedReschedules requestsOnly role="admin" month={state?.month||""} mutate={mutate} busy={busy}/>}<PagedGroupSessions role="admin" month={state?.month||""} classrooms={state?.classroomOptions||state?.classrooms} mutate={mutate} busy={busy}/><PagedLessonRows month={state?.month||""} teachers={state?.teachers} students={state?.students} renderTools={rows=><BulkDeleteTool kind="lesson" records={rows.map(l=>({id:l.id,label:l.student+" · "+l.subject+" · "+day(l.plannedStart)+" "+time(l.plannedStart)}))} mutate={mutate} busy={busy}/>} renderLesson={l=><LessonCard key={l.id} lesson={l} admin open={open} mutate={mutate} busy={busy}/>}/></div>;
     return <div className="schedule-layout schedule-single-view">{view==="create"&&<div className="class-session-mode" role="group" aria-label={t("排课方式")}><Button variant={scheduleMode==="one_to_one"?"default":"outline"} onClick={()=>setScheduleMode("one_to_one")}>{t("一对一课程")}</Button><Button variant={scheduleMode==="group"?"default":"outline"} onClick={()=>setScheduleMode("group")}>{t("整班课程")}</Button></div>}{view==="create"&&scheduleMode==="group"&&<GroupSessionPlanner mutate={mutate} busy={busy}/>}<section className="panel create-panel" hidden={view !== "create"||scheduleMode!=="one_to_one"}><h2>{t("一对一课程")}</h2>
         <form onSubmit={submit}>
             <label>{t("学生姓名")}<select required value={student} onChange={e => { setStudent(e.target.value); setKey(""); setReplacementFor("");setClassroomId(""); }}><option value="">{t("请选择")}</option>{(state?.students || []).map(n => <option key={n} value={n}>{n}</option>)}</select></label>
@@ -1027,14 +1039,14 @@ function Schedule({ state, lessons, mutate, open, busy, view }: {
             <p className="muted schedule-date-note">{t("开始和结束时间使用同一天日期。")}</p>
             <ConflictPreview enabled={Boolean(chosen && selectedClassId && startDate && startTime && endTime && startTime < endTime)} value={{ action: "create", student, subject: chosen?.subject, teacherName: chosen?.teacher,classroomId:selectedClassId, start: `${startDate}T${startTime}`, end: `${startDate}T${endTime}`, until }}/>
             <label>{t("课程类型")}<select value={kind} onChange={e => setKind(e.target.value)}><option value="regular">{t("常规课程")}</option><option value="extra">{t("临时加课")}</option><option value="makeup">{t("补课")}</option></select></label>
-            {kind === "makeup" && <label>{t("关联原课程")}<select required value={replacementFor} onChange={e => setReplacementFor(e.target.value)}><option value="">{t("请选择")}</option>{originals.map(l => <option key={l.id} value={l.id}>{day(l.plannedStart)} {time(l.plannedStart)} · {t(statusLabel[l.status] || l.status)}</option>)}</select></label>}
+            {kind === "makeup" && student&&chosen&&selectedClassId&&<MakeupOriginalPicker key={student+chosen.key+selectedClassId} student={student} subject={chosen.subject} value={replacementFor} onChange={setReplacementFor}/>}
             <label>{t("每周重复至（可留空）")}<input type="date" value={until} onChange={e => setUntil(e.target.value)}/></label>
             <Button adminGrant="lessons.create" disabled={busy || !chosen || !selectedClassId || classOptions===null} className="primary-full">{t("保存排课")}</Button>
         </form></section>
-        <GroupSessionBoard sessions={state?.classSessions||[]} requests={state?.classSessionRequests||[]} role={state?.account.role==="teacher"?"teacher":"admin"} mutate={mutate} busy={busy} month={state?.month} completionScope={'class-sessions-'+view} onAttendance={state?.account.role==="admin"?id=>{const lesson=lessons.find(l=>l.id===id);if(lesson)open({type:"attendance",lesson});}:undefined}/>
-        <section className="panel" hidden={view === "create"}><div className="section-head"><h2>{t("一对一课程")}</h2><span>{visible.length}{t(" 堂")}</span></div>
-            {view === "calendar" && <LessonCalendar lessons={lessons.filter(l => l.status !== "cancelled")} teachers={state?.teachers || []} proposals={state?.proposals || []} onSelect={id => { const lesson = lessons.find(l => l.id === id); if (lesson) open({ type: "edit", lesson }); }}/>}
-            {view === "list" && <><FilterPanel active={Boolean(filterTeacher || filterStudent || cancelled || completion!=="all")}><DirectoryFilters teachers={[...new Set(lessons.map(l => l.teacherName))].sort()} students={[...new Set(lessons.map(l => l.student))].sort()} teacher={filterTeacher} student={filterStudent} onTeacher={setFilterTeacher} onStudent={setFilterStudent}/><CourseCompletionFilter value={completion} onChange={setCompletion} testId="individual-course-completion-filter"/><Button variant="outline" size="sm" onClick={() => { setFilterTeacher(""); setFilterStudent(""); setCancelled(false);setCompletion("all"); }}>{t("重置筛选")}</Button><label className="check-row"><input type="checkbox" checked={cancelled} onChange={e => setCancelled(e.target.checked)}/>{t("查看已取消课程")}</label></FilterPanel><BulkDeleteTool kind="lesson" records={visible.map(l=>({id:l.id,label:l.student+" · "+l.subject+" · "+day(l.plannedStart)+" "+time(l.plannedStart)}))} mutate={mutate} busy={busy}/>{groups.map(name => <details className="directory-group" key={name} open={Boolean(filterTeacher || filterStudent || completion!=="all")}><summary>{name} <span>{visible.filter(l => l.teacherName === name).length}</span></summary><div className="lesson-stack">{visible.filter(l => l.teacherName === name).map(l => <LessonCard key={l.id} lesson={l} admin open={open} mutate={mutate} busy={busy}/>)}</div></details>)}{!visible.length && <p className="empty">{t("没有符合条件的记录")}</p>}</>}
+        {view==="create"&&<PagedGroupSessions role={state?.account.role==="teacher"?"teacher":"admin"} month={state?.month||""} mutate={mutate} busy={busy}/ >}
+        <section className="panel" hidden={view === "create"}>
+            {view === "calendar" && <LessonCalendar loading={calendarLoading} date={calendarDate} onDateChange={onCalendarDateChange} onRangeChange={onCalendarRangeChange} lessons={lessons.filter(l => l.status !== "cancelled")} teachers={state?.teachers || []} proposals={state?.proposals || []} onSelect={id => { const lesson = lessons.find(l => l.id === id); if (lesson) open({ type: "edit", lesson }); }}/>}
+
         </section>
     </div>;
 }

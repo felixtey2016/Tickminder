@@ -13,7 +13,7 @@ export function corePermissionKeys(action:string):string[] {
   const keys:Record<string,string>={
     createLocalAccount:'accounts.create',resetLocalPassword:'accounts.resetPassword',activateAccount:'accounts.activate',deleteAccount:'accounts.disable',restoreAccount:'accounts.restore',bind:'accounts.assign',
     saveStudent:'students.create',updateStudentProfile:'students.edit',create:'lessons.create',edit:'lessons.edit',cancel:'lessons.cancel',
-    attendance:'attendance.edit',review:'attendance.review',saveSessionAttendance:'attendance.edit',reviewSessionAttendance:'attendance.review',
+    attendance:'attendance.edit',review:'attendance.review',saveSessionAttendance:'attendance.edit',reviewSessionAttendance:'attendance.review',lockSessionAttendance:'attendance.review',unlockSessionAttendance:'attendance.review',
     proposeReschedule:'reschedules.create',respondReschedule:'reschedules.respond',
     createClassSession:'lessons.create',editClassSession:'lessons.edit',cancelClassSession:'lessons.cancel',proposeClassReschedule:'reschedules.create',respondClassReschedule:'reschedules.respond',updateClassSessionLink:'lessons.edit',
   };
