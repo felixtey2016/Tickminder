@@ -4,6 +4,27 @@ const entries:Record<string,[string,string]>={
  ,descriptionRequired:['请填写支出说明','Enter an expense description'],adjustHint:['调整会另行留档，不改写原薪资。请填写金额和原因。','The adjustment is recorded separately and retains the original pay. Enter its amount and reason.'],upcomingClasses:['课程未完成','Upcoming session'],upcomingHint:['该月仍有未完成课程，可先查看草稿，课程完成后确认薪资。','This month still has unfinished sessions. Keep the draft and confirm pay once the sessions are complete.'],loadMore:['显示更多','Show more'],inactive:['已停用','Inactive'],moreTeachers:['载入更多老师','Load more teachers'],hour:['小时','hour'],void:['已作废','Void'],metricUnavailable:['此项暂不适用或没有查看权限','Not applicable or not available with your permissions'],pagination:['记录分页','Record pages'],draftAmountHint:['草稿金额需先核对课次和时薪，请打开记录查看。','Review the sessions and rates in the draft before confirming its amount.'],cashSurplusHint:['现金结余 = 净收款 − 已登记发薪 − 其他支出；不代表利润。','Cash surplus = net receipts − recorded pay disbursements − other expenses. It is not profit.'],serviceHint:['按上课月份查看收入归属与课时薪资；收款和退款仍对应这些账单。','View invoices and teaching pay attributed to the service month. Receipts and refunds relate to those invoices.'],issuedHint:['按开单月份查看账单与关联收款。薪资和支出没有开单归属，本口径留空。','View invoices and related receipts for the issue month. Pay and expenses have no invoice issue basis and are left blank.'],paymentReversals:['收款撤销','Payment reversals'],expenseRecord:['支出登记','Expense recorded'],allMonthExport:['CSV 将下载所选月份的全部老师记录。','CSV includes all teachers in the selected month.']
 };
 Object.assign(entries,{downloading:['正在下载…','Downloading…'],invoiceIssued:['已开单','Issued'],invoiceUnpaid:['未付款','Unpaid'],invoicePartPaid:['部分付款','Partly paid'],unbilledStatus:['未开单','Not invoiced'],teachersFailed:['老师名单暂时无法加载','The teacher list could not be loaded'],sessionDetails:['课次明细','Session details'],sessions:['堂课','sessions']});
+Object.assign(entries,{
+ earnedDraftAmount:['已核算课时薪资','Calculated teaching pay'],
+ calculatedSessions:['已核算课次','Calculated sessions'],
+ projectedDraftAmount:['未完成课程预计薪资','Estimated pay for unfinished sessions'],
+ forecastDraftAmount:['草稿预计总额','Estimated draft total'],
+ knownDraftAmount:['可核算部分暂计总额','Total for calculable sessions'],
+ draftAmountHint:['草稿包含已核算薪资及未完成课程的预计金额，确认前仍可更新。','The draft includes calculated pay and estimates for unfinished sessions. Refresh it before confirmation.'],
+ draftForecastHint:['未完成课程按排课时长及上课当天适用的时薪预估；正式确认仍按已确认授课情况计算。','Unfinished sessions are estimated from scheduled time and the rate effective on the lesson date. Confirmation uses confirmed teaching records.'],
+ draftLineHint:['标注「预计」的课次尚未完成或待确认，预计金额仅供查看草稿。','Sessions marked “Estimated” are unfinished or unconfirmed. Their estimates are for draft review.'],
+ unestimatedSessions:['另有 {count} 堂课暂不能估价，暂计总额不包含这些课次。请核对时薪或授课资料。','Another {count} sessions cannot yet be estimated and are excluded from the provisional total. Review their rates or teaching records.'],
+ teachingOrPlannedTime:['实际／预计时长','Actual / estimated time'],
+ estimated:['预计','Estimated'],needsReview:['待核对','Needs review'],
+ notGenerated:['未生成草稿','Draft not created'],
+ notGeneratedHint:['本月有课程，尚未生成薪资草稿。','There are sessions this month, but no pay draft has been created.'],
+ scheduledReference:['（排课参考）','(scheduled reference)'],
+ payrollListHint:['显示本月有课次的老师，以及本月已有薪资记录。','Includes teachers with sessions or pay records in the selected month.'],
+ chooseDraftTeacherHint:['选择一位老师，为当前月份生成或打开薪资草稿。','Choose a teacher to create or open the pay draft for the selected month.'],
+ missingTeacherRoster:['不在老师名单中','Missing from teacher roster'],
+ restoreTeacherHint:['此老师仍有历史课次，但不在老师名单中。请先在「人员与账号」恢复老师资料，再生成草稿或设置时薪。','This teacher has historical sessions but is missing from the teacher roster. Restore the teacher under People & accounts before creating a draft or setting rates.'],
+ upcomingHint:['该月仍有未完成课程，草稿已包含其预计薪资；课程完成后才可正式确认。','This month has unfinished sessions. Their estimated pay is included in the draft; confirm pay after the sessions are complete.'],
+});
 const errors:Record<string,string>={
  '没有权限查看或修改老师薪资':'You do not have permission to view or change teacher pay.',
  '薪资版本无效，请刷新后重试':'The pay revision is invalid. Refresh and try again.',

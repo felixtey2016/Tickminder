@@ -5,3 +5,4 @@
 .finance2-spaced-actions{margin-top:20px}.finance2-line-warning{display:block;margin-top:6px;color:#8a5b19}.finance2-kpis{margin:0}.finance2-kpi .finance2-muted{margin:0}
 
 .finance2-dialog{position:fixed;inset:0;margin:auto}.finance2-kpis+.finance2-actions{margin-top:20px}.finance2-filters+.finance2-muted{margin-top:16px}.finance2-muted+.finance2-muted{margin-top:10px}
+.finance2-payroll-estimate{display:block;margin-top:6px;color:#71697d;font-size:.82rem}.finance2-badge[data-status=not_generated]{background:#f3f1f5;color:#6b6179}.finance2-record .finance2-payroll-draft-values>div:last-child{padding-top:12px;border-top:1px solid #e5dfed;font-weight:700}.finance2-notice.finance2-spaced-actions{margin-top:20px}.finance2-table-wrap:has(.finance2-table){margin-top:16px}
