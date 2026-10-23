@@ -147,7 +147,7 @@ await section('catalog exposes implemented finance actions and denies reserved o
   assert.deepEqual(permission.normalizeAdminGrants(['invoices.adjust']),['invoices.view','invoices.adjust','payments.view']);
   assert.deepEqual(data.catalog.find(module=>module.id==='materials').supportedActions,['view']);
   assert.deepEqual(data.catalog.find(module=>module.id==='finance').supportedActions,['view']);
-  assert.deepEqual(data.catalog.find(module=>module.id==='payroll').supportedActions,['view','rates','edit','confirm','pay','reverse']);
+  assert.deepEqual(data.catalog.find(module=>module.id==='payroll').supportedActions,['view','rates','edit','delete','confirm','pay','reverse']);
   assert.deepEqual(data.catalog.find(module=>module.id==='expenses').supportedActions,['view','record','reverse']);
   assert.deepEqual(data.catalog.find(module=>module.id==='exports').supportedActions,['view','finance']);
   for(const key of ['materials.create','materials.edit','homework.create','homework.edit','homework.grade','finance.edit','invoices.delete','payments.delete','payments.*','adminIdentity.assign','groups.edit','backup.export','futureWidget.view','*','lessons.*','*.view','LESSONS.view','lessons.view ']){

@@ -16,6 +16,7 @@ const recordingContactTables = ["whatsapp_contacts","whatsapp_challenges","whats
 const quizUpgradeTables = ["quiz_publications","quiz_publication_reports","quiz_publication_appeals","quiz_moderation_events","quiz_moderation_operations","quiz_question_sources"] as const;
 const invoiceFinanceTables = ["invoice_finance_accounts","invoice_finance_operations","invoice_payments","invoice_receipt_sequences","invoice_receipts","invoice_finance_events","invoice_attendance_corrections"] as const;
 const financeRound2Tables = ["payroll_teachers","payroll_rate_scopes","payroll_rate_versions","payroll_runs","payroll_operations","payroll_events","finance_expense_operations","finance_expenses","finance_expense_events"] as const;
+const classPayrollTables = ["payroll_legacy_rate_links","payroll_monthly_reviews","payroll_deleted_drafts"] as const;
 const noStore = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" };
 
 async function authorized(request: Request): Promise<boolean> {
@@ -148,6 +149,12 @@ export async function GET(request: Request) {
     if(round2Schema?.n&&round2Schema.n!==financeRound2Tables.length)throw new Error('Incomplete teacher pay or expense schema');
     const hasFinanceRound2=round2Schema?.n===financeRound2Tables.length;
     if(hasFinanceRound2){if(!hasInvoiceFinance)throw new Error('Teacher pay and expense foundation missing');(names as string[]).push(...financeRound2Tables);}
+    const classPayrollSchema=await db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name IN ("+classPayrollTables.map(()=>'?').join(',')+")").bind(...classPayrollTables).first<{n:number}>();
+    if(classPayrollSchema?.n&&classPayrollSchema.n!==classPayrollTables.length)throw new Error('Incomplete classroom payroll schema');
+    const hasClassPayroll=classPayrollSchema?.n===classPayrollTables.length;
+    const payrollRateColumns=hasFinanceRound2?(await db.prepare('PRAGMA table_info(payroll_rate_versions)').all<{name:string}>()).results.map(item=>item.name):[];
+    if(hasClassPayroll!==payrollRateColumns.includes('mode'))throw new Error('Classroom payroll rate schema mismatch');
+    if(hasClassPayroll){if(!hasFinanceRound2)throw new Error('Classroom payroll foundation missing');(names as string[]).push(...classPayrollTables);}
     const externalSchema=(await db.prepare("SELECT name,type,sql FROM sqlite_master WHERE tbl_name IN ("+EXTERNAL_BOT_TABLES.map(()=>'?').join(',')+") AND sql IS NOT NULL ORDER BY type,name").bind(...EXTERNAL_BOT_TABLES).all<ExternalSchemaObject>()).results||[];
     const externalNames=externalSchema.filter(item=>item.type==='table').map(item=>item.name);
     const externalHashes=Object.fromEntries(await Promise.all(externalSchema.map(async item=>[item.name,Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(item.sql))),b=>b.toString(16).padStart(2,'0')).join('')])));
@@ -164,7 +171,7 @@ export async function GET(request: Request) {
     if(hasQuizUpgrade&&!tables.quizzes.columns.includes('public_blocked_at'))throw new Error('Quiz library upgrade lacks moderation state');
     const contents=await db.batch<Record<string,unknown>>(names.map(name=>db.prepare(`SELECT * FROM "${name}"`)));
     names.forEach((name,index)=>{tables[name].rows=contents[index].results;});
-    return Response.json({ format: hasFinanceRound2 ? "timelyo-d1-v26" : hasInvoiceFinance ? "timelyo-d1-v25" : hasQuizUpgrade ? "timelyo-d1-v24" : hasRecordingsAndContacts ? "timelyo-d1-v23" : hasInvoices ? "timelyo-d1-v22" : hasAdminPermissions ? "timelyo-d1-v21" : hasBilling ? "timelyo-d1-v20" : hasAcademicCatalogues && tables.quiz_practice_attempts.columns.includes("discarded_at") ? "timelyo-d1-v19" : hasAcademicCatalogues ? "timelyo-d1-v18" : hasFormalPractice ? "timelyo-d1-v17" : hasPractice ? "timelyo-d1-v16" : hasQuizzes ? "timelyo-d1-v15" : hasClassSessions&&tables.class_sessions.columns.includes("teaching_status") ? "timelyo-d1-v14" : hasClassSessions ? "timelyo-d1-v13" : hasReview ? "timelyo-d1-v12" : hasVersions ? "timelyo-d1-v11" : hasFolders ? "timelyo-d1-v10" : hasGroups ? "timelyo-d1-v9" : hasInbox ? "timelyo-d1-v8" : hasNotifications ? "timelyo-d1-v7" : tables.accounts.columns.includes("pending_expires_at") ? "timelyo-d1-v6" : tables.reschedule_requests.columns.includes("requested_role") ? "timelyo-d1-v5" : hasTerms ? "timelyo-d1-v4" : hasIdentities ? "timelyo-d1-v3" : hasClassrooms ? "timelyo-d1-v2" : "timelyo-d1-v1", tables,...external.names.length?{externalSchema}:{} }, { headers: noStore });
+    return Response.json({ format: hasClassPayroll ? "timelyo-d1-v27" : hasFinanceRound2 ? "timelyo-d1-v26" : hasInvoiceFinance ? "timelyo-d1-v25" : hasQuizUpgrade ? "timelyo-d1-v24" : hasRecordingsAndContacts ? "timelyo-d1-v23" : hasInvoices ? "timelyo-d1-v22" : hasAdminPermissions ? "timelyo-d1-v21" : hasBilling ? "timelyo-d1-v20" : hasAcademicCatalogues && tables.quiz_practice_attempts.columns.includes("discarded_at") ? "timelyo-d1-v19" : hasAcademicCatalogues ? "timelyo-d1-v18" : hasFormalPractice ? "timelyo-d1-v17" : hasPractice ? "timelyo-d1-v16" : hasQuizzes ? "timelyo-d1-v15" : hasClassSessions&&tables.class_sessions.columns.includes("teaching_status") ? "timelyo-d1-v14" : hasClassSessions ? "timelyo-d1-v13" : hasReview ? "timelyo-d1-v12" : hasVersions ? "timelyo-d1-v11" : hasFolders ? "timelyo-d1-v10" : hasGroups ? "timelyo-d1-v9" : hasInbox ? "timelyo-d1-v8" : hasNotifications ? "timelyo-d1-v7" : tables.accounts.columns.includes("pending_expires_at") ? "timelyo-d1-v6" : tables.reschedule_requests.columns.includes("requested_role") ? "timelyo-d1-v5" : hasTerms ? "timelyo-d1-v4" : hasIdentities ? "timelyo-d1-v3" : hasClassrooms ? "timelyo-d1-v2" : "timelyo-d1-v1", tables,...external.names.length?{externalSchema}:{} }, { headers: noStore });
   } catch {
     return Response.json({ error: "Backup export unavailable" }, { status: 503, headers: noStore });
   }

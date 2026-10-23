@@ -28,7 +28,7 @@ const currentModules = [
   { id: "invoices", actions: ["view", "create", "edit", "issue", "adjust", "void"] },
   { id: "payments", actions: ["view", "record", "reverse", "refund"] },
   { id: "finance", actions: ["view"] },
-  { id: "payroll", actions: ["view", "rates", "edit", "confirm", "pay", "reverse"] },
+  { id: "payroll", actions: ["view", "rates", "edit", "delete", "confirm", "pay", "reverse"] },
   { id: "expenses", actions: ["view", "record", "reverse"] },
   { id: "exports", actions: ["view", "finance"] },
 ] as const;

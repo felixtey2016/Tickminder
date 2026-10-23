@@ -9,8 +9,8 @@ import { getLanguage } from "@/lib/i18n";
 import { useFilterPreference } from "@/lib/filter-preferences";
 import { BulkDeleteTool } from "./bulk-delete";
 import { TermManager, TermSelect, type Term } from "./term-manager";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { BookOpen, CalendarDays, ChevronDown, FileText, Megaphone, Plus, Settings2, Users, Film } from "lucide-react";
+import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState } from "react";
+import { BookOpen, CalendarDays, ChevronDown, FileText, Megaphone, Plus, Settings2, Users, Film, Banknote } from "lucide-react";
 import {RecordingsWorkspace} from "./recordings-workspace";
 import {ClassroomSchedule} from "./classroom-schedule";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,8 @@ import { AdminLearning } from "./admin-learning";
 import { FolderWorkspace } from "./folder-workspace";
 import { DeleteButton, DirectoryFilters } from "./directory-tools";
 import {useAcademicCatalogue} from '@/lib/use-academic-catalogue';
+import {F2} from '@/lib/finance-round2-i18n';
+const ClassroomPayrollSettings=lazy(()=>import('./classroom-payroll-settings'));
 
 export type Classroom = {
   id: string; title: string; description: string | null; subject: string;
@@ -30,7 +32,7 @@ export type Classroom = {
 };
 type ClassMutate = (body: Record<string, unknown>) => Promise<{ ok: boolean; id?: string }>;
 type Role = "admin" | "teacher" | "student";
-type ClassroomTab = "announcements" | "schedule" | "materials" | "recordings" | "homework" | "members";
+type ClassroomTab = "announcements" | "schedule" | "materials" | "recordings" | "homework" | "members" | "payroll";
 type Plan = { student: string; subject: string; subjectId?:string|null;syllabusId?:string;grade?:string|null;teacherName: string; active: boolean };
 
 const dateLabel = (iso: string) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
@@ -122,7 +124,7 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
     if (result.ok) { setAnnouncementId(""); setAnnouncementTitle(""); setAnnouncementBody(""); setPinned(false); }
   }
   const canManage = role !== "student";
-  const classTabs = ([{ id: "announcements", Icon: Megaphone, label: "公告" }, { id: "schedule", Icon: CalendarDays, label: "课程安排" }, { id: "materials", Icon: FileText, label: "教学资料" }, { id: "recordings", Icon: Film, label: "课堂录影" }, { id: "homework", Icon: BookOpen, label: "功课" }, ...(canManage ? [{ id: "members", Icon: Users, label: "学生名单" } as const] : [])] as const).filter(item=>can(item.id==="announcements"?"announcements.view":item.id==="schedule"?"lessons.view":item.id==="materials"?"materials.view":item.id==="recordings"?"recordings.view":item.id==="homework"?"homework.view":"classrooms.view"));
+  const classTabs = ([{ id: "announcements", Icon: Megaphone, label: "公告" }, { id: "schedule", Icon: CalendarDays, label: "课程安排" }, { id: "materials", Icon: FileText, label: "教学资料" }, { id: "recordings", Icon: Film, label: "课堂录影" }, { id: "homework", Icon: BookOpen, label: "功课" }, ...(canManage ? [{ id: "members", Icon: Users, label: "学生名单" } as const] : []), ...(role === "admin" && can("payroll.view") ? [{id:"payroll",Icon:Banknote,label:"老师报酬"} as const] : [])] as const).filter(item=>can(item.id==="announcements"?"announcements.view":item.id==="schedule"?"lessons.view":item.id==="materials"?"materials.view":item.id==="recordings"?"recordings.view":item.id==="homework"?"homework.view":item.id==="payroll"?"payroll.view":"classrooms.view"));
   useEffect(()=>{if(!classTabs.some(item=>item.id===tab)&&classTabs[0])setTab(classTabs[0].id);},[tab,classTabs.map(item=>item.id).join(",")]);
   const pick = (item: Classroom) => { setSelectedId(item.id); setDirectoryOpen(false); setCreating(false); setTab("announcements"); setAnnouncementId(""); setAnnouncementTitle(""); setAnnouncementBody(""); setPinned(false); focusClassroomContent(); };
   const classButtons = (items: Classroom[]) => <div className="classroom-chips">{items.map(item => <button type="button" key={item.id} className={selected?.id === item.id && !creating ? "selected" : ""} onClick={() => pick(item)}><strong>{item.title}</strong><span>{catalogue?.syllabuses.find(s=>s.id===item.syllabusId)?.name||item.syllabusId||t('课程体系待补充')} · {item.grade||t('年级待补充')} · {item.subject} · {item.teacherName} · {terms.find(term=>term.id===item.termId)?.name || t("未指定学期")}{item.archived ? ` · ${t("已封存")}` : ""}</span></button>)}</div>;
@@ -164,7 +166,7 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
         const nextTab = classTabs[nextIndex].id;
         setTab(nextTab); tabButtons.current[nextTab]?.focus({ preventScroll: true });
       }}>
-        {classTabs.map(item => <button key={item.id} ref={node => { tabButtons.current[item.id] = node; }} id={`${tabListId}-${item.id}`} type="button" role="tab" aria-selected={tab === item.id} aria-controls={`${tabListId}-panel`} tabIndex={tab === item.id ? 0 : -1} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}><item.Icon size={17}/>{t(item.label)}</button>)}
+        {classTabs.map(item => <button key={item.id} ref={node => { tabButtons.current[item.id] = node; }} id={`${tabListId}-${item.id}`} type="button" role="tab" aria-selected={tab === item.id} aria-controls={`${tabListId}-panel`} tabIndex={tab === item.id ? 0 : -1} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}><item.Icon size={17}/>{item.id==="payroll"?F2('classroomPay'):t(item.label)}</button>)}
       </div>
       <div id={`${tabListId}-panel`} className="classroom-content-panel" role="tabpanel" aria-labelledby={`${tabListId}-${tab}`} tabIndex={0}>
       {tab === "announcements" && can("announcements.view") && <section className="panel classroom-announcements-panel"><h2>{t("班级公告")}</h2>
@@ -173,6 +175,7 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
       </section>}
       {tab === "schedule" && can("lessons.view") && <ClassroomSchedule key={selected.id} classroomId={selected.id} onCalendar={onCalendar} canAddRecording={canManage&&!selected.archived&&can("recordings.create")}/>}
       {tab === "recordings" && can("recordings.view") && <RecordingsWorkspace key={selected.id} classroomId={selected.id}/>}
+      {tab === "payroll" && role === "admin" && can("payroll.view") && <Suspense fallback={<p role="status">{F2('loading')}</p>}><ClassroomPayrollSettings key={selected.id} classroomId={selected.id} canEdit={can("payroll.rates")}/></Suspense>}
       {tab === "members" && canManage && <section className="panel"><h2>{t("班级成员")} · {selected.members?.length || 0}</h2><div className="classroom-member-list">{selected.members?.map(name => <span key={name}>{name}</span>)}</div><p className="muted">{t("移出班级后，该学生不能再查看班级内容；已有提交记录会保留。")}</p></section>}
       {(tab === "materials"&&can("materials.view")) || (tab === "homework"&&can("homework.view")) ? !learningReady ? <PageState kind={learningError ? "error" : "loading"} title={learningError ? "页面加载失败" : "正在加载…"} description={learningError} action={learningError ? "重试" : undefined} onAction={() => { void loadLearning?.(true); }}/> : <FolderWorkspace key={selected.id} classroom={selected} role={role} learning={classLearning} view={tab} onChanged={()=>loadLearning?.(true)}>{(filtered,folderId,materials)=>role === "teacher" ? <TeacherLearning key={selected.id+":"+folderId+":"+tab} learning={filtered} mutate={learningMutate} busy={busy} view={tab} classroom={{id:selected.id,subject:selected.subject,members:selected.members||[]}} folderId={folderId} readOnly={Boolean(selected.archived)} availableMaterials={materials} onChanged={()=>loadLearning?.(true)}/> : role === "student" ? <StudentLearning key={folderId+":"+tab} learning={filtered} mutate={learningMutate} busy={busy} onPlan={onCalendar} onCalendar={onCalendar} view={tab}/> : <AdminLearning key={folderId+":"+tab} learning={filtered} view={tab} inClassroom/>}</FolderWorkspace> : null}
       </div>

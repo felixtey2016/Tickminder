@@ -6,3 +6,7 @@
 
 .finance2-dialog{position:fixed;inset:0;margin:auto}.finance2-kpis+.finance2-actions{margin-top:20px}.finance2-filters+.finance2-muted{margin-top:16px}.finance2-muted+.finance2-muted{margin-top:10px}
 .finance2-payroll-estimate{display:block;margin-top:6px;color:#71697d;font-size:.82rem}.finance2-badge[data-status=not_generated]{background:#f3f1f5;color:#6b6179}.finance2-record .finance2-payroll-draft-values>div:last-child{padding-top:12px;border-top:1px solid #e5dfed;font-weight:700}.finance2-notice.finance2-spaced-actions{margin-top:20px}.finance2-table-wrap:has(.finance2-table){margin-top:16px}
+
+.finance2-workspace .finance2-danger-button,.finance2-dialog .finance2-danger-button{background:#b42318;color:#fff;border:1px solid #b42318}.finance2-workspace .finance2-danger-button:hover:not(:disabled),.finance2-dialog .finance2-danger-button:hover:not(:disabled){background:#912018;border-color:#912018}.finance2-danger-button:focus-visible{outline:3px solid #f4c2bd;outline-offset:3px}
+
+.finance2-payroll-form{display:grid;gap:20px}.finance2-payroll-form fieldset{border:0;padding:0;margin:0;min-width:0}.finance2-payroll-form p{margin:0}.classroom-payroll-settings .finance2-section-head{align-items:flex-start}.classroom-payroll-settings .finance2-notice{margin-bottom:0}.classroom-payroll-settings .finance2-muted{margin-top:16px}.classroom-payroll-settings{max-width:100%}

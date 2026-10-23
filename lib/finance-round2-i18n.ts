@@ -25,6 +25,30 @@ Object.assign(entries,{
  restoreTeacherHint:['此老师仍有历史课次，但不在老师名单中。请先在「人员与账号」恢复老师资料，再生成草稿或设置时薪。','This teacher has historical sessions but is missing from the teacher roster. Restore the teacher under People & accounts before creating a draft or setting rates.'],
  upcomingHint:['该月仍有未完成课程，草稿已包含其预计薪资；课程完成后才可正式确认。','This month has unfinished sessions. Their estimated pay is included in the draft; confirm pay after the sessions are complete.'],
 });
+Object.assign(entries,{
+ deleteDraft:['删除薪资草稿','Delete pay draft'],confirmDeleteDraft:['确认删除草稿','Delete draft'],draftDeleted:['薪资草稿已删除','Pay draft deleted'],
+ deleteDraftHint:['删除后可重新生成该老师本月的薪资草稿。老师费率、课程和考勤记录会保留；已确认薪资不可删除。','You can create another pay draft for this teacher and month. Rates, sessions and attendance are retained. Confirmed pay cannot be deleted.'],
+ classroomPay:['老师报酬','Teacher remuneration'],classroomPayHint:['在班级设置老师报酬，财务按老师汇总核算。整班报酬只计算一次，不乘学生人数。','Set the teacher’s remuneration in the classroom. Finance summarises it by teacher. A classroom is counted once, regardless of student numbers.'],
+});
+Object.assign(entries,{
+ legacyDefaultRate:['历史默认时薪','Historical default hourly rate'],payMode:['计薪方式','Pay basis'],payByHour:['按小时','Per hour'],payByLesson:['按堂','Per session'],payByMonth:['固定月报酬','Fixed monthly pay'],lessonUnit:['堂','session'],monthUnit:['月','month'],lessonRate:['每堂报酬（MYR）','Pay per session (MYR)'],monthlyRate:['每月报酬（MYR）','Monthly pay (MYR)'],saveClassRate:['保存班级报酬','Save classroom pay'],
+ classRateHint:['每个班级单独保存费率及生效日期。新费率不会改写已确认薪资；老师默认时薪仅作新设置的预填建议。','Each classroom retains its own rate and effective date. New rates do not rewrite confirmed pay. A historical default rate is only a suggestion for a new setting.'],
+ prefillRateHint:['金额根据老师历史默认时薪预填。请核对后保存为本班的独立费率，之后不随默认时薪变化。','This suggestion comes from the teacher’s historical default hourly rate. Review and save it as this classroom’s own rate. Later default-rate changes will not change it.'],
+ monthlyPayHint:['按班级约定月报酬计算。月中开班、停班、换老师或费率改变时，会在薪资草稿中要求核对整月金额或填写调整金额及原因。','Uses the agreed monthly pay for this classroom. Mid-month starts, suspensions, teacher changes or rate changes require review in the pay draft. Confirm a full month or record an adjusted amount and reason.'],
+ lessonPayHint:['每堂已确认授课计一次报酬，不受上课学生人数影响。未完成课次会在草稿中列为预计。','Each confirmed session is counted once, regardless of student numbers. Unfinished sessions appear as estimates in the draft.'],
+ hourlyPayHint:['根据老师已确认授课时长按分钟比例计算，每堂金额四舍五入到分。未完成课程先按排课时长预估。','Calculated proportionally by teaching minute, rounded to cents per session. Unfinished sessions use scheduled time as an estimate.'],
+ payRatesReadOnly:['你可以查看班级报酬及费率历史。修改需要老师薪资费率权限。','You can view classroom pay and rate history. Changes require the teacher pay rate permission.'],
+ classTeacherMissing:['该班老师不在老师名单中。请先在「人员与账号」恢复老师资料，再设置报酬。','This classroom’s teacher is missing from the teacher roster. Restore the teacher under People & accounts before setting pay.'],
+ noClassRates:['本班尚未保存独立报酬设置。请先核对计薪方式、金额和生效日期。','This classroom has no saved pay rate. Review the pay basis, amount and effective date.'],
+ rateHint:['报酬设置统一在「班级 → 老师报酬」管理。此处只查看费率历史；历史默认时薪会保留，不再作为新班级的自动计价设置。','Manage remuneration under Classroom → Teacher remuneration. This page shows rate history. Historical default rates are retained and are not automatically applied to new classrooms.'],
+ noRate:['未设置有效报酬','Effective pay rate not set'],missingRate:['有课次未设置有效报酬，请先在相应班级补齐费率。','Some sessions have no effective pay rate. Complete the rate settings in the relevant classroom first.'],rate:['报酬标准','Pay rate'],lineAmount:['金额','Amount'],
+});
+Object.assign(entries,{
+ reviewMonthlyPay:['核对月报酬','Review monthly pay'],reviewMonthlyHint:['确认本月按整月报酬支付，或填写调整后的本月金额及原因。核对结果会保留，已确认薪资不会自动改写。','Confirm the agreed full-month pay, or enter the reviewed amount and a reason. The review is retained and does not rewrite confirmed pay.'],agreedMonthlyAmount:['约定月报酬','Agreed monthly pay'],reviewedMonthlyAmount:['本月核算金额','Reviewed pay for this month'],estimatedMonthlyAmount:['本月预计金额','Estimated pay for this month'],monthlyReviewChoice:['本月处理方式','Pay for this month'],useFullMonthlyAmount:['采用整月约定金额','Use agreed full-month pay'],useAdjustedMonthlyAmount:['调整本月金额','Adjust this month’s pay'],confirmMonthlyReview:['保存月报酬核对','Save monthly review'],monthlyPayDetails:['班级月报酬明细','Classroom monthly pay'],monthlyLineHint:['每个班级的月报酬只在这里计算一次，课次明细用于核对授课情况。','Monthly pay is counted once per classroom here. Session details show the teaching records.'],monthlyExceptionHint:['本月有需要核对的班级或授课变动。请确认整月金额，或填写本月调整金额及原因。','This month has classroom or teaching changes to review. Confirm a full month or record the reviewed amount and reason.'],monthlyReviewSaved:['月报酬核对已保存，请核对最新薪资草稿','Monthly review saved. Review the updated pay draft.'],includedInMonthlyPay:['计入班级月报酬','Included in monthly pay'],perSession:['每堂','per session'],perHour:['每小时','per hour'],
+ earnedDraftAmount:['已核算薪资','Calculated pay'],
+ draftForecastHint:['未完成课程按班级计薪方式及生效费率预估；固定月报酬按班级单独列出。正式确认使用已确认授课记录及月报酬核对结果。','Unfinished sessions use the classroom’s pay basis and effective rate. Fixed monthly pay is listed once per classroom. Confirmation uses confirmed teaching records and reviewed monthly pay.'],
+ unestimatedSessions:['另有 {count} 项资料或月报酬待核对，暂计总额可能尚未完整。请核对班级费率、授课记录及月报酬。','Another {count} teaching or monthly pay items need review. The provisional total may be incomplete. Review classroom rates, teaching records and monthly pay.'],
+});
 const errors:Record<string,string>={
  '没有权限查看或修改老师薪资':'You do not have permission to view or change teacher pay.',
  '薪资版本无效，请刷新后重试':'The pay revision is invalid. Refresh and try again.',
