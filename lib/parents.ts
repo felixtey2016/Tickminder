@@ -1,4 +1,4 @@
-/** Parent-only projections deliberately exclude prices, scores, notes and class rosters. */
+/** Baseline parent teaching projections. Released grades and finance use separate authorized DTOs. */
 export class ParentsError extends Error {constructor(message:string,readonly status=400){super(message);}}
 export type ParentPage<T>={items:T[];page:number;pages:number;total:number;pageSize:20};
 export type ParentChild={studentId:string;student:string;syllabusName:string|null;grade:string|null};

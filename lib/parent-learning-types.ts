@@ -1,0 +1,9 @@
+import type {ParentChild,ParentPage} from './parents';
+export type ParentQuizGrade={id:string;title:string;subject:string;kind:'practice'|'quiz'|'homework';attemptNumber:number;submittedAt:string;score:number;totalScore:number;percentage:number|null;questionCount:number;answersReleased:boolean};
+export type ParentQuizGradePage=ParentPage<ParentQuizGrade>&{child:ParentChild;month:string};
+export type ParentQuizGradeDetail={child:ParentChild;result:ParentQuizGrade;feedback:{questionNumber:number;points:number|null;maxPoints:number;comment:string}[]};
+export type ParentHomeworkGrade={id:string;title:string;subject:string;dueAt:string;submittedAt:string;score:number|null;maxScore:number|null;scoredAt:string|null;feedbackCount:number};
+export type ParentHomeworkGradePage=ParentPage<ParentHomeworkGrade>&{child:ParentChild;month:string};
+export type ParentHomeworkGradeDetail={child:ParentChild;homework:ParentHomeworkGrade;feedback:{id:string;comment:string;createdAt:string;teacherName:string;fileUrl:string|null}[];feedbackPage:number;feedbackPages:number};
+export type ParentPerformanceMetrics={scheduledLessons:number;attendedLessons:number;absentLessons:number;pendingAttendance:number;cancelledLessons:number;teacherAbsentLessons:number;homeworkAssigned:number;homeworkSubmitted:number;homeworkScored:number;homeworkOverdue:number;quizCompleted:number;quizAveragePercent:number|null};
+export type ParentPerformance={child:ParentChild;month:string;summary:ParentPerformanceMetrics;subjects:(ParentPerformanceMetrics&{subject:string})[];page:number;pages:number;total:number;pageSize:20;capabilities:{syllabusProgress:false;selfStudyCompletion:false};basis:{timezone:'Asia/Singapore';attendance:'scheduled_month_personal_attendance';homework:'due_month_current_recipient';quiz:'published_final_attempts';quizAverage:'equal_weight_per_attempt'}};

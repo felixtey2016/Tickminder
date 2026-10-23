@@ -20,16 +20,16 @@ function parentIdentity(actor:Account):Predicate {
  const session=accountSessionPredicate(actor);
  return{sql:`EXISTS(SELECT 1 FROM accounts parent_actor JOIN tuition_groups parent_group ON parent_group.id=parent_actor.group_id WHERE parent_actor.id=? AND parent_actor.group_id=? AND parent_actor.role='parent' AND parent_actor.disabled_at IS NULL AND parent_group.active=1 AND NOT EXISTS(SELECT 1 FROM local_credentials c WHERE c.account_id=parent_actor.id AND c.must_change_password=1) AND ${session.sql})`,args:[actor.id,requireGroup(actor.groupId),...session.args]};
 }
-function childScope(actor:Account,studentId:string,student?:string):Predicate {
+export function childScope(actor:Account,studentId:string,student?:string):Predicate {
  const identity=parentIdentity(actor);
  return{sql:`${identity.sql} AND EXISTS(SELECT 1 FROM parent_child_links parent_link JOIN billing_students parent_student ON parent_student.group_id=parent_link.group_id AND parent_student.id=parent_link.student_id JOIN students parent_roster ON parent_roster.group_id=parent_student.group_id AND parent_roster.name=parent_student.student_name WHERE parent_link.group_id=? AND parent_link.parent_account_id=? AND parent_link.student_id=? AND parent_link.active=1 AND parent_roster.active=1 ${student===undefined?'':'AND parent_student.student_name=?'})`,args:[...identity.args,actor.groupId,actor.id,studentId,...student===undefined?[]:[student]]};
 }
-async function selectedChild(actor:Account,studentId:string):Promise<ParentChild>{
+export async function selectedChild(actor:Account,studentId:string):Promise<ParentChild>{
  const scope=childScope(actor,queryId(studentId));
  const child=await learningDb().prepare(`SELECT b.id AS studentId,b.student_name AS student,s.grade,coalesce((SELECT json_extract(syllabus.value,'$.name') FROM academic_catalogues menu JOIN json_each(menu.content_json,'$.syllabuses') syllabus WHERE menu.scope='student' AND json_extract(syllabus.value,'$.id')=s.syllabus_id LIMIT 1),s.syllabus_id) AS syllabusName FROM billing_students b JOIN students s ON s.group_id=b.group_id AND s.name=b.student_name WHERE b.group_id=? AND b.id=? AND ${scope.sql}`).bind(actor.groupId,studentId,...scope.args).first<ParentChild>();
  if(!child)throw new ParentsError('孩子关联已解除、已停用或没有查看权限',404);return child;
 }
-async function recheckChild(actor:Account,child:ParentChild){await assertPredicate(childScope(actor,child.studentId,child.student),404,'孩子关联已解除、已停用或没有查看权限');}
+export async function recheckChild(actor:Account,child:ParentChild){await assertPredicate(childScope(actor,child.studentId,child.student),404,'孩子关联已解除、已停用或没有查看权限');}
 export async function parentChildren(actor:Account,params:URLSearchParams){
  const identity=parentIdentity(actor),page=parentPage(params.get('page')),group=requireGroup(actor.groupId);
  await assertPredicate(identity);
@@ -37,7 +37,7 @@ export async function parentChildren(actor:Account,params:URLSearchParams){
  const count=await learningDb().prepare(`SELECT count(*) AS total FROM parent_child_links l JOIN billing_students b ON b.group_id=l.group_id AND b.id=l.student_id JOIN students s ON s.group_id=b.group_id AND s.name=b.student_name WHERE ${scope}`).bind(...args).first<{total:number}>();
  const children=(await learningDb().prepare(`SELECT b.id AS studentId,b.student_name AS student,s.grade,coalesce((SELECT json_extract(syllabus.value,'$.name') FROM academic_catalogues menu JOIN json_each(menu.content_json,'$.syllabuses') syllabus WHERE menu.scope='student' AND json_extract(syllabus.value,'$.id')=s.syllabus_id LIMIT 1),s.syllabus_id) AS syllabusName FROM parent_child_links l JOIN billing_students b ON b.group_id=l.group_id AND b.id=l.student_id JOIN students s ON s.group_id=b.group_id AND s.name=b.student_name WHERE ${scope} ORDER BY b.student_name,b.id LIMIT 20 OFFSET ?`).bind(...args,(page-1)*20).all<ParentChild>()).results||[];
  await assertPredicate({sql:`${identity.sql} AND (SELECT count(*) FROM json_each(?) selected_child WHERE EXISTS(SELECT 1 FROM parent_child_links current_link JOIN billing_students current_student ON current_student.group_id=current_link.group_id AND current_student.id=current_link.student_id JOIN students current_roster ON current_roster.group_id=current_student.group_id AND current_roster.name=current_student.student_name WHERE current_link.group_id=? AND current_link.parent_account_id=? AND current_link.active=1 AND current_roster.active=1 AND current_student.id=json_extract(selected_child.value,'$.studentId') AND current_student.student_name=json_extract(selected_child.value,'$.student')))=?`,args:[...identity.args,JSON.stringify(children.map(c=>({studentId:c.studentId,student:c.student}))),group,actor.id,children.length]});
- return{children,page,pages:Math.max(1,Math.ceil((count?.total||0)/20)),total:count?.total||0,pageSize:20,permissions:{readOnly:true,finance:false,grades:false}};
+ return{children,page,pages:Math.max(1,Math.ceil((count?.total||0)/20)),total:count?.total||0,pageSize:20,permissions:{readOnly:true,finance:'per_child',grades:true}};
 }
 async function managedParent(actor:Account,parentId:string,key:'parents.view'|'parents.manage'='parents.view'){
  const guard=await requireParentManagement(actor,key);
@@ -106,7 +106,7 @@ export async function saveParentLink(actor:Account,data:Record<string,unknown>){
  return result;
 }
 /** Apply exactly the child's current classroom and subject assignment, never a parent's identity. */
-function classroomAccess(alias:string){return`(${alias}.classroom_id IS NULL OR EXISTS(SELECT 1 FROM classroom_members cm JOIN classrooms c ON c.group_id=cm.group_id AND c.id=cm.classroom_id JOIN students s ON s.group_id=cm.group_id AND s.name=cm.student_name AND s.active=1 JOIN plans p ON p.group_id=cm.group_id AND p.student=cm.student_name AND p.teacher_name=c.teacher_name AND p.active=1 AND ${classPlanSubjectSql('p','c','s')} JOIN teachers t ON t.group_id=c.group_id AND t.name=c.teacher_name AND t.active=1 WHERE cm.group_id=${alias}.group_id AND cm.classroom_id=${alias}.classroom_id AND cm.student_name=?))`;}
+export function classroomAccess(alias:string){return`(${alias}.classroom_id IS NULL OR EXISTS(SELECT 1 FROM classroom_members cm JOIN classrooms c ON c.group_id=cm.group_id AND c.id=cm.classroom_id JOIN students s ON s.group_id=cm.group_id AND s.name=cm.student_name AND s.active=1 JOIN plans p ON p.group_id=cm.group_id AND p.student=cm.student_name AND p.teacher_name=c.teacher_name AND p.active=1 AND ${classPlanSubjectSql('p','c','s')} JOIN teachers t ON t.group_id=c.group_id AND t.name=c.teacher_name AND t.active=1 WHERE cm.group_id=${alias}.group_id AND cm.classroom_id=${alias}.classroom_id AND cm.student_name=?))`;}
 async function paged<T>(select:string,from:string,where:string,args:unknown[],page:number,order:string):Promise<ParentPage<T>>{
  const total=(await learningDb().prepare(`SELECT count(*) AS total ${from} WHERE ${where}`).bind(...args).first<{total:number}>())?.total||0;
  const items=(await learningDb().prepare(`SELECT ${select} ${from} WHERE ${where} ORDER BY ${order} LIMIT 20 OFFSET ?`).bind(...args,(page-1)*20).all<T>()).results||[];

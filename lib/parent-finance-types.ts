@@ -1,0 +1,10 @@
+import type {ParentChild,ParentPage} from './parents';
+export type ParentFinancialAccess={id:string|null;linkId:string;parentId:string;studentId:string;active:boolean;revision:number;linkRevision:number;updatedAt:string|null};
+export type ParentFinancialAccessResponse={access:ParentFinancialAccess;canManage:boolean;currentLinkRevision:number;linkActive:boolean};
+export type ParentInvoice={id:string;number:string;month:string;issuedAt:string;dueDate:string;totalCents:number;paidCents:number;remainingCents:number;creditBalanceCents:number;status:'unpaid'|'partially_paid'|'paid'|'void';lessonCount:number;durationSeconds:number;printUrl:string};
+export type ParentFinanceEvent={kind:string;amountCents:number;occurredAt:string;method:string};
+export type ParentPayment={id:string;receiptId:string;number:string;amountCents:number;paidAt:string;method:string;reference:string;reversedAt:string|null;refundedCents:number;printUrl:string};
+export type ParentInvoiceList=ParentPage<ParentInvoice>&{child:ParentChild;authorized:boolean;totals:{remainingCents:number;paidCents:number;overdueCents:number;currency:'MYR'}|null};
+export type ParentInvoiceDetail={child:ParentChild;invoice:ParentInvoice;lines:{subject:string;lessonCount:number;durationSeconds:number;amountCents:number}[];payments:ParentPayment[];events:ParentFinanceEvent[];paymentPage:number;paymentPages:number;paymentTotal:number;page:number;pages:number;total:number;printUrl:string};
+export type ParentPrepaymentRequest={id:string;number:string;month:string;issuedAt:string;dueDate:string;totalCents:number;lessonCount:number;status:'issued'|'void';printUrl:string};
+export type ParentPrepayments={child:ParentChild;authorized:boolean;balanceCents:number|null;items:ParentPrepaymentRequest[];payments:ParentPayment[];events:ParentFinanceEvent[];page:number;pages:number;total:number;paymentPage:number;paymentPages:number;paymentTotal:number;eventPage:number;eventPages:number;eventTotal:number};

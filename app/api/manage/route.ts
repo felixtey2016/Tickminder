@@ -46,6 +46,8 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
       statements.push(accountAuthorityGuard(actor,id,authority));
       const linksSql="SELECT coalesce(json_group_array(json(item)),'[]') AS snapshot FROM(SELECT json_object('id',id,'studentId',student_id,'active',active,'revision',revision,'updatedBy',updated_by,'updatedAt',updated_at,'operationId',operation_id,'reason',reason) item FROM parent_child_links WHERE group_id=? AND parent_account_id=? ORDER BY id)",linkState=await raw.prepare(linksSql).bind(groupId,id).first<{snapshot:string}>();
       statements.push(authorityGuard({sql:'('+linksSql+')=?',args:[groupId,id,linkState?.snapshot||'[]']}));
+      const financialSql="SELECT coalesce(json_group_array(json(item)),'[]') AS snapshot FROM(SELECT json_object('id',id,'linkId',link_id,'active',active,'revision',revision,'linkRevision',link_revision,'updatedBy',updated_by,'updatedAt',updated_at,'operationId',operation_id,'reason',reason) item FROM parent_financial_access WHERE group_id=? AND parent_account_id=? ORDER BY id)",financialState=await raw.prepare(financialSql).bind(groupId,id).first<{snapshot:string}>();
+      statements.push(authorityGuard({sql:'('+financialSql+')=?',args:[groupId,id,financialState?.snapshot||'[]']}));
       if (await hasQuizAccountHistory(id)) throw new DeleteError("account.quizHistoryDeleteBlocked");
       if(await first("SELECT 1 FROM class_recordings WHERE created_by=? LIMIT 1",id))throw new DeleteError("此账号仍拥有课堂录影，请先处理这些录影后再永久删除");
       if (await first("SELECT 1 AS found FROM teaching_materials WHERE owner_id = ? UNION SELECT 1 FROM homework WHERE owner_id = ? LIMIT 1", id, id)) throw new DeleteError("此账号仍拥有教学资料或功课，请先处理这些资料后再永久删除");
@@ -54,6 +56,7 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
       for (const table of ["push_subscriptions", "sessions", "local_credentials", "google_identities"]) statements.push(db.prepare(`DELETE FROM ${table} WHERE account_id = ?`).bind(id));
       for (const table of ["site_notifications","notification_items","assignments","study_blocks"]) statements.push(db.prepare(`DELETE FROM ${table} WHERE account_id = ? AND group_id = ?`).bind(id,groupId));
       if (local) statements.push(db.prepare("DELETE FROM login_attempts WHERE username = ?").bind(local.username));
+      statements.push(db.prepare("DELETE FROM parent_financial_access WHERE parent_account_id=? AND group_id=?").bind(id,groupId));
       statements.push(db.prepare("DELETE FROM parent_child_links WHERE parent_account_id=? AND group_id=?").bind(id,groupId));
       statements.push(db.prepare("DELETE FROM accounts WHERE (id = ?) AND group_id = ?").bind(id,groupId));
     } else if (kind === "teacher" || kind === "student") {

@@ -7,6 +7,7 @@ import {usePageHistoryState} from '@/lib/page-history';
 import {t,type Language,registerTranslations} from '@/lib/i18n';
 import {BRAND_NAME} from '@/lib/brand';
 import './parent-shell.css';
+import '@/lib/parent30-i18n';
 const ParentsWorkspace=lazy(()=>import('./parents-workspace'));
 const AccountSettings=lazy(()=>import('./account-settings').then(m=>({default:m.AccountSettings})));
 registerTranslations({'家长':'家长','我的孩子':'我的孩子','家长工作台':'家长工作台'},{'家长':'Parent','我的孩子':'My children','家长工作台':'Parent portal'});
