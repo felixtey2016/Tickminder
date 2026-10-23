@@ -51,6 +51,7 @@ function needsHomeScreen() {
 function applicationKey(key:string) {const raw=atob(key.replace(/-/g,"+").replace(/_/g,"/"));return Uint8Array.from(raw,c=>c.charCodeAt(0));}
 type ContextValue={state:State|null;loadError:string;deviceId:string|null;enabled:boolean;busy:boolean;enable:()=>Promise<void>;disable:()=>Promise<void>;test:()=>Promise<void>;refresh:()=>Promise<void>;read:(id?:string)=>Promise<void>;showHelp:()=>void};
 const Context=createContext<ContextValue|null>(null);
+export function useNotificationControls(){return useContext(Context);}
 
 export function MenuBadge({count=0,includeUnread=false,quizOnly=false,header=false}:{count?:number;includeUnread?:boolean;quizOnly?:boolean;header?:boolean}) {
   const context=useContext(Context);
@@ -61,7 +62,7 @@ export function MenuBadge({count=0,includeUnread=false,quizOnly=false,header=fal
   return <span className={"menu-count"+(header?" menu-count-header":"")} aria-label={`${total} ${t("项待查看或处理")}`}>{total>99?"99+":total}</span>;
 }
 
-export function NotificationsProvider({accountId,groupId,language,children}:{accountId:string;groupId:string;language:Language;children:ReactNode}) {
+export function NotificationsProvider({accountId,groupId,language,children,audience='learning'}:{accountId:string;groupId:string;language:Language;children:ReactNode;audience?:'learning'|'parent'}) {
   const [state,setState]=useState<State|null>(null),[loadError,setLoadError]=useState(""),[deviceId,setDeviceId]=useState<string|null>(null),[enabled,setEnabled]=useState(false),[busy,setBusy]=useState(false);
   // Only explicit notification controls open this guide. Do not restore a
   // legacy automatically opened permission dialog from navigation history.
@@ -71,12 +72,13 @@ export function NotificationsProvider({accountId,groupId,language,children}:{acc
   const refresh=useCallback(async()=>{
     const requestId=++latestRefresh.current;
     const response=await groupFetch("/api/notifications",{cache:"no-store"});
+    if([401,403,404].includes(response.status)){configured.current=null;setState(null);throw new Error("登录已过期，请重新登录");}
     const result=await readApiJson<State & {error?:string}>(response);
     if(!response.ok || result.error) throw new Error(result.error||"通知中心暂时无法载入，请稍后重试");
     if((result.accountId && result.accountId!==accountId)||(result.groupId && result.groupId!==groupId))throw new Error("登录已过期，请重新登录");
     if(requestId!==latestRefresh.current)return;
     configured.current=result;setState(result);setLoadError("");
-  },[accountId]);
+  },[accountId,groupId]);
   useEffect(()=>{
     let alive=true;
     const sync=()=>withDeviceLock(async()=>{
@@ -102,7 +104,7 @@ export function NotificationsProvider({accountId,groupId,language,children}:{acc
     const visible=()=>{if(document.visibilityState==="visible") void sync();};
     const returning=(event:PageTransitionEvent)=>{if(event.persisted)void sync();};
     const changed=()=>{if(alive && document.visibilityState==="visible")void refresh().catch(()=>setLoadError(t("通知中心暂时无法载入，请稍后重试")));};
-    const message=(event:MessageEvent)=>{if(event.data?.type==="tickminder:notifications"){changed();window.dispatchEvent(new Event("tickminder:open-notifications"));}};
+    const message=(event:MessageEvent)=>{if(event.data?.type==="tickminder:notifications"){changed();if(event.data.open!==false)window.dispatchEvent(new Event("tickminder:open-notifications"));}};
     const timer=window.setInterval(changed,30_000);
     document.addEventListener("visibilitychange",visible);window.addEventListener("pageshow",returning);navigator.serviceWorker?.addEventListener("message",message);
     window.addEventListener("tickminder:data-changed",changed);
@@ -139,11 +141,11 @@ export function NotificationsProvider({accountId,groupId,language,children}:{acc
   const read=(id?:string)=>perform(async()=>{await api(id?{action:"read",id}:{action:"readAll"});await refresh();},"通知已标记为已读");
   const ios=typeof navigator!=="undefined"&&needsHomeScreen(),denied=typeof Notification!=="undefined"&&Notification.permission==="denied";
   return <Context.Provider value={{state,loadError,deviceId,enabled,busy,enable,disable,test,refresh,read,showHelp:()=>setPrompt(true)}}>{children}
-    <Dialog open={Boolean(prompt)} onOpenChange={open=>{if(!open)setPrompt(null);}}><DialogContent className="notification-dialog"><DialogHeader><DialogTitle>{t("开启上课提醒")}</DialogTitle></DialogHeader>
-      <div className="notification-symbol"><Bell size={28}/></div><p>{t("在上课前 30 分钟、5 分钟及开始时接收提醒。")}</p>
+    <Dialog open={Boolean(prompt)} onOpenChange={open=>{if(!open)setPrompt(null);}}><DialogContent className="notification-dialog"><DialogHeader><DialogTitle>{t(audience==='parent'?"开启家长通知":"开启上课提醒")}</DialogTitle></DialogHeader>
+      <div className="notification-symbol"><Bell size={28}/></div><p>{t(audience==='parent'?"接收孩子缺席、账单及欠费提醒；财务提醒需要对应孩子的授权。":"在上课前 30 分钟、5 分钟及开始时接收提醒。")}</p>
       {ios?<div className="notification-help"><Smartphone size={20}/><p>{t("iPhone／iPad：请用 Safari 打开网站，点击分享 → 添加到主屏幕，再从主屏幕图标进入并开启通知。")}</p></div>:denied?<div className="notification-help"><Settings size={20}/><p>{t("浏览器已禁止通知。请在网站设置或设备通知设置中改为允许，然后回到 Tickminder 开启提醒。")}</p></div>:typeof navigator!=="undefined"&&!supported()?<p className="notice">{t("此浏览器暂不支持推送通知。请使用支持通知的浏览器；你仍可查看通知中心。")}</p>:null}
       <p className="notification-muted">{t("每个设备需要分别开启。提醒可能受网络或系统设置影响，请以课程时间为准。")}</p>
-      {!state?.configured && <p className="notice">{t("自动上课提醒正在配置，通知中心仍可查看。")}</p>}
+      {!state?.configured && <p className="notice">{t(audience==='parent'?"推送服务尚未配置，仍可查看站内通知。":"自动上课提醒正在配置，通知中心仍可查看。")}</p>}
       <div className="notification-actions"><Button variant="outline" onClick={()=>setPrompt(null)}>{t("暂不开启")}</Button>{!ios&&!denied&&<Button onClick={()=>void enable()} disabled={busy||!state?.configured}>{t("开启此设备通知")}</Button>}</div>
     </DialogContent></Dialog>
   </Context.Provider>;

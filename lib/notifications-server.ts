@@ -4,6 +4,7 @@ import { learningDb, rows, first } from "@/lib/learning-server";
 import type { Account } from "@/lib/auth";
 import { participantSql } from "@/lib/notification-access";
 import { inboxState } from "@/lib/inbox-server";
+import {accountSessionPredicate} from '@/lib/account-session';
 export { participantSql } from "@/lib/notification-access";
 
 export const REMINDER_OFFSETS = [30, 5, 0] as const;
@@ -35,7 +36,14 @@ export async function validateSubscription(value: unknown) {
   catch { throw new NotificationError("通知设备资料无效，请重新开启通知"); }
   return {endpoint:s.endpoint,p256dh:s.keys!.p256dh as string,auth:s.keys!.auth as string};
 }
-type Subscription = {id:string;account_id:string;endpoint:string;p256dh:string;auth:string;language:string};
+export type NotificationSubscription = {id:string;account_id:string;endpoint:string;p256dh:string;auth:string;language:string};
+type Subscription=NotificationSubscription;
+export function parentPushAuthority(account:Account){
+ if(account.role!=='parent')return{sql:'1',args:[] as unknown[]};
+ const session=accountSessionPredicate(account);
+ return{sql:`EXISTS(SELECT 1 FROM accounts pa JOIN tuition_groups pg ON pg.id=pa.group_id AND pg.active=1 WHERE pa.id=? AND pa.group_id=? AND pa.role='parent' AND pa.disabled_at IS NULL AND NOT EXISTS(SELECT 1 FROM local_credentials pc WHERE pc.account_id=pa.id AND pc.must_change_password=1) AND ${session.sql})`,args:[account.id,account.groupId,...session.args]};
+}
+export async function requireParentPushAuthority(account:Account){const g=parentPushAuthority(account);if(account.role!=='parent')return g;if(!await learningDb().prepare(`SELECT 1 WHERE ${g.sql}`).bind(...g.args).first())throw new NotificationError('家长通知权限已改变，请重新登录',403);return g;}
 export async function removeSubscription(id:string, accountId:string) {
   const db=learningDb();
   await db.batch([
@@ -45,6 +53,7 @@ export async function removeSubscription(id:string, accountId:string) {
   ]);
 }
 export async function saveSubscription(account:Account, value:unknown, language:unknown) {
+  const authority=await requireParentPushAuthority(account);
   if (!pushConfigured()) throw new NotificationError("通知服务尚未配置，请稍后重试",503);
   const s=await validateSubscription(value), db=learningDb(), now=new Date().toISOString();
   // A foreign endpoint is never reassigned by a request. The browser must first
@@ -53,10 +62,10 @@ export async function saveSubscription(account:Account, value:unknown, language:
   if (old && old.account_id!==account.id) throw new NotificationError("此设备仍连接其他账号，请退出登录后重新开启通知",409);
   const id=old?.id || crypto.randomUUID();
   await db.prepare(`INSERT INTO push_subscriptions (id,account_id,endpoint,p256dh,auth,language,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh,auth=excluded.auth,language=excluded.language,updated_at=excluded.updated_at
-    WHERE push_subscriptions.account_id=excluded.account_id`).bind(id,account.id,s.endpoint,s.p256dh,s.auth,language==="en"?"en":"zh",now,now).run();
-  const saved=await first<Subscription>("SELECT * FROM push_subscriptions WHERE endpoint=? AND account_id=?",s.endpoint,account.id);
-  if (!saved) throw new NotificationError("此设备仍连接其他账号，请退出登录后重新开启通知",409);
+    SELECT ?,?,?,?,?,?,?,? WHERE ${authority.sql} ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh,auth=excluded.auth,language=excluded.language,updated_at=excluded.updated_at
+    WHERE push_subscriptions.account_id=excluded.account_id AND ${authority.sql}`).bind(id,account.id,s.endpoint,s.p256dh,s.auth,language==="en"?"en":"zh",now,now,...authority.args,...authority.args).run();
+  const saved=await first<Subscription>(`SELECT * FROM push_subscriptions WHERE endpoint=? AND account_id=? AND ${authority.sql}`,s.endpoint,account.id,...authority.args);
+  if (!saved) {await requireParentPushAuthority(account);throw new NotificationError("此设备仍连接其他账号，请退出登录后重新开启通知",409);}
   return {id:saved.id};
 }
 
@@ -96,12 +105,15 @@ export async function notificationState(account:Account) {
     schedulerReady:Boolean(health && Date.now()-Date.parse(health.last_dispatch_at)<10*60_000),lastDispatchAt:health?.last_dispatch_at || null};
 }
 
-export async function sendPush(subscription:Subscription, data:Record<string,unknown>, ttl = 600) {
+export async function sendPush(subscription:Subscription, data:Record<string,unknown>, ttl = 600,authorize?:()=>Promise<boolean>) {
   if(!allowedPushEndpoint(subscription.endpoint)) throw new NotificationError("通知设备资料无效，请重新开启通知");
   if(!pushConfigured()) throw new NotificationError("通知服务尚未配置，请稍后重试",503);
   const payload=await buildPushPayload({data:JSON.stringify(data),options:{ttl,urgency:"high"}},
     {endpoint:subscription.endpoint,expirationTime:null,keys:{p256dh:subscription.p256dh,auth:subscription.auth}},
     {subject:env.VAPID_SUBJECT!,publicKey:env.VAPID_PUBLIC_KEY!,privateKey:env.VAPID_PRIVATE_KEY!});
+  // Encryption can yield. Check the current recipient, source and device again
+  // at the final point before handing private notifications to a provider.
+  if(authorize&&!await authorize())throw new NotificationError('通知授权已失效',403);
   // Explicit provider allow-list, no redirects, and bounded timeout prevent SSRF.
   // Workers supports manual/follow only. Manual never follows a provider's
   // redirect; non-2xx responses are handled as failures by the caller.
@@ -112,17 +124,19 @@ export function reminderPayload(id:string,minutes:number,language:string) {
   return {id,visual:minutes===0?"class-start":"class-reminder",title:en?"Tickminder · Lesson reminder":"Tickminder · 上课提醒",body:minutes===0?(en?"Your lesson start time has arrived. Open Tickminder to view your schedule.":"课程时间已到，请打开 Tickminder 查看课表。"):(en?`Your lesson starts in ${minutes} minutes.`:`你的课程将在 ${minutes} 分钟后开始。`),url:"/?view=notifications"};
 }
 export async function sendTest(account:Account,id:string) {
+  const authority=await requireParentPushAuthority(account);
   const db=learningDb(), now=new Date().toISOString();
   const claimed=await db.prepare(`UPDATE push_subscriptions SET last_test_at=? WHERE id=? AND account_id=?
-    AND (last_test_at IS NULL OR last_test_at<?) RETURNING *`).bind(now,id,account.id,new Date(Date.now()-60_000).toISOString()).first<Subscription>();
+    AND (last_test_at IS NULL OR last_test_at<?) AND ${authority.sql} RETURNING *`).bind(now,id,account.id,new Date(Date.now()-60_000).toISOString(),...authority.args).first<Subscription>();
   if(!claimed) {
+    await requireParentPushAuthority(account);
     const exists=await first<{id:string}>("SELECT id FROM push_subscriptions WHERE id=? AND account_id=?",id,account.id);
     if(!exists) throw new NotificationError("此设备通知已失效，请重新开启通知",409);
     throw new NotificationError("请等待一分钟后再发送测试提醒",429);
   }
   let response:Response;
-  try { response=await sendPush(claimed,{id:crypto.randomUUID(),title:"Tickminder",body:claimed.language==="en"?"Test notification received on this device.":"测试通知：此设备已收到 Tickminder 通知。",url:"/?view=notifications"}); }
-  catch { throw new NotificationError("暂时无法发送通知，请检查网络后重试",503); }
+  try { response=await sendPush(claimed,{id:crypto.randomUUID(),title:"Tickminder",body:claimed.language==="en"?"Test notification received on this device.":"测试通知：此设备已收到 Tickminder 通知。",url:"/?view=notifications"},600,async()=>Boolean(await db.prepare(`SELECT 1 FROM push_subscriptions WHERE id=? AND account_id=? AND endpoint=? AND p256dh=? AND auth=? AND ${authority.sql}`).bind(claimed.id,account.id,claimed.endpoint,claimed.p256dh,claimed.auth,...authority.args).first())); }
+  catch(error) { if(error instanceof NotificationError&&error.status===403)throw error;throw new NotificationError("暂时无法发送通知，请检查网络后重试",503); }
   if([404,410].includes(response.status)) { await removeSubscription(id,account.id); throw new NotificationError("此设备通知已失效，请重新开启通知",409); }
   if(!response.ok) throw new NotificationError("通知服务暂时不可用，请稍后重试",503);
 }

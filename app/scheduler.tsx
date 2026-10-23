@@ -482,7 +482,7 @@ export function Scheduler() {
         } catch (error) { alertActionFailure(error); return { ok: false }; }
         finally { mutationInFlight.current = false; setBusy(false); }
     }
-    async function logout() { try { if(!auth?.account?.groupUnavailable&&auth?.account?.role!=='parent') await detachPushOnLogout(); await request("/api/auth", { method: "DELETE" }); clearDialogHistory(); setModal(null); showActionToast("success", "已退出登录"); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); loadedScopes.current.clear(); wantedScopes.current.clear(); scopeRequests.current.clear(); } catch (error) { setMessage(alertActionFailure(error)); } }
+    async function logout() { try { if(!auth?.account?.groupUnavailable) await detachPushOnLogout(); await request("/api/auth", { method: "DELETE" }); clearDialogHistory(); setModal(null); showActionToast("success", "已退出登录"); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); loadedScopes.current.clear(); wantedScopes.current.clear(); scopeRequests.current.clear(); } catch (error) { setMessage(alertActionFailure(error)); } }
     async function localLogin(username: string, password: string) { if (busy) return; try {
         setBusy(true);
         setMessage("");

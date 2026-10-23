@@ -1,32 +1,39 @@
 /* Authenticated pages, API responses and PDFs are never cached. */
 self.addEventListener('install',()=>self.skipWaiting());
 self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
+function notificationTarget(value){
+  try{const url=new URL(typeof value==='string'?value:'',self.location.origin),id=url.searchParams.get('parentNotice');
+    if(url.origin===self.location.origin&&url.pathname==='/'&&url.searchParams.get('view')==='notifications'&&id&&/^parent:[A-Za-z0-9_-]{1,200}$/.test(id))return '/?'+new URLSearchParams({view:'notifications',parentNotice:id});
+  }catch{/* All other links fall back to the authenticated notification centre. */}
+  return '/?view=notifications';
+}
 self.addEventListener('push',event=>{
   let data;
   try{data=event.data.json();}catch{return;}
   if(!data || typeof data.title!=='string' || typeof data.body!=='string')return;
-  event.waitUntil(self.registration.showNotification(data.title.slice(0,100),{
+  event.waitUntil((async()=>{await self.registration.showNotification(data.title.slice(0,100),{
     body:data.body.slice(0,250),
     icon:data.visual==='class-start'?'/mascots/notify-class-start-192.png':data.visual==='class-reminder'?'/mascots/notify-class-reminder-192.png':'/tickminder-logo-192.png',
     image:data.visual==='class-start'?'/mascots/notify-class-start-512.png':data.visual==='class-reminder'?'/mascots/notify-class-reminder-512.png':undefined,
     badge:'/notification-badge.png',
     tag:typeof data.id==='string'?'tickminder:'+data.id.slice(0,100):'tickminder',
-    data:{url:'/?view=notifications'},renotify:false,
-  }));
+    data:{url:notificationTarget(data.url)},renotify:false,
+  });for(const client of await self.clients.matchAll({type:'window',includeUncontrolled:true}))client.postMessage({type:'tickminder:notifications',open:false});})());
 });
 self.addEventListener('notificationclick',event=>{
   event.notification.close();
   event.waitUntil((async()=>{
+    const target=notificationTarget(event.notification.data?.url);
     const clients=await self.clients.matchAll({type:'window',includeUncontrolled:true});
     for(const client of clients){
       const url=new URL(client.url);
       if(url.origin===self.location.origin && url.pathname==='/'){
         // Navigation also works when an already open page has not mounted its
         // signed-in workspace; the validated view request survives sign-in.
-        await client.navigate('/?view=notifications');return client.focus();
+        await client.navigate(target);return client.focus();
       }
     }
-    return self.clients.openWindow('/?view=notifications');
+    return self.clients.openWindow(target);
   })());
 });
 

@@ -20,6 +20,7 @@ const source = JSON.parse(readFileSync(resolve(root, 'wrangler.recovery.json'), 
 const built = JSON.parse(readFileSync(resolve(dist, 'server/wrangler.json'), 'utf8'));
 for (const field of ['name', 'account_id']) if (built[field] !== source[field]) throw new Error('Recovery build target mismatch');
 if (JSON.stringify(built.routes) !== JSON.stringify(source.routes)) throw new Error('Recovery domain target mismatch');
+if (JSON.stringify(built.triggers) !== JSON.stringify(source.triggers)) throw new Error('Recovery schedule mismatch');
 if (JSON.stringify(built.d1_databases) !== JSON.stringify(source.d1_databases) ||
     JSON.stringify(built.r2_buckets) !== JSON.stringify(source.r2_buckets)) throw new Error('Recovery storage mismatch');
 if (JSON.stringify(Object.keys(built.vars).sort()) !== JSON.stringify(Object.keys(source.vars).sort())) throw new Error('Unexpected build variables');
