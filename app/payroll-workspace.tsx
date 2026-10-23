@@ -66,8 +66,8 @@ function PayrollLines({document}:{document:PayrollDocument}){
   {visible<document.sourceLines.length&&<div className="finance2-actions"><Button type="button" variant="outline" onClick={()=>setVisible(value=>value+20)}>{F2('loadMore')}</Button></div>}
  </section>;
 }
-export default function PayrollWorkspace({permissions,initialPayrollId}:{permissions:PayrollPermissions;initialPayrollId?:string}){
- const [month,setMonth]=useState(financeMonth),[teacherId,setTeacherId]=useState(''),[teachers,setTeachers]=useState<TeacherPage|null>(null),[teacherLoading,setTeacherLoading]=useState(false),[teacherFailed,setTeacherFailed]=useState(false),[teacherVersion,setTeacherVersion]=useState(0);
+export default function PayrollWorkspace({permissions,initialPayrollId,initialMonth}:{permissions:PayrollPermissions;initialPayrollId?:string;initialMonth?:string}){
+ const [month,setMonth]=useState(()=>initialMonth||financeMonth()),[teacherId,setTeacherId]=useState(''),[teachers,setTeachers]=useState<TeacherPage|null>(null),[teacherLoading,setTeacherLoading]=useState(false),[teacherFailed,setTeacherFailed]=useState(false),[teacherVersion,setTeacherVersion]=useState(0);
  const [list,setList]=useState<PayrollList|null>(null),[page,setPage]=useState(1),[loading,setLoading]=useState(true),[failed,setFailed]=useState(false),[version,setVersion]=useState(0),[mode,setMode]=useState<'monthly'|'rates'>('monthly');
  const [rates,setRates]=useState<PayrollRatesResponse|null>(null),[rateLoading,setRateLoading]=useState(false),[rateFailed,setRateFailed]=useState(false),[visibleRates,setVisibleRates]=useState(20);
  const [selected,setSelected]=useState(initialPayrollId||''),[detail,setDetail]=useState<PayrollDetail|null>(null),[eventPage,setEventPage]=useState(1),[detailLoading,setDetailLoading]=useState(false),[detailFailed,setDetailFailed]=useState(false),[action,setAction]=useState<PayAction|null>(null),[busy,setBusy]=useState(false);

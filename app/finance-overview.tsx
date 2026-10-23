@@ -1,33 +1,199 @@
 "use client";
-import {useEffect,useState} from 'react';
+
+import {useEffect,useRef,useState} from 'react';
 import {Button} from '@/components/ui/button';
 import {alertActionFailure} from '@/lib/action-feedback';
+import {formatDurationSeconds} from '@/lib/duration-format';
+import {getLanguage} from '@/lib/i18n';
 import {F2} from '@/lib/finance-round2-i18n';
 import type {FinanceBasis,FinanceDetailKind,FinanceOptions,FinancePage,FinanceReportRow,FinanceSummary} from '@/lib/finance-reporting';
 import {financeGet,financeMonth,financeMoney,financeDate,FinancePagination,FinanceCsvButton} from './finance-round2-shared';
 import './finance-round2.css';
 
 type ExportKind='invoices'|'payments'|'arrears'|'payroll'|'expenses';
-export type FinanceOverviewPermissions={payroll:boolean;expenses:boolean;export:boolean};
-const serviceKinds:FinanceDetailKind[]=['unbilled','attendance','makeups','missingFees','missingPayRates'];
-const reminderKind:Record<string,FinanceDetailKind>={unbilled:'unbilled',attendance:'attendance',makeups:'makeups',makeup:'makeups',missingFees:'missingFees',missingFee:'missingFees',missingPayRates:'missingPayRates',missingPayrate:'missingPayRates',overdue:'overdue',unpaidPayroll:'unpaidPayroll',payroll:'unpaidPayroll'};
-const reminderLabel:Record<string,string>={unbilled:'unbilled',attendance:'attendance',makeups:'makeup',makeup:'makeup',missingFees:'missingFee',missingFee:'missingFee',missingPayRates:'missingPayrate',missingPayrate:'missingPayrate',overdue:'overdue',unpaidPayroll:'unpaidPayroll',payroll:'unpaidPayroll'};
-const rowStatus=(row:FinanceReportRow)=>({draft:F2('draft'),issued:F2('invoiceIssued'),unpaid:F2('invoiceUnpaid'),partially_paid:F2('invoicePartPaid'),paid:F2('paid'),confirmed:F2('confirmed'),void:F2('void'),reversed:F2('reversed'),active:F2('active'),scheduled:F2('teachingPending'),pending:F2('pending'),completed:F2('confirmed'),payment:F2('received'),refund:F2('refunds'),record:F2('expenseRecord'),unbilled:F2('unbilledStatus'),attendance_pending:F2('attendance'),makeup_pending:F2('makeup'),missing_fee:F2('missingFee'),missing_pay_rate:F2('missingPayrate'),reverse:F2('reversed'),charge:F2('bonus'),credit:F2('deduction')} as Record<string,string>)[row.status]||row.status;
-export default function FinanceOverview({permissions,onInvoice,onPayroll}:{permissions:FinanceOverviewPermissions;onInvoice:(id:string)=>void;onPayroll:(id:string)=>void}){
- const [month,setMonth]=useState(financeMonth),[basis,setBasis]=useState<FinanceBasis>('cash'),[summary,setSummary]=useState<FinanceSummary|null>(null),[loading,setLoading]=useState(true),[failed,setFailed]=useState(false),[version,setVersion]=useState(0),[kind,setKind]=useState<FinanceDetailKind|null>(null),[page,setPage]=useState(1),[detail,setDetail]=useState<FinancePage|null>(null),[detailLoading,setDetailLoading]=useState(false),[detailFailed,setDetailFailed]=useState(false),[options,setOptions]=useState<FinanceOptions|null>(null),[teacher,setTeacher]=useState(''),[subject,setSubject]=useState(''),[classroomId,setClassroomId]=useState(''),[exportKind,setExportKind]=useState<ExportKind>('invoices');
- useEffect(()=>{const controller=new AbortController();setLoading(true);setFailed(false);setSummary(null);void financeGet<FinanceSummary>('/api/finance-reports?'+new URLSearchParams({view:'summary',month,basis}),controller.signal).then(value=>{if(!controller.signal.aborted)setSummary(value);}).catch(error=>{if(!controller.signal.aborted){setFailed(true);alertActionFailure(error);}}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[month,basis,version]);
- useEffect(()=>{if(!kind)return;const controller=new AbortController();setDetailLoading(true);setDetailFailed(false);setDetail(null);const isService=serviceKinds.includes(kind),params=new URLSearchParams({view:'details',kind,month,basis,page:String(page),...(isService?{teacher,subject,classroomId}:{})});void financeGet<FinancePage>('/api/finance-reports?'+params,controller.signal).then(value=>{if(!controller.signal.aborted)setDetail(value);}).catch(error=>{if(!controller.signal.aborted){setDetailFailed(true);alertActionFailure(error);}}).finally(()=>{if(!controller.signal.aborted)setDetailLoading(false);});return()=>controller.abort();},[kind,page,month,basis,teacher,subject,classroomId,version]);
- useEffect(()=>{if(!kind||!serviceKinds.includes(kind)||options)return;const controller=new AbortController();void financeGet<FinanceOptions>('/api/finance-reports?view=options',controller.signal).then(value=>{if(!controller.signal.aborted)setOptions(value);}).catch(error=>{if(!controller.signal.aborted)alertActionFailure(error);});return()=>controller.abort();},[kind,options]);
- function changeKind(value:FinanceDetailKind){setKind(value);setPage(1);setTeacher('');setSubject('');setClassroomId('');}
- const metrics=summary?.metrics,kpis: {label:string;value:number|null|undefined;kind?:FinanceDetailKind}[]=[{label:'issuedAmount',value:metrics?.issuedCents,kind:'invoices'},{label:'received',value:metrics?.receivedCents,kind:'payments'},{label:'refunds',value:metrics?.refundedCents,kind:'payments'},{label:'paymentReversals',value:metrics?.reversedCents,kind:'payments'},{label:'netReceived',value:metrics?.netReceivedCents,kind:'payments'},{label:'remaining',value:metrics?.remainingCents,kind:'arrears'},{label:'overdue',value:metrics?.overdueCents,kind:'overdue'},{label:'salaryDue',value:metrics?.payrollOwedCents,kind:permissions.payroll?'unpaidPayroll':undefined},{label:'salaryPaid',value:metrics?.payrollPaidCents,kind:permissions.payroll?'payrollCash':undefined},{label:'expensePaid',value:metrics?.expensesCents,kind:permissions.expenses?'expenseCash':undefined},{label:'cashSurplus',value:metrics?.cashSurplusCents}];
- const detailTitle=kind?F2(({invoices:'exportInvoices',payments:'exportPayments',arrears:'exportArrears',overdue:'overdue',payroll:'exportPayroll',unpaidPayroll:'unpaidPayroll',payrollCash:'salaryPaid',expenses:'exportExpenses',expenseCash:'expensePaid',unbilled:'unbilled',attendance:'attendance',makeups:'makeup',missingFees:'missingFee',missingPayRates:'missingPayrate'} as Record<FinanceDetailKind,string>)[kind]):'';
- return <div className="finance2-workspace" data-testid="finance-overview"><section className="panel"><div className="finance2-section-head"><h2>{F2('overview')}</h2><Button type="button" variant="outline" disabled={loading} onClick={()=>setVersion(v=>v+1)}>{F2('refresh')}</Button></div><div className="finance2-filters"><label>{F2('month')}<input type="month" value={month} onChange={e=>{if(/^20\d\d-(0[1-9]|1[0-2])$/.test(e.target.value)){setMonth(e.target.value);setPage(1);}}}/></label><label>{F2('basis')}<select value={basis} onChange={e=>{setBasis(e.target.value as FinanceBasis);setPage(1);}}>{['cash','service','issued'].map(value=><option key={value} value={value}>{F2(value)}</option>)}</select></label></div><p className="finance2-muted">{F2(basis==='cash'?'cashHint':basis==='service'?'serviceHint':'issuedHint')}</p><p className="finance2-muted">{F2('dimensionHint')}</p></section>
- {loading?<p role="status" className="finance2-loading">{F2('loading')}</p>:failed?<div className="finance2-error-state"><p>{F2('loadFailed')}</p><Button variant="outline" onClick={()=>setVersion(v=>v+1)}>{F2('reload')}</Button></div>:summary&&<><dl className="finance2-kpis">{kpis.map(metric=><div className="finance2-kpi" key={metric.label}><dt>{F2(metric.label)}</dt><dd>{financeMoney(metric.value)}</dd>{metric.value==null&&<small className="finance2-muted">{F2('metricUnavailable')}</small>}{metric.label==='cashSurplus'&&metric.value!=null&&<small className="finance2-muted">{F2('cashSurplusHint')}</small>}{metric.kind&&metric.value!=null&&<Button variant="outline" type="button" onClick={()=>changeKind(metric.kind!)}>{F2('details')}</Button>}</div>)}</dl>
- <section className="panel"><div className="finance2-section-head"><h2>{F2('reminders')}</h2></div><div className="finance2-reminder-list">{summary.reminders.map(reminder=><article className="finance2-reminder" key={reminder.key}><h3>{F2(reminderLabel[reminder.key]||reminder.key)}</h3><strong>{reminder.count}</strong>{reminderKind[reminder.key]&&<Button variant="outline" type="button" onClick={()=>changeKind(reminderKind[reminder.key])}>{F2('details')}</Button>}</article>)}</div></section>
- {summary.trend.length>0&&<section className="panel"><div className="finance2-section-head"><h2>{F2('trend')}</h2></div><div className="finance2-trend">{summary.trend.map(item=><div className="finance2-trend-row" key={item.month}><strong>{item.month}</strong><div className="finance2-trend-values"><span>{F2('netReceived')} · {financeMoney(item.netReceivedCents)}</span></div></div>)}</div></section>}</>}
- {permissions.export&&<section className="panel"><div className="finance2-export-controls"><label>{F2('exportKind')}<select value={exportKind} onChange={e=>setExportKind(e.target.value as ExportKind)}>{(['invoices','payments','arrears',...(permissions.payroll?['payroll']:[]),...(permissions.expenses?['expenses']:[])] as ExportKind[]).map(value=><option key={value} value={value}>{F2('export'+value[0].toUpperCase()+value.slice(1))}</option>)}</select></label><FinanceCsvButton params={{kind:exportKind,month,basis}}/></div><p className="finance2-muted">{F2('exportHint')}</p></section>}
- {kind&&<section className="panel" aria-busy={detailLoading}><div className="finance2-section-head"><h2>{detailTitle}</h2><Button type="button" variant="outline" onClick={()=>setKind(null)}>{F2('close')}</Button></div>{serviceKinds.includes(kind)&&<div className="finance2-filters"><label>{F2('teacher')}<select value={teacher} onChange={e=>{setTeacher(e.target.value);setPage(1);}}><option value="">{F2('allTeachers')}</option>{options?.teachers.map(item=><option key={item.id} value={item.name}>{item.name}</option>)}</select></label><label>{F2('subject')}<select value={subject} onChange={e=>{setSubject(e.target.value);setPage(1);}}><option value="">{F2('allSubjects')}</option>{options?.subjects.map(item=><option key={item} value={item}>{item}</option>)}</select></label><label>{F2('classroom')}<select value={classroomId} onChange={e=>{setClassroomId(e.target.value);setPage(1);}}><option value="">{F2('allClasses')}</option>{options?.classrooms.map(item=><option key={item.id} value={item.id}>{item.title}</option>)}</select></label></div>}
- {detailLoading?<p role="status" className="finance2-loading">{F2('loading')}</p>:detailFailed?<div className="finance2-error-state"><p>{F2('loadFailed')}</p><Button variant="outline" onClick={()=>setVersion(v=>v+1)}>{F2('reload')}</Button></div>:detail&&<><p className="finance2-muted">{F2('total').replace('{count}',String(detail.total))}</p><div className="finance2-records">{!detail.items.length?<p className="finance2-empty">{F2('empty')}</p>:detail.items.map(row=><article className="finance2-record" key={row.id}><div className="finance2-record-head"><h3>{row.label}</h3><span className="finance2-badge" data-status={row.status}>{rowStatus(row)}</span></div><dl><div><dt>{F2('date')}</dt><dd>{financeDate(row.date,true)}</dd></div>{row.subject&&<div><dt>{F2('subject')}</dt><dd>{row.subject}</dd></div>}{row.teacher&&<div><dt>{F2('teacher')}</dt><dd>{row.teacher}</dd></div>}{row.classroom&&<div><dt>{F2('classroom')}</dt><dd>{row.classroom}</dd></div>}{row.method&&<div><dt>{F2('method')}</dt><dd>{F2(row.method==='cash'?'cashMethod':row.method)}</dd></div>}{row.reference&&<div><dt>{F2('reference')}</dt><dd>{row.reference}</dd></div>}<div><dt>{F2('amount')}</dt><dd>{financeMoney(row.amountCents)}</dd></div>{row.remainingCents!==undefined&&<div><dt>{F2('remaining')}</dt><dd>{financeMoney(row.remainingCents)}</dd></div>}</dl>{row.invoiceId?<div className="finance2-actions"><Button type="button" variant="outline" onClick={()=>onInvoice(row.invoiceId!)}>{F2('details')}</Button></div>:row.payrollId&&permissions.payroll?<div className="finance2-actions"><Button type="button" variant="outline" onClick={()=>onPayroll(row.payrollId!)}>{F2('openPayroll')}</Button></div>:null}</article>)}</div><FinancePagination page={detail.page} pages={detail.pages} onChange={setPage}/></>}
- </section>}
+export type FinanceOverviewPermissions={payroll:boolean;expenses:boolean;export:boolean;invoices?:boolean};
+type DetailQuery={kind:FinanceDetailKind;month:string;basis:FinanceBasis;page:number;teacher:string;subject:string;classroomId:string};
+type Metric={label:string;value:number|null|undefined;kind?:FinanceDetailKind;hint?:string};
+
+const serviceKinds:FinanceDetailKind[]=['unbilled','attendance','makeups','missingFees','missingPayRates','pendingChanges','monthlyPayReviews'];
+const debtKinds:FinanceDetailKind[]=['arrears','overdue','arrearsAll','overdueAll'];
+const payrollKinds:FinanceDetailKind[]=['payroll','unpaidPayroll','payrollCash','missingPayRates','monthlyPayReviews'];
+const reminderKind:Record<string,FinanceDetailKind>={unbilled:'unbilled',attendance:'attendance',makeups:'makeups',makeup:'makeups',missingFees:'missingFees',missingFee:'missingFees',missingPayRates:'missingPayRates',missingPayrate:'missingPayRates',overdue:'overdue',unpaidPayroll:'unpaidPayroll',payroll:'unpaidPayroll',pendingChanges:'pendingChanges',monthlyPayReviews:'monthlyPayReviews'};
+const reminderLabel:Record<string,string>={unbilled:'unbilled',attendance:'attendance',makeups:'makeup',makeup:'makeup',missingFees:'missingFee',missingFee:'missingFee',missingPayRates:'missingPayrate',missingPayrate:'missingPayrate',overdue:'overdue',unpaidPayroll:'unpaidPayroll',payroll:'unpaidPayroll',pendingChanges:'pendingChanges',monthlyPayReviews:'monthlyPayReviews'};
+const detailLabels:Record<FinanceDetailKind,string>={invoices:'exportInvoices',payments:'netReceiptDetails',receivedPayments:'received',refunds:'refunds',paymentReversals:'paymentReversals',arrears:'exportArrears',overdue:'overdue',arrearsAll:'allMonthArrears',overdueAll:'allMonthOverdue',payroll:'exportPayroll',unpaidPayroll:'unpaidPayroll',payrollCash:'salaryPaid',expenses:'exportExpenses',expenseCash:'expensePaid',unbilled:'unbilled',attendance:'attendance',makeups:'makeup',missingFees:'missingFee',missingPayRates:'missingPayrate',pendingChanges:'pendingChanges',monthlyPayReviews:'monthlyPayReviews'};
+function rowStatus(row:FinanceReportRow,kind:FinanceDetailKind){
+ if(row.status==='payment'&&kind==='payrollCash')return F2('payRecord');
+ return ({draft:F2('draft'),issued:F2('invoiceIssued'),unpaid:F2('invoiceUnpaid'),partially_paid:F2('invoicePartPaid'),paid:F2('paid'),confirmed:F2('confirmed'),void:F2('void'),reversed:F2('reversed'),active:F2('active'),scheduled:F2('teachingPending'),pending:F2('pending'),completed:F2('confirmed'),payment:F2('received'),refund:F2('refunds'),record:F2('expenseRecord'),unbilled:F2('unbilledStatus'),attendance_pending:F2('attendance'),makeup_pending:F2('makeup'),missing_fee:F2('missingFee'),missing_pay_rate:F2('missingPayrate'),change_pending:F2('pendingChanges'),monthly_review_pending:F2('monthlyPayReviews'),pending_change:F2('pendingChanges'),monthly_pay_review:F2('monthlyPayReviews'),reverse:F2('reversed'),charge:F2('bonus'),credit:F2('deduction')} as Record<string,string>)[row.status]||row.status;
+}
+function invoiceScope(month:string,basis:FinanceBasis){
+ return F2(basis==='service'?'serviceInvoiceScope':'issuedInvoiceScope').replace('{month}',month);
+}
+function detailScope(query:DetailQuery){
+ if(query.kind==='arrearsAll'||query.kind==='overdueAll')return F2('allMonthDebtScope');
+ if(debtKinds.includes(query.kind)||query.kind==='invoices')return invoiceScope(query.month,query.basis);
+ if(serviceKinds.includes(query.kind)||query.kind==='unpaidPayroll'||query.kind==='payroll')return query.month+' · '+F2('service');
+ return query.month+' · '+F2(query.kind==='expenseCash'||query.kind==='expenses'?'cash':query.basis);
+}
+
+export default function FinanceOverview({permissions,onInvoice,onPayroll,onPayrollMonth}:{permissions:FinanceOverviewPermissions;onInvoice:(id:string)=>void;onPayroll:(id:string)=>void;onPayrollMonth?:(month:string)=>void}){
+ const [month,setMonth]=useState(financeMonth),[basis,setBasis]=useState<FinanceBasis>('cash'),[version,setVersion]=useState(0);
+ const [summaryResult,setSummaryResult]=useState<{key:string;value:FinanceSummary}|null>(null),[summaryFailure,setSummaryFailure]=useState('');
+ const [query,setQuery]=useState<DetailQuery|null>(null),[detailResult,setDetailResult]=useState<{key:string;value:FinancePage}|null>(null),[detailFailure,setDetailFailure]=useState('');
+ const [options,setOptions]=useState<FinanceOptions|null>(null),[exportKind,setExportKind]=useState<ExportKind>('invoices');
+ const detailHeading=useRef<HTMLHeadingElement>(null);
+ const summaryKey=JSON.stringify([month,basis,version]),detailKey=JSON.stringify([query,version]);
+ const summary=summaryResult?.key===summaryKey?summaryResult.value:null,failed=!summary&&summaryFailure===summaryKey,loading=!summary&&!failed;
+ const detail=detailResult?.key===detailKey?detailResult.value:null,detailFailed=!detail&&detailFailure===detailKey,detailLoading=Boolean(query&&!detail&&!detailFailed);
+ useEffect(()=>{
+  const controller=new AbortController();
+  void financeGet<FinanceSummary>('/api/finance-reports?'+new URLSearchParams({view:'summary',month,basis}),controller.signal)
+   .then(value=>{if(!controller.signal.aborted)setSummaryResult({key:summaryKey,value});})
+   .catch(error=>{if(!controller.signal.aborted){setSummaryFailure(summaryKey);alertActionFailure(error);}});
+  return()=>controller.abort();
+ },[month,basis,summaryKey]);
+ useEffect(()=>{
+  if(!query)return;
+  const controller=new AbortController(),{kind,month,basis,page,teacher,subject,classroomId}=query;
+  const params=new URLSearchParams({view:'details',kind,month,basis,page:String(page),...(serviceKinds.includes(kind)?{teacher,subject,classroomId}:{})});
+  void financeGet<FinancePage>('/api/finance-reports?'+params,controller.signal)
+   .then(value=>{if(!controller.signal.aborted)setDetailResult({key:detailKey,value});})
+   .catch(error=>{if(!controller.signal.aborted){setDetailFailure(detailKey);alertActionFailure(error);}});
+  return()=>controller.abort();
+ },[query,detailKey]);
+ useEffect(()=>{
+  if(!query||!serviceKinds.includes(query.kind)||options)return;
+  const controller=new AbortController();
+  void financeGet<FinanceOptions>('/api/finance-reports?view=options',controller.signal)
+   .then(value=>{if(!controller.signal.aborted)setOptions(value);})
+   .catch(error=>{if(!controller.signal.aborted)alertActionFailure(error);});
+  return()=>controller.abort();
+ },[query?.kind,options]);
+ useEffect(()=>{if(query)detailHeading.current?.focus();},[query?.kind,query?.month,query?.basis]);
+ function changeKind(kind:FinanceDetailKind,targetMonth=month,targetBasis=basis){
+  setDetailResult(null);setDetailFailure('');
+  setQuery({kind,month:targetMonth,basis:serviceKinds.includes(kind)?'service':targetBasis,page:1,teacher:'',subject:'',classroomId:''});
+ }
+ function detailFilter(key:'teacher'|'subject'|'classroomId',value:string){
+  setQuery(current=>current?{...current,[key]:value,page:1}:null);
+ }
+ const metrics=summary?.metrics;
+ const coreMetrics:Metric[]=[
+  {label:'netReceived',value:metrics?.netReceivedCents,kind:'payments',hint:F2('netReceiptFormula')},
+  {label:'remaining',value:metrics?.remainingCents,kind:'arrears',hint:invoiceScope(month,basis)},
+  {label:'overdue',value:metrics?.overdueCents,kind:'overdue',hint:invoiceScope(month,basis)},
+  ...(permissions.payroll&&permissions.expenses?[{label:'cashSurplus',value:metrics?.cashSurplusCents,hint:F2(basis==='cash'?'cashSurplusShortHint':'cashOnlyMetric')}]:[]),
+ ];
+ const tuitionMetrics:Metric[]=[
+  {label:'issuedAmount',value:metrics?.issuedCents,kind:'invoices',hint:invoiceScope(month,basis)},
+  {label:'received',value:metrics?.receivedCents,kind:'receivedPayments'},
+  {label:'refunds',value:metrics?.refundedCents,kind:'refunds'},
+  {label:'paymentReversals',value:metrics?.reversedCents,kind:'paymentReversals'},
+ ];
+ const reminders=(summary?.reminders||[]).filter(item=>permissions.payroll||!payrollKinds.includes(reminderKind[item.key]));
+ const detailTotal=(query&&debtKinds.includes(query.kind))||query?.kind==='unpaidPayroll'?detail?.totals?.remainingCents:detail?.totals?.amountCents;
+ function metricLines(items:Metric[]){
+  return <dl className="finance2-metric-lines">{items.map(metric=><div className="finance2-metric-line" key={metric.label}>
+   <dt><span>{F2(metric.label)}</span>{metric.hint&&<small className="finance2-muted">{metric.hint}</small>}</dt>
+   <dd><strong>{financeMoney(metric.value)}</strong>{metric.kind&&metric.value!=null&&<Button variant="outline" type="button" onClick={()=>changeKind(metric.kind!)} aria-label={F2(metric.label)+' · '+F2('details')}>{F2('details')}</Button>}</dd>
+  </div>)}</dl>;
+ }
+ return <div className="finance2-workspace finance2-overview" data-testid="finance-overview">
+  <section className="panel">
+   <div className="finance2-section-head"><h2>{F2('overview')}</h2><Button type="button" variant="outline" disabled={loading} onClick={()=>setVersion(v=>v+1)}>{F2('refresh')}</Button></div>
+   <div className="finance2-filters">
+    <label>{F2('month')}<input type="month" value={month} onChange={event=>{if(/^20\d\d-(0[1-9]|1[0-2])$/.test(event.target.value)){setMonth(event.target.value);setQuery(null);}}}/></label>
+    <label>{F2('basis')}<select value={basis} onChange={event=>{setBasis(event.target.value as FinanceBasis);setQuery(null);}}>{(['cash','service','issued'] as const).map(value=><option key={value} value={value}>{F2(value)}</option>)}</select></label>
+   </div>
+   <p className="finance2-muted">{F2(basis==='cash'?'cashHint':basis==='service'?'serviceHint':'issuedHint')}</p>
+   <p className="finance2-muted">{F2('dimensionHint')}</p>
+  </section>
+  {loading?<p role="status" className="finance2-loading">{F2('loading')}</p>:failed?<div className="finance2-error-state"><p>{F2('loadFailed')}</p><Button variant="outline" onClick={()=>setVersion(v=>v+1)}>{F2('reload')}</Button></div>:summary&&<>
+   <section className="finance2-core" aria-labelledby="finance2-core-title">
+    <div className="finance2-section-head"><h2 id="finance2-core-title">{F2('coreSummary')}</h2><span className="finance2-scope">{month} · {F2(basis)}</span></div>
+    <dl className="finance2-kpis finance2-core-kpis">{coreMetrics.map(metric=><div className="finance2-kpi" key={metric.label}>
+     <dt>{F2(metric.label)}</dt><dd><strong>{financeMoney(metric.value)}</strong></dd>
+     {metric.hint&&<small className="finance2-muted">{metric.hint}</small>}
+     {metric.value==null&&metric.label!=='cashSurplus'&&<small className="finance2-muted">{F2('metricUnavailable')}</small>}
+     {metric.kind&&metric.value!=null&&<Button variant="outline" type="button" onClick={()=>changeKind(metric.kind!)} aria-label={F2(metric.label)+' · '+F2('details')}>{F2('details')}</Button>}
+    </div>)}</dl>
+   </section>
+   <section className="panel" aria-labelledby="finance2-tuition-title">
+    <div className="finance2-section-head"><h2 id="finance2-tuition-title">{F2('tuitionCollections')}</h2><span className="finance2-scope">{month} · {F2(basis)}</span></div>
+    {metricLines(tuitionMetrics)}
+    <div className="finance2-debt-tools"><div><h3>{F2('allMonthDebtTitle')}</h3><p className="finance2-muted">{F2('allMonthDebtScope')}</p></div><div className="finance2-actions"><Button variant="outline" type="button" onClick={()=>changeKind('arrearsAll')}>{F2('allMonthArrears')}</Button><Button variant="outline" type="button" onClick={()=>changeKind('overdueAll')}>{F2('allMonthOverdue')}</Button></div></div>
+   </section>
+   {(permissions.payroll||permissions.expenses)&&<div className="finance2-outflow-grid">
+    {permissions.payroll&&<section className="panel" aria-labelledby="finance2-pay-title">
+     <div className="finance2-section-head"><h2 id="finance2-pay-title">{F2('payroll')}</h2></div>
+     {basis==='issued'?<p className="finance2-notice">{F2('payrollIssuedUnavailable')}</p>:metricLines([{label:'salaryDue',value:metrics?.payrollOwedCents,kind:'unpaidPayroll',hint:month+' · '+F2('service')},{label:'salaryPaid',value:metrics?.payrollPaidCents,kind:'payrollCash',hint:month+' · '+F2(basis)}])}
+     <p className="finance2-muted">{F2('payrollCashHint')}</p>
+    </section>}
+    {permissions.expenses&&<section className="panel" aria-labelledby="finance2-expenses-title">
+     <div className="finance2-section-head"><h2 id="finance2-expenses-title">{F2('expensePaid')}</h2></div>
+     {basis!=='cash'?<p className="finance2-notice">{F2('expenseCashOnly')}</p>:metricLines([{label:'expensePaid',value:metrics?.expensesCents,kind:'expenseCash',hint:month+' · '+F2('cash')}])}
+     {permissions.payroll&&basis==='cash'&&<p className="finance2-muted">{F2('cashSurplusHint')}</p>}
+    </section>}
+   </div>}
+   <section className="panel" aria-labelledby="finance2-reminders-title">
+    <div className="finance2-section-head"><h2 id="finance2-reminders-title">{F2('reminders')}</h2><span className="finance2-scope">{month} · {F2('selectedMonthTasks')}</span></div>
+    <p className="finance2-muted">{F2('reminderScopeHint')}</p>
+    <div className="finance2-reminder-list">{reminders.map(reminder=><article className="finance2-reminder" key={reminder.key}>
+     <div><h3>{F2(reminderLabel[reminder.key]||reminder.key)}</h3><span className="finance2-reminder-count">{F2('taskCount').replace('{count}',String(reminder.count))}</span></div>
+     {reminderKind[reminder.key]&&<Button variant="outline" type="button" onClick={()=>changeKind(reminderKind[reminder.key])} aria-label={F2(reminderLabel[reminder.key]||reminder.key)+' · '+F2('details')}>{F2('details')}</Button>}
+    </article>)}</div>
+   </section>
+   {summary.trend.length>0&&<section className="panel" aria-labelledby="finance2-trend-title">
+    <div className="finance2-section-head"><h2 id="finance2-trend-title">{F2('trend')}</h2><span className="finance2-scope">{F2(basis)}</span></div>
+    <p className="finance2-muted">{F2('trendScopeHint')}</p>
+    <div className="finance2-trend">{summary.trend.map(item=><div className="finance2-trend-row" key={item.month}>
+     <strong>{item.month}</strong><div className="finance2-trend-values"><span>{F2('netReceived')}</span><strong>{financeMoney(item.netReceivedCents)}</strong></div>
+     <Button type="button" variant="outline" onClick={()=>changeKind('payments',item.month,basis)} aria-label={item.month+' · '+F2('netReceiptDetails')}>{F2('details')}</Button>
+    </div>)}</div>
+   </section>}
+  </>}
+  {query&&(!payrollKinds.includes(query.kind)||permissions.payroll)&&(!['expenses','expenseCash'].includes(query.kind)||permissions.expenses)&&<section className="panel finance2-drilldown" aria-busy={detailLoading} aria-labelledby="finance2-detail-title">
+   <div className="finance2-section-head"><div><h2 ref={detailHeading} tabIndex={-1} id="finance2-detail-title">{F2(detailLabels[query.kind])}</h2><p className="finance2-scope">{detailScope(query)}</p></div><Button type="button" variant="outline" onClick={()=>setQuery(null)}>{F2('close')}</Button></div>
+   {query.kind==='payments'&&<p className="finance2-notice">{F2('netReceiptDetailHint')}</p>}
+   {query.kind==='unbilled'&&<p className="finance2-notice">{F2('unbilledDetailHint')}</p>}
+   {query.kind==='pendingChanges'&&<p className="finance2-notice">{F2('pendingChangeDetailHint')}</p>}
+   {query.kind==='monthlyPayReviews'&&<p className="finance2-notice">{F2('monthlyReviewDetailHint')}</p>}
+   {serviceKinds.includes(query.kind)&&<div className="finance2-filters finance2-spaced-actions">
+    <label>{F2('teacher')}<select value={query.teacher} disabled={!options} onChange={event=>detailFilter('teacher',event.target.value)}><option value="">{F2('allTeachers')}</option>{options?.teachers.map(item=><option key={item.id} value={item.name}>{item.name}</option>)}</select></label>
+    <label>{F2('subject')}<select value={query.subject} disabled={!options} onChange={event=>detailFilter('subject',event.target.value)}><option value="">{F2('allSubjects')}</option>{options?.subjects.map(item=><option key={item} value={item}>{item}</option>)}</select></label>
+    <label>{F2('classroom')}<select value={query.classroomId} disabled={!options} onChange={event=>detailFilter('classroomId',event.target.value)}><option value="">{F2('allClasses')}</option>{options?.classrooms.map(item=><option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+   </div>}
+   {detailLoading?<p role="status" className="finance2-loading">{F2('loading')}</p>:detailFailed?<div className="finance2-error-state finance2-spaced-actions"><p>{F2('loadFailed')}</p><Button variant="outline" onClick={()=>setVersion(v=>v+1)}>{F2('reload')}</Button></div>:detail&&<>
+    <div className="finance2-detail-summary">
+     <span>{F2('total').replace('{count}',String(detail.total))}</span>
+     {detailTotal!=null&&<strong>{F2(query.kind==='unpaidPayroll'?'unpaidAmount':debtKinds.includes(query.kind)?'remaining':'filterAmountTotal')} · {financeMoney(detailTotal)}</strong>}
+     {detail.totals?.durationSeconds!=null&&<span>{F2(query.kind==='unbilled'?'unbilledDurationTotal':'filterDurationTotal')} · {formatDurationSeconds(detail.totals.durationSeconds,getLanguage())}</span>}
+    </div>
+    <div className="finance2-records">{!detail.items.length?<p className="finance2-empty">{F2('empty')}</p>:detail.items.map(row=><article className="finance2-record" key={row.id}>
+     <div className="finance2-record-head"><h3>{row.label}</h3><span className="finance2-badge" data-status={row.status}>{rowStatus(row,query.kind)}</span></div>
+     <dl>
+      <div><dt>{F2(query.kind==='pendingChanges'?'originalStart':'date')}</dt><dd>{financeDate(query.kind==='pendingChanges'?row.originalStart||row.date:row.date,true)}</dd></div>
+      {query.kind==='pendingChanges'&&row.originalEnd&&<div><dt>{F2('originalEnd')}</dt><dd>{financeDate(row.originalEnd,true)}</dd></div>}
+      {row.month&&<div><dt>{F2('period')}</dt><dd>{row.month}</dd></div>}
+      {row.subject&&<div><dt>{F2('subject')}</dt><dd>{row.subject}</dd></div>}
+      {row.teacher&&<div><dt>{F2('teacher')}</dt><dd>{row.teacher}</dd></div>}
+      {row.classroom&&<div><dt>{F2('classroom')}</dt><dd>{row.classroom}</dd></div>}
+      {row.proposedStart&&<div><dt>{F2('proposedStart')}</dt><dd>{financeDate(row.proposedStart,true)}</dd></div>}
+      {row.proposedEnd&&<div><dt>{F2('proposedEnd')}</dt><dd>{financeDate(row.proposedEnd,true)}</dd></div>}
+      {row.durationSeconds!=null&&<div><dt>{F2('duration')}</dt><dd>{formatDurationSeconds(row.durationSeconds,getLanguage())}</dd></div>}
+      {row.method&&<div><dt>{F2('method')}</dt><dd>{F2(row.method==='cash'?'cashMethod':row.method)}</dd></div>}
+      {row.reference&&<div><dt>{F2('reference')}</dt><dd>{row.reference}</dd></div>}
+      {row.amountCents!=null&&<div><dt>{F2('amount')}</dt><dd>{financeMoney(row.amountCents)}</dd></div>}
+      {row.remainingCents!==undefined&&<div><dt>{F2(query.kind==='unpaidPayroll'?'unpaidAmount':'remaining')}</dt><dd>{financeMoney(row.remainingCents)}</dd></div>}
+     </dl>
+     {row.reason&&<p className="finance2-muted">{F2('reason')} · {row.reason}</p>}
+     {row.invoiceId&&permissions.invoices!==false?<div className="finance2-actions"><Button type="button" variant="outline" onClick={()=>onInvoice(row.invoiceId!)}>{F2('openInvoice')}</Button></div>:row.payrollId&&permissions.payroll?<div className="finance2-actions"><Button type="button" variant="outline" onClick={()=>onPayroll(row.payrollId!)}>{F2('openPayroll')}</Button></div>:query.kind==='monthlyPayReviews'&&permissions.payroll&&onPayrollMonth?<div className="finance2-actions"><Button type="button" variant="outline" onClick={()=>onPayrollMonth(row.month||query.month)}>{F2('openMonthPayroll')}</Button></div>:null}
+    </article>)}</div>
+    <FinancePagination page={detail.page} pages={detail.pages} onChange={page=>setQuery(current=>current?{...current,page}:null)}/>
+   </>}
+  </section>}
+  {permissions.export&&<section className="panel">
+   <div className="finance2-export-controls"><label>{F2('exportKind')}<select value={exportKind} onChange={event=>setExportKind(event.target.value as ExportKind)}>{(['invoices','payments','arrears',...(permissions.payroll?['payroll']:[]),...(permissions.expenses?['expenses']:[])] as ExportKind[]).map(value=><option key={value} value={value}>{F2('export'+value[0].toUpperCase()+value.slice(1))}</option>)}</select></label><FinanceCsvButton params={{kind:exportKind,month,basis}}/></div>
+   <p className="finance2-muted">{F2('exportHint')}</p>
+  </section>}
  </div>;
 }
