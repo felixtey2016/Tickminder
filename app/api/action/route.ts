@@ -22,7 +22,7 @@ import { first, learningDb } from "@/lib/learning-server";
 import { normalizeOnlineLink } from "@/lib/online-link";
 import {classPlanSubjectSql} from "@/lib/academic-subject-match";
 import {ensurePlanClassroom,planClassroomStatements,planSessionClassroomStatements} from "@/lib/student-classrooms";
-import { adminAuthority, adminActorGuard, accountAuthorityGuard, assertAccountAuthority, AdminAuthorityError, isAdminAuthorityFailure } from "@/lib/admin-authority";
+import { adminAuthority, assertParentAccountManagement,parentAccountManagementGuard,adminActorGuard, accountAuthorityGuard, assertAccountAuthority, AdminAuthorityError, isAdminAuthorityFailure } from "@/lib/admin-authority";
 import {requireCorePermissions,corePermissionKeys,rejectUnknownAdminAction,guardedCoreDb} from '@/lib/admin-core-permissions';
 import {adminPermissionFailure} from '@/lib/admin-permission-access';
 
@@ -84,17 +84,19 @@ export async function POST(request: Request) {
       const role = str(data.role), teacherName = str(data.teacherName), studentName = str(data.studentName);
       if (!validUsername(username)) return bad("账号需为 3–40 位英文字母、数字、点、横线或底线，且以字母或数字开头");
       if (!validPassword(password)) return bad("初始密码需为 8–128 个字符");
-      if (!name || name.length > 80 || !["admin", "teacher", "student"].includes(role)) return bad("请输入姓名并选择角色");
+      if (!name || name.length > 80 || !["admin", "teacher", "student", "parent"].includes(role)) return bad("请输入姓名并选择角色");
+      if(role==='parent')await assertParentAccountManagement(actor);
       if(role==='admin'&&!(await adminAuthority(actor)).canManageAdministrators)return bad('admin.administratorAccessRequired',403);
       if (await db.select({ accountId: localCredentials.accountId }).from(localCredentials).where(eq(localCredentials.username, username)).get()) return bad("此账号名已被使用");
       if (role === "teacher" && !(await readRoster(actor)).teachers.includes(teacherName)) return bad("请选择启用的老师");
       if (role === "student" && !(await readRoster(actor)).students.includes(studentName)) return bad("请选择已登记的学生");
-      if (role !== "admin" && await first("SELECT 1 AS found FROM accounts WHERE role = ? AND " + (role === "teacher" ? "teacher_name" : "student_name") + " = ? AND disabled_at IS NULL", role, role === "teacher" ? teacherName : studentName)) return bad("此身份已有账号，请使用现有账号连接 Google，避免重复创建", 409);
+      if (["teacher","student"].includes(role) && await first("SELECT 1 AS found FROM accounts WHERE role = ? AND " + (role === "teacher" ? "teacher_name" : "student_name") + " = ? AND disabled_at IS NULL", role, role === "teacher" ? teacherName : studentName)) return bad("此身份已有账号，请使用现有账号连接 Google，避免重复创建", 409);
       const id = `local:${crypto.randomUUID()}`;
       const passwordHash = await hashPassword(password);
       const raw=guardedCoreDb(actor,permissionKeys),after={username,name,role,teacherName:role==='teacher'?teacherName:null,studentName:role==='student'?studentName:null};
       await raw.batch([
         adminActorGuard(actor,role==='admin'),
+        ...(role==='parent'?[parentAccountManagementGuard(actor)]:[]),
         raw.prepare("INSERT INTO accounts(group_id,id,email,name,role,teacher_name,student_name,created_at,activated_at,activation_reason) VALUES(?,?,'',?,?,?,?,?,?,'admin-created')").bind(groupId,id,name,role,after.teacherName,after.studentName,now,now),
         raw.prepare("INSERT INTO local_credentials(account_id,username,password_hash,must_change_password,updated_at) VALUES(?,?,?,1,?)").bind(id,username,passwordHash,now),
         raw.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) VALUES(?,?,?,?,'createLocalAccount',NULL,?,?)").bind(groupId,crypto.randomUUID(),`account:${id}`,actor.id,JSON.stringify(after),now),
@@ -277,7 +279,7 @@ export async function POST(request: Request) {
     if (action === "bind") {
       const userId = str(data.userId), role = str(data.role), teacherName = str(data.teacherName), studentName = str(data.studentName);
       const target = await db.select().from(accounts).where(groupWhere(accounts,actor.groupId,eq(accounts.id, userId))).get();
-      if (!target || !["teacher", "admin", "student"].includes(role)) return bad("Choose an account and role");
+      if (!target || !["teacher", "admin", "student", "parent"].includes(role)) return bad("Choose an account and role");
       const authority={action:'bind' as const,nextRole:role,expected:target};
       await assertAccountAuthority(actor,userId,authority);
       if (role === "teacher") {

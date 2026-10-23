@@ -1,3 +1,4 @@
+import {configuredAdminGrantPredicate} from "@/lib/admin-permissions-server";
 import type { Account } from "@/lib/auth";
 import { learningDb } from "@/lib/learning-server";
 import { OWNER_EMAIL } from "@/lib/owner";
@@ -62,6 +63,8 @@ function accountPredicate(actor: Account, targetId: string, options: AccountAuth
   const owner = actorPredicate(actor, groupId, false, true);
   const removesChief = options.action === "deleteAccount" || options.action === "permanentDelete" || options.action === "bind" && options.nextRole !== "admin";
   const needsManager = options.action === "bind" && options.nextRole === "admin" ? "1" : "t.role='admin'";
+  const parentGrant=configuredAdminGrantPredicate(actor,"parents.manage");
+  const parentTarget=options.nextRole==="parent"?"1":"t.role='parent'";
   const activeTarget = ["bind", "resetLocalPassword", "activateAccount"].includes(options.action) ? " AND t.disabled_at IS NULL" : "";
   return {
     sql: `${normal.sql} AND EXISTS(SELECT 1 FROM accounts t JOIN tuition_groups g ON g.id=t.group_id WHERE t.id=? AND t.group_id=?
@@ -69,11 +72,15 @@ function accountPredicate(actor: Account, targetId: string, options: AccountAuth
       ${options.action === "activateAccount" ? "" : "AND t.id<>?"}${activeTarget}
       ${options.expected ? "AND t.role=? AND t.disabled_at IS ? AND t.teacher_name IS ? AND t.student_name IS ?" : ""}
       AND (NOT(${needsManager}) OR ${managers.sql})
+      AND (NOT(${parentTarget}) OR ${parentGrant.sql})
+      ${options.action==="bind"&&options.nextRole!=="parent"?"AND (t.role<>'parent' OR NOT EXISTS(SELECT 1 FROM parent_child_links pcl WHERE pcl.group_id=t.group_id AND pcl.parent_account_id=t.id AND pcl.active=1))":""}
       ${removesChief ? "AND g.chief_admin_id IS NOT t.id" : ""}
       ${options.action === "resetLocalPassword" ? `AND (g.chief_admin_id IS NOT t.id OR ${owner.sql}) AND EXISTS(SELECT 1 FROM local_credentials c WHERE c.account_id=t.id)` : ""})`,
-    args: [...normal.args, targetId, groupId, OWNER_EMAIL, ...(options.action === "activateAccount" ? [] : [actor.id]), ...(options.expected ? [options.expected.role, options.expected.disabledAt, options.expected.teacherName, options.expected.studentName] : []), ...managers.args, ...(options.action === "resetLocalPassword" ? owner.args : [])],
+    args: [...normal.args, targetId, groupId, OWNER_EMAIL, ...(options.action === "activateAccount" ? [] : [actor.id]), ...(options.expected ? [options.expected.role, options.expected.disabledAt, options.expected.teacherName, options.expected.studentName] : []), ...managers.args,...parentGrant.args, ...(options.action === "resetLocalPassword" ? owner.args : [])],
   };
 }
+export function parentAccountManagementGuard(actor:Account){return authorityGuard(configuredAdminGrantPredicate(actor,'parents.manage'));}
+export async function assertParentAccountManagement(actor:Account){const p=configuredAdminGrantPredicate(actor,'parents.manage');if(!await learningDb().prepare('SELECT 1 WHERE '+p.sql).bind(...p.args).first())throw new AdminAuthorityError('需要家长管理权限才能管理此账号',403);}
 export function accountAuthorityGuard(actor: Account, targetId: string, options: AccountAuthorityOptions) {
   return authorityGuard(accountPredicate(actor, targetId, options));
 }
@@ -84,6 +91,7 @@ export async function assertAccountAuthority(actor: Account, targetId: string, o
   if (target && target.email.trim().toLowerCase() === OWNER_EMAIL && !target.id.startsWith("local:")) throw new AdminAuthorityError("admin.ownerProtected", 403);
   if (target?.id === actor.id && options.action !== "activateAccount") throw new AdminAuthorityError("admin.selfProtected", 403);
   if (target?.chiefAdminId === targetId && (options.action === "deleteAccount" || options.action === "permanentDelete" || options.action === "bind" && options.nextRole !== "admin")) throw new AdminAuthorityError("admin.chiefProtected", 403);
+  if(target?.role==='parent'&&options.action==='bind'&&options.nextRole!=='parent'&&await learningDb().prepare('SELECT 1 FROM parent_child_links WHERE group_id=? AND parent_account_id=? AND active=1 LIMIT 1').bind(actor.groupId,targetId).first())throw new AdminAuthorityError('请先解除已关联的孩子，再更改家长角色',409);
   if (target?.role === "admin" || options.nextRole === "admin") throw new AdminAuthorityError("admin.administratorAccessRequired", 403);
   throw new AdminAuthorityError();
 }

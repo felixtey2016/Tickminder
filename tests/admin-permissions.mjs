@@ -140,7 +140,10 @@ await section('catalog exposes implemented finance actions and denies reserved o
   await login('chief-a');const data=await readProfile('admin-a'),keys=data.catalog.flatMap(module=>module.actions.map(action=>action.key));
   assert.equal(new Set(keys).size,keys.length);assert.ok(keys.length>60);
   assert.ok(keys.every(key=>/^[A-Za-z]+\.[A-Za-z]+$/.test(key)),'all grants are explicit module.action keys');
-  for(const id of ['parents','resources','progress','publicModeration','adminIdentity','groups','academicCatalogues','backup']){const module=data.catalog.find(item=>item.id===id);assert.ok(module,id+' reserved entry exists');assert.equal(module.availability,'reserved');assert.deepEqual(module.actions,[]);assert.deepEqual(module.supportedActions,[]);}
+  for(const id of ['resources','progress','publicModeration','adminIdentity','groups','academicCatalogues','backup']){const module=data.catalog.find(item=>item.id===id);assert.ok(module,id+' reserved entry exists');assert.equal(module.availability,'reserved');assert.deepEqual(module.actions,[]);assert.deepEqual(module.supportedActions,[]);}
+  assert.equal(data.catalog.find(module=>module.id==='parents').availability,'current');
+  assert.deepEqual(data.catalog.find(module=>module.id==='parents').supportedActions,['view','manage']);
+  assert.deepEqual(permission.normalizeAdminGrants(['parents.manage']),['parents.view','parents.manage','accounts.view']);
   assert.deepEqual(data.catalog.find(module=>module.id==='invoices').supportedActions,['view','create','edit','issue','adjust','void']);
   assert.deepEqual(data.catalog.find(module=>module.id==='payments').supportedActions,['view','record','reverse','refund']);
   assert.deepEqual(permission.normalizeAdminGrants(['payments.record']),['invoices.view','payments.view','payments.record']);

@@ -3,6 +3,7 @@
 export const ADMIN_PERMISSIONS_ROLLOUT = "preparation" as const;
 
 const currentModules = [
+  { id: "parents", actions: ["view", "manage"] },
   { id: "accounts", actions: ["view", "create", "assign", "disable", "restore", "delete", "activate", "resetPassword"] },
   { id: "teachers", actions: ["view", "create", "disable", "restore", "delete"] },
   { id: "students", actions: ["view", "create", "edit", "disable", "restore", "delete", "promote"] },
@@ -34,7 +35,7 @@ const currentModules = [
   { id: "exports", actions: ["view", "finance"] },
 ] as const;
 
-const reservedModules = ["parents", "resources", "progress", "publicModeration", "adminIdentity", "groups", "academicCatalogues", "backup"] as const;
+const reservedModules = ["resources", "progress", "publicModeration", "adminIdentity", "groups", "academicCatalogues", "backup"] as const;
 type GrantOf<T> = T extends { id: infer I extends string; actions: readonly (infer A extends string)[] } ? `${I}.${A}` : never;
 export type AdminGrantKey = GrantOf<typeof currentModules[number]>;
 export type AdminPermissionModuleId = typeof currentModules[number]["id"] | typeof reservedModules[number];
@@ -43,6 +44,7 @@ export type AdminPermissionModule = { id: AdminPermissionModuleId; labelKey: str
 export type AdminPermissionTemplate = { id: "none" | "readOnly" | "scheduling" | "academicSupport" | "legacy"; labelKey: string; descriptionKey: string; grants: AdminGrantKey[] };
 
 const extraDependencies: Partial<Record<AdminGrantKey, AdminGrantKey[]>> = {
+  "parents.view": ["accounts.view"],
   "attendance.view": ["lessons.view"],
   "reschedules.view": ["lessons.view"],
   "announcements.view": ["classrooms.view"],

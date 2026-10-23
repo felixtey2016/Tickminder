@@ -1,3 +1,4 @@
+import { isLegacyBusinessRole } from '@/lib/legacy-business-access';
 import {groupStatement,requireGroup} from "@/lib/group-data";
 import { currentBusinessAccount } from "@/lib/auth";
 import { learningDb } from "@/lib/learning-server";
@@ -7,12 +8,14 @@ const headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"};
 export async function GET() {
   const account=await currentBusinessAccount();
   if(!account) return Response.json({error:"登录已过期，请重新登录"},{status:401,headers});
+  if(!isLegacyBusinessRole(account.role)) return Response.json({error:"没有权限执行此操作"},{status:403,headers});
   try {return Response.json(await notificationState(account),{headers});}
   catch {return Response.json({error:"通知中心暂时无法载入，请稍后重试"},{status:503,headers});}
 }
 export async function POST(request:Request) {
   const account=await currentBusinessAccount();
   if(!account) return Response.json({error:"登录已过期，请重新登录"},{status:401,headers});
+  if(!isLegacyBusinessRole(account.role)) return Response.json({error:"没有权限执行此操作"},{status:403,headers});
   if(request.headers.get("origin")!==new URL(request.url).origin) return Response.json({error:"没有权限执行此操作"},{status:403,headers});
   try {
     const bodyText=await request.text();if(bodyText.length>6000) throw new NotificationError("请求内容过大",413);

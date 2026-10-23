@@ -19,7 +19,7 @@ export async function GET(request:Request) {
   if(!identity) return json({error:"请先登录"},401);
   if(!isOwnerAccount(identity.account)) {
     const group=await selectedGroup(identity.account);
-    return group?json({groups:[{id:group.id,name:group.name,joinCode:group.joinCode,active:group.active}],isOwner:false}):json({error:"补习集团已停用，请联系管理员"},403);
+    return group?json({groups:[{id:group.id,name:group.name,...(identity.account.role!=="parent"?{joinCode:group.joinCode}:{}),active:group.active}],isOwner:false}):json({error:"补习集团已停用，请联系管理员"},403);
   }
   const account=await currentBusinessAccount();
   if(!account) return json({error:"请先完成账号设置"},403);

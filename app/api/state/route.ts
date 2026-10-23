@@ -1,3 +1,4 @@
+import { isLegacyBusinessRole } from '@/lib/legacy-business-access';
 import {classSessionState} from "@/lib/class-sessions";
 import {groupRows} from "@/lib/group-data";
 import { groupWhere } from "@/lib/group-data";
@@ -13,7 +14,7 @@ import { accounts, audit, lessons, localCredentials, rescheduleRequests } from "
 import { approvedActualHours, approvedHoursInMonth, checkinInMonth, currentMalaysiaMonth, inMonth } from "@/lib/lesson-rules";
 import { teacherMaySeeLesson } from "@/lib/access";
 import { readRevision } from "@/lib/revision";
-import { learningState, rows } from "@/lib/learning-server";
+import { learningDb, learningState, rows } from "@/lib/learning-server";
 import { mergedAccountNames } from "@/lib/merged-account-names";
 import { classroomsState } from "@/lib/classrooms-server";
 import {studentLessonResponse,studentRescheduleResponse,studentSessionResponse} from "@/lib/student-course-response";
@@ -24,9 +25,9 @@ import {configuredAdminGrantPredicate} from '@/lib/admin-permissions-server';
 
 type Scope = "core" | "learning" | "classrooms" | "accounts" | "activity";
 const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
-// New financial powers require explicit live grants even during preparation or
+// Sensitive activity requires explicit live grants even during preparation or
 // recovery. Filter complete events in SQL before applying the activity limit.
-function financialActivityCondition(account:Account,key:'payroll.view'|'expenses.view'|'payments.view'|'prepayments.view'){
+function restrictedActivityCondition(account:Account,key:'payroll.view'|'expenses.view'|'payments.view'|'prepayments.view'|'parents.view'){
   const predicate=configuredAdminGrantPredicate(account,key),parts=predicate.sql.split('?');
   if(parts.length!==predicate.args.length+1)throw new Error('Invalid financial activity predicate');
   return sql.join(parts.flatMap((part,index)=>index<predicate.args.length?[sql.raw(part),sql`${predicate.args[index]}`]:[sql.raw(part)]),sql.raw(''));
@@ -86,10 +87,23 @@ async function extraState(account: Account, scope: Exclude<Scope, "core">, acces
       adminAuthority(account),
     ]);
     const byId = new Map(credentials.map(c => [c.accountId, c]));
-    return {users: users.map(u => ({...u, ...lifecycleView(u), isOwner:isOwnerAccount(u), isGroupChief:u.role==='admin'&&!u.disabledAt&&u.id===hierarchy.chiefAdminId, username: byId.get(u.id)?.username || null, mustChangePassword: byId.get(u.id)?.mustChangePassword || false}))};
+    const parentPermission=configuredAdminGrantPredicate(account,'parents.view');
+    const mayReadParents=async()=>Boolean(await learningDb().prepare('SELECT 1 WHERE '+parentPermission.sql).bind(...parentPermission.args).first());
+    const showParentChildren=await mayReadParents(),parentIds=showParentChildren?users.filter(u=>u.role==='parent').map(u=>u.id):[];
+    const parentChildren=new Map<string,string[]>();
+    if(parentIds.length){
+      const linked=await learningDb().prepare('SELECT l.parent_account_id AS parentId,b.student_name AS student FROM parent_child_links l JOIN billing_students b ON b.group_id=l.group_id AND b.id=l.student_id WHERE l.group_id=? AND l.active=1 AND l.parent_account_id IN (SELECT value FROM json_each(?)) AND '+parentPermission.sql+' ORDER BY b.student_name,b.id').bind(account.groupId,JSON.stringify(parentIds),...parentPermission.args).all<{parentId:string;student:string}>();
+      for(const child of linked.results){const names=parentChildren.get(child.parentId)||[];names.push(child.student);parentChildren.set(child.parentId,names);}
+    }
+    if(showParentChildren&&!await mayReadParents())throw new AdminPermissionDenied();
+    return {users: users.map(u => ({...u, ...lifecycleView(u), isOwner:isOwnerAccount(u), isGroupChief:u.role==='admin'&&!u.disabledAt&&u.id===hierarchy.chiefAdminId, username: byId.get(u.id)?.username || null, mustChangePassword: byId.get(u.id)?.mustChangePassword || false,...(showParentChildren&&u.role==='parent'?{parentChildren:parentChildren.get(u.id)||[]}: {})}))};
   }
-  const activityVisibility=and(adminPermissionReadCondition(account,"audit.view"),isOwnerAccount(account)?undefined:notLike(audit.action,'billing.%'),or(notLike(audit.action,'invoice.%'),adminPermissionReadCondition(account,'invoices.view')),or(and(notLike(audit.action,'invoice.finance.%'),notLike(audit.action,'invoice.correctAttendance')),financialActivityCondition(account,'payments.view')),or(notLike(audit.action,'payroll.%'),financialActivityCondition(account,'payroll.view')),or(notLike(audit.action,'finance.%'),financialActivityCondition(account,'expenses.view')),or(notLike(audit.action,'prepayments.%'),financialActivityCondition(account,'prepayments.view')),or(notLike(audit.action,'adminPermissions.%'),adminManagementReadCondition(account)));
+  const activityVisibility=and(adminPermissionReadCondition(account,"audit.view"),isOwnerAccount(account)?undefined:notLike(audit.action,'billing.%'),or(notLike(audit.action,'invoice.%'),adminPermissionReadCondition(account,'invoices.view')),or(and(notLike(audit.action,'invoice.finance.%'),notLike(audit.action,'invoice.correctAttendance')),restrictedActivityCondition(account,'payments.view')),or(notLike(audit.action,'payroll.%'),restrictedActivityCondition(account,'payroll.view')),or(notLike(audit.action,'finance.%'),restrictedActivityCondition(account,'expenses.view')),or(notLike(audit.action,'prepayments.%'),restrictedActivityCondition(account,'prepayments.view')),or(notLike(audit.action,'parents.%'),restrictedActivityCondition(account,'parents.view')),or(notLike(audit.action,'adminPermissions.%'),adminManagementReadCondition(account)));
   const [changes, mergedNames] = await Promise.all([db.select().from(audit).where(groupWhere(audit,account.groupId,activityVisibility)).orderBy(desc(audit.at)).limit(30).all(), mergedAccountNames(account.groupId)]);
+  if(changes.some(change=>change.action.startsWith('parents.'))){
+    const parentPermission=configuredAdminGrantPredicate(account,'parents.view');
+    if(!await learningDb().prepare('SELECT 1 WHERE '+parentPermission.sql).bind(...parentPermission.args).first())throw new AdminPermissionDenied();
+  }
   const changedLessons = changes.length ? await db.select({id: lessons.id, student: lessons.student, subject: lessons.subject}).from(lessons).where(groupWhere(lessons,account.groupId,inArray(lessons.id, changes.map(c => c.lessonId)))).all() : [];
   const byId = new Map(changedLessons.map(l => [l.id, `${l.student} · ${l.subject}`]));
   const readableSnapshot=(action:string)=>{
@@ -97,7 +111,7 @@ async function extraState(account: Account, scope: Exclude<Scope, "core">, acces
     if(isOwnerAccount(account))return true;
     if(action.startsWith('adminPermissions.'))return access.privileged;
     const direct:Record<string,string>={saveTeacher:'teachers',saveStudent:'students',updateStudentProfile:'students',setStudentActive:'students',savePlan:'plans',create:'lessons',edit:'lessons',cancel:'lessons',attendance:'attendance',review:'attendance',createLocalAccount:'accounts',resetLocalPassword:'accounts',activateAccount:'accounts',deleteAccount:'accounts',restoreAccount:'accounts',bind:'accounts',proposeReschedule:'reschedules',respondReschedule:'reschedules',saveClassroom:'classrooms',archiveClassroom:'classrooms',saveTerm:'terms',createTerm:'terms',saveAnnouncement:'announcements',deleteAnnouncement:'announcements',saveSessionAttendance:'attendance',reviewSessionAttendance:'attendance',autoConfirmAttendance:'attendance',createClassSession:'lessons',editClassSession:'lessons',cancelClassSession:'lessons',proposeClassReschedule:'reschedules',respondClassReschedule:'reschedules'};
-    const module=direct[action]||(action.startsWith('prepayments.')?'prepayments':action.startsWith('payroll.')?'payroll':action.startsWith('finance.')?'expenses':action.startsWith('invoice.')?'invoices':action.startsWith('quiz.')?'quizzes':action.startsWith('quizPractice.')||action.startsWith('quizAssignment.')?'quizAssignments':action.startsWith('folder.')?'folders':action.startsWith('material.')?'materials':action.startsWith('homework.')?'homework':action.startsWith('sheet')?'sheetSync':null);
+    const module=direct[action]||(action.startsWith('parents.')?'parents':action.startsWith('prepayments.')?'prepayments':action.startsWith('payroll.')?'payroll':action.startsWith('finance.')?'expenses':action.startsWith('invoice.')?'invoices':action.startsWith('quiz.')?'quizzes':action.startsWith('quizPractice.')||action.startsWith('quizAssignment.')?'quizAssignments':action.startsWith('folder.')?'folders':action.startsWith('material.')?'materials':action.startsWith('homework.')?'homework':action.startsWith('sheet')?'sheetSync':null);
     return module?access.grants.some(key=>key===`${module}.view`):false;
   };
   const visibleSnapshot=(value:string|null,action:string)=>{
@@ -114,6 +128,7 @@ async function extraState(account: Account, scope: Exclude<Scope, "core">, acces
 export async function GET(request: Request) {
   const account = await currentAccount();
   if (!account) return json({error: "Sign in required"}, 401);
+  if (!isLegacyBusinessRole(account.role) && account.role !== "pending") return json({error: "没有权限执行此操作"}, 403);
   const url = new URL(request.url), selected = url.searchParams.get("month") || currentMalaysiaMonth();
   const scope = url.searchParams.get("scope");
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(selected)) return json({error: "Invalid month"}, 400);

@@ -1,3 +1,4 @@
+import { isLegacyBusinessRole } from '@/lib/legacy-business-access';
 import {adminPermissionFailure} from "@/lib/admin-permission-access";
 import { NextResponse } from "next/server";
 import { currentBusinessAccount as currentAccount } from "@/lib/auth";
@@ -14,6 +15,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   );
   const actor = await currentAccount();
   if (!actor) return failure("请先登录", 401);
+  if (!isLegacyBusinessRole(actor.role)) return failure("文件不存在或无权访问", 403);
   if (await first("SELECT 1 AS mustChange FROM local_credentials WHERE account_id = ? AND must_change_password = 1", actor.id)) return failure("请先修改初始密码", 403);
   const { id } = await context.params;
   try {

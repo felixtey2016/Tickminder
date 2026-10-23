@@ -4,7 +4,8 @@ import { first, learningDb } from "@/lib/learning-server";
 import { verifyPassword } from "@/lib/password";
 import { OWNER_EMAIL } from "@/lib/owner";
 import { prepareAccountMerge } from "@/lib/account-merge";
-import { isAdminAuthorityFailure } from "@/lib/admin-authority";
+import {accountSessionPredicate} from "@/lib/account-session";
+import {authorityGuard, isAdminAuthorityFailure } from "@/lib/admin-authority";
 
 class LinkError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export async function POST(request: Request) {
@@ -33,7 +34,9 @@ export async function POST(request: Request) {
     const merge = used && used.account_id !== actor.id ? await prepareAccountMerge(actor, used.account_id, data.confirmMerge === true) : { statements: [] };
     if (merge.error) return NextResponse.json({ error: merge.error, mergeName: merge.mergeName }, { status: 409 });
     const db = learningDb(), now = new Date().toISOString();
+    const parentSession=accountSessionPredicate(actor);
     await db.batch([
+      ...(actor.role==='parent'?[authorityGuard({sql:`EXISTS(SELECT 1 FROM accounts a JOIN tuition_groups g ON g.id=a.group_id AND g.active=1 JOIN local_credentials c ON c.account_id=a.id WHERE a.id=? AND a.group_id=? AND a.role='parent' AND a.disabled_at IS NULL AND c.must_change_password=0 AND c.password_hash=?) AND (${parentSession.sql})`,args:[actor.id,actor.groupId,local.password_hash,...parentSession.args]})]:[]),
       ...merge.statements,
       // Strict unique insert makes concurrent linking attempts fail and roll back together.
       own ? db.prepare("UPDATE google_identities SET email = ? WHERE subject = ? AND account_id = ?").bind(profile.email, profile.id, actor.id)

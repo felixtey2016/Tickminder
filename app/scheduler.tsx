@@ -2,6 +2,7 @@ import {SessionAttendanceBoard,SessionAttendanceDialog,TeachingHoursPanel} from 
 import type {AttendanceSession} from "@/lib/attendance-types";
 "use client";
 import '@/lib/finance-round2-i18n';
+import '@/lib/parents-i18n';
 import {GroupSessionPlanner,GroupSessionBoard,type GroupSession,type GroupSessionRequest} from "./class-session-schedule";
 import {uniqueSessionLessons} from "@/lib/class-session-display";
 import type {SessionLesson} from "@/lib/class-session-display";
@@ -42,6 +43,7 @@ const GroupConsole=lazy(()=>import("./group-console").then(m=>({default:m.GroupC
 const TeacherLearning = lazy(() => import("./learning-portal").then(module => ({default: module.TeacherLearning})));
 const AdminLearning = lazy(() => import("./admin-learning").then(module => ({default: module.AdminLearning})));
 const QuizWorkspace=lazy(()=>import('./quiz-workspace'));
+const ParentShell=lazy(()=>import('./parent-shell'));
 const FinanceWorkspace=lazy(()=>import('./finance-workspace'));
 import type { Classroom } from "./classrooms-page";
 const ClassroomsPage = lazy(() => import("./classrooms-page").then(module => ({default: module.ClassroomsPage})));
@@ -75,7 +77,7 @@ type Account = AdminPermissionAccount & {
     assignmentStatus?: string;
     pendingExpiresAt?: string | null;
     activatedAt?: string | null;
-    role: "admin" | "teacher" | "student" | "pending";
+    role: "admin" | "teacher" | "student" | "parent" | "pending";
     isOwner?: boolean;
     isGroupChief?: boolean;
     canManageAdministrators?: boolean;
@@ -240,7 +242,7 @@ export function Scheduler() {
     activeAccountId.current = auth?.account?.id;
     const ensureScope = useCallback(async (scope: StateScope, force = false) => {
         const accountId = auth?.account?.id;
-        if (!accountId) return;
+        if (!accountId || auth?.account?.role==='parent') return;
         if (!force && loadedScopes.current.has(scope)) return;
         const pending = scopeRequests.current.get(scope);
         if (pending) return pending;
@@ -279,6 +281,7 @@ export function Scheduler() {
         try { await promise; } finally { if (scopeRequests.current.get(scope) === promise) scopeRequests.current.delete(scope); }
     }, [auth?.account?.id,auth?.account?.adminPermissions]);
     const refreshState = useCallback(async (silent: boolean) => {
+        if(auth?.account?.role==='parent'){setState(null);return;}
         const requestId = ++latestStateRequest.current;
         scopeRequests.current.clear();
         try {
@@ -335,7 +338,7 @@ export function Scheduler() {
     }, []);
     useEffect(() => { loadedScopes.current.clear(); wantedScopes.current.clear(); scopeRequests.current.clear(); }, [auth?.account?.id]);
     useEffect(() => { let active = true; request("/api/auth").then(a => { if (active) setAuth(a); }).catch(e => { if (active) setMessage(e.message); }); return () => { active = false; }; }, []);
-    useEffect(() => { if (auth?.account && !auth.account.requiresAccountSetup && !auth.account.mustChangePassword && auth.account.nameConfirmedAt) void reload(); }, [auth?.account?.id, auth?.account?.role, auth?.account?.requiresAccountSetup, auth?.account?.mustChangePassword, auth?.account?.nameConfirmedAt, reload]);
+    useEffect(() => { if (auth?.account && auth.account.role!=='parent' && !auth.account.requiresAccountSetup && !auth.account.mustChangePassword && auth.account.nameConfirmedAt) void reload(); }, [auth?.account?.id, auth?.account?.role, auth?.account?.requiresAccountSetup, auth?.account?.mustChangePassword, auth?.account?.nameConfirmedAt, reload]);
     useEffect(() => {
         const account = auth?.account;
         if (!account || account.mustChangePassword || account.requiresAccountSetup || !account.nameConfirmedAt) return;
@@ -346,7 +349,7 @@ export function Scheduler() {
             if (!active || checking || busy || document.visibilityState === "hidden") return;
             checking = true;
             try {
-                if (account.role === "pending") {
+                if (account.role === "pending" || account.role === "parent") {
                     const next = await request("/api/auth");
                     if (active && JSON.stringify(next.account) !== JSON.stringify(account)) setAuth(next);
                 } else {
@@ -479,7 +482,7 @@ export function Scheduler() {
         } catch (error) { alertActionFailure(error); return { ok: false }; }
         finally { mutationInFlight.current = false; setBusy(false); }
     }
-    async function logout() { try { if(!auth?.account?.groupUnavailable) await detachPushOnLogout(); await request("/api/auth", { method: "DELETE" }); clearDialogHistory(); setModal(null); showActionToast("success", "已退出登录"); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); loadedScopes.current.clear(); wantedScopes.current.clear(); scopeRequests.current.clear(); } catch (error) { setMessage(alertActionFailure(error)); } }
+    async function logout() { try { if(!auth?.account?.groupUnavailable&&auth?.account?.role!=='parent') await detachPushOnLogout(); await request("/api/auth", { method: "DELETE" }); clearDialogHistory(); setModal(null); showActionToast("success", "已退出登录"); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); loadedScopes.current.clear(); wantedScopes.current.clear(); scopeRequests.current.clear(); } catch (error) { setMessage(alertActionFailure(error)); } }
     async function localLogin(username: string, password: string) { if (busy) return; try {
         setBusy(true);
         setMessage("");
@@ -532,8 +535,9 @@ export function Scheduler() {
         return <NameSetup initialName={account.name} save={confirmName} logout={logout} busy={busy} message={message} language={language} changeLanguage={changeLanguage}/>;
     if (account.requiresAccountSetup)
         return <AccountSetup email={account.email} onSaved={async()=>setAuth(await request("/api/auth"))} logout={logout} language={language} changeLanguage={changeLanguage}/>;
-    if(account.role==='pending'&&account.groupId==='next-genn-edu')return <main className="auth-shell"><div className="auth-card"><h1>完成学生注册</h1><WhatsAppBinding onComplete={async()=>{setAuth(await request('/api/auth'));}}/><Button variant="outline" onClick={logout}>退出登录</Button></div></main>;
+    if(account.role==='pending'&&account.groupId==='next-genn-edu')return <main className="auth-shell"><div className="auth-card"><h1>{t("完成账号注册")}</h1><p>{t("家长账号请联系管理员分配家长身份并关联孩子。")}</p><WhatsAppBinding onComplete={async()=>{setAuth(await request('/api/auth'));}}/><Button variant="outline" onClick={logout}>退出登录</Button></div></main>;
     if(account.groupUnavailable)return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><h1>{t("补习集团暂不可用")}</h1><p>{t("请联系所属集团的管理员，或稍后重试。")}</p><Button onClick={()=>window.location.reload()}>{t("刷新")}</Button><Button variant="outline" onClick={logout}>{t("退出登录")}</Button></div></main>;
+    if(account.role==='parent')return <Suspense fallback={<p role="status">{t('正在加载…')}</p>}><ParentShell account={account} language={language} changeLanguage={changeLanguage} logout={logout} refreshIdentity={async()=>setAuth(await request('/api/auth'))}/></Suspense>;
     const admin = account.role === "admin";
     return <AdminPermissionContext.Provider value={account}><Workspace key={`${account.id}:${account.groupId}:${JSON.stringify(account.adminPermissions)}`} account={account} state={state} ensureScope={ensureScope} setActiveScopes={setActiveScopes} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/></AdminPermissionContext.Provider>;
 }
@@ -821,7 +825,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
             pageContent=<FinanceWorkspace account={account} key={account.groupId} students={(state?.allStudents?.length?state.allStudents:state?.studentOptions||[]).map(student=>student.name)} onCourses={()=>choose('subjects')}/>;
         } else if (["teacherRoster", "studentRoster", "accounts"].includes(activeView)) {
             const view = activeView === "teacherRoster" ? "teachers" : activeView === "studentRoster" ? "students" : activeView as "binding" | "accounts";
-            pageContent = <RosterAdmin account={account} state={state} mutate={mutate} busy={busy} view={view}/>;
+            pageContent = <RosterAdmin account={account} state={state} mutate={mutate} busy={busy} view={view} onAccountsChanged={()=>void ensureScope("accounts",true)}/>;
         } else if (activeView === "sheet") {
             pageContent = <SheetSyncPanel/>;
         }
@@ -910,9 +914,9 @@ function AdminDashboard({ state, lessons, open, view,mutate,busy }: {
     if (view === "activity") return <ActivityLog items={state?.activity || []}/>;
     return <div className="dashboard">{can("attendance.view")&&<TeachingHoursPanel sessions={state?.attendanceSessions} month={state?.month||""}/>}<div className="metric-grid"><div className="metric"><span>{t("学生累计出席课时")}</span><strong>{formatDurationHours(summary.reduce((s,x)=>s+x.completed,0),getLanguage())}</strong><p>{state?.month}{t(" · 已记录出席")}</p></div><div className="metric"><span>{t("\u672A\u6765\u5DF2\u5B89\u6392\u8BFE\u65F6")}</span><strong>{formatDurationHours(summary.reduce((s,x)=>s+x.upcoming,0),getLanguage())}</strong><p>{t("\u6240\u9009\u6708\u4EFD")}</p></div><div className="metric attention"><span>{t("待复核记录")}</span><strong>{review.length}</strong><p>{t("已完成课时按实际时长计入统计")}</p></div></div><div className="dashboard-columns"><section className="panel"><div className="section-head"><h2>{t("待复核记录")}</h2><span>{review.length}{t(" \u6761")}</span></div><div className="lesson-stack">{review.length ? review.map(l => <LessonCard key={l.id} lesson={l} admin open={open}/>) : <div className="empty">{t("目前没有待复核记录。")}</div>}</div></section><section className="panel"><div className="section-head"><h2>{t("\u5373\u5C06\u4E0A\u8BFE")}</h2></div>{upcoming.length ? upcoming.map(l => <div className="upcoming-item" key={l.id}><span>{day(l.plannedStart)}</span><strong>{l.student} · {l.subject}</strong><small>{time(l.plannedStart)}–{time(l.plannedEnd)} · {l.teacherName}</small></div>) : <div className="empty">{t("\u6682\u65E0\u8BFE\u7A0B\u3002")}</div>}</section></div><section className="panel"><div className="section-head"><h2>{t("\u5B66\u751F\u79D1\u76EE\u7EDF\u8BA1")}</h2><span>{t("按实际开始日期归属月份")}</span></div><div className="summary-grid">{summary.map(s => <div className="summary-row" key={s.key}><strong>{s.key.replace("|", " · ")}</strong><span>{formatDurationHours(s.completed,getLanguage())} · {s.lessons}{t(" \u5802\u5DF2\u4E0A\u8BFE")}</span><span>{formatDurationHours(s.upcoming,getLanguage())} · {t("未来已安排")}</span><span>{s.pending}{t(" 待记录出席 · ")}{s.makeupNeeded}{t(" \u5F85\u8865")}</span></div>)}</div></section></div>;
 }
-function RosterAdmin({ account, state, mutate, busy, view }: { account: Account; state: State | null; mutate: (x: Record<string, unknown>) => Promise<boolean>; busy: boolean; view: "teachers" | "students" | "binding" | "accounts" }) {
+function RosterAdmin({ account, state, mutate, busy, view,onAccountsChanged }: { onAccountsChanged?:()=>void; account: Account; state: State | null; mutate: (x: Record<string, unknown>) => Promise<boolean>; busy: boolean; view: "teachers" | "students" | "binding" | "accounts" }) {
     if (view === "teachers" || view === "students") return <PeopleDirectory kind={view === "teachers" ? "teacher" : "student"} people={view === "teachers" ? state?.allTeachers || [] : state?.allStudents || []} mutate={mutate} busy={busy}/>;
-    return <AccountDirectory actor={account} users={state?.users || []} teachers={state?.teachers || []} students={state?.students || []} mutate={mutate} busy={busy} createForm={<LocalAccountAdmin account={account} state={state} mutate={mutate} busy={busy}/>}/>;
+    return <AccountDirectory onAccountsChanged={onAccountsChanged} actor={account} users={state?.users || []} teachers={state?.teachers || []} students={state?.students || []} mutate={mutate} busy={busy} createForm={<LocalAccountAdmin account={account} state={state} mutate={mutate} busy={busy}/>}/>;
 }
 function LocalAccountAdmin({ account, state, mutate, busy }: {
     account: Account;
@@ -923,7 +927,7 @@ function LocalAccountAdmin({ account, state, mutate, busy }: {
     const [username, setUsername] = useState("");
     const [name, setName] = useState("");
     const [password, setPassword] = useState("");
-    const [role, setRole] = useState<"teacher" | "student" | "admin">("teacher");
+    const [role, setRole] = useState<"teacher" | "student" | "parent" | "admin">("teacher");
     const [teacherName, setTeacherName] = useState("");
     const [studentName, setStudentName] = useState("");
     const [resetUserId, setResetUserId] = useState("");
@@ -931,7 +935,7 @@ function LocalAccountAdmin({ account, state, mutate, busy }: {
     const canManageAdministrators = account.canManageAdministrators === true;
     const selectedRole = role === "admin" && !canManageAdministrators ? "teacher" : role;
     const can=useAdminAction();
-    const localUsers = (state?.users || []).filter(u => u.username && !u.disabledAt && u.id !== account.id && !u.isOwner && (!u.isGroupChief || account.isOwner) && (u.role !== "admin" || canManageAdministrators));
+    const localUsers = (state?.users || []).filter(u => (u.role!=='parent'||can('parents.manage')) && u.username && !u.disabledAt && u.id !== account.id && !u.isOwner && (!u.isGroupChief || account.isOwner) && (u.role !== "admin" || canManageAdministrators));
     return <section className="panel local-account-admin"><p className="muted">{t("创建账号后，请将临时密码交给用户；首次登录须设置新密码。忘记密码时可在下方重置。")}</p>
     {can("accounts.create")&&<form onSubmit={async (e) => { e.preventDefault(); if (await mutate({ action: "createLocalAccount", username, name, password, role: selectedRole, teacherName: selectedRole === "teacher" ? teacherName : "", studentName: selectedRole === "student" ? studentName : "" })) {
         setUsername("");
@@ -944,7 +948,7 @@ function LocalAccountAdmin({ account, state, mutate, busy }: {
       <label>{t("用户名")}<input required minLength={3} maxLength={40} pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,39}" autoComplete="off" value={username} onChange={e => setUsername(e.target.value)} placeholder={t("\u4F8B\u5982 ms.sydney")}/></label>
       <label>{t("\u663E\u793A\u59D3\u540D")}<input required maxLength={80} value={name} onChange={e => setName(e.target.value)}/></label>
       <label>{t("临时密码（至少 8 个字符）")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)}/></label>
-      <label>{t("\u89D2\u8272")}<select value={selectedRole} onChange={e => setRole(e.target.value as "teacher" | "student" | "admin")}><option value="teacher">{t("\u8001\u5E08")}</option><option value="student">{t("\u5B66\u751F")}</option>{canManageAdministrators && <option value="admin">{t("admin.regularAdministrator")}</option>}</select></label>
+      <label>{t("\u89D2\u8272")}<select value={selectedRole} onChange={e => setRole(e.target.value as "teacher" | "student" | "parent" | "admin")}><option value="teacher">{t("\u8001\u5E08")}</option><option value="student">{t("\u5B66\u751F")}</option>{can("parents.manage")&&<option value="parent">{t("家长")}</option>}{canManageAdministrators && <option value="admin">{t("admin.regularAdministrator")}</option>}</select></label>
       {selectedRole === "teacher" && <label>{t("\u5173\u8054\u8001\u5E08")}<select required value={teacherName} onChange={e => setTeacherName(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{state?.teachers?.map(t => <option key={t}>{t}</option>)}</select></label>}
       {selectedRole === "student" && <label>{t("\u5173\u8054\u5B66\u751F")}<select required value={studentName} onChange={e => setStudentName(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{(state?.students || []).map(s => <option key={s}>{s}</option>)}</select></label>}
       <div className="directory-form-actions"><Button disabled={busy || (selectedRole === "teacher" && !teacherName) || (selectedRole === "student" && !studentName)}>{t("\u521B\u5EFA\u8D26\u53F7")}</Button></div>

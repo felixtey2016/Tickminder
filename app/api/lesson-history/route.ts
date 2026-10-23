@@ -1,3 +1,4 @@
+import { isLegacyBusinessRole } from '@/lib/legacy-business-access';
 import {groupReader} from "@/lib/group-data";
 import { groupWhere } from "@/lib/group-data";
 import { NextResponse } from "next/server";
@@ -19,6 +20,7 @@ type TimePair = { plannedStart?: unknown; plannedEnd?: unknown };
 export async function GET(request: Request) {
   const actor = await currentAccount();
   if (!actor) return bad("Sign in required", 401);
+  if (!isLegacyBusinessRole(actor.role)) return bad("You cannot view this lesson", 403);
   try{
   await requireCorePermissions(actor,['lessons.view']);
   const showReschedules=actor.role!=='admin'||await hasAdminPermission(actor,'reschedules.view'),showAttendance=actor.role!=='admin'||await hasAdminPermission(actor,'attendance.view');
@@ -33,7 +35,6 @@ export async function GET(request: Request) {
     const active = new Set(roster.plans.filter(p => p.teacher === actor.teacherName).map(p => p.key));
     if (!teacherMaySeeLesson(actor, lesson, active)&&!await groupReader(actor.groupId).first("SELECT 1 FROM class_sessions WHERE id=? AND session_type='group' AND teacher_name=?",lesson.sessionId,actor.teacherName)) return bad("You cannot view this lesson", 403);
   }
-  if (!["admin", "student", "teacher"].includes(actor.role)) return bad("You cannot view this lesson", 403);
 
   const [requests, changes] = await Promise.all([
     showReschedules?guardedCoreReader(actor,['reschedules.view']).rows<typeof rescheduleRequests.$inferSelect>("SELECT id,original_start AS originalStart,original_end AS originalEnd,proposed_start AS proposedStart,proposed_end AS proposedEnd,status,note,requested_role AS requestedRole,requested_by AS requestedBy,requested_at AS requestedAt,responded_by AS respondedBy,responded_at AS respondedAt FROM reschedule_requests WHERE lesson_id=? OR (session_id=? AND EXISTS(SELECT 1 FROM class_sessions WHERE id=? AND session_type='group'))",id,lesson.sessionId,lesson.sessionId):[],

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import ts from 'typescript';
-import {posix} from 'node:path';
+import {createFixtureLoader} from './fixture-loader.mjs';
 
 // Execute the actual route and merge SQL in an isolated in-memory database.
 // Only authentication/network bindings are substituted; no production bypass exists.
@@ -38,25 +38,8 @@ const harness = {
 };
 globalThis.__accountTest = harness;
 const stub = `data:text/javascript;base64,${Buffer.from('export const {groupReader,groupStatement,requireGroup,learningDb,first,rows,change,teacherMayAssign,classroomMemberNames,currentAccount,currentBusinessAccount,verifyPassword,verifyGoogleCredential,OWNER_EMAIL,isOwnerAccount,classroomMayManage,deleteUnreferencedFile,NextResponse}=globalThis.__accountTest;').toString('base64')}`;
-const moduleCache=new Map();
-const boundaryModules=new Set(['lib/group-data.ts','lib/auth.ts','lib/learning-server.ts','lib/owner.ts','lib/classrooms-server.ts','lib/pdf-storage.ts','lib/password.ts']);
-async function load(file) {
-  if(moduleCache.has(file))return moduleCache.get(file);
-  let js=ts.transpileModule(readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
-  // Keep the original account/network substitutes; run new pure SQL/catalogue
-  // helpers for real instead of silently substituting every new application import.
-  for(const spec of new Set([...js.matchAll(/from ["']([^"']+)["']/g)].map(item=>item[1]))){
-    let target;
-    if(spec.startsWith('@/')||spec.startsWith('.')){
-      const path=spec.startsWith('@/')?spec.slice(2):posix.normalize(posix.join(posix.dirname(file),spec));
-      const dependency=path.endsWith('.ts')?path:path+'.ts';
-      target=boundaryModules.has(dependency)?stub:(await load(dependency)).url;
-    }else target=spec==='next/server'?stub:import.meta.resolve(spec);
-    js=js.replaceAll(`"${spec}"`,`"${target}"`).replaceAll(`'${spec}'`,`'${target}'`);
-  }
-  const url = 'data:text/javascript;base64,' + Buffer.from(js).toString('base64');
-  const result={url,module:await import(url)};moduleCache.set(file,result);return result;
-}
+const environmentUrl='data:text/javascript;base64,'+Buffer.from('export const env=globalThis.__accountTest.env;').toString('base64');
+const load=createFixtureLoader({runtimeUrl:stub,environmentUrl,runtimeFiles:['lib/group-data.ts','lib/auth.ts','lib/learning-server.ts','lib/owner.ts','lib/classrooms-server.ts','lib/pdf-storage.ts','lib/password.ts'],transform:(_file,code)=>code.replaceAll('"next/server"',JSON.stringify(stub)).replaceAll("'next/server'",JSON.stringify(stub))});
 const groupSource=readFileSync(new URL('../lib/group-data.ts',import.meta.url),'utf8').replace('"cloudflare:workers"',JSON.stringify('data:text/javascript;base64,'+Buffer.from('export const env=globalThis.__accountTest.env;').toString('base64'))).replace('"drizzle-orm"',JSON.stringify(import.meta.resolve('drizzle-orm')));
 Object.assign(harness,await import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(groupSource,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64')));
 const merge = await load('lib/account-merge.ts');

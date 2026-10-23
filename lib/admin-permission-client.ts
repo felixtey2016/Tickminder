@@ -12,7 +12,7 @@ export type AdminPermissionAccount = {
 export function canAdminAction(account: AdminPermissionAccount | null | undefined, key: AdminGrantKey): boolean {
   if (account?.role !== "admin") return true;
   const permissions = account.adminPermissions;
-  if (!permissions?.enforced && key.startsWith("prepayments.")) return hasAdminGrant([key],key) && (account.isOwner === true || account.isGroupChief === true || permissions?.privileged === true || hasAdminGrant(permissions?.grants || [],key));
+  if (!permissions?.enforced && (key.startsWith("prepayments.")||key.startsWith("parents."))) return hasAdminGrant([key],key) && (account.isOwner === true || account.isGroupChief === true || permissions?.privileged === true || hasAdminGrant(permissions?.grants || [],key));
   if (!permissions?.enforced) return true;
   return hasAdminGrant(permissions.grants || [], key) || (permissions.privileged === true && hasAdminGrant([key], key));
 }

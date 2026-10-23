@@ -1,3 +1,4 @@
+import { isLegacyBusinessRole } from '@/lib/legacy-business-access';
 import {adminPermissionFailure} from "@/lib/admin-permission-access";
 import { NextResponse } from "next/server";
 import { currentBusinessAccount } from "@/lib/auth";
@@ -12,6 +13,7 @@ function failure(request:Request,error:unknown) {
 export async function GET(request:Request) {
   try {
     const actor=await currentBusinessAccount();if(!actor)throw new LearningEditError("请先登录",401);
+    if(!isLegacyBusinessRole(actor.role))throw new LearningEditError("没有权限执行此操作",403);
     const url=new URL(request.url),kind=url.searchParams.get("kind"),id=url.searchParams.get("id") || "";
     if(!["material","homework"].includes(kind||"") || !id)throw new LearningEditError("请求格式无效");
     return NextResponse.json(await versionHistory(actor,kind as "material"|"homework",id),{headers:{"cache-control":"private, no-store"}});
@@ -21,6 +23,7 @@ export async function POST(request:Request) {
   try {
     if(new URL(request.url).origin!==request.headers.get("origin"))throw new LearningEditError("Origin mismatch",403);
     const actor=await currentBusinessAccount();if(!actor)throw new LearningEditError("请先登录",401);
+    if(!isLegacyBusinessRole(actor.role))throw new LearningEditError("没有权限执行此操作",403);
     const value:unknown=await request.json();if(!value || typeof value!=="object" || Array.isArray(value))throw new LearningEditError("请求格式无效");
     const data=value as Record<string,unknown>;if(!["material","homework"].includes(String(data.kind)))throw new LearningEditError("请求格式无效");
     return NextResponse.json(await editPublishedContent(actor,data.kind as "material"|"homework",data));

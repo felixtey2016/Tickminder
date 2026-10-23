@@ -13,10 +13,10 @@ globalThis.__quizAccountHistory={first:async(sql,...args)=>{
   reads++;
   if((sql.match(/\bUNION(?:\s+ALL)?\s+SELECT\b/gi)||[]).length>=5)throw Error('too many terms in compound SELECT: SQLITE_ERROR');
   return db.prepare(sql).get(...args)||null;
-},learningDb:()=>{throw Error('History checks must not write');},authorityGuard:()=>{throw Error('History checks must not mutate accounts');}};
-const stub='data:text/javascript;base64,'+Buffer.from('export const {first,learningDb,authorityGuard}=globalThis.__quizAccountHistory;').toString('base64');
+},learningDb:()=>{throw Error('History checks must not write');},accountSessionPredicate:()=>({sql:'1',args:[]}),authorityGuard:()=>{throw Error('History checks must not mutate accounts');}};
+const stub='data:text/javascript;base64,'+Buffer.from('export const {first,learningDb,authorityGuard,accountSessionPredicate}=globalThis.__quizAccountHistory;').toString('base64');
 let source=ts.transpileModule(readFileSync(new URL('../lib/account-merge.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
-source=source.replace(/from ["']@\/lib\/(learning-server|admin-authority)["']/g,`from "${stub}"`);
+source=source.replace(/from ["']@\/lib\/(learning-server|admin-authority|account-session)["']/g,`from "${stub}"`);
 const {hasQuizAccountHistory}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 try{
   assert.equal(await hasQuizAccountHistory('no-history'),false);

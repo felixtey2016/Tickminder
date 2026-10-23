@@ -1,3 +1,4 @@
+import { isLegacyBusinessRole } from '@/lib/legacy-business-access';
 import { NextResponse } from "next/server";
 import { currentBusinessAccount } from "@/lib/auth";
 import { requireGroup,groupReader } from "@/lib/group-data";
@@ -22,6 +23,7 @@ export async function GET(request:Request) {
   try {
     const actor=await currentBusinessAccount();
     if(!actor) throw new FolderError("请先登录",401);
+    if(!isLegacyBusinessRole(actor.role)) throw new FolderError("没有权限执行此操作",403);
     await requireCorePermissions(actor,['folders.view']);
     const groupId=requireGroup(actor.groupId),classroomId=new URL(request.url).searchParams.get("classroomId") || "";
     if(!await classroomMayRead(actor,classroomId)) throw new FolderError("班级不存在或无权访问",403);
