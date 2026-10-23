@@ -3,6 +3,7 @@ import { hasAdminGrant, type AdminGrantKey } from "./admin-permissions";
 export type AdminPermissionAccount = {
   role?: string;
   isOwner?: boolean;
+  isGroupChief?: boolean;
   canManageAdministrators?: boolean;
   adminPermissions?: { enforced: boolean; grants: AdminGrantKey[]; privileged: boolean };
 };
@@ -11,6 +12,7 @@ export type AdminPermissionAccount = {
 export function canAdminAction(account: AdminPermissionAccount | null | undefined, key: AdminGrantKey): boolean {
   if (account?.role !== "admin") return true;
   const permissions = account.adminPermissions;
+  if (!permissions?.enforced && key.startsWith("prepayments.")) return hasAdminGrant([key],key) && (account.isOwner === true || account.isGroupChief === true || permissions?.privileged === true || hasAdminGrant(permissions?.grants || [],key));
   if (!permissions?.enforced) return true;
   return hasAdminGrant(permissions.grants || [], key) || (permissions.privileged === true && hasAdminGrant([key], key));
 }
@@ -29,7 +31,7 @@ const viewGrants: Record<string, AdminGrantKey[]> = {
 export function canAdminView(account: AdminPermissionAccount | null | undefined, view: string): boolean {
   if (account?.role !== "admin") return true;
   if (view === "groups") return account.isOwner === true;
-  if (view === "billing") return account.isOwner === true || ["fees.view","invoices.view","finance.view","payroll.view","expenses.view"].some(key=>canAdminAction(account,key as AdminGrantKey));
+  if (view === "billing") return account.isOwner === true || ["fees.view","invoices.view","finance.view","payroll.view","expenses.view","prepayments.view"].some(key=>canAdminAction(account,key as AdminGrantKey));
   if (view === "accounts" || view === "people") {
     if (account.canManageAdministrators === true) return true;
   }

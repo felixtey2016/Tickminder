@@ -23,13 +23,13 @@ function current<T extends {effectiveFrom:string}>(versions:T[]){return versions
 async function versions(actor:Account,studentId:string,subjectKey:string){return read<BillingRate>(actor,`SELECT ${rateColumns} FROM billing_rate_versions v JOIN billing_rates r ON r.id=v.rate_id AND r.group_id=v.group_id WHERE r.group_id=? AND r.student_id=? AND r.subject_key=? ORDER BY v.effective_from DESC,v.revision DESC LIMIT 50`,context(actor).group,studentId,subjectKey);}
 export async function billingRateSettings(actor:Account,planKey:string):Promise<BillingRateResponse>{
  const group=await requireBillingManager(actor);if(!planKey||planKey.length>512)throw new BillingError('请选择有效的学生科目安排');
- const rows=await read<Omit<BillingContext,'history'|'currentRate'|'revision'>>(actor,`SELECT b.id AS studentId,b.student_name AS student,bs.subject_key AS subjectKey,p.subject,s.syllabus_id AS syllabusId,s.grade,(s.active=1 AND p.active=1) AS active
+ const rows=await read<Omit<BillingContext,'history'|'currentRate'|'revision'|'collectionTiming'|'collectionRevision'>>(actor,`SELECT b.id AS studentId,b.student_name AS student,bs.subject_key AS subjectKey,p.subject,s.syllabus_id AS syllabusId,s.grade,(s.active=1 AND p.active=1) AS active
  FROM plans p JOIN students s ON s.group_id=p.group_id AND s.name=p.student JOIN billing_students b ON b.group_id=s.group_id AND b.student_name=s.name
  JOIN billing_subjects bs ON bs.group_id=b.group_id AND bs.student_id=b.id AND bs.subject_key=CASE WHEN p.subject_id IS NOT NULL THEN 'id:'||s.syllabus_id||':'||p.subject_id ELSE 'label:'||lower(trim(p.subject)) END WHERE p.group_id=? AND p.key=?`,group,planKey);
  if(!rows[0]){await requireBillingManager(actor);throw new BillingError('学生科目安排不存在或已改变',404);}
- const selected=rows[0],[history,policies,currentRates]=await Promise.all([versions(actor,selected.studentId,selected.subjectKey),billingPolicies(actor),read<BillingRate>(actor,`SELECT ${rateColumns} FROM billing_rate_versions v JOIN billing_rates r ON r.id=v.rate_id AND r.group_id=v.group_id WHERE r.group_id=? AND r.student_id=? AND r.subject_key=? AND v.effective_from<=? ORDER BY v.effective_from DESC,v.revision DESC LIMIT 1`,group,selected.studentId,selected.subjectKey,malaysiaDate(new Date().toISOString()))]);
+ const selected=rows[0],[history,policies,currentRates,collection]=await Promise.all([versions(actor,selected.studentId,selected.subjectKey),billingPolicies(actor),read<BillingRate>(actor,`SELECT ${rateColumns} FROM billing_rate_versions v JOIN billing_rates r ON r.id=v.rate_id AND r.group_id=v.group_id WHERE r.group_id=? AND r.student_id=? AND r.subject_key=? AND v.effective_from<=? ORDER BY v.effective_from DESC,v.revision DESC LIMIT 1`,group,selected.studentId,selected.subjectKey,malaysiaDate(new Date().toISOString())),read<{timing:'advance'|'arrears';revision:number}>(actor,'SELECT timing,revision FROM prepayment_collection_settings WHERE group_id=? AND student_id=? AND subject_key=?',group,selected.studentId,selected.subjectKey)]);
  await requireBillingManager(actor);
- return{context:{...selected,active:Boolean(selected.active),revision:Math.max(0,...history.map(v=>v.revision)),currentRate:currentRates[0]||null,history},policy:current(policies),policyRevision:Math.max(0,...policies.map(p=>p.revision)),policyHistory:policies};
+ return{context:{...selected,active:Boolean(selected.active),collectionTiming:collection[0]?.timing||'arrears',collectionRevision:collection[0]?.revision||0,revision:Math.max(0,...history.map(v=>v.revision)),currentRate:currentRates[0]||null,history},policy:current(policies),policyRevision:Math.max(0,...policies.map(p=>p.revision)),policyHistory:policies};
 }
 function rev(value:unknown){if(!Number.isSafeInteger(value)||Number(value)<0)throw new BillingError('资料版本无效，请刷新后重试',409);return Number(value);}
 function opId(value:unknown){const id=str(value);if(!/^[A-Za-z0-9_-]{16,100}$/.test(id))throw new BillingError('操作编号无效，请重新打开窗口');return id;}
@@ -37,6 +37,7 @@ async function hash(value:unknown){const bytes=await crypto.subtle.digest('SHA-2
 function futureDate(value:unknown,revision:number){const date=billingDate(value);if(revision>0&&date<=malaysiaDate(new Date().toISOString()))throw new BillingError('新版本须从明天或以后生效，历史收费依据会保留');return date;}
 async function replay(actor:Account,operation:string,requestHash:string){const rows=await read<{requestHash:string;actorId:string;resultJson:string}>(actor,'SELECT request_hash AS requestHash,actor_id AS actorId,result_json AS resultJson FROM billing_operations WHERE group_id=? AND operation_id=?',context(actor).group,operation);if(!rows[0])return null;if(rows[0].requestHash!==requestHash||rows[0].actorId!==actor.id)throw new BillingError('操作编号已用于其他更改，请刷新后重试',409);return JSON.parse(rows[0].resultJson);}
 export async function saveBilling(actor:Account,data:Record<string,unknown>){
+ if(data.action==='saveCollectionTiming')return saveCollectionTiming(actor,data);
  if(data.action==='saveAdjustment'||data.action==='clearAdjustment')return saveAdjustment(actor,data);
  const group=await requireBillingManager(actor),action=str(data.action),revision=rev(data.revision),operation=opId(data.operationId),effectiveFrom=billingDate(data.effectiveFrom),now=new Date().toISOString(),id=crypto.randomUUID();
  if('groupId'in data&&data.groupId!==group)throw new BillingError('没有权限修改其他补习集团的财务资料',403);
@@ -74,6 +75,23 @@ export async function saveBilling(actor:Account,data:Record<string,unknown>){
  }else throw new BillingError('未知财务操作');
  statements.push(db.prepare(`INSERT INTO audit(group_id,id,lesson_id,actor_id,action,after_json,at) SELECT ?,?,'billing',?,?,?,? WHERE ${guard}`).bind(group,crypto.randomUUID(),actor.id,'billing.'+action,JSON.stringify({versionId:id,revision:revision+1}),now,group,operation,requestHash));
  const saved=await db.batch(statements);if(!saved[1].meta.changes)throw new BillingError('资料或权限已改变，请刷新后重试',409);return result;
+}
+
+
+// Collection timing is independent of immutable price versions.
+async function saveCollectionTiming(actor:Account,data:Record<string,unknown>){
+ const group=await requireBillingManager(actor),revision=rev(data.revision),operation=opId(data.operationId),studentId=str(data.studentId),subjectKey=str(data.subjectKey),timing=str(data.timing),action='saveCollectionTiming';
+ if('groupId'in data&&data.groupId!==group)throw new BillingError('没有权限修改其他补习集团的财务资料',403);
+ if(!studentId||!subjectKey||!['advance','arrears'].includes(timing))throw new BillingError('请选择有效的收款时点');
+ const requestHash=await hash({action,revision,studentId,subjectKey,timing}),old=await replay(actor,operation,requestHash);if(old){await requireBillingManager(actor);return old;}
+ const db=learningDb(),c=writeAuthority(actor),now=new Date().toISOString(),result={ok:true,revision:revision+1,timing,studentId,subjectKey};
+ const liveSubject=`EXISTS(SELECT 1 FROM billing_subjects bs JOIN billing_students b ON b.id=bs.student_id AND b.group_id=bs.group_id JOIN students s ON s.group_id=b.group_id AND s.name=b.student_name WHERE bs.group_id=? AND bs.student_id=? AND bs.subject_key=? AND s.active=1 AND EXISTS(SELECT 1 FROM plans p WHERE p.group_id=s.group_id AND p.student=s.name AND p.active=1 AND CASE WHEN p.subject_id IS NOT NULL THEN 'id:'||s.syllabus_id||':'||p.subject_id ELSE 'label:'||lower(trim(p.subject)) END=bs.subject_key))`;
+ const guard='EXISTS(SELECT 1 FROM billing_operations WHERE group_id=? AND operation_id=? AND request_hash=? AND actor_id=?)',guardArgs=[group,operation,requestHash,actor.id];
+ const statements=[db.prepare(`INSERT INTO billing_operations(group_id,operation_id,actor_id,action,request_hash,result_json,created_at) SELECT ?,?,?,?,?,?,? WHERE ${c.sql} AND ${liveSubject} AND coalesce((SELECT revision FROM prepayment_collection_settings WHERE group_id=? AND student_id=? AND subject_key=?),0)=?`).bind(group,operation,actor.id,action,requestHash,JSON.stringify(result),now,...c.args,group,studentId,subjectKey,group,studentId,subjectKey,revision),
+ db.prepare(`INSERT INTO prepayment_collection_settings(group_id,student_id,subject_key,timing,revision,updated_by,updated_at) SELECT ?,?,?,?,?,?,? WHERE ${guard} ON CONFLICT(group_id,student_id,subject_key) DO UPDATE SET timing=excluded.timing,revision=excluded.revision,updated_by=excluded.updated_by,updated_at=excluded.updated_at WHERE prepayment_collection_settings.revision=?`).bind(group,studentId,subjectKey,timing,revision+1,actor.id,now,...guardArgs,revision),
+ db.prepare(`INSERT INTO audit(group_id,id,lesson_id,actor_id,action,after_json,at) SELECT ?,?,'billing',?,'billing.saveCollectionTiming',?,? WHERE ${guard}`).bind(group,crypto.randomUUID(),actor.id,JSON.stringify({studentId,subjectKey,timing,revision:revision+1}),now,...guardArgs)];
+ try{const saved=await db.batch(statements);if(!saved[0].meta.changes)throw new BillingError('资料或权限已改变，请刷新后重试',409);}catch(error){const repeated=await replay(actor,operation,requestHash);if(repeated){await requireBillingManager(actor);return repeated;}throw error;}
+ return result;
 }
 
 type Source={id:string;student:string;subject:string;teacherName:string;plannedStart:string;plannedEnd:string;actualStart:string|null;actualEnd:string|null;status:string;attendanceKind:string|null;chargeable:number|null;reviewedAt:string|null;replacementFor:string|null;sessionId:string|null;sessionStatus:string|null;classroomId:string|null;classroomTitle:string|null;teachingStatus:string|null;teachingStart:string|null;teachingEnd:string|null;sessionReviewedAt:string|null;attendanceStatus:string|null;arrivedAt:string|null;leftAt:string|null;subjectId:string|null};

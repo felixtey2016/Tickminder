@@ -38,6 +38,12 @@ check(adminMutationGrant({action:'archiveClassroom',archived:false})==='classroo
 check(adminMutationGrant({action:'saveAnnouncement',id:'existing'})==='announcements.edit','announcement edit is independent from create');
 check(adminMutationGrant({action:'restoreAccount'})==='accounts.restore','account restoration has its own capability');
 
+check(canAdminView(actor(['prepayments.view']),'billing'),'prepayment reader can open finance');
+check(!canAdminAction(actor(['prepayments.view']),'prepayments.record'),'balance view does not grant cash collection');
+check(!canAdminAction({role:'admin',adminPermissions:{enforced:false,grants:[],privileged:false}},'prepayments.record'),'new money powers remain explicit during preparation');
+check(canAdminAction({role:'admin',isOwner:true},'prepayments.record'),'Owner retains prepayment presentation during recovery');
+check(canAdminAction({role:'admin',isGroupChief:true},'prepayments.record'),'group chief retains prepayment presentation during recovery');
+
 // Render the actual shared Button and context to prove denied controls disappear
 // while ordinary non-mutating controls and non-admin role checks stay intact.
 const ui=await build({stdin:{contents:`import React from 'react';import {renderToStaticMarkup} from 'react-dom/server';import {AdminPermissionContext,AdminPermissionGate} from './app/admin-permission-context';import {Button} from './components/ui/button';export function render(account){return renderToStaticMarkup(<AdminPermissionContext.Provider value={account}><Button adminGrant="students.create">Create student</Button><Button>Refresh</Button><AdminPermissionGate grant="students.edit"><form>Edit form</form></AdminPermissionGate></AdminPermissionContext.Provider>);}`,loader:'tsx',resolveDir:root,sourcefile:'permission-component-fixture.tsx'},bundle:true,platform:'node',format:'cjs',external:['react','react-dom/server'],write:false});

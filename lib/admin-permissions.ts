@@ -26,6 +26,7 @@ const currentModules = [
   { id: "audit", actions: ["view"] },
   { id: "fees", actions: ["view"] },
   { id: "invoices", actions: ["view", "create", "edit", "issue", "adjust", "void"] },
+  { id: "prepayments", actions: ["view", "manage", "record", "apply", "refund", "reverse"] },
   { id: "payments", actions: ["view", "record", "reverse", "refund"] },
   { id: "finance", actions: ["view"] },
   { id: "payroll", actions: ["view", "rates", "edit", "delete", "confirm", "pay", "reverse"] },
@@ -55,6 +56,7 @@ const extraDependencies: Partial<Record<AdminGrantKey, AdminGrantKey[]>> = {
   "invoices.adjust": ["payments.view"],
   "invoices.void": ["payments.view"],
   "payments.view": ["invoices.view"],
+  "prepayments.apply": ["invoices.view"],
   "finance.view": ["invoices.view", "payments.view"],
 };
 

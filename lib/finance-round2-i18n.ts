@@ -89,6 +89,26 @@ Object.assign(entries,{
  openInvoice:['打开账单','Open invoice'],
  openMonthPayroll:['打开该月薪资','Open pay for this month'],
 });
+Object.assign(entries,{
+ settledAmount:['对应账单已结算','Settled for these invoices'],
+ settledHint:['截至现在，含现金净额及预收抵扣；不代表所选月份新现金。','As of now, including net invoice cash and prepayment applications. This is not new cash for the selected month.'],
+ cashHint:['按实际收付款日期统计现金，包含预收学费的收款、退款和撤销；抵扣及退回余额不重复计入。','Actual cash receipt and payment dates, including prepayments, refunds and reversals. Applications and releases add no cash.'],
+ serviceHint:['按上课月份查看对应账单与关联现金收退款。预收抵扣另列；已结算金额含抵扣，不代表本月新现金。','Invoices and linked cash receipts or refunds follow the service month. Prepayment applications are separate. Settled amounts include applications and are not new monthly cash.'],
+ issuedHint:['按开单月份查看对应账单与关联现金收退款。预收抵扣另列；已结算金额含抵扣，不代表本月新现金。','Invoices and linked cash receipts or refunds follow the issue month. Prepayment applications are separate. Settled amounts include applications and are not new monthly cash.'],
+ prepaymentBalance:['当前可用预收余额','Current available prepayment balance'],
+ prepaymentApplied:['预收抵扣净额','Net prepayment applied'],
+ prepaymentCash:['预收现金明细','Prepayment cash movements'],
+ prepaymentSettlements:['预收抵扣与退回','Prepayment applications and releases'],
+ prepaymentBalances:['学生预收余额','Student prepayment balances'],
+ prepaymentReceived:['预收学费','Prepayment received'],
+ prepaymentRefund:['预收退款','Prepayment refund'],
+ prepaymentReverse:['预收撤销','Prepayment reversal'],
+ prepaymentApply:['预收抵扣','Prepayment applied'],
+ prepaymentRelease:['抵扣退回余额','Application released to balance'],
+ prepaymentBalanceHint:['此项为当前余额，不受所选月份影响。','This is the current balance across all months.'],
+ prepaymentSettlementHint:['抵扣和退回只改变账单结算与可用余额，不计入现金流。','Applications and releases change invoice settlement and available balances without adding cash movements.'],
+ prepaymentCashOnly:['预收现金明细按实际收退日期查询。','Prepayment cash details use the actual receipt or refund date.'],
+});
 const errors:Record<string,string>={
  '没有权限查看或修改老师薪资':'You do not have permission to view or change teacher pay.',
  '薪资版本无效，请刷新后重试':'The pay revision is invalid. Refresh and try again.',

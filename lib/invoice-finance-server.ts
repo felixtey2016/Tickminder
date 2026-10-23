@@ -9,9 +9,9 @@ import {prepareInvoiceAttendanceCorrection} from './invoice-attendance-correctio
 
 type Guard={sql:string;args:unknown[]};
 type StoredInvoice={id:string;studentId:string;status:string;documentJson:string;totalCents:number};
-type BalanceRow={invoiceId:string;revision:number;originalTotalCents:number;chargeCents:number;creditCents:number;receivedCents:number;reversedCents:number;refundedCents:number;voidedAt:string|null;voidReason:string};
+type BalanceRow={invoiceId:string;revision:number;originalTotalCents:number;chargeCents:number;creditCents:number;receivedCents:number;reversedCents:number;refundedCents:number;prepaymentCents:number;voidedAt:string|null;voidReason:string};
 const text=(v:unknown)=>typeof v==='string'?v.trim():'';
-const totalsColumns=`i.id AS invoiceId,coalesce(f.revision,0) AS revision,i.total_cents AS originalTotalCents,coalesce(f.charge_cents,0) AS chargeCents,coalesce(f.credit_cents,0) AS creditCents,coalesce(f.received_cents,0) AS receivedCents,coalesce(f.reversed_cents,0) AS reversedCents,coalesce(f.refunded_cents,0) AS refundedCents,f.voided_at AS voidedAt,coalesce(f.void_reason,'') AS voidReason`;
+const totalsColumns=`i.id AS invoiceId,coalesce(f.revision,0) AS revision,i.total_cents AS originalTotalCents,coalesce(f.charge_cents,0) AS chargeCents,coalesce(f.credit_cents,0) AS creditCents,coalesce(f.received_cents,0) AS receivedCents,coalesce(f.reversed_cents,0) AS reversedCents,coalesce(f.refunded_cents,0) AS refundedCents,coalesce(f.prepayment_cents,0) AS prepaymentCents,f.voided_at AS voidedAt,coalesce(f.void_reason,'') AS voidReason`;
 const totalsFrom='invoices i LEFT JOIN invoice_finance_accounts f ON f.group_id=i.group_id AND f.invoice_id=i.id';
 export function financeAuthority(actor:Account,key:string='payments.view'):Guard{
  if(actor.role!=='admin'||!actor.groupId||!/^[a-z0-9-]{1,64}$/.test(actor.groupId))throw new InvoiceFinanceError('没有权限查看或修改收款记录',403);
@@ -25,8 +25,8 @@ export async function requireFinancePermission(actor:Account,key='payments.view'
 async function read<T>(actor:Account,key:string,sql:string,...args:unknown[]){const a=financeAuthority(actor,key);return(await learningDb().prepare(`SELECT * FROM (${sql}) WHERE ${a.sql}`).bind(...args,...a.args).all<T>()).results||[];}
 function validId(value:unknown,label='账单'){const id=text(value);if(!/^[A-Za-z0-9:_-]{1,100}$/.test(id))throw new InvoiceFinanceError(`请选择有效${label}`);return id;}
 function summarize(row:BalanceRow):InvoiceFinanceSummary{
- const adjustedTotalCents=row.originalTotalCents+row.chargeCents-row.creditCents,paidCents=row.receivedCents-row.reversedCents-row.refundedCents;
- return{...row,adjustedTotalCents,paidCents,remainingCents:row.voidedAt?0:Math.max(0,adjustedTotalCents-paidCents),creditBalanceCents:row.voidedAt?0:Math.max(0,paidCents-adjustedTotalCents),status:row.voidedAt?'void':paidCents>=adjustedTotalCents?'paid':paidCents>0?'partially_paid':'unpaid'};
+ const adjustedTotalCents=row.originalTotalCents+row.chargeCents-row.creditCents,cashPaidCents=row.receivedCents-row.reversedCents-row.refundedCents,paidCents=cashPaidCents+row.prepaymentCents;
+ return{...row,adjustedTotalCents,cashPaidCents,paidCents,remainingCents:row.voidedAt?0:Math.max(0,adjustedTotalCents-paidCents),creditBalanceCents:row.voidedAt?0:Math.max(0,paidCents-adjustedTotalCents),status:row.voidedAt?'void':paidCents>=adjustedTotalCents?'paid':paidCents>0?'partially_paid':'unpaid'};
 }
 async function balance(actor:Account,id:string,key='payments.view'){
  const rows=await read<BalanceRow>(actor,key,`SELECT ${totalsColumns} FROM ${totalsFrom} WHERE i.group_id=? AND i.id=? AND i.status='issued'`,actor.groupId,id);

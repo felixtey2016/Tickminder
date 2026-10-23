@@ -14,6 +14,7 @@ export function checkRestoredInvoiceFinance(db){
  const json=v=>{try{return JSON.parse(v);}catch{fail();}};
  const payments=db.prepare('SELECT * FROM invoice_payments').all(),receipts=db.prepare('SELECT * FROM invoice_receipts').all(),events=db.prepare('SELECT * FROM invoice_finance_events').all(),accounts=db.prepare('SELECT * FROM invoice_finance_accounts').all();
  const identity=(group,id)=>JSON.stringify([group,id]),accountMap=new Map(accounts.map(a=>[identity(a.group_id,a.invoice_id),a]));
+ const prepaymentEvents=db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='prepayment_events'").get()?db.prepare("SELECT * FROM prepayment_events WHERE kind IN('apply','release')").all():[];
  const receiptBalances=new Map();
  const operations=new Map(db.prepare('SELECT * FROM invoice_finance_operations').all().map(o=>{
   const result=json(o.result_json);
@@ -28,12 +29,17 @@ export function checkRestoredInvoiceFinance(db){
  for(const account of accounts){
   const invoice=db.prepare('SELECT * FROM invoices WHERE group_id=? AND id=?').get(account.group_id,account.invoice_id);
   if(!invoice||invoice.status!=='issued'||invoice.student_id!==account.student_id||invoice.total_cents!==account.original_total_cents||!integer(account.original_total_cents)||!timestamp(account.created_at)||!timestamp(account.updated_at))fail();
-  const rows=events.filter(e=>e.group_id===account.group_id&&e.invoice_id===account.invoice_id).sort((a,b)=>a.expected_revision-b.expected_revision);
-  const totals={charge_cents:0,credit_cents:0,received_cents:0,reversed_cents:0,refunded_cents:0},paid=new Map();let voided=null;
+  const rows=[...events.filter(e=>e.group_id===account.group_id&&e.invoice_id===account.invoice_id),...prepaymentEvents.filter(e=>e.group_id===account.group_id&&e.invoice_id===account.invoice_id).map(e=>({...e,expected_revision:e.expected_invoice_revision,prepayment:true}))].sort((a,b)=>a.expected_revision-b.expected_revision);
+  const totals={charge_cents:0,credit_cents:0,received_cents:0,reversed_cents:0,refunded_cents:0,...('prepayment_cents'in account?{prepayment_cents:0}:{})},paid=new Map();let voided=null;
   for(const [index,event]of rows.entries()){
+   if(event.prepayment){
+    const net=totals.received_cents-totals.reversed_cents-totals.refunded_cents+totals.prepayment_cents,due=account.original_total_cents+totals.charge_cents-totals.credit_cents;
+    if(voided||event.expected_revision!==index||event.student_id!==account.student_id||!integer(event.amount_cents,1)||!timestamp(event.created_at)||!timestamp(event.occurred_at)||event.kind==='apply'&&event.amount_cents>due-net||event.kind==='release'&&event.amount_cents>totals.prepayment_cents)fail();
+    totals.prepayment_cents+=event.kind==='apply'?event.amount_cents:-event.amount_cents;continue;
+   }
    const op=operations.get(identity(event.group_id,event.operation_id));
    if(voided||event.expected_revision!==index||!op||op.actor_id!==event.actor_id||json(op.result_json).invoiceId!==account.invoice_id||!timestamp(event.occurred_at)||!timestamp(event.created_at)||!text(event.reason)||!text(event.notes)||!text(event.reference)||!['','cash','bank_transfer','duitnow','tng','other'].includes(event.method))fail();
-   const amount=event.amount_cents,net=totals.received_cents-totals.reversed_cents-totals.refunded_cents,due=account.original_total_cents+totals.charge_cents-totals.credit_cents;
+   const amount=event.amount_cents,net=totals.received_cents-totals.reversed_cents-totals.refunded_cents+(totals.prepayment_cents||0),due=account.original_total_cents+totals.charge_cents-totals.credit_cents;
    if(!integer(amount,['void','attendance_correction'].includes(event.kind)?0:1)||event.kind!=='payment'&&!event.reason.trim())fail();
    if(event.kind==='payment'){
     const payment=payments.find(p=>p.id===event.payment_id&&p.group_id===event.group_id&&p.invoice_id===event.invoice_id);
@@ -46,7 +52,7 @@ export function checkRestoredInvoiceFinance(db){
     if(event.kind==='reverse'){if(payment.refunded||payment.amount!==amount)fail();payment.reversed=true;totals.reversed_cents+=amount;}
     else{if(amount>payment.amount-payment.refunded)fail();payment.refunded+=amount;totals.refunded_cents+=amount;}
    }else if(event.kind==='charge'){if(event.payment_id!==null||due+amount>100000000)fail();totals.charge_cents+=amount;}
-   else if(event.kind==='credit'){if(event.payment_id!==null||amount>due)fail();totals.credit_cents+=amount;}
+   else if(event.kind==='credit'){if(event.payment_id!==null||amount>due-(totals.prepayment_cents||0))fail();totals.credit_cents+=amount;}
    else if(event.kind==='void'){if(event.payment_id!==null||amount!==0||net!==0)fail();voided=event;}
    else if(event.kind==='attendance_correction'){if(event.payment_id!==null||amount!==0)fail();}
    else fail();

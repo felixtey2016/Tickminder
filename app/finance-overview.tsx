@@ -11,7 +11,7 @@ import {financeGet,financeMonth,financeMoney,financeDate,FinancePagination,Finan
 import './finance-round2.css';
 
 type ExportKind='invoices'|'payments'|'arrears'|'payroll'|'expenses';
-export type FinanceOverviewPermissions={payroll:boolean;expenses:boolean;export:boolean;invoices?:boolean};
+export type FinanceOverviewPermissions={payroll:boolean;expenses:boolean;export:boolean;invoices?:boolean;prepayments?:boolean};
 type DetailQuery={kind:FinanceDetailKind;month:string;basis:FinanceBasis;page:number;teacher:string;subject:string;classroomId:string};
 type Metric={label:string;value:number|null|undefined;kind?:FinanceDetailKind;hint?:string};
 
@@ -20,15 +20,17 @@ const debtKinds:FinanceDetailKind[]=['arrears','overdue','arrearsAll','overdueAl
 const payrollKinds:FinanceDetailKind[]=['payroll','unpaidPayroll','payrollCash','missingPayRates','monthlyPayReviews'];
 const reminderKind:Record<string,FinanceDetailKind>={unbilled:'unbilled',attendance:'attendance',makeups:'makeups',makeup:'makeups',missingFees:'missingFees',missingFee:'missingFees',missingPayRates:'missingPayRates',missingPayrate:'missingPayRates',overdue:'overdue',unpaidPayroll:'unpaidPayroll',payroll:'unpaidPayroll',pendingChanges:'pendingChanges',monthlyPayReviews:'monthlyPayReviews'};
 const reminderLabel:Record<string,string>={unbilled:'unbilled',attendance:'attendance',makeups:'makeup',makeup:'makeup',missingFees:'missingFee',missingFee:'missingFee',missingPayRates:'missingPayrate',missingPayrate:'missingPayrate',overdue:'overdue',unpaidPayroll:'unpaidPayroll',payroll:'unpaidPayroll',pendingChanges:'pendingChanges',monthlyPayReviews:'monthlyPayReviews'};
-const detailLabels:Record<FinanceDetailKind,string>={invoices:'exportInvoices',payments:'netReceiptDetails',receivedPayments:'received',refunds:'refunds',paymentReversals:'paymentReversals',arrears:'exportArrears',overdue:'overdue',arrearsAll:'allMonthArrears',overdueAll:'allMonthOverdue',payroll:'exportPayroll',unpaidPayroll:'unpaidPayroll',payrollCash:'salaryPaid',expenses:'exportExpenses',expenseCash:'expensePaid',unbilled:'unbilled',attendance:'attendance',makeups:'makeup',missingFees:'missingFee',missingPayRates:'missingPayrate',pendingChanges:'pendingChanges',monthlyPayReviews:'monthlyPayReviews'};
+const detailLabels:Record<FinanceDetailKind,string>={invoices:'exportInvoices',payments:'netReceiptDetails',receivedPayments:'received',refunds:'refunds',paymentReversals:'paymentReversals',arrears:'exportArrears',overdue:'overdue',arrearsAll:'allMonthArrears',overdueAll:'allMonthOverdue',payroll:'exportPayroll',unpaidPayroll:'unpaidPayroll',payrollCash:'salaryPaid',expenses:'exportExpenses',expenseCash:'expensePaid',unbilled:'unbilled',attendance:'attendance',makeups:'makeup',missingFees:'missingFee',missingPayRates:'missingPayrate',pendingChanges:'pendingChanges',monthlyPayReviews:'monthlyPayReviews',prepaymentCash:'prepaymentCash',prepaymentSettlements:'prepaymentSettlements',prepaymentBalances:'prepaymentBalances'};
 function rowStatus(row:FinanceReportRow,kind:FinanceDetailKind){
  if(row.status==='payment'&&kind==='payrollCash')return F2('payRecord');
- return ({draft:F2('draft'),issued:F2('invoiceIssued'),unpaid:F2('invoiceUnpaid'),partially_paid:F2('invoicePartPaid'),paid:F2('paid'),confirmed:F2('confirmed'),void:F2('void'),reversed:F2('reversed'),active:F2('active'),scheduled:F2('teachingPending'),pending:F2('pending'),completed:F2('confirmed'),payment:F2('received'),refund:F2('refunds'),record:F2('expenseRecord'),unbilled:F2('unbilledStatus'),attendance_pending:F2('attendance'),makeup_pending:F2('makeup'),missing_fee:F2('missingFee'),missing_pay_rate:F2('missingPayrate'),change_pending:F2('pendingChanges'),monthly_review_pending:F2('monthlyPayReviews'),pending_change:F2('pendingChanges'),monthly_pay_review:F2('monthlyPayReviews'),reverse:F2('reversed'),charge:F2('bonus'),credit:F2('deduction')} as Record<string,string>)[row.status]||row.status;
+ return ({prepayment_payment:F2('prepaymentReceived'),prepayment_refund:F2('prepaymentRefund'),prepayment_reverse:F2('prepaymentReverse'),prepayment_apply:F2('prepaymentApply'),prepayment_release:F2('prepaymentRelease'),prepayment_balance:F2('prepaymentBalance'),draft:F2('draft'),issued:F2('invoiceIssued'),unpaid:F2('invoiceUnpaid'),partially_paid:F2('invoicePartPaid'),paid:F2('paid'),confirmed:F2('confirmed'),void:F2('void'),reversed:F2('reversed'),active:F2('active'),scheduled:F2('teachingPending'),pending:F2('pending'),completed:F2('confirmed'),payment:F2('received'),refund:F2('refunds'),record:F2('expenseRecord'),unbilled:F2('unbilledStatus'),attendance_pending:F2('attendance'),makeup_pending:F2('makeup'),missing_fee:F2('missingFee'),missing_pay_rate:F2('missingPayrate'),change_pending:F2('pendingChanges'),monthly_review_pending:F2('monthlyPayReviews'),pending_change:F2('pendingChanges'),monthly_pay_review:F2('monthlyPayReviews'),reverse:F2('reversed'),charge:F2('bonus'),credit:F2('deduction')} as Record<string,string>)[row.status]||row.status;
 }
 function invoiceScope(month:string,basis:FinanceBasis){
  return F2(basis==='service'?'serviceInvoiceScope':'issuedInvoiceScope').replace('{month}',month);
 }
 function detailScope(query:DetailQuery){
+ if(query.kind==='prepaymentBalances')return F2('prepaymentBalanceHint');
+ if(query.kind==='prepaymentCash')return query.month+' · '+F2('cash');
  if(query.kind==='arrearsAll'||query.kind==='overdueAll')return F2('allMonthDebtScope');
  if(debtKinds.includes(query.kind)||query.kind==='invoices')return invoiceScope(query.month,query.basis);
  if(serviceKinds.includes(query.kind)||query.kind==='unpaidPayroll'||query.kind==='payroll')return query.month+' · '+F2('service');
@@ -86,6 +88,8 @@ export default function FinanceOverview({permissions,onInvoice,onPayroll,onPayro
  const tuitionMetrics:Metric[]=[
   {label:'issuedAmount',value:metrics?.issuedCents,kind:'invoices',hint:invoiceScope(month,basis)},
   {label:'received',value:metrics?.receivedCents,kind:'receivedPayments'},
+  ...(basis!=='cash'?[{label:'settledAmount',value:metrics?.settledCents,kind:'invoices' as const,hint:F2('settledHint')}]:[]),
+  ...(permissions.prepayments&&summary?.capabilities.prepayments?[{label:'prepaymentBalance',value:metrics?.prepaymentBalanceCents,kind:'prepaymentBalances' as const,hint:F2('prepaymentBalanceHint')},...(basis!=='cash'?[{label:'prepaymentApplied',value:metrics?.prepaymentAppliedCents,kind:'prepaymentSettlements' as const,hint:F2('prepaymentSettlementHint')}]:[])]:[]),
   {label:'refunds',value:metrics?.refundedCents,kind:'refunds'},
   {label:'paymentReversals',value:metrics?.reversedCents,kind:'paymentReversals'},
  ];
@@ -120,6 +124,7 @@ export default function FinanceOverview({permissions,onInvoice,onPayroll,onPayro
    <section className="panel" aria-labelledby="finance2-tuition-title">
     <div className="finance2-section-head"><h2 id="finance2-tuition-title">{F2('tuitionCollections')}</h2><span className="finance2-scope">{month} · {F2(basis)}</span></div>
     {metricLines(tuitionMetrics)}
+    {permissions.prepayments&&summary.capabilities.prepayments&&<div className="finance2-actions"><Button variant="outline" onClick={()=>changeKind('prepaymentCash',month,'cash')}>{F2('prepaymentCash')}</Button><Button variant="outline" onClick={()=>changeKind('prepaymentSettlements')}>{F2('prepaymentSettlements')}</Button></div>}
     <div className="finance2-debt-tools"><div><h3>{F2('allMonthDebtTitle')}</h3><p className="finance2-muted">{F2('allMonthDebtScope')}</p></div><div className="finance2-actions"><Button variant="outline" type="button" onClick={()=>changeKind('arrearsAll')}>{F2('allMonthArrears')}</Button><Button variant="outline" type="button" onClick={()=>changeKind('overdueAll')}>{F2('allMonthOverdue')}</Button></div></div>
    </section>
    {(permissions.payroll||permissions.expenses)&&<div className="finance2-outflow-grid">
@@ -151,8 +156,11 @@ export default function FinanceOverview({permissions,onInvoice,onPayroll,onPayro
     </div>)}</div>
    </section>}
   </>}
-  {query&&(!payrollKinds.includes(query.kind)||permissions.payroll)&&(!['expenses','expenseCash'].includes(query.kind)||permissions.expenses)&&<section className="panel finance2-drilldown" aria-busy={detailLoading} aria-labelledby="finance2-detail-title">
+  {query&&(!['prepaymentCash','prepaymentSettlements','prepaymentBalances'].includes(query.kind)||permissions.prepayments)&&(!payrollKinds.includes(query.kind)||permissions.payroll)&&(!['expenses','expenseCash'].includes(query.kind)||permissions.expenses)&&<section className="panel finance2-drilldown" aria-busy={detailLoading} aria-labelledby="finance2-detail-title">
    <div className="finance2-section-head"><div><h2 ref={detailHeading} tabIndex={-1} id="finance2-detail-title">{F2(detailLabels[query.kind])}</h2><p className="finance2-scope">{detailScope(query)}</p></div><Button type="button" variant="outline" onClick={()=>setQuery(null)}>{F2('close')}</Button></div>
+   {query.kind==='prepaymentBalances'&&<p className="finance2-notice">{F2('prepaymentBalanceHint')}</p>}
+   {query.kind==='prepaymentSettlements'&&<p className="finance2-notice">{F2('prepaymentSettlementHint')}</p>}
+   {query.kind==='prepaymentCash'&&<p className="finance2-notice">{F2('prepaymentCashOnly')}</p>}
    {query.kind==='payments'&&<p className="finance2-notice">{F2('netReceiptDetailHint')}</p>}
    {query.kind==='unbilled'&&<p className="finance2-notice">{F2('unbilledDetailHint')}</p>}
    {query.kind==='pendingChanges'&&<p className="finance2-notice">{F2('pendingChangeDetailHint')}</p>}

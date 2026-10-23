@@ -150,4 +150,13 @@ export const billingEn:Record<string,string>={
  '财务资料暂时无法处理，请刷新后重试':'Unable to process financial details. Refresh and try again.',
  '财务请求格式无效':'Invalid billing request.',
  '此记录已有收费或费用调整历史，不能永久删除。请改为停用，以保留核算依据。':'This record has fee or adjustment history and cannot be permanently deleted. Deactivate it to retain billing references.',
+ "收款时点":"Collection timing",
+ "收款安排":"Collection schedule",
+ "课后结算":"After-class settlement",
+ "课前预收":"Advance collection",
+ "保存收款时点":"Save collection timing",
+ "收款时点已保存":"Collection timing saved.",
+ "收款时点未能保存":"Unable to save collection timing.",
+ "请选择有效的收款时点":"Choose a valid collection timing.",
+ "课前预收先发预收费单，收款保留为学生余额；完成课程后用余额抵扣正式账单。收款时点不改变费率、课程日期或原账单。":"For advance collection, issue an advance payment request and keep receipts as the student’s balance. Apply it to the final invoice after lessons are complete. This setting does not change rates, lesson dates or existing invoices.",
 };

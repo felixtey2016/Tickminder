@@ -180,4 +180,28 @@ for(const change of ['handover','inactiveGroup','disable']){
 }
 const chiefSession='c'.repeat(43);bindAccountSession(chief,chiefSession);sqlite.prepare('INSERT INTO sessions(token_hash,account_id,expires_at) VALUES(?,?,?)').run(chiefSession,chief.id,'2099-01-01T00:00:00Z');
 const beforeSessionRevocation=financialSnapshot();beforeBatch=()=>sqlite.prepare('DELETE FROM sessions WHERE token_hash=?').run(chiefSession);expect(await post({...futureChiefRate,operationId:op()},chief),409,'logout at transaction boundary prevents chief write');check(()=>assert.equal(financialSnapshot(),beforeSessionRevocation));
+
+// Collection timing changes the workflow without changing prices or historical invoices.
+const collectionContext=expect(await get({view:'rates',planKey:'Alpha-science'}),200,'default collection settings').context;
+check(()=>assert.equal(collectionContext.collectionTiming,'arrears'));check(()=>assert.equal(collectionContext.collectionRevision,0));
+const feeRows=JSON.stringify(sqlite.prepare('SELECT * FROM billing_rate_versions ORDER BY id').all());
+const timingBody={action:'saveCollectionTiming',studentId:collectionContext.studentId,subjectKey:collectionContext.subjectKey,revision:0,timing:'advance',operationId:op()};
+expect(await post(timingBody),200,'owner changes collection without effective date');expect(await post(timingBody),200,'timing retry idempotent');
+check(()=>assert.equal(sqlite.prepare("SELECT count(*) n FROM audit WHERE action='billing.saveCollectionTiming'").get().n,1));
+check(()=>assert.equal(JSON.stringify(sqlite.prepare('SELECT * FROM billing_rate_versions ORDER BY id').all()),feeRows));
+let savedTiming=expect(await get({view:'rates',planKey:'Alpha-science'}),200,'saved timing read').context;
+check(()=>assert.equal(savedTiming.collectionTiming,'advance'));check(()=>assert.equal(savedTiming.collectionRevision,1));
+expect(await post({...timingBody,timing:'arrears'}),409,'timing operation payload cannot be reused');
+expect(await post({...timingBody,operationId:op(),timing:'arrears'}),409,'stale timing CAS');
+expect(await post({...timingBody,operationId:op(),revision:1,timing:'automatic'}),400,'invalid timing rejected');
+expect(await post({...timingBody,operationId:op(),revision:1},admin),403,'ordinary admin cannot change collection');
+expect(await post({...timingBody,operationId:op(),revision:1},teacher),403,'teacher cannot change collection');
+expect(await post({...timingBody,operationId:op(),revision:1},student),403,'student cannot change collection');
+expect(await post({...timingBody,operationId:op(),revision:1,groupId:foreign}),403,'cross-group setting rejected');
+const beforeTiming=JSON.stringify(sqlite.prepare('SELECT * FROM prepayment_collection_settings').all());
+beforeBatch=()=>sqlite.prepare('UPDATE accounts SET disabled_at=? WHERE id=?').run(now,owner.id);
+expect(await post({...timingBody,operationId:op(),revision:1,timing:'arrears'}),409,'live disable prevents timing write');
+check(()=>assert.equal(JSON.stringify(sqlite.prepare('SELECT * FROM prepayment_collection_settings').all()),beforeTiming));sqlite.prepare('UPDATE accounts SET disabled_at=NULL WHERE id=?').run(owner.id);
+expect(await post({...timingBody,operationId:op(),revision:1,timing:'arrears'}),200,'owner restores after-class collection');
+check(()=>assert.equal(sqlite.prepare('SELECT timing FROM prepayment_collection_settings WHERE student_id=?').get(collectionContext.studentId).timing,'arrears'));
 console.log(JSON.stringify({suite:'billing',passed:checks,scope:'Owner and designated chief fee management; handover, inactive group, disable and logout at write time; actual API and SQLite; existing fee calculations and write controls, fee-only admin view, group and role boundaries, revoked grants/session during reads; fictional data only.'}));sqlite.close();
