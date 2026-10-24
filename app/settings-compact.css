@@ -1,0 +1,41 @@
+.management-mobile{display:none}
+.management-switcher{min-width:0;margin-bottom:16px}
+.management-switcher .management-navigation{margin:0;padding:6px}
+.account-settings-compact{display:grid;gap:16px;min-width:0}
+.account-settings-compact .account-settings>h2{font-size:18px;margin:0 0 16px}
+.account-settings-compact .account-summary{gap:8px}
+.account-settings-compact .account-login-methods{font-size:13px;color:var(--ui-secondary);margin:0;line-height:1.6;overflow-wrap:anywhere}
+.account-settings-compact .account-security-section{display:block;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+.account-settings-compact .account-connect,.account-settings-compact .account-password-form{display:grid;gap:12px;min-width:0;max-width:540px;margin:0}
+.account-settings-compact .account-connect>p{margin:0;font-size:13px}
+.account-settings-compact .settings-disclosure>summary{font-size:14px}
+.account-settings-compact .account-details[open]{padding-bottom:8px}
+.account-settings-compact .account-whatsapp>.panel{margin:0;padding:0;border:0;box-shadow:none}
+.account-settings-compact .account-whatsapp>.panel>h2{display:none}
+.settings-compact .group-console{gap:16px}
+.settings-compact .group-entry{padding:20px}
+.settings-compact .group-heading h2{font-size:18px}
+.settings-compact .group-heading p{font-size:13px}
+.settings-compact .group-invitation{display:block;margin-top:12px;padding-top:8px}
+.settings-compact .group-invitation-content{display:grid;gap:12px;min-width:0}
+.settings-compact .group-invitation-content>.field-hint{font-size:13px;margin:0}
+.settings-compact .group-chief-settings{display:block;margin-top:12px;padding-block:8px}
+.settings-compact .group-chief-settings>summary{justify-content:space-between}
+.settings-compact .group-chief-settings>summary strong{font-size:13px;font-weight:500;color:var(--ui-secondary);min-width:0;overflow-wrap:anywhere}
+.settings-compact .group-chief-controls{display:grid;gap:12px}
+.settings-compact .group-entry-primary{margin-top:16px}
+.settings-compact .settings-disclosure>summary{font-size:14px}
+.settings-compact .settings-tools{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px}
+.sheet-sync-compact>h2{font-size:18px;margin:0}
+.sheet-sync-compact>.muted{font-size:14px;margin:0;line-height:1.6}
+.sheet-sync-compact>.settings-disclosure{font-size:13px}
+.sheet-sync-compact>.settings-disclosure p{margin:8px 0;line-height:1.7}
+@media(max-width:700px){
+ .management-switcher .management-navigation{display:none}
+ .management-mobile{display:flex;align-items:center;gap:12px;font-size:13px;min-width:0}
+ .management-mobile>span{flex:none;color:var(--ui-secondary)}
+ .management-mobile>select{flex:1;width:100%;min-width:0;min-height:44px;border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:#fff;color:var(--foreground);font-size:15px}
+ .settings-compact .group-entry{padding:16px}
+ .account-settings-compact .account-settings{padding:16px}
+ .account-settings-compact .account-summary-fields>div{grid-template-columns:minmax(65px,.6fr) minmax(0,1.4fr);gap:8px}
+}

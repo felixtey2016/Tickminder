@@ -8,6 +8,7 @@ import { groupFetch } from "@/lib/group-client";
 import { t } from "@/lib/i18n";
 import { readApiJson,showActionToast } from "@/lib/action-feedback";
 import { AcademicCatalogueAdmin } from './academic-catalogue-admin';
+import './settings-compact.css';
 
 type Group={id:string;name:string;joinCode:string;active:boolean|number;admins?:number;teachers?:number;students?:number;classrooms?:number;chiefAdminId?:string|null;adminOptions?:{id:string;name:string}[]};
 async function api(data?:Record<string,unknown>) {
@@ -76,8 +77,8 @@ export function GroupConsole({isOwner,currentGroupId}:{isOwner:boolean;currentGr
     <div className="group-list">{groups.map(group=>{const selectedChief=chiefDrafts[group.id]??group.chiefAdminId??'',availableChiefs=group.adminOptions||[];return <section className="panel group-entry" key={group.id}>
       <div className="group-heading"><Building2 size={24} aria-hidden="true"/><div className="group-heading-copy"><h2>{group.name}</h2><p>{t(group.active?"已启用":"已停用")}{group.id===currentGroupId&&` · ${t("当前集团")}`}</p></div></div>
       {isOwner&&<dl className="group-counts"><div><dt>{t("管理员")}</dt><dd>{group.admins||0}</dd></div><div><dt>{t("老师")}</dt><dd>{group.teachers||0}</dd></div><div><dt>{t("学生")}</dt><dd>{group.students||0}</dd></div><div><dt>{t("班级")}</dt><dd>{group.classrooms||0}</dd></div></dl>}
-      {isOwner&&<section className="group-chief-settings" aria-label={t('admin.groupChief')+' · '+group.name}>
-        <div className="group-chief-current"><span className="account-authority-badge" data-authority="chief">{t('admin.groupChief')}</span><p><span>{t('admin.chiefCurrent')}</span><strong>{chiefName(group)}</strong></p></div>
+      {isOwner&&<details className="group-chief-settings settings-disclosure">
+        <summary><span>{t('admin.groupChief')}</span><strong>{chiefName(group)}</strong><ChevronDown size={18} aria-hidden="true"/></summary><div className="group-chief-controls">
         <p className="field-hint">{t('admin.chiefScope')}</p>
         <label>{t('admin.chiefSelect')}<select aria-label={t('admin.chiefSelect')+' · '+group.name} disabled={busy||!availableChiefs.length} value={selectedChief} onChange={event=>setChiefDrafts(drafts=>({...drafts,[group.id]:event.target.value}))}>
           <option value="" disabled>{t('admin.chiefSelectPlaceholder')}</option>
@@ -86,9 +87,9 @@ export function GroupConsole({isOwner,currentGroupId}:{isOwner:boolean;currentGr
         </select></label>
         {!availableChiefs.length&&<p className="field-hint">{t('admin.chiefNoCandidates')}</p>}
         <div className="settings-actions"><Button variant="outline" disabled={busy||!selectedChief||selectedChief===group.chiefAdminId||!availableChiefs.some(admin=>admin.id===selectedChief)} onClick={()=>{setError('');setChiefConfirmation({group,chiefAdminId:selectedChief});}}>{t(group.chiefAdminId?'admin.chiefTransfer':'admin.chiefAssign')}</Button></div>
-      </section>}
+      </div></details>}
       {isOwner&&<div className="group-entry-primary settings-actions"><Button disabled={busy} onClick={()=>void enter(group)}>{t("管理此集团")}<ArrowRight size={16}/></Button></div>}
-      <div className="group-invitation"><label>{t("新用户邀请链接")}<input readOnly value={origin?`${origin}/?group=${group.joinCode}`:""}/></label><p className="field-hint">{t("新用户通过此链接使用 Google 注册后，归入此集团并等待管理员分配角色。已有账号所属集团不变。")}</p><div className="settings-actions"><Button variant="outline" disabled={busy} onClick={()=>void copy(group)}><Copy size={16}/>{t("复制注册链接")}</Button></div></div>
+      <details className="group-invitation settings-disclosure"><summary><span>{t("新用户邀请链接")}</span><ChevronDown size={18} aria-hidden="true"/></summary><div className="group-invitation-content"><label>{t("新用户邀请链接")}<input readOnly value={origin?`${origin}/?group=${group.joinCode}`:""}/></label><p className="field-hint">{t("新用户通过此链接使用 Google 注册后，归入此集团并等待管理员分配角色。已有账号所属集团不变。")}</p><div className="settings-actions"><Button variant="outline" disabled={busy} onClick={()=>void copy(group)}><Copy size={16}/>{t("复制注册链接")}</Button></div></div></details>
       {isOwner&&<details className="group-entry-management settings-disclosure"><summary><span>{t("更多操作")}</span><ChevronDown size={18} aria-hidden="true"/></summary><div className="group-management-content"><div className="button-row settings-actions"><Button variant="outline" disabled={busy} onClick={()=>{setEditing(group.id);setName(group.name);setCreateOpen(true);focusGroupControl(nameInput.current);}}>{t("修改名称")}</Button><Button variant="outline" disabled={busy} onClick={()=>void toggle(group)}>{t(group.active?"停用集团":"启用集团")}</Button></div></div></details>}
     </section>;})}</div>
     {isOwner&&<AcademicCatalogueAdmin/>}

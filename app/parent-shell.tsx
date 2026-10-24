@@ -11,6 +11,7 @@ import {PNav} from '@/lib/parent-nav-i18n';
 import type {ParentWorkspaceView} from '@/lib/parent-navigation';
 import type {ParentWorkspaceTarget} from '@/lib/parent-workspace-ui';
 import './parent-shell.css';
+import './parent-compact.css';
 import '@/lib/parent30-i18n';
 import {MenuBadge,NotificationsProvider} from './notifications';
 import type {ParentNoticeNavigation} from './parent-notifications-pane';
@@ -127,9 +128,8 @@ function ParentShellContent({account,language,changeLanguage,logout,refreshIdent
         <nav className="menu-links" aria-label={PNav('navigation')}>{menuItems.map(({view:target,Icon})=><button key={target} type="button" className={'menu-link'+(moduleFor(view)===target?' active':'')} aria-current={moduleFor(view)===target?'page':undefined} onClick={()=>choose(target)} data-testid={'parent-menu-'+target}><Icon size={19} aria-hidden="true"/><span>{PNav(target)}</span>{target==='notifications'&&<MenuBadge includeUnread/>}</button>)}</nav>
         <div className="menu-utilities"><button type="button" className="menu-link" onClick={logout}><LogOut size={19} aria-hidden="true"/><span>{PNav('logout')}</span></button><LegalLinks language={language} className="menu-legal"/></div>
       </aside>}
-      <main className="parent-shell-main" inert={drawerOpen?true:undefined}>
-        <FloatingBackButton context={account.id+':parent:'+account.groupId} isHome={view==='home'} onHome={()=>choose('home')}/>
-        {view==='account'&&<div className="page-head parent-page-head"><h1>{PNav(view)}</h1></div>}
+      <main className="parent-shell-main parent-compact" inert={drawerOpen?true:undefined}>
+        <FloatingBackButton context={account.id+':parent:'+account.groupId} isHome={view==='home'} onHome={()=>choose('home')} title={PNav(moduleFor(view))}/>
         <Suspense fallback={<p role="status">{t('正在加载…')}</p>}>
           {view==='home'?<ParentHome name={account.name} onOpen={openWorkspace} onNotifications={()=>choose('notifications')} onAuthorityLost={()=>void refreshIdentity()}/>:view==='account'?<AccountSettings/>:view==='notifications'?<ParentNotificationsPane onOpen={next=>{setTarget(null);setNavigation(next);setView(next.kind==='invoice'?'finance':'lessons');}} pendingNotice={pendingNotice} onPendingHandled={()=>setPendingNotice('')} onAuthorityLost={()=>void refreshIdentity()}/>:<ParentsWorkspace key={account.id+':'+account.groupId} view={workspaceView} onViewChange={next=>setView(next)} navigation={navigation} target={target} onAuthorityLost={()=>void refreshIdentity()}/>}
         </Suspense>

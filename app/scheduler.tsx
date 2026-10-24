@@ -816,7 +816,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     };
     const openAttendanceFinance=canAdminAction(account,"invoices.view")?()=>{const next={...(window.history.state||{})};delete next.timelyoOverlay;window.history.replaceState(next,"");setModal(null);setOpenInvoiceList(true);choose("billing");}:undefined;
     let pageContent: React.ReactNode = null;
-    if((activeView==="groups"&&account.isOwner)||(activeView==="groupInfo"&&role==="admin")){pageContent=<><GroupConsole isOwner={activeView==="groups"&&Boolean(account.isOwner)} currentGroupId={account.groupId}/>{activeView==="groupInfo"&&canAdminAction(account,"terms.view")&&<section className="panel"><h2>{t("管理学期")}</h2><TermManager terms={state?.terms||state?.termOptions||[]} mutate={classroomMutate} busy={busy}/></section>}</>;}
+    if((activeView==="groups"&&account.isOwner)||(activeView==="groupInfo"&&role==="admin")){pageContent=<div className="settings-compact"><GroupConsole isOwner={activeView==="groups"&&Boolean(account.isOwner)} currentGroupId={account.groupId}/>{activeView==="groupInfo"&&canAdminAction(account,"terms.view")&&<div className="settings-tools"><TermManager terms={state?.terms||state?.termOptions||[]} mutate={classroomMutate} busy={busy}/></div>}</div>;}
     else if (activeView==='quizzes'&&(role==='teacher'||role==='admin'||role==='student')) {
         pageContent=<QuizWorkspace key={`${account.groupId}:${activeView}`} view={activeView} language={language} role={role}/>;
     }

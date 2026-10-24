@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
 import { getLanguage, t } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
+import { ChevronDown } from "lucide-react";
+import "./settings-compact.css";
 
 type Auth = { account: { name: string; role?: string; groupId?: string; email?: string; username?: string; googleLinked?: boolean; emailLoginAvailable?: boolean }; clientId: string | null };
 type Google = { accounts: { id: { initialize: (args: object) => void; renderButton: (element: HTMLElement, args: object) => void } } };
@@ -63,13 +65,12 @@ export function AccountSettings() {
     return () => { active = false; script?.removeEventListener("load", setup); };
   }, [auth, language]);
   const signInMethods = [auth?.account.username ? t("用户名与密码") : "", auth?.account.emailLoginAvailable ? t("邮箱与密码") : "", auth?.account.googleLinked ? "Google" : ""].filter(Boolean);
-  return <>{auth && auth.account.groupId === "next-genn-edu" && ["admin","teacher","student","pending"].includes(auth.account.role || "") && <WhatsAppBinding/>}<section className="panel account-settings"><h2>{t("登录与安全")}</h2>{auth?.account ? <>
-    <div className="account-summary"><strong className="account-summary-name">{auth.account.name}</strong><dl className="account-summary-fields">
+  return <div className="account-settings-compact"><section className="panel account-settings"><h2>{t("登录与安全")}</h2>{auth?.account ? <>
+    <div className="account-summary"><strong className="account-summary-name">{auth.account.name}</strong><p className="account-login-methods">{t("可用登录方式")} · {signInMethods.join(" / ") || "—"}</p><details className="settings-disclosure account-details"><summary><span>{language === "zh" ? "账号资料" : "Account details"}</span><ChevronDown size={18} aria-hidden="true"/></summary><dl className="account-summary-fields">
       <div><dt>{t("用户名")}</dt><dd>{auth.account.username || "—"}</dd></div>
       <div><dt>Google</dt><dd>{auth.account.email || t("未连接 Google")}</dd></div>
-      <div><dt>{t("可用登录方式")}</dt><dd>{signInMethods.join(" / ") || "—"}</dd></div>
-    </dl></div>
-    {auth.account.username && !auth.account.email && <div className="account-connect account-security-section"><div className="settings-section-heading"><h3>{t("连接 Google 账号")}</h3><p className="muted">{t("连接后可用密码或 Google 登录同一个账号。")}</p></div><label>{t("当前密码")}<input type="password" autoComplete="current-password" maxLength={128} value={password} onChange={e => setPassword(e.target.value)} disabled={busy}/></label>{auth.clientId ? <div ref={button} className={busy ? "google-link-busy settings-actions" : "settings-actions"}/> : <p>{t("Google 登录尚未配置")}</p>}{busy && <p role="status">{t("正在连接…")}</p>}</div>}
-    {auth.account.username && <form className="account-password-form account-security-section" onSubmit={changePassword}><div className="settings-section-heading"><h3>{t("修改密码")}</h3></div><label>{t("当前密码")}<input required type="password" autoComplete="current-password" maxLength={128} value={current} onChange={e=>setCurrent(e.target.value)}/></label><label>{t("新密码（至少 8 个字符）")}<input required type="password" autoComplete="new-password" minLength={8} maxLength={128} value={next} onChange={e=>setNext(e.target.value)}/></label><label>{t("确认新密码")}<input required type="password" autoComplete="new-password" minLength={8} maxLength={128} value={confirm} onChange={e=>setConfirm(e.target.value)}/></label><div className="settings-actions"><Button disabled={busy}>{t("更新密码")}</Button></div></form>}
-  </> : <p>{t("正在加载…")}</p>}</section></>;
+    </dl></details></div>
+    {auth.account.username && !auth.account.email && <details className="settings-disclosure account-security-section"><summary><span>{t("连接 Google 账号")}</span><ChevronDown size={18} aria-hidden="true"/></summary><div className="account-connect"><p className="muted">{t("连接后可用密码或 Google 登录同一个账号。")}</p><label>{t("当前密码")}<input type="password" autoComplete="current-password" maxLength={128} value={password} onChange={e => setPassword(e.target.value)} disabled={busy}/></label>{auth.clientId ? <div ref={button} className={busy ? "google-link-busy settings-actions" : "settings-actions"}/> : <p>{t("Google 登录尚未配置")}</p>}{busy && <p role="status">{t("正在连接…")}</p>}</div></details>}
+    {auth.account.username && <details className="settings-disclosure account-security-section"><summary><span>{t("修改密码")}</span><ChevronDown size={18} aria-hidden="true"/></summary><form className="account-password-form" onSubmit={changePassword}><label>{t("当前密码")}<input required type="password" autoComplete="current-password" maxLength={128} value={current} onChange={e=>setCurrent(e.target.value)}/></label><label>{t("新密码（至少 8 个字符）")}<input required type="password" autoComplete="new-password" minLength={8} maxLength={128} value={next} onChange={e=>setNext(e.target.value)}/></label><label>{t("确认新密码")}<input required type="password" autoComplete="new-password" minLength={8} maxLength={128} value={confirm} onChange={e=>setConfirm(e.target.value)}/></label><div className="settings-actions"><Button disabled={busy}>{t("更新密码")}</Button></div></form></details>}
+  </> : <p>{t("正在加载…")}</p>}</section>{auth && auth.account.groupId === "next-genn-edu" && ["admin","teacher","student","pending"].includes(auth.account.role || "") && <details className="panel settings-disclosure account-whatsapp"><summary><span>{language === "zh" ? "连接 WhatsApp" : "Connect WhatsApp"}</span><ChevronDown size={18} aria-hidden="true"/></summary><WhatsAppBinding/></details>}</div>;
 }
