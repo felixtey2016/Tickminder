@@ -1,6 +1,6 @@
 import { isLegacyBusinessRole } from '@/lib/legacy-business-access';
 import {classSessionState} from "@/lib/class-sessions";
-import {groupRows} from "@/lib/group-data";
+import {groupRows,operationalStudentVisible} from "@/lib/group-data";
 import { groupWhere } from "@/lib/group-data";
 import { NextResponse } from "next/server";
 import { and, desc, eq, inArray,notLike,or,sql } from "drizzle-orm";
@@ -73,7 +73,7 @@ async function extraState(account: Account, scope: Exclude<Scope, "core">, acces
     const showParentChildren=await mayReadParents(),parentIds=showParentChildren?users.filter(u=>u.role==='parent').map(u=>u.id):[];
     const parentChildren=new Map<string,string[]>();
     if(parentIds.length){
-      const linked=await learningDb().prepare('SELECT l.parent_account_id AS parentId,b.student_name AS student FROM parent_child_links l JOIN billing_students b ON b.group_id=l.group_id AND b.id=l.student_id WHERE l.group_id=? AND l.active=1 AND l.parent_account_id IN (SELECT value FROM json_each(?)) AND '+parentPermission.sql+' ORDER BY b.student_name,b.id').bind(account.groupId,JSON.stringify(parentIds),...parentPermission.args).all<{parentId:string;student:string}>();
+      const linked=await learningDb().prepare('SELECT l.parent_account_id AS parentId,b.student_name AS student FROM parent_child_links l JOIN billing_students b ON b.group_id=l.group_id AND b.id=l.student_id WHERE l.group_id=? AND l.active=1 AND l.parent_account_id IN (SELECT value FROM json_each(?)) AND '+operationalStudentVisible('b.group_id','b.student_name')+' AND '+parentPermission.sql+' ORDER BY b.student_name,b.id').bind(account.groupId,JSON.stringify(parentIds),...parentPermission.args).all<{parentId:string;student:string}>();
       for(const child of linked.results){const names=parentChildren.get(child.parentId)||[];names.push(child.student);parentChildren.set(child.parentId,names);}
     }
     if(showParentChildren&&!await mayReadParents())throw new AdminPermissionDenied();

@@ -1,6 +1,6 @@
 import type {Account} from './auth';
 import {learningDb} from './learning-server';
-import {requireGroup} from './group-data';
+import {requireGroup,operationalRowVisible,operationalStudentVisible} from './group-data';
 import {OWNER_EMAIL} from './owner';
 import {accountSessionPredicate} from './account-session';
 import {adminPermissionPredicate,requireAdminPermission,hasAdminPermission} from './admin-permission-access';
@@ -26,9 +26,10 @@ async function requireAccess(actor:Account,key:Grant){
  return requireGroup(actor.groupId);
 }
 function visibility(actor:Account):Sql{
- if(actor.role==='teacher')return{sql:'c.teacher_name=?',args:[actor.teacherName||'']};
- if(actor.role==='student')return{sql:`r.status='published' AND (r.audience_mode='classroom' OR EXISTS(SELECT 1 FROM recording_recipients recipient WHERE recipient.group_id=r.group_id AND recipient.recording_id=r.id AND recipient.student_name=?)) AND EXISTS(SELECT 1 FROM classroom_members member WHERE member.group_id=c.group_id AND member.classroom_id=c.id AND member.student_name=?)`,args:[actor.studentName||'',actor.studentName||'']};
- return{sql:'1',args:[]};
+ const visible=operationalRowVisible('classrooms','c');
+ if(actor.role==='teacher')return{sql:`${visible} AND c.teacher_name=?`,args:[actor.teacherName||'']};
+ if(actor.role==='student')return{sql:`${visible} AND r.status='published' AND (r.audience_mode='classroom' OR EXISTS(SELECT 1 FROM recording_recipients recipient WHERE recipient.group_id=r.group_id AND recipient.recording_id=r.id AND recipient.student_name=?)) AND EXISTS(SELECT 1 FROM classroom_members member WHERE member.group_id=c.group_id AND member.classroom_id=c.id AND member.student_name=?)`,args:[actor.studentName||'',actor.studentName||'']};
+ return{sql:visible,args:[]};
 }
 async function can(actor:Account,key:Grant){return actor.role==='admin'?hasAdminPermission(actor,key):actor.role==='teacher';}
 async function present(actor:Account,item:Stored,permissions?:{canEdit:boolean;canDelete:boolean}):Promise<Recording>{
@@ -44,7 +45,7 @@ export async function recordingDetail(actor:Account,id:string){
  const item=await present(actor,await stored(actor,id));
  if(actor.role!=='student'){
   const scope=visibility(actor),guard=authority(actor,'recordings.view');
-  item.students=(await learningDb().prepare(`SELECT rr.student_name AS name FROM recording_recipients rr JOIN class_recordings r ON r.group_id=rr.group_id AND r.id=rr.recording_id JOIN classrooms c ON c.group_id=r.group_id AND c.id=r.classroom_id WHERE rr.group_id=? AND rr.recording_id=? AND ${scope.sql} AND ${guard.sql} ORDER BY rr.student_name`).bind(requireGroup(actor.groupId),id,...scope.args,...guard.args).all<{name:string}>()).results?.map(r=>r.name)||[];
+  item.students=(await learningDb().prepare(`SELECT rr.student_name AS name FROM recording_recipients rr JOIN class_recordings r ON r.group_id=rr.group_id AND r.id=rr.recording_id JOIN classrooms c ON c.group_id=r.group_id AND c.id=r.classroom_id WHERE rr.group_id=? AND rr.recording_id=? AND ${operationalStudentVisible('rr.group_id','rr.student_name')} AND ${scope.sql} AND ${guard.sql} ORDER BY rr.student_name`).bind(requireGroup(actor.groupId),id,...scope.args,...guard.args).all<{name:string}>()).results?.map(r=>r.name)||[];
  }
  return{recording:item};
 }
@@ -63,14 +64,14 @@ export async function listRecordings(actor:Account,params:URLSearchParams){
 export async function recordingContext(actor:Account,params:URLSearchParams){
  const group=await requireAccess(actor,'recordings.view'),guard=authority(actor,'recordings.view');
  const scope=actor.role==='teacher'?{sql:'c.teacher_name=?',args:[actor.teacherName||'']}:actor.role==='student'?{sql:'EXISTS(SELECT 1 FROM classroom_members m WHERE m.group_id=c.group_id AND m.classroom_id=c.id AND m.student_name=?)',args:[actor.studentName||'']}:{sql:'1',args:[]};
- const classrooms=(await learningDb().prepare(`SELECT c.id,c.title,c.subject,c.teacher_name AS teacherName,c.archived FROM classrooms c WHERE c.group_id=? AND ${scope.sql} AND ${guard.sql} ORDER BY c.archived,c.title LIMIT 501`).bind(group,...scope.args,...guard.args).all<{id:string;title:string;subject:string;teacherName:string;archived:number}>()).results||[];
+ const classrooms=(await learningDb().prepare(`SELECT c.id,c.title,c.subject,c.teacher_name AS teacherName,c.archived FROM classrooms c WHERE c.group_id=? AND ${operationalRowVisible('classrooms','c')} AND ${scope.sql} AND ${guard.sql} ORDER BY c.archived,c.title LIMIT 501`).bind(group,...scope.args,...guard.args).all<{id:string;title:string;subject:string;teacherName:string;archived:number}>()).results||[];
  const id=str(params.get('classroomId')),selected=classrooms.find(c=>c.id===id);if(id&&!selected)throw new RecordingError('班级不存在或没有查看权限',404);
  let students:string[]=[],sessions:{id:string;plannedStart:string;plannedEnd:string;title:string}[]=[];
  if(selected&&actor.role!=='student'){
   students=(await learningDb().prepare(`SELECT DISTINCT m.student_name AS name FROM classroom_members m JOIN students s ON s.group_id=m.group_id AND s.name=m.student_name AND s.active=1 JOIN classrooms c ON c.group_id=m.group_id AND c.id=m.classroom_id WHERE m.group_id=? AND m.classroom_id=? AND ${scope.sql} AND ${guard.sql} ORDER BY m.student_name`).bind(group,id,...scope.args,...guard.args).all<{name:string}>()).results?.map(r=>r.name)||[];
   let month=str(params.get('month'));if(!month)month=new Date(Date.now()+8*3600000).toISOString().slice(0,7);
   if(!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(month))throw new RecordingError('请选择有效月份');
-  sessions=(await learningDb().prepare(`SELECT cs.id,cs.planned_start AS plannedStart,cs.planned_end AS plannedEnd,coalesce(cs.classroom_title,cs.subject) AS title FROM class_sessions cs JOIN classrooms c ON c.group_id=cs.group_id AND c.id=cs.classroom_id WHERE cs.group_id=? AND cs.classroom_id=? AND cs.status<>'cancelled' AND substr(datetime(cs.planned_start,'+8 hours'),1,7)=? AND ${scope.sql} AND ${guard.sql} ORDER BY cs.planned_start DESC LIMIT 300`).bind(group,id,month,...scope.args,...guard.args).all<{id:string;plannedStart:string;plannedEnd:string;title:string}>()).results||[];
+  sessions=(await learningDb().prepare(`SELECT cs.id,cs.planned_start AS plannedStart,cs.planned_end AS plannedEnd,coalesce(cs.classroom_title,cs.subject) AS title FROM class_sessions cs JOIN classrooms c ON c.group_id=cs.group_id AND c.id=cs.classroom_id WHERE cs.group_id=? AND cs.classroom_id=? AND ${operationalRowVisible('class_sessions','cs')} AND cs.status<>'cancelled' AND substr(datetime(cs.planned_start,'+8 hours'),1,7)=? AND ${scope.sql} AND ${guard.sql} ORDER BY cs.planned_start DESC LIMIT 300`).bind(group,id,month,...scope.args,...guard.args).all<{id:string;plannedStart:string;plannedEnd:string;title:string}>()).results||[];
  }
  return{classrooms:classrooms.slice(0,500),classroomsTruncated:classrooms.length>500,students,sessions,permissions:{canCreate:await can(actor,'recordings.create'),canEdit:await can(actor,'recordings.edit'),canDelete:await can(actor,'recordings.delete')}};
 }

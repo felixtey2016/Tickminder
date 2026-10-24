@@ -20,6 +20,16 @@ export function setLanguage(language: Language) {
 export function getLanguage() { return currentLanguage; }
 
 const en: Record<string, string> = {
+  "此班级关联受保护的薪资记录，暂不能永久删除。课程数量不是限制原因；需要先完成保留薪资记录的班级删除升级。":"This classroom has protected payroll associations. A payroll-preserving classroom deletion upgrade is required before it can be deleted.",
+  "此班级有排课，请由管理员删除班级及关联课程。":"An administrator must delete this classroom and its courses.",
+  "此班级仍用于学生科目配对，请由管理员处理后删除。":"This classroom is used by student subject pairings. Ask an administrator to delete it.",
+  "此班级的课程已关联正式账单，请先处理账单后再永久删除。":"Courses in this classroom are linked to issued invoices. Resolve the invoices before deleting the classroom.",
+  "班级课程仍有关联到其他班级的补课，请先处理这些补课。":"Courses in this classroom have makeup lessons outside the classroom. Resolve those links first.",
+  "永久删除这个班级、全部排课与出勤，以及班级公告、资料、功课和课堂录影链接？学生账号、共用 PDF 和 Google Drive 影片保留，此操作无法恢复。":"Permanently delete this classroom, all its courses and attendance, announcements, materials, homework and recording links? Student accounts, shared PDFs and Google Drive videos are retained. This cannot be undone.",
+  "班级资源引用":"Classroom resource references",
+  "家长课程通知":"Parent course notifications",
+  "课程通知":"Course notifications",
+  "站内课程通知":"In-app course notifications",
   "返回": "Back",
   "教学统计": "Teaching statistics",
   "返回上一页": "Go back",

@@ -3,7 +3,7 @@ import {learningDb} from './learning-server';
 import {configuredAdminGrantPredicate} from './admin-permissions-server';
 import {accountSessionPredicate} from './account-session';
 import {authorityGuard} from './admin-authority';
-import {requireGroup} from './group-data';
+import {requireGroup,operationalStudentVisible} from './group-data';
 import {classPlanSubjectSql} from './academic-subject-match';
 import {ParentsError,parentText as str,parentPage,parentMonth,parentOperationId,parentReasonForStorage,type ParentChild,type ParentPage,type ParentLink,type ParentLesson,type ParentCalendarDay,type ParentHomework,type ParentMaterial,type ParentRecording} from './parents';
 import {parentLessonRange,parentLessonOverlap} from './parent-calendar';
@@ -57,7 +57,7 @@ export async function parentLinks(actor:Account,params:URLSearchParams){
 export async function parentStudentSearch(actor:Account,params:URLSearchParams){
  const parentId=queryId(params.get('parentId')),{guard}=await managedParent(actor,parentId),group=requireGroup(actor.groupId),page=parentPage(params.get('page')),q=str(params.get('q'));
  if(q.length>100)throw new ParentsError('搜索内容最多 100 字');
- const scope=`b.group_id=? AND s.active=1 AND b.student_name LIKE ? ESCAPE '\\' AND ${guard.sql}`,args=[group,search(q),...guard.args];
+ const scope=`b.group_id=? AND s.active=1 AND ${operationalStudentVisible('s.group_id','s.name')} AND b.student_name LIKE ? ESCAPE '\\' AND ${guard.sql}`,args=[group,search(q),...guard.args];
  const count=await learningDb().prepare(`SELECT count(*) AS total FROM billing_students b JOIN students s ON s.group_id=b.group_id AND s.name=b.student_name WHERE ${scope}`).bind(...args).first<{total:number}>();
  const items=(await learningDb().prepare(`SELECT b.id AS studentId,b.student_name AS student,s.active,coalesce((SELECT l.revision FROM parent_child_links l WHERE l.group_id=b.group_id AND l.student_id=b.id AND l.parent_account_id=?),0) AS linkRevision,coalesce((SELECT l.active FROM parent_child_links l WHERE l.group_id=b.group_id AND l.student_id=b.id AND l.parent_account_id=?),0) AS linked FROM billing_students b JOIN students s ON s.group_id=b.group_id AND s.name=b.student_name WHERE ${scope} ORDER BY b.student_name,b.id LIMIT 20 OFFSET ?`).bind(parentId,parentId,...args,(page-1)*20).all<{studentId:string;student:string;active:number;linkRevision:number;linked:number}>()).results||[];
  await managedParent(actor,parentId);return{items:items.map(i=>({...i,active:Boolean(i.active),linked:Boolean(i.linked)})),page,pages:Math.max(1,Math.ceil((count?.total||0)/20)),total:count?.total||0,pageSize:20};

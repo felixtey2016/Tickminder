@@ -1,0 +1,28 @@
+.student-offboarding-badge{display:inline-flex;flex-wrap:wrap;align-items:center;gap:0 4px;width:fit-content;max-width:100%;padding:3px 8px;border:1px solid #e8ce9d;border-radius:7px;background:#fff7e8;color:#795324;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.student-offboarding-dialog{max-height:88dvh;overflow-y:auto;min-width:0}
+.student-offboarding-name{display:block;min-width:0;overflow-wrap:anywhere;line-height:1.5}
+.student-offboarding-editor{display:grid;gap:18px;min-width:0}
+.student-offboarding-editor>label{display:grid;gap:8px;min-width:0}
+.student-offboarding-editor :is(input[type=date],textarea){width:100%;max-width:100%;min-width:0;min-height:44px;border:1px solid #d9d6ea;border-radius:9px;padding:10px 12px;background:#fff;color:var(--foreground);font:inherit;font-size:16px;line-height:1.5}
+.student-offboarding-editor textarea{resize:vertical;min-height:80px}
+.student-offboarding-editor :is(input,textarea):focus-visible{outline:2px solid #795bc5;outline-offset:2px}
+.student-offboarding-description{margin:0;font-size:13px;line-height:1.65;color:var(--muted-foreground)}
+.student-offboarding-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.student-offboarding-actions>button{max-width:100%;min-height:44px;height:auto;white-space:normal;line-height:1.5}
+.student-offboarding-preserved{margin:0;padding:10px 12px;border:1px solid #cde1d9;border-radius:8px;background:#eef8f2;color:#2c6a4c;font-size:14px}
+.student-offboarding-editor h3{margin:0 0 10px;font-size:15px;font-weight:650;line-height:1.5}
+.student-offboarding-effects{display:grid;gap:8px;list-style:none;padding:0;margin:0}
+.student-offboarding-effects>li{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;line-height:1.6;font-size:14px}
+.student-offboarding-effects>li>span{min-width:0;overflow-wrap:anywhere}
+.student-offboarding-effects>li>strong{flex:none}
+.student-offboarding-blockers{padding:14px;border:1px solid #e8ce9d;border-radius:8px;background:#fff8ed;color:#765127}
+.student-offboarding-editor>.student-offboarding-confirm{display:flex;flex-direction:row;align-items:flex-start;gap:10px;font-weight:400;font-size:14px;line-height:1.65}
+.student-offboarding-confirm>input{flex:none;width:20px;height:20px;min-height:0;padding:0;margin:3px 0 0;accent-color:#6845bf}
+.student-offboarding-list{display:grid;gap:12px;min-width:0}
+.student-offboarding-list>article{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:14px;border:1px solid #e0dbea;border-radius:10px;min-width:0}
+.student-offboarding-list>article>div{display:grid;gap:8px;min-width:0;overflow-wrap:anywhere}
+.student-offboarding-list>article>button{flex:none;min-height:44px}
+.student-offboarding-list details{font-size:13px;line-height:1.6}
+.student-offboarding-list summary{cursor:pointer;color:#654c92}
+.student-offboarding-list details p{margin:8px 0 0;white-space:pre-wrap}
+@media(max-width:480px){.student-offboarding-actions>button{flex:1 1 140px}.student-offboarding-list>article{flex-wrap:wrap}.student-offboarding-list>article>button{margin-left:auto}.student-offboarding-dialog .student-offboarding-name{font-size:15px}}

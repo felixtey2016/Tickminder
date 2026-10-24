@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { and, eq, type SQL } from "drizzle-orm";
+import { and, eq, getTableName, sql, type SQL, type Table } from "drizzle-orm";
 
 export const DEFAULT_GROUP_ID = "next-genn-edu";
 export const GROUP_TABLES = ["resource_catalog","resource_assignments","resource_reports","resource_operations","file_extra_references","parent_notifications","parent_notification_deliveries","parent_financial_operations","parent_financial_access","parent_financial_events","parent_operations","parent_child_links","parent_link_events","quiz_publications","quiz_publication_reports","quiz_publication_appeals","quiz_moderation_events","quiz_moderation_operations","quiz_question_sources","class_recordings","recording_recipients","recording_operations","whatsapp_contacts","whatsapp_challenges","whatsapp_contact_requests","invoice_brand_assets","invoice_brand_settings","invoices","invoice_items","invoice_operations","invoice_sequences","invoice_source_locks","billing_students","billing_subjects","billing_policies","billing_policy_versions","billing_rates","billing_rate_versions","billing_operations","billing_adjustments","student_grade_promotions","class_sessions","class_session_participants","accounts","teachers","students","plans","assignments","lessons","reschedule_requests","audit","pdf_files","teaching_materials","material_recipients","homework","homework_recipients","homework_submissions","study_blocks","classrooms","classroom_folders","classroom_content_state","learning_versions","homework_score_history","homework_feedback","homework_resubmission_grants","learning_notifications","academic_terms","classroom_members","classroom_announcements","notification_items","site_notifications","storage_quota","quizzes","quiz_versions","quiz_answer_keys","quiz_images","quiz_version_images","quiz_practice_assignments","quiz_practice_recipients","quiz_practice_attempts","quiz_practice_operations","quiz_practice_events","quiz_assignment_notifications"] as const;
@@ -9,7 +9,32 @@ export function requireGroup(groupId: string | null | undefined): string {
   return groupId;
 }
 export function groupWhere(table: {groupId: any}, groupId: string | null | undefined, ...conditions: (SQL | undefined)[]) {
-  return and(eq(table.groupId, requireGroup(groupId)), ...conditions);
+  const name=getTableName(table as unknown as Table),visible=operationalRowVisible(name,`"${name}"`);
+  return and(eq(table.groupId, requireGroup(groupId)), visible==='1'?undefined:sql.raw(visible), ...conditions);
+}
+
+// These are operational views only. Financial services deliberately read the
+// retained main tables and immutable snapshots through their own guarded APIs.
+export function operationalStudentVisible(groupSql:string,studentSql:string){
+  return `NOT EXISTS(SELECT 1 FROM main.student_offboarding cleanup_student WHERE cleanup_student.group_id=${groupSql} AND cleanup_student.student_name=${studentSql} AND cleanup_student.status='cleaned')`;
+}
+export function operationalClassroomVisible(groupSql:string,classroomSql:string){
+  return `NOT EXISTS(SELECT 1 FROM main.classroom_retirements cleanup_class WHERE cleanup_class.group_id=${groupSql} AND cleanup_class.classroom_id=${classroomSql})`;
+}
+/** Trusted table/alias expressions, never values supplied by a client. */
+export function operationalRowVisible(table:string,alias:string):string{
+  if(!/^(?:[a-z_][a-z0-9_]*|"[a-z_][a-z0-9_]*")$/i.test(alias))throw new Error('Invalid operational alias');
+  const group=`${alias}.group_id`,studentColumns:Record<string,string>={students:'name',plans:'student',lessons:'student',classroom_members:'student_name',class_session_participants:'student_name',material_recipients:'student_name',homework_recipients:'student_name',homework_submissions:'student_name',homework_score_history:'student_name',homework_resubmission_grants:'student_name',recording_recipients:'student_name',quiz_practice_recipients:'student_name',quiz_practice_attempts:'student_name'};
+  if(studentColumns[table])return operationalStudentVisible(group,`${alias}.${studentColumns[table]}`);
+  if(table==='accounts')return `(${alias}.role<>'student' OR ${operationalStudentVisible(group,`${alias}.student_name`)})`;
+  if(table==='classrooms')return operationalClassroomVisible(group,`${alias}.id`);
+  if(table==='class_sessions'){
+    const retained=`cleanup_lesson.group_id=${group} AND cleanup_lesson.session_id=${alias}.id`,visible=operationalStudentVisible('cleanup_lesson.group_id','cleanup_lesson.student');
+    return `(${operationalClassroomVisible(group,`${alias}.classroom_id`)} AND (NOT EXISTS(SELECT 1 FROM main.lessons cleanup_lesson WHERE ${retained} AND NOT (${visible})) OR EXISTS(SELECT 1 FROM main.lessons cleanup_lesson WHERE ${retained} AND ${visible})))`;
+  }
+  if(table==='reschedule_requests')return `NOT EXISTS(SELECT 1 FROM main.lessons cleanup_lesson WHERE cleanup_lesson.group_id=${group} AND cleanup_lesson.id=${alias}.lesson_id AND NOT (${operationalStudentVisible('cleanup_lesson.group_id','cleanup_lesson.student')}))`;
+  if(['classroom_folders','classroom_content_state','classroom_announcements','class_recordings','resource_assignments','quiz_practice_assignments','teaching_materials','homework'].includes(table))return operationalClassroomVisible(group,`${alias}.classroom_id`);
+  return '1';
 }
 
 // Each read gets statement-local SQLite views. Nested joins and subqueries see
@@ -22,7 +47,7 @@ export function groupStatement(groupId: string | null | undefined, query: string
   if (!/^\s*(?:SELECT|INSERT|UPDATE|DELETE)\b/i.test(query) || /;|\bmain\s*\.|\b(?:sqlite_master|pragma)\b/i.test(query)) throw new Error("Invalid group statement");
   const tables = GROUP_TABLES.filter(table => new RegExp(`\\b${table}\\b`, "i").test(query));
   if (!tables.length) return env.DB.prepare(query);
-  const ctes = tables.map(table => `"${table}" AS (SELECT *${table === "audit" ? ", rowid AS rowid" : ""} FROM main."${table}" WHERE group_id = ?)`);
+  const ctes = tables.map(table => `"${table}" AS (SELECT *${table === "audit" ? ", rowid AS rowid" : ""} FROM main."${table}" WHERE group_id = ? AND ${operationalRowVisible(table,`"${table}"`)})`);
   const statement = env.DB.prepare(`WITH ${ctes.join(",")} ${query}`);
   return {
     bind: (...values: unknown[]) => statement.bind(...tables.map(() => id), ...values),
