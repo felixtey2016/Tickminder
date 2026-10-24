@@ -42,7 +42,7 @@ export function BulkDeleteTool({kind,records,mutate,busy,single=false,message}: 
         {["account","teacher","student","plan","classroom"].includes(kind)&&<p>{t("独立排课及历史课时保留。已写入 Google Sheet 的数值不会自动撤回。")}</p>}
         {kind==="lesson"&&<p>{t("网站课时统计将更新；已写入 Google Sheet 的数值不会自动撤回。")}</p>}
         {preview.blocked.length>0&&<p role="alert">{t("部分记录无法删除，请调整选择后重新预览。此次不会删除任何记录。")}</p>}
-        <div className="learning-card-actions"><Button type="button" variant="outline" disabled={busy} onClick={()=>setPreview(null)}>{t("返回选择")}</Button><Button className="danger-action" disabled={busy||loading||preview.blocked.length>0||!preview.items.length} onClick={async()=>{if(inFlight.current)return;inFlight.current=true;try{if(await mutate({action:"permanentDelete",entries:chosen.map(id=>({kind,id})),fingerprint:preview.fingerprint,previewAt:preview.previewAt,confirm:true})){setOpen(null);setSelected([]);setPreview(null);}else setPreview(null);}finally{inFlight.current=false;}}}>{t("确认永久删除")} · {preview.items.length}</Button></div>
+        <div className="learning-card-actions"><Button type="button" variant="outline" disabled={busy} onClick={()=>setPreview(null)}>{t("返回选择")}</Button><Button variant="destructive" disabled={busy||loading||preview.blocked.length>0||!preview.items.length} onClick={async()=>{if(inFlight.current)return;inFlight.current=true;try{if(await mutate({action:"permanentDelete",entries:chosen.map(id=>({kind,id})),fingerprint:preview.fingerprint,previewAt:preview.previewAt,confirm:true})){setOpen(null);setSelected([]);setPreview(null);}else setPreview(null);}finally{inFlight.current=false;}}}>{t("确认永久删除")} · {preview.items.length}</Button></div>
       </>}
     </DialogContent></Dialog></>;
 }

@@ -1,0 +1,48 @@
+.resource-catalog.round1-resource-catalog { gap: 12px; }
+.round1-resource-catalog .resource-heading { gap: 10px; align-items: flex-start; }
+.round1-resource-catalog .resource-heading h2 { margin: 4px 0 0; font-size: 20px; line-height: 1.4; }
+.round1-resource-catalog .resource-grid { grid-template-columns: minmax(0,1fr); gap: 8px; }
+.round1-resource-catalog .resource-card { display: block; padding: 13px 16px; border-radius: 10px; }
+.round1-resource-catalog .round1-resource-row { display: flex; align-items: center; justify-content: space-between; min-width: 0; gap: 16px; }
+.round1-resource-catalog .round1-resource-copy { flex: 1; min-width: 0; display: grid; gap: 6px; }
+.round1-resource-catalog .resource-card-title { gap: 7px; }
+.round1-resource-catalog .resource-card h3 { font-size: 15px; }
+.round1-resource-catalog .resource-card-title svg { margin-top: 2px; }
+.round1-resource-catalog .resource-meta { font-size: 12px; line-height: 1.5; }
+.round1-resource-catalog .resource-badges { gap: 5px; }
+.round1-resource-catalog .resource-badges > span { padding: 2px 6px; font-size: 11px; }
+.round1-resource-catalog .round1-resource-primary { justify-content: flex-end; flex: 0 1 290px; gap: 8px; }
+.round1-resource-catalog .resource-open { display: inline-flex; justify-content: center; max-width: 100%; box-sizing: border-box; min-height: 36px; padding: 7px 10px; border: 1px solid var(--border,#d7dce4); border-radius: 7px; font-size: 12px; font-weight: 600; line-height: 1.4; text-decoration: none; }
+.round1-resource-catalog .round1-resource-details > summary, .round1-resource-catalog .round1-catalog-management > summary { width: fit-content; min-height: 34px; padding: 7px 0; color: var(--primary,#5135b4); cursor: pointer; font-size: 12px; }
+.round1-resource-catalog .round1-resource-details[open] > summary { margin-bottom: 4px; }
+.round1-resource-catalog .round1-resource-detail-content { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--border,#e2dce9); font-size: 13px; line-height: 1.6; }
+.round1-resource-catalog .round1-resource-detail-content p { margin: 0; }
+.round1-resource-catalog .round1-resource-rights { display: grid; gap: 4px; color: var(--muted-foreground,#666078); }
+.round1-resource-catalog .resource-actions { gap: 8px; }
+.round1-resource-catalog .round1-catalog-management { min-width: 0; }
+.round1-resource-catalog .round1-catalog-management > summary { min-height: 36px; border: 1px solid var(--border,#d7dce4); border-radius: 7px; padding: 8px 10px; }
+.round1-resource-catalog .round1-catalog-management[open] > .resource-actions { margin-top: 8px; }
+.round1-resource-catalog button { min-height: 36px; max-width: 100%; overflow-wrap: anywhere; }
+.round1-resource-catalog .resource-pagination { gap: 8px; }
+.round1-resource-dialog { max-height: calc(100dvh - 32px); overscroll-behavior: contain; }
+.round1-resource-dialog > [data-slot="dialog-title"] { padding-right: 36px; line-height: 1.4; overflow-wrap: anywhere; }
+.round1-resource-dialog > [data-slot="dialog-description"] { margin: 0; line-height: 1.6; overflow-wrap: anywhere; }
+.round1-resource-dialog > [data-slot="dialog-close"] { display: grid; place-items: center; width: 36px; height: 36px; top: 12px; right: 12px; }
+.round1-resource-dialog .resource-actions { gap: 10px; }
+.round1-resource-dialog button { overflow-wrap: anywhere; }
+@media(max-width:600px) {
+  .round1-resource-catalog .resource-heading { align-items: center; }
+  .round1-resource-catalog .resource-heading > .resource-actions { width: auto; }
+  .round1-resource-catalog .resource-heading h2 { font-size: 18px; }
+  .round1-resource-catalog .resource-card { padding: 12px; }
+  .round1-resource-catalog .round1-resource-row { display: grid; grid-template-columns: minmax(0,1fr); gap: 10px; }
+  .round1-resource-catalog .round1-resource-primary { justify-content: flex-start; }
+  .round1-resource-catalog .round1-resource-primary > * { flex: 0 1 auto; }
+  .round1-resource-catalog button, .round1-resource-catalog .resource-open, .round1-resource-catalog .round1-resource-details > summary, .round1-resource-catalog .round1-catalog-management > summary { min-height: 44px; }
+  .round1-resource-catalog .round1-resource-details > summary { padding-top: 12px; padding-bottom: 10px; }
+  .round1-resource-catalog .round1-catalog-management > summary { padding-top: 12px; padding-bottom: 10px; }
+  .round1-resource-catalog .resource-filters { gap: 10px; }
+  .round1-resource-dialog .resource-form-grid { grid-template-columns: minmax(0,1fr); }
+  .round1-resource-dialog > [data-slot="dialog-close"] { width: 44px; height: 44px; top: 8px; right: 8px; }
+  .round1-resource-dialog button { min-height: 44px; }
+}

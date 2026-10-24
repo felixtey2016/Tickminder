@@ -1,0 +1,42 @@
+.classrooms-page.round1-classrooms { gap: 16px; }
+.round1-classrooms .classroom-intro { padding: 16px 18px; align-items: flex-start; }
+.round1-classrooms .classroom-intro-copy { gap: 3px; }
+.round1-classrooms .classroom-intro-copy h2 { font-size: 20px; line-height: 1.4; }
+.round1-classrooms .classroom-intro-copy .eyebrow { font-size: 12px; line-height: 1.5; }
+.round1-classrooms .classroom-management > summary { min-height: 36px; padding: 7px 11px; font-size: 13px; }
+.round1-classrooms .classroom-management-actions { gap: 8px; padding: 10px; }
+.round1-classrooms .round1-class-description { margin-top: 4px; font-size: 13px; }
+.round1-classrooms .round1-class-description summary { width: fit-content; min-height: 32px; padding: 5px 0; cursor: pointer; color: var(--muted-foreground,#6b6479); }
+.round1-classrooms .round1-class-description p { padding-top: 4px; }
+.round1-classrooms .round1-section-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.round1-classrooms .round1-section-head h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 18px; }
+.round1-classrooms .round1-announcement-list { display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; }
+.round1-classrooms .classroom-announcement { min-width: 0; padding: 12px 14px; gap: 4px; }
+.round1-classrooms .round1-announcement-heading { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.round1-classrooms .round1-announcement-heading strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.round1-classrooms .round1-announcement-heading .classroom-pinned { position: static; flex: none; margin: 0; padding: 2px 6px; font-size: 11px; }
+.round1-classrooms .round1-announcement-detail > summary { cursor: pointer; width: fit-content; min-height: 32px; padding: 7px 0; color: var(--primary,#5c3ca5); font-size: 13px; }
+.round1-classrooms .round1-announcement-detail > p { margin: 4px 0 12px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.round1-classrooms .round1-announcement-detail .learning-card-actions { gap: 8px; }
+.round1-classrooms .round1-classroom-members { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0 20px; margin: 12px 0; padding: 0; list-style: none; }
+.round1-classrooms .round1-classroom-members li { display: flex; align-items: flex-start; gap: 10px; min-width: 0; padding: 10px 2px; border-bottom: 1px solid var(--border,#e1dce9); font-size: 14px; line-height: 1.5; }
+.round1-classrooms .round1-classroom-members li > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.round1-classrooms .round1-member-number { flex: 0 0 24px; color: var(--muted-foreground,#756c83); font-size: 12px; line-height: 21px; }
+.round1-announcement-dialog { width: min(600px,calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; padding: 24px; }
+.round1-announcement-dialog > [data-slot="dialog-title"] { padding-right: 36px; line-height: 1.4; overflow-wrap: anywhere; }
+.round1-announcement-dialog > [data-slot="dialog-close"] { display: grid; place-items: center; top: 12px; right: 12px; width: 36px; height: 36px; }
+.round1-announcement-dialog .round1-announcement-pin { display: flex; flex-direction: row; align-items: center; gap: 9px; }
+.round1-announcement-dialog .round1-announcement-pin input { width: 18px; height: 18px; }
+.round1-announcement-dialog .learning-card-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.round1-classrooms button, .round1-announcement-dialog button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; height: auto; min-height: 36px; line-height: 1.4; }
+@media (max-width:600px) {
+  .round1-classrooms .classroom-intro { display: grid; grid-template-columns: minmax(0,1fr); gap: 10px; padding: 14px; }
+  .round1-classrooms .classroom-management { width: auto; }
+  .round1-classrooms .classroom-management > summary { min-height: 44px; }
+  .round1-classrooms .round1-classroom-members { grid-template-columns: minmax(0,1fr); }
+  .round1-classrooms .round1-announcement-detail > summary, .round1-classrooms .round1-class-description summary { min-height: 44px; display: flex; align-items: center; }
+  .round1-announcement-dialog { padding: 20px 16px; }
+  .round1-announcement-dialog > [data-slot="dialog-close"] { width: 44px; height: 44px; top: 8px; right: 8px; }
+  .round1-classrooms button, .round1-announcement-dialog button { min-height: 44px; }
+  .round1-announcement-dialog .learning-card-actions > button { flex: 1 1 110px; }
+}

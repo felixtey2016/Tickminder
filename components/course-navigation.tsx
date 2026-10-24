@@ -11,6 +11,7 @@ type CourseNavigationProps = {
   onChoose: (view: string) => void;
   badges?: Partial<Record<string, number>>;
   canView?: (view:string)=>boolean;
+  showArrange?: boolean;
 };
 
 function PendingCount({ count = 0 }: { count?: number }) {
@@ -19,7 +20,7 @@ function PendingCount({ count = 0 }: { count?: number }) {
 }
 
 /** Present existing course destinations without changing their history or permissions. */
-export function CourseNavigation({ role, activeView, onChoose, badges = {}, canView=()=>true }: CourseNavigationProps) {
+export function CourseNavigation({ role, activeView, onChoose, badges = {}, canView=()=>true, showArrange=true }: CourseNavigationProps) {
   const sections = getCourseTabs(role).filter(section=>section.views.some(canView));
   const selected = courseSection(role, activeView);
   const row = useRef<HTMLElement>(null);
@@ -58,7 +59,7 @@ export function CourseNavigation({ role, activeView, onChoose, badges = {}, canV
           </button>;
         })}
       </nav>
-      {canArrange && <div className="course-navigation-actions">
+      {canArrange && showArrange && <div className="course-navigation-actions">
         <button type="button" className="course-navigation-arrange" data-testid="course-arrange"
           data-active={activeView === "schedule"} aria-current={activeView === "schedule" ? "page" : undefined}
           onClick={() => onChoose("schedule")}>

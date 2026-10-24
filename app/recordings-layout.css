@@ -87,3 +87,62 @@
   .recording-student-list { grid-template-columns: minmax(0,1fr); }
   .recording-dialog-actions > button { flex: 1 1 100px; }
 }
+
+/* Compact rows retain a direct Drive link; details expand in the document flow. */
+.recordings-workspace.recordings-compact { gap: 14px; }
+.recordings-compact .recordings-heading { align-items: center; gap: 12px; }
+.recordings-compact .recordings-heading h2 { font-size: 20px; gap: 8px; }
+.recordings-compact .recordings-heading > button { width: auto; }
+.recordings-compact .recordings-compact-filter-form { display: grid; gap: 8px; min-width: 0; }
+.recordings-compact .recordings-compact-search { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: end; gap: 10px; }
+.recordings-compact .recordings-compact-search label { display: grid; gap: 5px; min-width: 0; font-size: 13px; font-weight: 600; }
+.recordings-compact .recordings-compact-search input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 40px; border: 1px solid #bdb4ce; border-radius: 8px; padding: 9px 12px 9px 38px; background: #fff; color: #29233f; font-size: 16px; }
+.recordings-compact .recordings-search { grid-column: auto; }
+.recordings-compact .recordings-search svg { top: 12px; }
+.recordings-compact .recordings-filter-disclosure { min-width: 0; border-bottom: 1px solid #e6e0ef; }
+.recordings-compact .recordings-filter-disclosure > summary { width: fit-content; min-height: 36px; padding: 8px 0; cursor: pointer; color: #5e4c7b; font-size: 13px; font-weight: 600; }
+.recordings-compact .recordings-filter-disclosure > summary span { margin-left: 8px; font-size: 11px; }
+.recordings-compact .recordings-filters { grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); margin: 4px 0 12px; padding: 12px; gap: 10px; border-radius: 9px; }
+.recordings-compact .recordings-filters label { gap: 5px; font-size: 13px; }
+.recordings-compact .recordings-filters input, .recordings-compact .recordings-filters select { min-height: 40px; padding: 8px 10px; }
+.recordings-compact .recordings-list { grid-template-columns: minmax(0,1fr); gap: 8px; }
+.recordings-compact .recording-card { display: block; padding: 13px 16px; border-radius: 10px; }
+.recordings-compact .recording-row-main { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 0; }
+.recordings-compact .recording-row-copy { flex: 1; min-width: 0; }
+.recordings-compact .recording-card h3 { margin: 0 0 6px; font-size: 16px; line-height: 1.5; }
+.recordings-compact .recording-row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 12px; color: #756a83; }
+.recordings-compact .recording-badge { padding: 2px 6px; font-size: 11px; }
+.recordings-compact .recording-date { font-size: 12px; }
+.recordings-compact .recording-row-context { min-width: 0; overflow-wrap: anywhere; }
+.recordings-compact .recording-watch { flex: 0 0 auto; width: auto; min-height: 36px; padding: 7px 11px; gap: 6px; border-radius: 7px; font-size: 13px; }
+.recordings-compact .recording-row-details > summary { min-height: 32px; width: fit-content; padding: 7px 0 3px; color: #67557d; font-size: 12px; cursor: pointer; }
+.recordings-compact .recording-row-details[open] > summary { margin-bottom: 8px; padding-bottom: 7px; }
+.recordings-compact .recording-detail-content { display: grid; gap: 10px; padding-top: 10px; border-top: 1px solid #ece6f3; }
+.recordings-compact .recording-detail-content p { margin: 0; font-size: 13px; }
+.recordings-compact .recording-detail-content .recording-description { margin: 0; }
+.recordings-compact .recording-history { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; font-size: 12px; color: #776c89; }
+.recordings-compact .recording-history > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.recordings-compact .recording-history dd { margin: 0; }
+.recordings-compact .recording-actions { gap: 8px; }
+.recordings-compact button { min-height: 36px; }
+.recordings-compact .recordings-compact-search > button { min-height: 40px; }
+.recordings-compact .recording-watch-hint { margin-top: 0; font-size: 12px; }
+.recordings-compact .recordings-pagination { padding-top: 0; gap: 10px; }
+.recording-dialog { overscroll-behavior: contain; }
+.recording-dialog .recording-dialog-header { gap: 14px; }
+.recording-dialog .recording-dialog-header h2 { font-size: 21px; }
+.recording-dialog .recording-dialog-actions { position: static; background: #fff; padding-top: 16px; }
+@media(max-width:600px) {
+  .recordings-compact .recordings-heading { flex-direction: row; align-items: flex-start; flex-wrap: wrap; }
+  .recordings-compact .recordings-heading h2 { font-size: 18px; }
+  .recordings-compact .recordings-heading > button { max-width: 100%; width: auto; }
+  .recordings-compact .recording-card { padding: 12px; }
+  .recordings-compact .recording-row-main { align-items: flex-start; gap: 10px; }
+  .recordings-compact .recording-row-copy { min-width: 100px; }
+  .recordings-compact .recording-watch { min-height: 44px; max-width: 46%; white-space: normal; overflow-wrap: anywhere; text-align: center; }
+  .recordings-compact button, .recordings-compact .recordings-compact-search > button, .recordings-compact .recordings-compact-search input { min-height: 44px; }
+  .recordings-compact .recordings-filters { grid-template-columns: minmax(0,1fr); }
+  .recordings-compact .recording-row-details > summary, .recordings-compact .recordings-filter-disclosure > summary { min-height: 44px; padding-top: 11px; padding-bottom: 9px; }
+  .recordings-compact .recording-detail-content .recording-actions > button { flex: 0 1 auto; }
+}
+.recordings-workspace.recordings-compact .recordings-compact-search input[type="search"] { padding-inline-start: 12px; padding-left: 12px; }

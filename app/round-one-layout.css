@@ -1,0 +1,65 @@
+/* List-first workspace: a single heading row and bounded, on-demand controls. */
+.workspace-compact .workspace-heading{top:64px;min-height:64px;gap:12px;margin:0 0 16px;padding:8px 0;align-items:center;pointer-events:auto}
+.workspace-heading-text{min-width:0;flex:1}
+.workspace-heading-text h1{font-size:24px;line-height:1.3;margin:0;font-weight:700;overflow-wrap:anywhere}
+.workspace-heading-text>span{display:block;max-width:100%;font-size:12px;line-height:1.5;color:var(--ui-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.workspace-heading-actions{display:flex;gap:8px;flex-shrink:0}
+.workspace-period{display:flex;align-items:center;gap:12px;margin:0 0 12px}
+.workspace-period .month-select{display:flex;flex-direction:row;align-items:center;gap:10px;margin:0;font-size:14px;min-width:0}
+.workspace-period input{min-height:44px;min-width:0;max-width:220px;background:#fff;border:1px solid #d9d5e6;border-radius:8px;padding:8px 12px}
+.workspace-compact .course-navigation{margin-bottom:16px}
+.workspace-compact .course-navigation-main{display:block}
+.workspace-compact .course-navigation-secondary{gap:8px;padding-top:8px}
+.filter-panel-selection{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400;color:var(--ui-secondary)}
+.filter-panel>summary>svg{flex-shrink:0}
+.filter-panel>summary>svg:last-child{margin-left:auto}
+.course-query-stack{gap:14px}
+.course-query-stack:empty{display:none}
+.course-type-switch{display:flex;flex-wrap:wrap;gap:8px}
+.course-type-switch>button{flex:0 1 auto;white-space:normal}
+.course-query-filterbar{display:flex;align-items:flex-end;flex-wrap:wrap;gap:12px;min-width:0}
+.course-query-filterbar>.course-completion-field{display:grid;gap:4px;min-width:0;flex:0 1 200px;font-size:13px}
+.course-query-filterbar select{width:100%;min-width:0;max-width:100%;min-height:44px;padding:8px 12px;border:1px solid #d9d5e6;border-radius:8px;background:#fff;color:var(--ui-ink)}
+.course-query-filterbar>.filter-panel{flex:1 1 140px;min-width:0;margin:0}
+.course-query-filterbar>.filter-panel[open]{flex-basis:100%}
+.course-query-filterbar>.filter-panel>summary{min-height:44px;padding:9px 12px;gap:8px}
+.course-query-filterbar .filter-panel-fields{gap:12px;padding:12px;min-width:0}
+.course-query-filterbar .filter-panel-fields>label{display:grid;gap:6px;min-width:0}
+.course-query-filterbar .filter-panel-fields>.check-row{display:flex;align-items:center;gap:10px}
+.course-query-filterbar .directory-filters{margin:0;gap:12px}
+.course-query-filterbar .teacher-student-filters[data-hide-teacher=true]{grid-template-columns:minmax(0,1fr)}
+.compact-course-list-heading{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
+.compact-course-list-heading h2{margin:0;font-size:16px}
+.compact-course-list-heading>span{font-size:13px;color:var(--ui-secondary)}
+.course-bulk-actions{margin-left:auto;font-size:13px;min-width:0}
+.course-bulk-actions>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;color:var(--ui-purple);padding:8px;list-style:revert}
+.course-bulk-actions[open]{flex-basis:100%;border-top:1px solid var(--ui-line);padding-top:8px}
+.course-bulk-actions [data-slot=button]{margin:8px 0 0}
+.workspace-compact .lesson-card{grid-template-columns:100px minmax(0,1fr);padding:14px;gap:14px}
+.workspace-compact .date-tile{padding:8px;align-self:start;min-width:0;min-height:0}
+.workspace-compact .lesson-title>strong{font-size:16px}
+.workspace-compact .lesson-body>p{margin:4px 0 8px;font-size:13px}
+.workspace-compact .lesson-actions{gap:8px;margin:8px 0 0}
+.workspace-compact .lesson-actions [data-slot=button]{white-space:normal}
+.course-row-details{min-width:0;font-size:13px;margin-top:4px}
+.course-row-details>summary,.course-existing-sessions>summary{display:flex;align-items:center;min-height:44px;gap:8px;color:var(--ui-purple);cursor:pointer;font-weight:500}
+.course-row-details>summary::before,.course-existing-sessions>summary::before{content:'›';font-size:20px}
+.course-row-details[open]>summary::before,.course-existing-sessions[open]>summary::before{transform:rotate(90deg)}
+.course-row-details .lesson-history{margin-top:4px;padding-top:4px}
+.course-existing-sessions{grid-column:1/-1;min-width:0}
+.course-existing-sessions[open]>.course-query-stack{margin-top:12px}
+.workspace-compact .attendance-session{padding:14px;gap:6px;margin-top:12px;min-width:0}
+.workspace-compact .attendance-session>strong{font-size:16px;line-height:1.4;overflow-wrap:anywhere}
+.workspace-compact .attendance-session>span{font-size:14px}
+.workspace-compact .attendance-session>p{font-size:13px;margin:0}
+.workspace-compact .attendance-session>.class-session-controls{gap:8px;margin-top:0}
+.workspace-compact .portal-card{padding:14px;margin-top:12px;gap:8px}
+.workspace-compact .portal-card>div:first-child strong{font-size:16px}
+.workspace-compact .portal-card .lesson-history{margin-top:4px}
+.workspace-compact .student-calendar-layout{align-items:start}
+.workspace-compact .calendar-role-filters{margin-bottom:12px;gap:8px}
+.workspace-compact .calendar-role-filters label{flex:1;min-width:0}
+.workspace-compact .calendar-role-filters select{width:100%;min-width:0;max-width:100%}
+@media(min-width:1000px){.workspace-compact .student-calendar-layout{grid-template-columns:minmax(320px,1.05fr) minmax(300px,1fr);gap:16px}.workspace-compact .student-day-panel{position:sticky;top:152px}}
+@media(max-width:900px){.app-body .workspace-compact{padding-top:8px}.workspace-compact .workspace-heading{margin-bottom:12px}.workspace-heading-text h1{font-size:21px}.workspace-heading-text>span{max-width:48vw}}
+@media(max-width:650px){.workspace-heading .workspace-back-button{width:44px;min-width:44px;padding:8px}.workspace-heading .workspace-back-button>span{display:none}.workspace-heading .workspace-arrange{width:auto;min-width:44px;padding:8px 10px}.workspace-heading .workspace-arrange>span{display:inline}.workspace-period .month-select{width:100%;justify-content:space-between}.workspace-period input{flex:1;max-width:230px}.workspace-compact .panel{padding:14px}.workspace-compact .date-tile{margin-bottom:8px;padding:0;background:transparent}.workspace-compact .date-tile strong{font-size:13px}.workspace-compact .date-tile span{font-size:14px}.workspace-compact .lesson-card{padding:12px}.workspace-compact .lesson-body .course-row-details{margin-top:0}.course-query-filterbar>.course-completion-field{flex:1 1 150px}.course-query-filterbar>.filter-panel{flex:1 1 115px}.course-query-filterbar .filter-panel-fields .directory-filters{grid-template-columns:minmax(0,1fr)}.workspace-compact .student-calendar-day{min-height:44px;padding:4px}.workspace-compact .student-calendar-toolbar{padding:10px;gap:6px}.workspace-compact .student-calendar-legend{padding:8px 10px;gap:8px}.workspace-compact .student-calendar-controls{gap:4px}.workspace-compact .student-calendar-controls [data-slot=button]{padding:8px;min-width:44px}.workspace-compact .student-calendar-toolbar h3{font-size:16px}.workspace-compact .student-day-panel{padding:14px}.workspace-compact .student-day-lesson{padding:12px;margin-top:10px}.workspace-compact .student-day-lesson-top strong{font-size:16px}}
