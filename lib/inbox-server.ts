@@ -4,8 +4,9 @@ import {quizAssignmentInbox} from "./quiz-assignment-notices";
 import { participantSql } from "@/lib/notification-access";
 import type { Account } from "@/lib/auth";
 import { adminPermissionPredicate } from "@/lib/admin-permission-access";
+import {appendAudit} from './audit-log';
 
-type LessonChange = { groupId:string; lessonId: string; actorId: string; action: "reschedule" | "acceptReschedule" | "rejectReschedule" | "cancel"; before: unknown; after: unknown; at: string };
+type LessonChange = { groupId:string; lessonId: string; actorId: string; actorName?:string;objectName?:string;action: "reschedule" | "acceptReschedule" | "rejectReschedule" | "cancel"; before: unknown; after: unknown; at: string };
 const inboxAccess = `a.disabled_at IS NULL AND ((a.role='admin' AND (a.group_id=l.group_id OR (a.group_id IS NULL AND a.id NOT LIKE 'local:%' AND lower(trim(a.email))='felixtey2016@gmail.com'))) OR (${participantSql}))`;
 
 // Commit the audit record and its inbox entries together. Only subsequent
@@ -13,8 +14,7 @@ const inboxAccess = `a.disabled_at IS NULL AND ((a.role='admin' AND (a.group_id=
 export function lessonChangeStatements(event: LessonChange) {
   const db = learningDb(), eventId = crypto.randomUUID();
   return [
-    db.prepare("INSERT INTO audit (group_id,id,lesson_id,actor_id,action,before_json,after_json,at) VALUES (?,?,?,?,?,?,?,?)")
-      .bind(event.groupId,eventId,event.lessonId,event.actorId,event.action,JSON.stringify(event.before),JSON.stringify(event.after),event.at),
+    appendAudit(db,{...event,id:eventId}),
     db.prepare(`INSERT INTO site_notifications (group_id,id,account_id,event_id,lesson_id,kind,created_at)
       SELECT l.group_id,lower(hex(randomblob(16))),a.id,?,l.id,?,? FROM lessons l JOIN accounts a ON ${inboxAccess}
       WHERE l.id=? AND a.id<>? AND l.group_id=?`).bind(eventId,event.action,event.at,event.lessonId,event.actorId,event.groupId),

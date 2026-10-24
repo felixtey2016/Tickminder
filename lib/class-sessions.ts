@@ -11,6 +11,7 @@ import {isOwnerAccount} from "./owner";
 import {participantSql} from "./notification-access";
 import {corePermissionKeys,requireCorePermissions,rejectUnknownAdminAction,guardedCoreDb,guardedCoreReader} from './admin-core-permissions';
 import {hasAdminPermission} from './admin-permission-access';
+import {auditJson,appendAudit} from './audit-log';
 
 export class ClassSessionError extends Error {constructor(message:string,readonly status=400,readonly conflict?:Record<string,unknown>){super(message);}}
 const str=(value:unknown)=>typeof value==="string"?value.trim():"";
@@ -70,8 +71,9 @@ async function checkSlots(actor:Account,candidates:LessonSlot[],exclude:string[]
  for(let i=0;i<candidates.length;i++)for(let j=i+1;j<candidates.length;j++){const a=candidates[i],b=candidates[j];if(a.id!==b.id&&a.plannedStart<b.plannedEnd&&b.plannedStart<a.plannedEnd&&(a.teacherName===b.teacherName||a.student===b.student))throw new ClassSessionError("重复课次之间的时间冲突",409);}
 }
 function sessionAudit(actor:Account,s:ClassSession,opId:string,action:string,before:unknown,after:unknown,at:string,claim:string,args:unknown[]) {
+ const metadata={actorName:actor.name,objectName:[s.classroomTitle,s.subject].filter(Boolean).join(' · ')};
  return learningDb().prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) SELECT ?,?||l.id,l.id,?,?,?,?,? FROM lessons l WHERE l.session_id=? AND l.group_id=? AND "+claim)
-  .bind(actor.groupId,"class-event:"+opId+":",actor.id,action,JSON.stringify(before),JSON.stringify(after),at,s.id,actor.groupId,...args);
+  .bind(actor.groupId,"class-event:"+opId+":",actor.id,action,auditJson(before),auditJson(after,metadata),at,s.id,actor.groupId,...args);
 }
 function sessionNotice(actor:Account,s:ClassSession,opId:string,kind:string,at:string,claim:string,args:unknown[],target:"all"|"admin"|"teacher"="all") {
  const adminAccess="a.role='admin' AND (a.group_id=l.group_id OR (a.group_id IS NULL AND a.id NOT LIKE 'local:%' AND lower(trim(a.email))='felixtey2016@gmail.com'))";
@@ -97,7 +99,7 @@ export async function classSessionAction(actor:Account,data:Record<string,unknow
    statements.push(db.prepare("INSERT INTO class_sessions(id,group_id,session_type,classroom_id,classroom_title,teacher_name,subject,planned_start,planned_end,online_link,series_id,created_by,created_at,updated_at,create_request_id,occurrence,create_hash) SELECT ?,?,'group',?,?,?,?,?,?,?,?,?,?,?,?,?,? FROM classrooms c0 WHERE c0.id=? AND c0.group_id=? AND c0.archived=0 AND c0.teacher_name=? AND c0.subject=? AND c0.title=? AND c0.updated_at=? AND (SELECT json_group_array(student_name) FROM ("+activeMembersSql+"))=? AND "+guard.sql)
     .bind(id,groupId,chosen.id,chosen.title,chosen.teacherName,chosen.subject,date.start,date.end,onlineLink,seriesId,actor.id,now,now,requestId,index,hash,chosen.id,groupId,chosen.teacherName,chosen.subject,chosen.title,chosen.updatedAt,rosterJson,...guard.args));
    statements.push(db.prepare("INSERT INTO lessons(group_id,id,student,subject,teacher_name,planned_start,planned_end,kind,series_id,created_by,updated_at,session_id) SELECT ?,lower(hex(randomblob(16))),value,?,?,?,?, 'regular',?,?,?,? FROM json_each(?) WHERE "+claim).bind(groupId,chosen.subject,chosen.teacherName,date.start,date.end,seriesId,actor.id,now,id,rosterJson,...claimArgs));
-   statements.push(db.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,after_json,at) SELECT ?,?||l.id,l.id,?,'createClassSession',json_object('sessionId',l.session_id,'student',l.student,'subject',l.subject,'plannedStart',l.planned_start,'plannedEnd',l.planned_end,'classroomTitle',?,'participantCount',?),? FROM lessons l WHERE l.session_id=? AND l.group_id=? AND "+claim).bind(groupId,"class-create:"+requestId+":",actor.id,chosen.title,chosen.members.length,now,id,groupId,...claimArgs));
+   statements.push(db.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,after_json,at) SELECT ?,?||l.id,l.id,?,'createClassSession',json_object('sessionId',l.session_id,'student',l.student,'subject',l.subject,'plannedStart',l.planned_start,'plannedEnd',l.planned_end,'classroomTitle',?,'participantCount',?,'_audit',json_object('actorName',?,'objectName',?)),? FROM lessons l WHERE l.session_id=? AND l.group_id=? AND "+claim).bind(groupId,"class-create:"+requestId+":",actor.id,chosen.title,chosen.members.length,actor.name,[chosen.title,chosen.subject].filter(Boolean).join(' · '),now,id,groupId,...claimArgs));
   }
   try{const result=await db.batch(statements);if(result.filter((_,i)=>i%3===0).some(r=>!r.meta.changes))throw new ClassSessionError("班级或学生名单已改变，请重新载入",409);}catch(error){if(/UNIQUE constraint/.test(String(error))){const saved=await first<{createHash:string}>("SELECT create_hash AS createHash FROM class_sessions WHERE create_request_id=? AND created_by=? LIMIT 1",requestId,actor.id);if(saved?.createHash===hash)return {ok:true,replayed:true,count:dates.length};}throw error;}
   return {ok:true,count:dates.length,studentCount:chosen.members.length};
@@ -116,7 +118,7 @@ async function changeClassSession(actor:Account,data:Record<string,unknown>,cont
   const classroom=current.classroomId?await classroomMayManage(actor,current.classroomId):null;if(!classroom||classroom.archived)throw new ClassSessionError("班级已封存或无权管理",403);
  }
  const claim="EXISTS(SELECT 1 FROM class_sessions WHERE id=? AND group_id=? AND mutation_id=?)",claimArgs=[id,groupId,requestId];
- const opAudit=(count:number)=>db.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,after_json,at) SELECT ?,?,?,?,?,?,? WHERE "+claim).bind(groupId,"class-op:"+requestId,"class-session:"+id,actor.id,action,JSON.stringify({hash,count}),now,...claimArgs);
+ const opAudit=(count:number)=>appendAudit(db,{groupId,id:"class-op:"+requestId,lessonId:"class-session:"+id,actorId:actor.id,actorName:actor.name,objectName:[current.classroomTitle,current.subject].filter(Boolean).join(' · '),action,after:{hash,count},at:now,guard:{sql:claim,args:claimArgs}});
  if(action==="updateClassSessionLink"){
   const link=normalizeOnlineLink(data.onlineLink),result=await db.batch([db.prepare("UPDATE class_sessions SET online_link=?,revision=revision+1,updated_at=?,mutation_id=? WHERE id=? AND group_id=? AND revision=? AND "+guard.sql).bind(link,now,requestId,id,groupId,baseRevision,...guard.args),sessionAudit(actor,current,requestId,action,{onlineLink:current.onlineLink},{onlineLink:link},now,claim,claimArgs),opAudit(1)]);
   if(!result[0].meta.changes)throw new ClassSessionError("课次或操作权限已改变，请重新载入",409);return {ok:true};

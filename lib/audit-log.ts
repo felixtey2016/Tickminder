@@ -8,7 +8,9 @@ export function sanitizeAuditValue(value:unknown,depth=0):unknown{
  if(depth>8)return null;
  if(value===null||typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value))return value;
  if(typeof value==='string')return value.slice(0,4000);
- if(Array.isArray(value))return value.slice(0,100).map(item=>sanitizeAuditValue(item,depth+1));
+ // The validated administrator catalog currently has 112 grants. Keep complete
+ // permission snapshots while retaining a fixed bound for arbitrary arrays.
+ if(Array.isArray(value))return value.slice(0,256).map(item=>sanitizeAuditValue(item,depth+1));
  if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([key])=>key!=='_audit'&&!sensitiveAuditKey(key)).slice(0,100).map(([key,item])=>[key,sanitizeAuditValue(item,depth+1)]));
  return null;
 }

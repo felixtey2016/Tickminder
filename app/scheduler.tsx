@@ -228,6 +228,8 @@ export function Scheduler() {
     const [selectedMonth, setSelectedMonth] = useFilterPreference<string>("reporting-month", local(new Date().toISOString()).slice(0, 7), auth?.account?.id?`${auth.account.id}:${auth.account.groupId}`:undefined);
     const [calendarDate,setCalendarDate]=useState(()=>local(new Date().toISOString()).slice(0,10));
     const [calendarRange,setCalendarRange]=useState<CalendarRange>(()=>monthCalendarRange(local(new Date().toISOString()).slice(0,10)));
+    const coreQueryRef=useRef({month:selectedMonth,...calendarRange});
+    coreQueryRef.current={month:selectedMonth,...calendarRange};
     const onCalendarRangeChange=useCallback((next:CalendarRange)=>setCalendarRange(previous=>previous.from===next.from&&previous.to===next.to?previous:next),[]);
     const [message, setMessage] = useState("");
     const [busy, setBusy] = useState(false);
@@ -293,7 +295,9 @@ export function Scheduler() {
         setState(previous=>previous?{...previous,coreError:undefined}:previous);
         scopeRequests.current.clear();
         try {
-            const next = await request(`/api/state?scope=core&${new URLSearchParams({month:selectedMonth,...calendarRange})}`) as State;
+            // A completed mutation can hold an older reload callback while the
+            // user has already selected another reporting/calendar range.
+            const next = await request(`/api/state?scope=core&${new URLSearchParams(coreQueryRef.current)}`) as State;
             if (requestId !== latestStateRequest.current) return;
             if (next.account?.id && next.account.id !== auth?.account?.id) {
                 setAuth(await request("/api/auth"));

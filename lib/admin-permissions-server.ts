@@ -6,6 +6,7 @@ import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 import { ADMIN_PERMISSION_CATALOG, ADMIN_PERMISSION_TEMPLATES, ADMIN_PERMISSIONS_ROLLOUT, SUPPORTED_ADMIN_GRANTS, AdminPermissionValidationError, hasAdminGrant, normalizeAdminGrants, type AdminGrantKey, type AdminPermissionProfile, type AdminPermissionsResponse } from "@/lib/admin-permissions";
 import { adminPermissionContext,adminPermissionsEnforced } from "@/lib/admin-permission-access";
 import {accountSessionPredicate} from '@/lib/account-session';
+import {appendAudit} from './audit-log';
 
 type Predicate = {sql: string; args: unknown[]};
 type ProfileRow = {accountId: string; groupId: string; revision: number; grantsJson: string; draftGrantsJson: string | null; origin: "legacy" | "new"; updatedBy: string | null; updatedAt: string};
@@ -147,8 +148,7 @@ export async function saveAdminPermissionDraft(actor: Account, accountId: string
       ? db.prepare("UPDATE admin_permission_profiles SET draft_grants_json=?,revision=revision+1,updated_by=?,updated_at=? WHERE group_id=? AND account_id=? AND revision=?").bind(JSON.stringify(grants), actor.id, now, groupId, accountId, expectedRevision)
       : db.prepare("INSERT INTO admin_permission_profiles(group_id,account_id,revision,grants_json,draft_grants_json,origin,updated_by,updated_at) VALUES(?,?,1,'[]',?,'new',?,?)").bind(groupId, accountId, JSON.stringify(grants), actor.id, now),
     authorityGuard({sql: "changes()=1", args: []}, "admin_permissions_revision_changed"),
-    db.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) VALUES(?,?,?,?,'adminPermissions.saveDraft',?,?,?)")
-      .bind(groupId, crypto.randomUUID(), `admin-permissions:${accountId}`, actor.id, JSON.stringify({rollout:adminPermissionsEnforced()?'active':ADMIN_PERMISSIONS_ROLLOUT,profile:before}), JSON.stringify({rollout:adminPermissionsEnforced()?'active':ADMIN_PERMISSIONS_ROLLOUT,profile:next}), now),
+    appendAudit(db,{groupId,lessonId:`admin-permissions:${accountId}`,actorId:actor.id,actorName:actor.name,objectName:target.name,action:'adminPermissions.saveDraft',before:{rollout:adminPermissionsEnforced()?'active':ADMIN_PERMISSIONS_ROLLOUT,profile:before},after:{rollout:adminPermissionsEnforced()?'active':ADMIN_PERMISSIONS_ROLLOUT,profile:next},at:now}),
   ]);
   return response(target, next);
 }
@@ -168,7 +168,7 @@ export async function changeSavedAdminPermissionDraft(actor:Account,accountId:st
     ...guards,
     db.prepare('UPDATE admin_permission_profiles SET grants_json=?,draft_grants_json=NULL,revision=revision+1,updated_by=?,updated_at=? WHERE group_id=? AND account_id=? AND revision=?').bind(JSON.stringify(next.grants),actor.id,now,groupId,accountId,expectedRevision),
     authorityGuard({sql:'changes()=1',args:[]},'admin_permissions_revision_changed'),
-    db.prepare('INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) VALUES(?,?,?,?,?,?,?,?)').bind(groupId,crypto.randomUUID(),`admin-permissions:${accountId}`,actor.id,`adminPermissions.${action}`,JSON.stringify({rollout,profile:before}),JSON.stringify({rollout,effectiveChanged,profile:next}),now),
+    appendAudit(db,{groupId,lessonId:`admin-permissions:${accountId}`,actorId:actor.id,actorName:actor.name,objectName:target.name,action:`adminPermissions.${action}`,before:{rollout,profile:before},after:{rollout,effectiveChanged,profile:next},at:now}),
   ]);
   return response(target,next);
 }

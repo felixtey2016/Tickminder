@@ -137,7 +137,7 @@ export async function courseList(actor:Account,params:URLSearchParams){
   parts.push(mode==='records'?inMonth('r.requested_at'):"r.status='pending' AND l.status='scheduled'");if(mode==='records')args.push(range.start,range.end);
  }else if(mode==='month'||mode==='timetable'){
   parts.push(courseOverlap(alias));args.push(range.end,range.start);parts.push(`${alias}.status${params.get('cancelled')==='1'?'=':'<>'}'cancelled'`);
- }else if(mode==='pending'){parts.push(`${alias}.status='scheduled' AND ${view==='sessions'?"s.teaching_status='pending' AND ":''}julianday(${alias}.planned_end)<julianday(?)`);args.push(now);
+ }else if(mode==='pending'){parts.push(view==='sessions'?"s.status<>'cancelled' AND EXISTS(SELECT 1 FROM lessons pending_lesson WHERE pending_lesson.group_id=s.group_id AND pending_lesson.session_id=s.id AND pending_lesson.status='scheduled' AND julianday(pending_lesson.planned_end)<julianday(?))":`l.status='scheduled' AND julianday(l.planned_end)<julianday(?)`);args.push(now);
  }else if(mode==='review'){parts.push(view==='sessions'?"s.status<>'cancelled' AND s.teaching_status<>'pending' AND s.attendance_reviewed_at IS NULL":"l.status IN('completed','student_absent','teacher_absent') AND l.reviewed_at IS NULL");
  }else if(mode==='makeup'){if(view!=='lessons')throw new CourseQueryError('补课查询类型无效');parts.push(`l.status IN('student_absent','teacher_absent') AND coalesce(l.chargeable,0)=0 AND ${noReplacement()}`);
  }else if(mode==='originals'){if(view!=='lessons'||!student||!subject)throw new CourseQueryError('请选择学生与科目查找原课程');parts.push(`l.status IN('student_absent','teacher_absent','cancelled') AND ${noReplacement()}`);
