@@ -8,7 +8,7 @@ const labels:Record<string,[string,string]>={
   todayHint:['按时间排列，涵盖所有已关联孩子。','In time order, across all your linked children.'],
   noToday:['今天没有课程','No lessons today'],
   next:['下一堂课','Next lesson'],
-  noNext:['未来 90 天内暂无已安排课程。','No scheduled lessons in the next 90 days.'],
+  noNext:['目前没有已安排的后续课程。','There are no upcoming scheduled lessons.'],
   viewCourses:['查看课程','View lessons'],
   allCourses:['全部课程与出勤','All lessons & attendance'],
   openCalendar:['打开日历','Open calendar'],
