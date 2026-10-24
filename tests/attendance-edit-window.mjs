@@ -101,6 +101,21 @@ const oldLesson=await freshLesson('04');sqlite.prepare("UPDATE class_sessions SE
 await attendance.attendanceAction(admin,{action:'adminResetSessionAttendance',sessionId:oldLesson.session_id,revision:session(oldLesson.session_id).revision,operationId:op(),reason:'Reset old record with no reliable first submission'});
 check(session(oldLesson.session_id).first_submission_at===null&&Boolean(session(oldLesson.session_id).attendance_recorded_at),'Legacy reset never fabricates a first submission timestamp');
 await assert.rejects(async()=>attendance.attendanceAction(teacher,await bodyFor(oldLesson.session_id,{reason:'Attempt to reopen old attendance'})),e=>e.status===409&&/已提交/.test(e.message));checks++;
+// A future scheduled lesson may have been mistaken for an earlier actual class.
+// Undo is an administrator reset, not an absence or a not-taught registration;
+// its payload needs no ordinary attendance form/participant confirmation.
+clock=RealDate.now();const futureDay=new RealDate(clock+2*86400000+8*3600000).toISOString().slice(0,10);
+await post({action:'create',student:student.name,subject:'Science',teacherName:teacher.name,classroomId:classId,start:futureDay+'T12:00',end:futureDay+'T13:30'});
+const futureLesson=sqlite.prepare('SELECT * FROM lessons WHERE planned_start=?').get(futureDay+'T04:00:00.000Z'),futureId=futureLesson.session_id;
+await attendance.attendanceAction(admin,await bodyFor(futureId,{actualStart:new RealDate(clock-7200000+8*3600000).toISOString().slice(0,16),actualEnd:new RealDate(clock-3600000+8*3600000).toISOString().slice(0,16)}));
+const futureFirst=session(futureId).first_submission_at;
+check(lesson(futureLesson.id).attendance_kind==='present','Fictional future scheduled lesson has a mistakenly saved attendance entry');
+await attendance.attendanceAction(editOnly,{action:'adminResetSessionAttendance',sessionId:futureId,revision:session(futureId).revision,operationId:op(),reason:'Undo attendance accidentally saved against a future scheduled lesson'});
+const undone=session(futureId),undoneLesson=lesson(futureLesson.id);
+check(undone.teaching_status==='pending'&&undone.actual_start===null&&undone.actual_end===null,'Administrator can undo future scheduled attendance without using not taught');
+check(undoneLesson.status==='scheduled'&&undoneLesson.attendance_kind==='pending'&&undoneLesson.chargeable===null,'Future mistaken entry becomes unrecorded, with no absence or charge decision');
+check(undone.first_submission_at===futureFirst&&Boolean(undone.attendance_recorded_at),'Future reset retains first submission and recording evidence');
+await assert.rejects(async()=>attendance.attendanceAction(teacher,await bodyFor(futureId)),e=>e.status===409&&/已提交/.test(e.message));checks++;
 // A separate pre-migration database proves backfill only accepts reliable audit transitions.
 const legacyDb=new DatabaseSync(':memory:');for(const file of fs.readdirSync(new URL('../drizzle/',import.meta.url)).filter(n=>/^\d{4}_.*\.sql$/.test(n)&&Number(n.slice(0,4))<52).sort())legacyDb.exec(fs.readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8'));
 legacyDb.prepare("INSERT INTO accounts(id,group_id,email,name,role,created_at) VALUES('history-teacher',?,'history@example.test','History Teacher','teacher',?)").run(group,now);

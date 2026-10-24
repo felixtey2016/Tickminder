@@ -1011,13 +1011,15 @@ function Schedule({ state, lessons, mutate, open, busy, view,calendarDate,onCale
     view: "create" | "calendar" | "list";
 }) {
     const can=useAdminAction();
-    const plans = can("plans.view")?(state?.plans || []):(state?.planOptions || []).map(plan=>({...plan,teacher:plan.teacher||plan.teacherName}));
+    const plans = can("plans.view")?(state?.plans || []):(state?.planOptions || []).filter(plan=>plan.active).map(plan=>({...plan,teacher:plan.teacher||plan.teacherName}));
     const [filterTeacher, setFilterTeacher] = useFilterPreference<string>("courses-teacher", ""), [filterStudent, setFilterStudent] = useFilterPreference<string>("courses-student", ""), [cancelled, setCancelled] = useFilterPreference<boolean>("courses-cancelled", false);
     const [completion,setCompletion]=useFilterPreference<string>("courses-completion","all");
     const visible = lessons.filter(l => l.sessionType!=="group" && (l.status === "cancelled") === cancelled && (!state?.month || local(l.plannedStart).slice(0,7) === state.month) && (!filterTeacher || l.teacherName === filterTeacher) && (!filterStudent || l.student === filterStudent)&&(view!=="list"||matchesCourseCompletion(l,completion)));
     const groups = [...new Set(visible.map(l => l.teacherName))].sort();
     const [scheduleMode,setScheduleMode]=useState("one_to_one");
     const [student, setStudent] = useState("");
+    const [scheduleTeacher,setScheduleTeacher]=useState("");
+    const schedulePairs=plans.map(plan=>({teacher:plan.teacher,student:plan.student}));
     const [key, setKey] = useState("");
     const [kind, setKind] = useState("regular");
     const [startDate, setStartDate] = useState("");
@@ -1029,7 +1031,7 @@ function Schedule({ state, lessons, mutate, open, busy, view,calendarDate,onCale
     const classRequest=useRef(0);
     async function loadClasses(){const request=++classRequest.current;setClassOptions(null);setClassError("");try{const response=await groupFetch("/api/class-sessions?lang="+getLanguage(),{cache:"no-store"}),data=await readApiJson<{classes:ScheduleClassOption[];error?:string}>(response);if(!response.ok)throw Error(data.error||t("班级名单加载失败，请重试"));if(request===classRequest.current)setClassOptions(data.classes);}catch(error){if(request===classRequest.current)setClassError(error instanceof Error?error.message:t("班级名单加载失败，请重试"));}}
     useEffect(()=>{if(view==="create")void loadClasses();return()=>{classRequest.current++;};},[view,state?.revision]);
-    const subjects = plans.filter(p => p.student === student);
+    const subjects = plans.filter(p => p.student === student&&(!scheduleTeacher||p.teacher===scheduleTeacher));
     const chosen = subjects.find(p => p.key === key);
     const eligibleClasses=chosen?(classOptions||[]).filter(item=>item.teacherName===chosen.teacher&&item.members.includes(student)&&item.planKeys.includes(chosen.key)):[];
     const selectedClassId=eligibleClasses.length===1?eligibleClasses[0].id:eligibleClasses.some(item=>item.id===classroomId)?classroomId:"";
@@ -1039,15 +1041,16 @@ function Schedule({ state, lessons, mutate, open, busy, view,calendarDate,onCale
         if (!chosen||!selectedClassId) return;
         if (await mutate({ action: "create", student, subject: chosen.subject, teacherName: chosen.teacher, classroomId:selectedClassId, kind,
             start: `${startDate}T${startTime}`, end: `${startDate}T${endTime}`, until, replacementFor })) {
-            setStudent(""); setKey(""); setKind("regular"); setStartDate(""); setStartTime("");
+            setStudent("");setScheduleTeacher(""); setKey(""); setKind("regular"); setStartDate(""); setStartTime("");
             setEndTime(""); setUntil(""); setReplacementFor("");setClassroomId("");
         }
     }
     if(view==="list")return <div className="course-query-stack">{can("reschedules.view")&&<PagedReschedules requestsOnly role="admin" month={state?.month||""} mutate={mutate} busy={busy}/>}<PagedGroupSessions onOpenFinance={onOpenFinance} role="admin" month={state?.month||""} classrooms={state?.classroomOptions||state?.classrooms} mutate={mutate} busy={busy}/><PagedLessonRows month={state?.month||""} teachers={state?.teachers} students={state?.students} renderTools={rows=><BulkDeleteTool kind="lesson" records={rows.map(l=>({id:l.id,label:l.student+" · "+l.subject+" · "+day(l.plannedStart)+" "+time(l.plannedStart)}))} mutate={mutate} busy={busy}/>} renderLesson={l=><LessonCard key={l.id} lesson={l} admin open={open} mutate={mutate} busy={busy}/>}/></div>;
     return <div className="schedule-layout schedule-single-view">{view==="create"&&<div className="class-session-mode" role="group" aria-label={t("排课方式")}><Button variant={scheduleMode==="one_to_one"?"default":"outline"} onClick={()=>setScheduleMode("one_to_one")}>{t("一对一课程")}</Button><Button variant={scheduleMode==="group"?"default":"outline"} onClick={()=>setScheduleMode("group")}>{t("整班课程")}</Button></div>}{view==="create"&&scheduleMode==="group"&&<GroupSessionPlanner mutate={mutate} busy={busy}/>}<section className="panel create-panel" hidden={view !== "create"||scheduleMode!=="one_to_one"}><h2>{t("一对一课程")}</h2>
         <form onSubmit={submit}>
-            <label>{t("学生姓名")}<select required value={student} onChange={e => { setStudent(e.target.value); setKey(""); setReplacementFor("");setClassroomId(""); }}><option value="">{t("请选择")}</option>{(state?.students || []).map(n => <option key={n} value={n}>{n}</option>)}</select></label>
-            {student && <label>{t("学生科目配对")}<select required value={key} onChange={e => { setKey(e.target.value); setReplacementFor("");setClassroomId(""); }}><option value="">{t("请选择")}</option>{subjects.map(p => <option value={p.key} key={p.key}>{p.subject}</option>)}</select></label>}
+            <div className="schedule-person-filters"><DirectoryFilters teachers={[...new Set([...(state?.teachers||[]),...plans.map(plan=>plan.teacher)])].sort()} students={[...new Set([...(state?.students||[]),...plans.map(plan=>plan.student)])].sort()} pairs={schedulePairs} teacher={scheduleTeacher} student={student} onTeacher={value=>{setScheduleTeacher(value);setKey('');setReplacementFor('');setClassroomId('');}} onStudent={value=>{setStudent(value);setKey('');setReplacementFor('');setClassroomId('');}}/></div>
+            {student && <label>{t("学生科目配对")}<select required value={key} onChange={e => { const plan=subjects.find(item=>item.key===e.target.value);setKey(e.target.value);if(plan)setScheduleTeacher(plan.teacher); setReplacementFor("");setClassroomId(""); }}><option value="">{t("请选择")}</option>{subjects.map(p => <option value={p.key} key={p.key}>{p.subject} · {p.teacher}</option>)}</select></label>}
+            {(student&&!subjects.length||!plans.length)&&<p className="muted">{t('请先设置学生课程，再安排老师与学生的课程。')}</p>}
             {chosen && <p className="assigned-teacher">{t("负责老师")}：<strong>{chosen.teacher}</strong></p>}
             {chosen&&<div className="schedule-classroom-field"><div className="field-heading"><label htmlFor="lesson-classroom">{t("所属班级")}</label><Button type="button" variant="ghost" size="sm" aria-label={t("刷新班级名单")} disabled={classOptions===null&&!classError} onClick={()=>void loadClasses()}><RefreshCw size={16} aria-hidden="true"/>{t("刷新")}</Button></div><select id="lesson-classroom" required data-testid="lesson-classroom-select" value={selectedClassId} disabled={classOptions===null||busy} onChange={event=>setClassroomId(event.target.value)}>{eligibleClasses.length!==1&&<option value="">{t("请选择有效班级")}</option>}{eligibleClasses.map(item=><option key={item.id} value={item.id}>{item.title}</option>)}</select>{classOptions===null&&!classError?<p role="status" className="muted">{t("正在加载班级…")}</p>:classError?<p role="alert" className="notice">{classError} <Button type="button" variant="outline" onClick={()=>void loadClasses()}>{t("重试")}</Button></p>:<p className="muted">{t(!eligibleClasses.length?"此学生科目配对暂无有效班级，请刷新名单并检查班级成员。":eligibleClasses.length===1?"已自动选择对应班级。":"请选择本次课程的班级。")}</p>}</div>}
             <div className="schedule-time-fields"><label>{t("上课日期")}<input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)}/></label><label>{t("开始时间")}<input required type="time" value={startTime} onChange={e => setStartTime(e.target.value)}/></label><label>{t("结束时间")}<input required type="time" value={endTime} onChange={e => setEndTime(e.target.value)}/></label></div>

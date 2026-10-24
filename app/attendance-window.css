@@ -4,3 +4,12 @@
 .session-attendance-dialog .class-session-controls button{min-height:44px;max-width:100%;white-space:normal}
 .session-attendance-dialog textarea{min-width:0;width:100%;min-height:88px;resize:vertical}
 .session-attendance-board .attendance-window-info{margin:12px 0}
+.session-attendance-dialog .attendance-current-state{margin:0;line-height:1.6;overflow-wrap:anywhere}
+.session-attendance-dialog .attendance-reset-panel{display:grid;gap:14px;padding:16px;margin:8px 0;border:1px solid #d9cde9;border-radius:8px;background:#faf8fd;min-width:0;overflow-wrap:anywhere}
+.session-attendance-dialog .attendance-reset-panel h3,.session-attendance-dialog .attendance-reset-panel p{margin:0;line-height:1.6}
+.session-attendance-dialog .attendance-reset-panel h3{font-size:16px}
+.session-attendance-dialog .attendance-reset-confirm,.session-attendance-dialog .attendance-reset-finance,.session-attendance-dialog .attendance-record-fields:not([hidden]){display:grid;gap:16px;min-width:0}
+.session-attendance-dialog .attendance-reset-confirm>label{display:grid;gap:8px;min-width:0}
+.session-attendance-dialog .attendance-reset-confirm>label.check-row{display:flex;align-items:flex-start;gap:10px;line-height:1.6}
+.session-attendance-dialog .attendance-reset-panel button{height:auto;min-height:44px;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+@media(max-width:420px){.session-attendance-dialog .attendance-reset-panel{padding:12px}.session-attendance-dialog .attendance-reset-confirm .class-session-controls{align-items:stretch}.session-attendance-dialog .attendance-reset-confirm .class-session-controls button{flex:1 1 100%}}

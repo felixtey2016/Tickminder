@@ -1,7 +1,7 @@
 "use client";
 import { useAdminAction } from "./admin-permission-context";
 import { useFilterPreference } from "@/lib/filter-preferences";
-import {lazy,Suspense,useState } from "react";
+import {lazy,Suspense,useEffect,useRef,useState } from "react";
 import { Button } from "@/components/ui/button";
 import {StudentPromotions} from "./student-promotions";
 import { BulkDeleteTool } from "./bulk-delete";
@@ -10,6 +10,9 @@ import {PR} from "@/lib/parents-i18n";
 import {useAcademicCatalogue} from '@/lib/use-academic-catalogue';
 import {StudentProfileFields,type StudentProfile} from '@/components/student-profile-fields';
 import {Dialog,DialogContent,DialogHeader,DialogTitle} from '@/components/ui/dialog';
+import {teacherStudentOptions,isTeacherStudentPair,type TeacherStudentPair} from '@/lib/teacher-student-options';
+import './teacher-student-filters.css';
+import '@/lib/teacher-student-ui-i18n';
 
 const StudentParentConnections=lazy(()=>import('./parent-children-manager').then(m=>({default:m.StudentParentConnections})));
 const ParentChildrenManager=lazy(()=>import('./parent-children-manager').then(m=>({default:m.ParentChildrenManager})));
@@ -18,8 +21,17 @@ export function DeleteButton({ kind, id, mutate, busy, message }: { kind: string
   return <BulkDeleteTool kind={kind} records={[{id,label:""}]} mutate={mutate} busy={busy} single message={message}/>;
 }
 
-export function DirectoryFilters({ teachers, students, teacher, student, onTeacher, onStudent }: { teachers: string[]; students: string[]; teacher: string; student: string; onTeacher: (value: string) => void; onStudent: (value: string) => void }) {
-  return <div className="directory-filters"><label>{t("老师姓名")}<select value={teacher} onChange={e => onTeacher(e.target.value)}><option value="">{t("所有老师")}</option>{teachers.map(n => <option key={n}>{n}</option>)}</select></label><label>{t("学生姓名")}<select value={student} onChange={e => onStudent(e.target.value)}><option value="">{t("所有学生")}</option>{students.map(n => <option key={n}>{n}</option>)}</select></label></div>;
+export function DirectoryFilters({ teachers, students, pairs, teacher, student, onTeacher, onStudent }: { teachers: string[]; students: string[]; pairs?:readonly TeacherStudentPair[]; teacher: string; student: string; onTeacher: (value: string) => void; onStudent: (value: string) => void }) {
+  const primary=useRef<'teacher'|'student'>('teacher'),ready=pairs!==undefined;
+  const options=teacherStudentOptions(teachers,students,pairs||[],teacher,student);
+  const available=teacherStudentOptions(teachers,students,pairs||[],'','');
+  useEffect(()=>{
+    if(!pairs)return;
+    if(teacher&&!available.teachers.includes(teacher)){onTeacher('');return;}
+    if(student&&!available.students.includes(student)){onStudent('');return;}
+    if(!isTeacherStudentPair(pairs,teacher,student)){if(primary.current==='student')onTeacher('');else onStudent('');}
+  },[teacher,student,teachers,students,pairs,onTeacher,onStudent]);
+  return <div className="directory-filters teacher-student-filters" aria-busy={!ready}><label>{t("老师姓名")}<select aria-label={t('老师姓名')} disabled={!ready} value={ready&&options.teachers.includes(teacher)?teacher:''} onChange={e=>{const value=e.target.value;primary.current='teacher';onTeacher(value);if(!isTeacherStudentPair(pairs||[],value,student))onStudent('');}}><option value="">{t(ready?"所有老师":'正在加载…')}</option>{options.teachers.map(n=><option key={n} value={n}>{n}</option>)}</select>{ready&&student&&!options.teachers.length&&<small className="teacher-student-filter-hint">{t('此学生暂无关联老师')}</small>}</label><label>{t("学生姓名")}<select aria-label={t('学生姓名')} disabled={!ready} value={ready&&options.students.includes(student)?student:''} onChange={e=>{const value=e.target.value;primary.current='student';onStudent(value);if(!isTeacherStudentPair(pairs||[],teacher,value))onTeacher('');}}><option value="">{t(ready?"所有学生":'正在加载…')}</option>{options.students.map(n=><option key={n} value={n}>{n}</option>)}</select>{ready&&teacher&&!options.students.length&&<small className="teacher-student-filter-hint">{t('此老师暂无关联学生')}</small>}</label></div>;
 }
 
 type Person={name:string;active:boolean;syllabusId?:string;grade?:string|null;age?:number|null};

@@ -9,10 +9,11 @@ import {classSessionState} from './class-sessions';
 import {studentLessonResponse,studentRescheduleResponse,studentSessionResponse} from './student-course-response';
 import {uniqueSessionLessons} from './class-session-display';
 import {readRevision} from './revision';
+import type {TeacherStudentPair} from './teacher-student-options';
 
 export class CourseQueryError extends Error {constructor(message:string,readonly status=400){super(message);}}
 export type CourseRange={from:string;to:string;start:string;end:string};
-export type CoursePage<T>={items:T[];page:number;pages:number;total:number;pageSize:20;revision:number};
+export type CoursePage<T>={items:T[];page:number;pages:number;total:number;pageSize:20;revision:number;teacherStudentPairs:TeacherStudentPair[]};
 export type CourseTaskCounts={lessons:number;reschedule:number;overview:number;attention:number;pendingAttendance:number;pendingReview:number;makeupNeeded:number;todayLessons:number;todayPendingAttendance:number};
 export type CourseTeachingSummary={month:string;recordedMilliseconds:number;approvedMilliseconds:number;count:number};
 export type CourseTimetableSummary={lessonCount:number;completedCount:number;durationMilliseconds:number};
@@ -126,7 +127,8 @@ export async function courseList(actor:Account,params:URLSearchParams){
  await assertCourseActor(actor,keys);const reader=guardedCoreReader(actor,keys),scope=view==='sessions'?sessionScope(actor):courseLessonScope(actor),alias=view==='sessions'?'s':'l',parts=[scope.sql],args=[...scope.args];
  const teacher=text(params.get('teacher')),student=text(params.get('student')),subject=text(params.get('subject')),classroom=text(params.get('classroomId')),completion=text(params.get('completion'))||'all',sessionType=text(params.get('sessionType'));
  if(sessionType){if(!['one_to_one','group'].includes(sessionType))throw new CourseQueryError('课次类型无效');parts.push("coalesce(s.session_type,'one_to_one')=?");args.push(sessionType);}
- if(teacher){parts.push(`${alias}.teacher_name=?`);args.push(teacher);}if(student){parts.push(view==='sessions'?'EXISTS(SELECT 1 FROM class_session_participants selected WHERE selected.group_id=s.group_id AND selected.session_id=s.id AND selected.student_name=?)':'l.student=?');args.push(student);}
+ const peoplePartIndexes=new Set<number>(),peopleArgIndexes=new Set<number>();
+ if(teacher){peoplePartIndexes.add(parts.length);peopleArgIndexes.add(args.length);parts.push(`${alias}.teacher_name=?`);args.push(teacher);}if(student){peoplePartIndexes.add(parts.length);peopleArgIndexes.add(args.length);parts.push(view==='sessions'?'EXISTS(SELECT 1 FROM class_session_participants selected WHERE selected.group_id=s.group_id AND selected.session_id=s.id AND selected.student_name=?)':'l.student=?');args.push(student);}
  if(subject){parts.push(`${alias}.subject=?`);args.push(subject);}
  const classroomPartIndex=parts.length,classroomArgIndex=args.length;
  if(classroom){parts.push('s.classroom_id=?');args.push(classroom);}
@@ -144,6 +146,26 @@ export async function courseList(actor:Account,params:URLSearchParams){
  }else if(mode==='records'){parts.push(view==='sessions'?"s.status<>'cancelled' AND s.teaching_status<>'pending'":"l.status IN('completed','student_absent','teacher_absent')");parts.push(inMonth(view==='sessions'?'coalesce(s.actual_start,s.planned_start)':"CASE WHEN l.status='completed' THEN l.actual_start ELSE l.planned_start END"));args.push(range.start,range.end);
  }else if(mode==='upcoming'){parts.push(`${alias}.status='scheduled' AND julianday(${alias}.planned_start)>=julianday(?)`);args.push(now);}
  const from=view==='sessions'?'FROM class_sessions s':view==='reschedules'?'FROM reschedule_requests r JOIN lessons l ON l.id=r.lesson_id AND l.group_id=r.group_id LEFT JOIN class_sessions s ON s.id=l.session_id AND s.group_id=l.group_id':'FROM lessons l LEFT JOIN class_sessions s ON s.id=l.session_id AND s.group_id=l.group_id';
+ if(mode==='timetable'&&(view!=='lessons'||!['teacher','student'].includes(text(params.get('timetableType')))))throw new CourseQueryError('时间表类型无效');
+ // Relation options deliberately ignore both selected people, retaining the
+ // rest of the actual query context. DISTINCT is before any page LIMIT.
+ const pairParts=parts.filter((_,index)=>!peoplePartIndexes.has(index)),pairArgs=args.filter((_,index)=>!peopleArgIndexes.has(index));
+ const pairFrom=view==='sessions'?from+' JOIN class_session_participants pair_member ON pair_member.group_id=s.group_id AND pair_member.session_id=s.id':from;
+ const historicalPairs=await reader.rows<TeacherStudentPair>(`SELECT DISTINCT ${alias}.teacher_name AS teacher,${view==='sessions'?'pair_member.student_name':'l.student'} AS student ${pairFrom} WHERE ${pairParts.join(' AND ')} ORDER BY teacher,student`,...pairArgs);
+ // Current assignments remain selectable even before this month's first
+ // course is scheduled. This projection contains names only, independent of
+ // subject permissions; an explicitly selected subject/class is still a filter.
+ const currentIdentity=identity(actor),personSql=actor.role==='teacher'?' AND p.teacher_name=?':actor.role==='student'?' AND p.student=?':'',classPersonSql=actor.role==='teacher'?' AND c.teacher_name=?':actor.role==='student'?' AND cm.student_name=?':'',personArgs=actor.role==='teacher'?[actor.teacherName]:actor.role==='student'?[actor.studentName]:[];
+ const currentPairs=await reader.rows<TeacherStudentPair>(`SELECT DISTINCT teacher,student FROM (
+  SELECT p.teacher_name AS teacher,p.student AS student FROM plans p JOIN teachers roster_teacher ON roster_teacher.group_id=p.group_id AND roster_teacher.name=p.teacher_name AND roster_teacher.active=1 JOIN students roster_student ON roster_student.group_id=p.group_id AND roster_student.name=p.student AND roster_student.active=1 WHERE p.group_id=? AND p.active=1${personSql}${subject?' AND p.subject=?':''}${classroom?' AND EXISTS(SELECT 1 FROM classroom_members selected_member JOIN classrooms selected_class ON selected_class.group_id=selected_member.group_id AND selected_class.id=selected_member.classroom_id AND selected_class.archived=0 WHERE selected_member.group_id=p.group_id AND selected_member.classroom_id=? AND selected_member.student_name=p.student AND selected_class.teacher_name=p.teacher_name)':''} AND ${currentIdentity.sql}
+  UNION
+  SELECT c.teacher_name AS teacher,cm.student_name AS student FROM classrooms c JOIN classroom_members cm ON cm.group_id=c.group_id AND cm.classroom_id=c.id JOIN teachers roster_teacher ON roster_teacher.group_id=c.group_id AND roster_teacher.name=c.teacher_name AND roster_teacher.active=1 JOIN students roster_student ON roster_student.group_id=cm.group_id AND roster_student.name=cm.student_name AND roster_student.active=1 WHERE c.group_id=? AND c.archived=0${classPersonSql}${subject?' AND c.subject=?':''}${classroom?' AND c.id=?':''} AND ${currentIdentity.sql}
+ ) ORDER BY teacher,student`,actor.groupId,...personArgs,...subject?[subject]:[],...classroom?[classroom]:[],...currentIdentity.args,actor.groupId,...personArgs,...subject?[subject]:[],...classroom?[classroom]:[],...currentIdentity.args);
+ const teacherStudentPairs=[...new Map([...currentPairs,...historicalPairs].map(pair=>[JSON.stringify([pair.teacher,pair.student]),pair])).values()].sort((a,b)=>a.teacher.localeCompare(b.teacher)||a.student.localeCompare(b.student));
+ if(params.get('optionsOnly')==='1'){
+  await assertCourseActor(actor,keys);
+  return{items:[],page:1,pages:1,total:0,pageSize:20 as const,revision:await readRevision(actor.groupId),month,courseRange:{from:range.from,to:range.to},teacherStudentPairs,optionsOnly:true};
+ }
  let where=parts.join(' AND '),summary:CourseTimetableSummary|undefined,studentOptions:string[]|undefined;
  if(mode==='timetable'){
   const timetableType=text(params.get('timetableType'));if(view!=='lessons'||!['teacher','student'].includes(timetableType))throw new CourseQueryError('时间表类型无效');
@@ -171,5 +193,5 @@ export async function courseList(actor:Account,params:URLSearchParams){
   const source=await reader.rows<Lesson>(`SELECT ${lessonColumns} ${from} WHERE ${where} ORDER BY ${order} LIMIT 20 OFFSET ?`,...args,(page-1)*20),decorated=await decorateLessons(actor,source);items=mode==='timetable'&&params.get('timetableType')==='teacher'?uniqueSessionLessons(decorated):decorated;
  }
  await assertCourseActor(actor,keys);
- return{items,page,pages:Math.max(1,Math.ceil(total/20)),total,pageSize:20 as const,revision:await readRevision(actor.groupId),month,courseRange:{from:range.from,to:range.to},...summary?{summary}:{},...studentOptions?{studentOptions}:{},...related};
+ return{items,page,pages:Math.max(1,Math.ceil(total/20)),total,pageSize:20 as const,revision:await readRevision(actor.groupId),month,courseRange:{from:range.from,to:range.to},teacherStudentPairs,...summary?{summary}:{},...studentOptions?{studentOptions}:{},...related};
 }
