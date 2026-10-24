@@ -1,0 +1,64 @@
+.finance-compact{gap:16px}
+.finance-compact .finance-navigation{gap:8px;padding:8px;margin:0}
+.finance-compact .finance-navigation>button{padding:8px 12px;min-height:44px}
+.finance-mobile-navigation{display:none}
+.finance-layout-help{min-width:0;font-size:14px;color:#625a74;margin:0}
+.finance-layout-help>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;gap:8px;font-weight:600;color:#57428c;list-style:none;line-height:1.4}
+.finance-layout-help>summary::-webkit-details-marker{display:none}
+.finance-layout-help>summary::before{content:'›';font-size:20px;flex:0 0 auto}
+.finance-layout-help[open]>summary::before{transform:rotate(90deg)}
+.finance-layout-help>div{display:grid;gap:12px;padding:8px 0 12px;min-width:0;line-height:1.6}
+.finance-layout-help:not([open])>div{display:none}
+.finance-layout-help>div>p{margin:0!important}
+.finance-compact .finance2-workspace,.finance-compact .billing-workspace{gap:16px}
+.finance-compact .finance2-section-head,.finance-compact .billing-workspace .section-head{gap:12px;margin-bottom:16px;align-items:center}
+.finance-compact :is(.finance2-actions,.billing-actions){gap:8px 12px}
+.finance-compact :is(.finance2-filters,.billing-filters){gap:12px}
+.finance-compact .finance2-records{gap:10px}
+.finance-compact .finance2-record{gap:10px;padding:16px}
+.finance-compact .finance2-badge{padding:4px 8px}
+.finance-compact-amount-row{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 16px;min-width:0}
+.finance-compact-amount-row>strong{font-size:1.2rem;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.finance-compact-amount-row>span{font-size:14px;color:#71697d;line-height:1.5}
+.finance-compact .finance-expense-row .finance-layout-help>summary{min-height:44px}
+.finance-compact .billing-workspace .billing-policy{padding:8px 16px;gap:0}
+.finance-compact .billing-policy>summary{gap:8px;justify-content:flex-start;list-style:none;color:#57428c;min-height:44px;font-size:14px}
+.finance-compact .billing-policy>summary::before{content:'›';font-size:20px;flex:0 0 auto}
+.finance-compact .billing-policy[open]>summary::before{transform:rotate(90deg)}
+.finance-compact .billing-policy>summary>.billing-status{margin-left:auto}
+.finance-compact .billing-policy-content{display:grid;gap:12px;padding:12px 0}
+.finance-compact .billing-policy:not([open])>.billing-policy-content{display:none}
+.finance-compact .billing-workspace .billing-status{width:fit-content;font-size:13px;line-height:1.5}
+.finance-compact .billing-student-row{padding:14px 0;gap:12px}
+.finance-compact .billing-student-row:first-child{padding-top:4px}
+.finance-compact .billing-student-row>div:first-child{gap:6px}
+.finance-compact .billing-student-row>div:first-child>strong:first-child{font-size:16px}
+.finance-compact .billing-student-row>div:first-child>small{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px;color:#71697d}
+.finance-compact .billing-student-row .billing-actions{align-self:center}
+.finance-compact .billing-line{gap:12px;padding:14px 0}
+.finance-compact .billing-line-body{gap:8px}
+.finance-compact .billing-line-meta{font-size:13px;gap:6px 12px}
+.finance-compact .billing-source>summary{min-height:44px}
+.finance-compact .prepayment-detail-section{gap:14px;margin-top:16px;padding-top:16px}
+.finance-compact .prepayment-request-compact .finance2-actions{margin-top:2px}
+.finance-compact .prepayments-workspace>section:first-child .finance2-section-head>div:first-child{gap:0}
+@media(max-width:700px){
+ .finance-compact>.finance-navigation{display:none}
+ .finance-mobile-navigation{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:12px;font-size:14px;font-weight:600;min-width:0}
+ .finance-mobile-navigation select{width:100%;min-width:0;min-height:44px;padding:8px 12px;border:1px solid #d9d1e4;border-radius:8px;background:#fff;color:#282135;font:inherit;font-size:16px}
+ .finance-compact .finance2-workspace>.panel,.finance-compact .billing-workspace>.panel{padding:16px}
+ .finance-compact .billing-workspace>.billing-policy{padding:8px 16px}
+ .finance-compact :is(.finance2-filters,.billing-filters){grid-template-columns:repeat(2,minmax(0,1fr))}
+ .finance-compact :is(.finance2-filters,.billing-filters)>label{gap:6px;font-size:14px}
+ .finance-compact :is(.finance2-filters,.billing-filters) :is(input,select){padding:8px;min-height:44px}
+ .finance-compact .billing-student-row{grid-template-columns:minmax(0,1fr) auto}
+ .finance-compact .billing-student-row .billing-actions button{padding:8px 10px;min-height:44px}
+ .finance-compact .prepayments-workspace>section:first-child nav{flex-wrap:nowrap;overflow-x:auto;gap:8px}
+ .finance-compact .prepayments-workspace>section:first-child nav>button{flex:1 0 auto;min-height:44px;white-space:nowrap;padding:8px}
+}
+@media(max-width:350px){
+ .finance-compact :is(.finance2-filters,.billing-filters){grid-template-columns:minmax(0,1fr)}
+ .finance-compact .billing-student-row{grid-template-columns:minmax(0,1fr)}
+ .finance-mobile-navigation{gap:8px}
+ .finance-mobile-navigation>span{font-size:13px}
+}

@@ -9,6 +9,8 @@ import {invoiceEn,invoiceZh} from '@/lib/invoice-i18n';
 import {F2} from '@/lib/finance-round2-i18n';
 import {P} from '@/lib/prepayments-i18n';
 import './finance-round2.css';
+import './finance-compact.css';
+import {financeLabel} from './finance-layout-tools';
 const BillingWorkspace=lazy(()=>import('./billing-workspace'));
 const InvoiceWorkspace=lazy(()=>import('./invoice-workspace'));
 const FinanceOverview=lazy(()=>import('./finance-overview'));
@@ -28,10 +30,11 @@ export default function FinanceWorkspace({account,students,onCourses,openInvoice
  useEffect(()=>{if(openInvoiceList&&canInvoices){setContext(null);setView('invoices');onInvoiceListOpened?.();}},[openInvoiceList,canInvoices,onInvoiceListOpened,setView]);
  const financePermissions={view:canAdminAction(account,'payments.view'),record:canAdminAction(account,'payments.record'),reverse:canAdminAction(account,'payments.reverse'),refund:canAdminAction(account,'payments.refund'),adjust:canAdminAction(account,'invoices.adjust'),void:canAdminAction(account,'invoices.void'),correctAttendance:canAdminAction(account,'attendance.edit')&&canAdminAction(account,'invoices.adjust'),prepayments:{view:canPrepayments,apply:canAdminAction(account,'prepayments.apply'),reverse:canAdminAction(account,'prepayments.reverse')}};
  const openInvoice=(studentId:string,month:string,studentName?:string)=>{if(!changeAllowed())return;setContext({studentId,month,studentName});setView('invoices');};
+ const viewLabel=(key:FinanceView)=>key==='prepayments'?P('title'):['overview','payroll','expenses'].includes(key)?F2(key):t('invoice.nav.'+key);
  const navigate=(next:FinanceView)=>{if(!changeAllowed())return;if(next==='invoices')setContext(null);if(next==='payroll'){setPayrollId(undefined);setPayrollMonth(undefined);}setView(next);};
  if(account.role!=='admin'||!allowed.length)return <p>{F2('forbidden')}</p>;
- return <div className="finance-workspace"><nav className="finance-navigation" aria-label={t('invoice.nav.finance')}>
-  {allowed.map(key=><Button key={key} type="button" variant={view===key?'default':'outline'} aria-current={view===key?'page':undefined} onClick={()=>navigate(key)}>{key==='prepayments'?P('title'):['overview','payroll','expenses'].includes(key)?F2(key):t('invoice.nav.'+key)}</Button>)}
+ return <div className="finance-workspace finance-compact"><label className="finance-mobile-navigation"><span>{financeLabel('财务页面','Finance page')}</span><select aria-label={financeLabel('财务页面','Finance page')} value={view} onChange={event=>navigate(event.target.value as FinanceView)}>{allowed.map(key=><option key={key} value={key}>{viewLabel(key)}</option>)}</select></label><nav className="finance-navigation" aria-label={t('invoice.nav.finance')}>
+  {allowed.map(key=><Button key={key} type="button" variant={view===key?'default':'outline'} aria-current={view===key?'page':undefined} onClick={()=>navigate(key)}>{viewLabel(key)}</Button>)}
  </nav><Suspense fallback={<p role="status">{t('invoice.loading')}</p>}>
   {view==='overview'&&canOverview&&<FinanceOverview permissions={{payroll:canPayroll,expenses:canExpenses,export:canExport,invoices:canInvoices,prepayments:canPrepayments}} onInvoice={id=>{if(canInvoices&&changeAllowed()){setContext({invoiceId:id});setView('invoices');}}} onPayroll={id=>{if(canPayroll&&changeAllowed()){setPayrollMonth(undefined);setPayrollId(id);setView('payroll');}}} onPayrollMonth={month=>{if(canPayroll&&changeAllowed()){setPayrollId(undefined);setPayrollMonth(month);setView('payroll');}}}/>}
   {view==='tuition'&&canFees&&<BillingWorkspace students={students} onCourses={onCourses} canManageFees={canManage} onInvoice={canInvoices&&canAdminAction(account,'invoices.create')?openInvoice:undefined}/>}

@@ -1,0 +1,96 @@
+.invoice-compact.invoice-workspace,.invoice-compact .invoice-document-editor,.invoice-compact .invoice-detail-region,.invoice-compact .invoice-settings-form{gap:16px}
+.invoice-compact.invoice-workspace .panel{padding:20px;gap:16px}
+.invoice-compact .invoice-heading{gap:12px;align-items:center}
+.invoice-compact .invoice-heading>div:first-child{gap:6px;flex-basis:200px}
+.invoice-compact .invoice-heading h2{font-size:1.2rem}
+.invoice-compact .invoice-actions,.invoice-compact .invoice-finance-actions{gap:10px}
+.invoice-compact :is(button,input,select){min-height:44px}
+.invoice-compact .invoice-list-filters{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.invoice-compact .invoice-list-filters label{font-size:.88rem;gap:6px}
+.invoice-compact .invoice-list-filters input,.invoice-compact .invoice-list-filters select{padding:10px}
+.invoice-compact .invoice-list-count{font-size:.9rem;color:#6b6279}
+.invoice-compact .invoice-list-card{grid-template-columns:minmax(0,1fr) auto;gap:10px 18px;padding:16px 0;align-items:center}
+.invoice-compact .invoice-list-card:first-child{padding-top:0}
+.invoice-compact .invoice-card-main{display:grid;gap:7px}
+.invoice-compact .invoice-card-title{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;min-width:0}
+.invoice-compact .invoice-card-title h3{font-size:1rem;line-height:1.4}
+.invoice-compact .invoice-card-title :is(.invoice-badge,.invoice-finance-status){font-size:.75rem;padding:4px 7px}
+.invoice-compact .invoice-card-actions{display:flex;align-items:center;gap:14px;justify-content:flex-end;text-align:right}
+.invoice-compact .invoice-card-amount{display:grid;gap:4px}
+.invoice-compact .invoice-card-amount strong{font-size:1.08rem;line-height:1.4;font-variant-numeric:tabular-nums}
+.invoice-compact .invoice-card-amount small{font-size:.8rem;color:#6b6279}
+.invoice-compact .invoice-card-actions button{padding:10px 14px;flex-shrink:0}
+.invoice-compact .invoice-line-meta{gap:4px 12px;font-size:.83rem;line-height:1.45}
+.invoice-compact .invoice-finance-card-balance{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:.83rem}
+.invoice-compact .invoice-card-more{grid-column:1/-1;justify-self:start}
+.invoice-compact .invoice-card-more summary{font-size:.83rem;padding:8px 0;min-height:44px}
+.invoice-compact .invoice-card-more[open]{display:grid;gap:8px}
+.invoice-compact .invoice-summary{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.invoice-compact .invoice-summary>div{display:grid;gap:6px;padding:12px;align-items:start}
+.invoice-compact .invoice-summary dt{font-size:.8rem}
+.invoice-compact .invoice-summary dd{font-size:1rem;text-align:left;line-height:1.4}
+.invoice-compact details.invoice-section-disclosure{display:block;min-width:0}
+.invoice-compact .invoice-section-disclosure>summary{font-weight:650;min-height:44px;line-height:1.5;padding:10px 0;cursor:pointer;overflow-wrap:anywhere}
+.invoice-compact details.panel.invoice-section-disclosure{padding-top:8px;padding-bottom:8px}
+.invoice-compact .invoice-section-disclosure>summary>span{font-weight:400;font-size:.83rem;color:#6b6279;margin-left:10px}
+.invoice-compact .invoice-disclosure-content{display:grid;gap:16px;padding:10px 0 12px;min-width:0}
+.invoice-compact .invoice-inline-help{min-width:0}
+.invoice-compact .invoice-inline-help>summary{color:#60458a;font-size:.85rem;line-height:1.5;cursor:pointer;min-height:44px;padding:10px 0}
+.invoice-compact .invoice-inline-help>p{font-size:.85rem;color:#6b6279;line-height:1.6;margin:6px 0 10px}
+.invoice-compact summary:focus-visible{outline:3px solid #c7b7ee;outline-offset:3px;border-radius:4px}
+.invoice-compact .invoice-review{gap:12px}
+.invoice-compact .invoice-review h3{font-size:1rem}
+.invoice-compact .invoice-review .invoice-notice{padding:12px}
+.invoice-compact .invoice-editable-fields,.invoice-compact .invoice-additions{gap:14px}
+.invoice-compact .invoice-addition{padding:14px;gap:12px}
+.invoice-compact .invoice-form-grid{gap:14px}
+.invoice-compact .invoice-fee-line,.invoice-compact .invoice-readonly-addition{grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:12px 0}
+.invoice-compact .invoice-fee-line>div,.invoice-compact .invoice-readonly-addition>div{gap:6px}
+.invoice-compact .invoice-fee-line p,.invoice-compact .invoice-readonly-addition p{font-size:.85rem}
+.invoice-compact .invoice-finance-header{align-items:center;gap:12px}
+.invoice-compact .invoice-finance-header>div{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px}
+.invoice-compact.invoice-finance-panel{gap:16px}
+.invoice-compact .invoice-finance-balances{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.invoice-compact .invoice-finance-balances>div{padding:12px;gap:6px}
+.invoice-compact .invoice-finance-balances dt{font-size:.8rem}
+.invoice-compact .invoice-finance-balances dd{font-size:1.05rem;line-height:1.4}
+.invoice-compact .invoice-finance-section{gap:12px;padding-top:16px}
+.invoice-compact .invoice-finance-records{gap:0}
+.invoice-compact .invoice-finance-record{gap:8px;border:0;border-bottom:1px solid #e4ddeb;border-radius:0;padding:14px 0}
+.invoice-compact .invoice-finance-record-heading{gap:8px 14px}
+.invoice-compact .invoice-finance-record dl{gap:8px}
+.invoice-compact .invoice-finance-record dl>div{grid-template-columns:minmax(80px,.6fr) minmax(0,1fr);gap:10px}
+.invoice-compact .invoice-payment-details[open] dl{margin:8px 0 12px}
+.invoice-compact .invoice-finance-history{gap:12px}
+.invoice-compact .invoice-finance-history>li{gap:6px}
+.invoice-compact .invoice-finance-history p{font-size:.85rem}
+.invoice-compact .invoice-logo-section{gap:12px;padding-top:14px}
+.invoice-compact .invoice-template-options{gap:10px}
+.invoice-compact .invoice-template-option{padding:12px}
+.invoice-compact .invoice-template-option.selected{padding:11px}
+.invoice-compact .invoice-template-mini{height:114px}
+.invoice-compact .invoice-settings-form>.invoice-actions{position:sticky;bottom:8px;padding:12px;background:#fff;border:1px solid #e0d9eb;border-radius:8px;box-shadow:0 4px 18px #21193212;z-index:5}
+@media(max-width:600px){
+ .invoice-compact.invoice-workspace .panel{padding:16px;gap:12px}
+ .invoice-compact .invoice-heading>div:first-child{flex-basis:160px}
+ .invoice-compact .invoice-list-card{grid-template-columns:minmax(0,1fr);gap:10px}
+ .invoice-compact .invoice-card-actions{justify-content:space-between;text-align:left;width:100%;gap:12px}
+ .invoice-compact .invoice-card-more{grid-column:1}
+ .invoice-compact .invoice-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ .invoice-compact .invoice-summary>div:last-child{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between}
+ .invoice-compact .invoice-summary>div:last-child dd{font-size:1.3rem}
+ .invoice-compact .invoice-finance-balances{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ .invoice-compact .invoice-finance-balances>div{padding:10px}
+ .invoice-compact details.panel.invoice-section-disclosure{padding-top:6px;padding-bottom:6px}
+ .invoice-compact .invoice-fee-line,.invoice-compact .invoice-readonly-addition{grid-template-columns:minmax(0,1fr) auto}
+ .invoice-compact .invoice-template-option{grid-template-columns:20px 74px minmax(0,1fr)}
+ .invoice-compact .invoice-template-mini{height:112px;padding:12px 8px}
+ .invoice-compact .invoice-template-option>span:last-child{grid-column:3}
+}
+@media(max-width:350px){
+ .invoice-compact .invoice-list-filters{grid-template-columns:minmax(0,1fr)}
+ .invoice-compact .invoice-finance-balances dd{font-size:.94rem}
+ .invoice-compact .invoice-card-title{align-items:flex-start}
+ .invoice-compact .invoice-fee-line,.invoice-compact .invoice-readonly-addition{grid-template-columns:minmax(0,1fr)}
+ .invoice-compact .invoice-finance-record dl>div{grid-template-columns:minmax(0,1fr);gap:4px}
+}

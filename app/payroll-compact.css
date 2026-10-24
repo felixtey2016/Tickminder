@@ -1,0 +1,84 @@
+/* Payroll summaries stay distinct; explanations and editing open on demand. */
+.payroll-compact{gap:16px}
+.payroll-compact>.panel{padding:20px}
+.payroll-compact .finance2-section-head{gap:12px;margin-bottom:16px;align-items:center}
+.payroll-compact .finance2-filters{gap:12px;grid-template-columns:minmax(150px,.8fr) minmax(180px,1.2fr)}
+.payroll-compact .finance2-actions{gap:10px}
+.payroll-compact .finance2-spaced-actions{margin-top:16px}
+.payroll-compact .finance2-record{padding:16px;gap:10px}
+.payroll-compact .finance2-record-head{gap:10px;align-items:center}
+.payroll-compact .finance2-record h3{font-size:1rem}
+.payroll-compact .finance2-record p{font-size:.9rem;line-height:1.5}
+.payroll-compact .finance2-record dl{gap:8px}
+.payroll-compact .finance2-record dl>div{gap:10px;align-items:baseline}
+.payroll-compact .finance2-record dd{font-weight:600}
+.payroll-compact .finance2-record .finance2-payroll-draft-values>div:last-child{padding-top:8px}
+.payroll-compact .finance2-badge{padding:4px 8px;flex-shrink:0}
+.payroll-compact .finance2-record .finance2-actions{margin-top:4px}
+.payroll-compact .finance2-line-warning{margin:0;line-height:1.5}
+.payroll-compact .finance2-record :is(dt,dd){font-size:.9rem;line-height:1.5}
+.payroll-list-count{margin:0 0 12px;color:#71697d;font-size:.88rem}
+.payroll-help{margin:12px 0 0;min-width:0;color:#655872}
+.payroll-help>summary{cursor:pointer;min-height:44px;box-sizing:border-box;padding:11px 0;line-height:1.5;font-size:.88rem;font-weight:600;width:fit-content;max-width:100%;overflow-wrap:anywhere}
+.payroll-help>summary:focus-visible,.payroll-history>summary:focus-visible{outline:3px solid #d9cbed;outline-offset:3px;border-radius:4px}
+.payroll-help>div{border-left:3px solid #e5dfed;padding:4px 0 4px 12px;font-size:.88rem;line-height:1.6}
+.payroll-help>div>p{margin:0}
+.payroll-help>div>p+p{margin-top:8px}
+.payroll-compact .payroll-rate-location{margin:0;color:#655872;font-size:.9rem;line-height:1.6}
+.payroll-compact .payroll-rate-effective{color:#71697d;font-size:.88rem;margin:0}
+.payroll-review-warnings{gap:8px;margin-bottom:16px}
+.payroll-review-warnings:empty{display:none}
+.payroll-compact .payroll-review-warnings>li{padding:10px 12px;font-size:.9rem;line-height:1.5}
+.payroll-compact .finance2-kpis{gap:12px}
+.payroll-compact .finance2-kpi{padding:16px;gap:6px}
+.payroll-compact .finance2-kpi dd{font-size:1.35rem;line-height:1.4}
+.payroll-compact .finance2-kpi dt{font-size:.88rem}
+.payroll-compact .payroll-draft-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+.payroll-compact .payroll-draft-kpis>.finance2-kpi:last-child{background:#f8f5fd;border-color:#d6c9ef}
+.payroll-compact .payroll-class-rates{margin-top:12px}
+.payroll-compact .payroll-class-rates h3{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.payroll-history>summary{cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;line-height:1.5;font-weight:600}
+.payroll-history>summary::before{content:'›';font-size:1.25rem}
+.payroll-history[open]>summary::before{transform:rotate(90deg)}
+.payroll-history>summary>span:first-of-type{flex:1}
+.payroll-history-body{margin-top:16px}
+.payroll-history .payroll-help{margin-top:0}
+.payroll-rate-editor .payroll-help{margin:0}
+.payroll-compact .finance2-table-wrap{margin-top:12px}
+.payroll-compact .payroll-session-table :is(th,td){padding:10px 8px}
+.payroll-compact .payroll-session-table td small{display:block;margin-top:2px}
+@media(min-width:1100px){
+ .payroll-compact .payroll-list,.payroll-compact .payroll-class-rates{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+}
+@media(max-width:600px){
+ .payroll-compact>.panel{padding:16px}
+ .payroll-compact .finance2-section-head>h2{font-size:1.12rem}
+ .payroll-compact .finance2-filters{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+ .payroll-compact .payroll-controls .finance2-section-head>.finance2-actions{width:100%}
+ .payroll-compact .payroll-controls .finance2-section-head>.finance2-actions>button{flex:1}
+ .payroll-compact .payroll-draft-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .payroll-compact .payroll-draft-kpis>.finance2-kpi:last-child{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px}
+ .payroll-compact .payroll-draft-kpis>.finance2-kpi:last-child>dd{text-align:right}
+ .payroll-compact .finance2-kpi dd{font-size:1.15rem}
+ .payroll-compact .payroll-session-table tr{padding:12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px;margin-bottom:12px}
+ .payroll-compact .payroll-session-table td{padding:0;display:block;min-width:0;width:100%;font-size:.9rem;line-height:1.5}
+ .payroll-compact .payroll-session-table td:nth-child(-n+2){grid-column:1/-1}
+ .payroll-compact .payroll-session-table td:nth-child(-n+2)::before{display:none}
+ .payroll-compact .payroll-session-table td:first-child{color:#655872;font-size:.85rem}
+ .payroll-compact .payroll-session-table td:nth-child(2){padding-bottom:8px;border-bottom:1px solid #ebe5f0}
+ .payroll-compact .payroll-session-table td::before{display:block;font-size:.8rem;margin-bottom:4px}
+ .payroll-compact .payroll-session-table td>span{text-align:left;display:block}
+ .payroll-compact .payroll-session-table td small{font-size:.8rem}
+ .payroll-compact .payroll-session-table td:last-child{grid-column:1/-1;display:flex;align-items:baseline;justify-content:space-between;gap:12px;border-top:1px solid #ebe5f0;padding-top:8px}
+ .payroll-compact .payroll-session-table td:last-child>span{font-weight:600;text-align:right}
+ .payroll-compact .payroll-session-table .finance2-payroll-estimate{margin-top:2px}
+}
+@media(max-width:350px){
+ .payroll-compact .finance2-filters{grid-template-columns:minmax(0,1fr)}
+ .payroll-compact>.panel{padding:12px}
+ .payroll-compact .finance2-record{padding:12px}
+ .payroll-compact .finance2-record dl>div{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+ .payroll-compact .finance2-record dd{text-align:right}
+ .payroll-compact .payroll-draft-kpis>.finance2-kpi:last-child{display:grid}
+ .payroll-compact .payroll-draft-kpis>.finance2-kpi:last-child>dd{text-align:left}
+}
