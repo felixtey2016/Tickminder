@@ -42,6 +42,8 @@ import type {TeachingStatisticsDetailTarget} from "@/lib/teaching-statistics-typ
 const TeachingStatistics=lazy(()=>import("./teaching-statistics").then(m=>({default:m.TeachingStatistics})));
 const TeachingStatisticsDetails=lazy(()=>import("./teaching-statistics-details").then(m=>({default:m.TeachingStatisticsDetails})));
 import { HomeDashboard } from "./home-dashboard";
+import {PersonIdentityFields,createPersonIdentityDraft,personIdentityPayload,personIdentityReady} from "./person-identity-fields";
+import {GoogleLinkOnboarding} from './google-link-onboarding';
 import type { LearningState } from "./learning-portal";
 const GroupConsole=lazy(()=>import("./group-console").then(m=>({default:m.GroupConsole})));
 const TeacherLearning = lazy(() => import("./learning-portal").then(module => ({default: module.TeacherLearning})));
@@ -65,7 +67,6 @@ import { courseBadgeCount, defaultCourseView, isCourseView, normalizeCourseView 
 import { CourseNavigation } from "@/components/course-navigation";
 import { ManagementNavigation } from "@/components/management-navigation";
 import { defaultManagementView, managementArea, managementTitle, normalizeManagementView } from "@/lib/management-navigation";
-import {WhatsAppBinding} from "./whatsapp-binding";
 import { AccountSetup } from "./account-setup";
 import { DeleteButton, DirectoryFilters, PeopleDirectory } from "./directory-tools";
 import { AdminPermissionContext, useAdminAction } from "./admin-permission-context";
@@ -80,6 +81,7 @@ type Account = AdminPermissionAccount & {
     username?: string | null;
     mustChangePassword?: boolean;
     requiresAccountSetup?: boolean;
+    showGoogleLinkOnboarding?: boolean;
     assignmentStatus?: string;
     pendingExpiresAt?: string | null;
     activatedAt?: string | null;
@@ -552,8 +554,9 @@ export function Scheduler() {
         return <NameSetup initialName={account.name} save={confirmName} logout={logout} busy={busy} message={message} language={language} changeLanguage={changeLanguage}/>;
     if (account.requiresAccountSetup)
         return <AccountSetup email={account.email} onSaved={async()=>setAuth(await request("/api/auth"))} logout={logout} language={language} changeLanguage={changeLanguage}/>;
-    if(account.role==='pending'&&account.groupId==='next-genn-edu')return <main className="auth-shell"><div className="auth-card"><h1>{t("完成账号注册")}</h1><p>{t("家长账号请联系管理员分配家长身份并关联孩子。")}</p><WhatsAppBinding onComplete={async()=>{setAuth(await request('/api/auth'));}}/><Button variant="outline" onClick={logout}>退出登录</Button></div></main>;
+    if(account.role==='pending')return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><h1>{language==='zh'?'等待管理员分配身份':'Waiting for account approval'}</h1><SignedInIdentity account={account}/><p>{language==='zh'?'请联系所属集团管理员填写资料并分配身份，完成后即可使用。':'Ask your centre administrator to complete your profile and assign a role.'}</p><div className="directory-form-actions"><Button onClick={async()=>{try{setAuth(await request('/api/auth'));}catch(error){alertActionFailure(error);}}}>{t('刷新')}</Button><Button variant="outline" onClick={logout}>{t('退出登录')}</Button></div></div></main>;
     if(account.groupUnavailable)return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><h1>{t("补习集团暂不可用")}</h1><p>{t("请联系所属集团的管理员，或稍后重试。")}</p><Button onClick={()=>window.location.reload()}>{t("刷新")}</Button><Button variant="outline" onClick={logout}>{t("退出登录")}</Button></div></main>;
+    if(account.showGoogleLinkOnboarding)return <GoogleLinkOnboarding name={account.name} clientId={auth.clientId} language={language} changeLanguage={changeLanguage} onCompleted={async()=>setAuth(await request('/api/auth'))} logout={logout}/>;
     if(account.role==='parent')return <Suspense fallback={<p role="status">{t('正在加载…')}</p>}><ParentShell account={account} language={language} changeLanguage={changeLanguage} logout={logout} refreshIdentity={async()=>setAuth(await request('/api/auth'))}/></Suspense>;
     const admin = account.role === "admin";
     return <AdminPermissionContext.Provider value={account}><Workspace key={`${account.id}:${account.groupId}:${JSON.stringify(account.adminPermissions)}`} account={account} state={state} ensureScope={ensureScope} setActiveScopes={setActiveScopes} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} calendarDate={calendarDate} setCalendarDate={setCalendarDate} calendarRange={calendarRange} onCalendarRangeChange={onCalendarRangeChange} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/></AdminPermissionContext.Provider>;
@@ -850,7 +853,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
             pageContent=<FinanceWorkspace openInvoiceList={openInvoiceList} onInvoiceListOpened={()=>setOpenInvoiceList(false)} account={account} key={account.groupId} students={(state?.allStudents?.length?state.allStudents:state?.studentOptions||[]).map(student=>student.name)} onCourses={()=>choose('subjects')}/>;
         } else if (["teacherRoster", "studentRoster", "accounts"].includes(activeView)) {
             const view = activeView === "teacherRoster" ? "teachers" : activeView === "studentRoster" ? "students" : activeView as "binding" | "accounts";
-            pageContent = <RosterAdmin account={account} state={state} mutate={mutate} busy={busy} view={view} onAccountsChanged={()=>void ensureScope("accounts",true)}/>;
+            pageContent = <RosterAdmin account={account} state={state} mutate={mutate} busy={busy} view={view} onOpenAccounts={()=>choose("accounts")} onAccountsChanged={()=>void ensureScope("accounts",true)}/>;
         } else if (activeView === "sheet") {
             pageContent = <SheetSyncPanel/>;
         }
@@ -937,44 +940,30 @@ function AdminDashboard({ state, lessons, open, view,mutate,busy,onOpenFinance }
     return <div className="dashboard">{can('attendance.view')&&<TeachingSummary summary={state?.teachingSummary}/>}<div className="metric-grid">{can('statistics.view')&&<><div className="metric"><span>{t('学生累计出席课时')}</span><strong>{formatDurationHours(summary.reduce((n,x)=>n+x.completed,0),getLanguage())}</strong><p>{month} · {t('已记录出席')}</p></div><div className="metric"><span>{t('未来已安排课时')}</span><strong>{formatDurationHours(summary.reduce((n,x)=>n+x.upcoming,0),getLanguage())}</strong><p>{t('所选月份')}</p></div></>}<div className="metric attention"><span>{t('待复核记录')}</span><strong>{state?.taskCounts?.pendingReview??'—'}</strong></div></div>{can('attendance.view')&&<PagedAttendanceBoard onOpenFinance={onOpenFinance} mode="review" role="admin" month={month} mutate={mutate} busy={busy} teachers={teachers}/ >}{can('lessons.view')&&<PagedLessonRows mode="upcoming" month={month} sessionType="" title="即将上课" renderLesson={l=><LessonCard key={l.id} lesson={l} admin open={open}/>}/ >}{can('statistics.view')&&<section className="panel"><h2>{t('学生科目统计')}</h2><p className="muted">{t('按实际开始日期归属月份')}</p><div className="summary-grid">{summary.map(row=><div className="summary-row" key={row.key}><strong>{row.key.replace('|',' · ')}</strong><span>{formatDurationHours(row.completed,getLanguage())} · {row.lessons} {t('堂已上课')}</span><span>{formatDurationHours(row.upcoming,getLanguage())} · {t('未来已安排')}</span><span>{row.pending} {t('待记录出席')} · {row.makeupNeeded} {t('待补')}</span></div>)}</div></section>}</div>;
 }
 
-function RosterAdmin({ account, state, mutate, busy, view,onAccountsChanged }: { onAccountsChanged?:()=>void; account: Account; state: State | null; mutate: (x: Record<string, unknown>) => Promise<boolean>; busy: boolean; view: "teachers" | "students" | "binding" | "accounts" }) {
-    if (view === "teachers" || view === "students") return <PeopleDirectory kind={view === "teachers" ? "teacher" : "student"} people={view === "teachers" ? state?.allTeachers || [] : state?.allStudents || []} mutate={mutate} busy={busy}/>;
-    return <AccountDirectory onAccountsChanged={onAccountsChanged} actor={account} users={state?.users || []} teachers={state?.teachers || []} students={state?.students || []} mutate={mutate} busy={busy} createForm={<LocalAccountAdmin account={account} state={state} mutate={mutate} busy={busy}/>}/>;
+function RosterAdmin({ account, state, mutate, busy, view,onAccountsChanged,onOpenAccounts }: {onOpenAccounts?:()=>void; onAccountsChanged?:()=>void; account: Account; state: State | null; mutate: (x: Record<string, unknown>) => Promise<boolean>; busy: boolean; view: "teachers" | "students" | "binding" | "accounts" }) {
+    if (view === "teachers" || view === "students") return <PeopleDirectory kind={view === "teachers" ? "teacher" : "student"} people={view === "teachers" ? state?.allTeachers || [] : state?.allStudents || []} mutate={mutate} busy={busy} onCreateAccount={onOpenAccounts}/>;
+    return <AccountDirectory onAccountsChanged={onAccountsChanged} actor={account} users={state?.users || []} teachers={state?.teachers || []} students={state?.students || []} mutate={mutate} busy={busy} createForm={onCreated=><LocalAccountAdmin account={account} state={state} mutate={mutate} busy={busy} onCreated={onCreated}/>}/>;
 }
-function LocalAccountAdmin({ account, state, mutate, busy }: {
+function LocalAccountAdmin({ account, state, mutate, busy,onCreated }: {
+    onCreated?:(role:string)=>void;
     account: Account;
     state: State | null;
     mutate: (x: Record<string, unknown>) => Promise<boolean>;
     busy: boolean;
 }) {
-    const [username, setUsername] = useState("");
-    const [name, setName] = useState("");
-    const [password, setPassword] = useState("");
-    const [role, setRole] = useState<"teacher" | "student" | "parent" | "admin">("teacher");
-    const [teacherName, setTeacherName] = useState("");
-    const [studentName, setStudentName] = useState("");
-    const [resetUserId, setResetUserId] = useState("");
-    const [resetPassword, setResetPassword] = useState("");
-    const canManageAdministrators = account.canManageAdministrators === true;
-    const selectedRole = role === "admin" && !canManageAdministrators ? "teacher" : role;
-    const can=useAdminAction();
-    const localUsers = (state?.users || []).filter(u => (u.role!=='parent'||can('parents.manage')) && u.username && !u.disabledAt && u.id !== account.id && !u.isOwner && (!u.isGroupChief || account.isOwner) && (u.role !== "admin" || canManageAdministrators));
-    return <section className="panel local-account-admin"><p className="muted">{t("创建账号后，请将临时密码交给用户；首次登录须设置新密码。忘记密码时可在下方重置。")}</p>
-    {can("accounts.create")&&<form onSubmit={async (e) => { e.preventDefault(); if (await mutate({ action: "createLocalAccount", username, name, password, role: selectedRole, teacherName: selectedRole === "teacher" ? teacherName : "", studentName: selectedRole === "student" ? studentName : "" })) {
-        setUsername("");
-        setName("");
-        setPassword("");
-        setRole("teacher");
-        setTeacherName("");
-        setStudentName("");
-    } }}>
-      <label>{t("用户名")}<input required minLength={3} maxLength={40} pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,39}" autoComplete="off" value={username} onChange={e => setUsername(e.target.value)} placeholder={t("\u4F8B\u5982 ms.sydney")}/></label>
-      <label>{t("\u663E\u793A\u59D3\u540D")}<input required maxLength={80} value={name} onChange={e => setName(e.target.value)}/></label>
-      <label>{t("临时密码（至少 8 个字符）")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)}/></label>
-      <label>{t("\u89D2\u8272")}<select value={selectedRole} onChange={e => setRole(e.target.value as "teacher" | "student" | "parent" | "admin")}><option value="teacher">{t("\u8001\u5E08")}</option><option value="student">{t("\u5B66\u751F")}</option>{can("parents.manage")&&<option value="parent">{t("家长")}</option>}{canManageAdministrators && <option value="admin">{t("admin.regularAdministrator")}</option>}</select></label>
-      {selectedRole === "teacher" && <label>{t("\u5173\u8054\u8001\u5E08")}<select required value={teacherName} onChange={e => setTeacherName(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{state?.teachers?.map(t => <option key={t}>{t}</option>)}</select></label>}
-      {selectedRole === "student" && <label>{t("\u5173\u8054\u5B66\u751F")}<select required value={studentName} onChange={e => setStudentName(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{(state?.students || []).map(s => <option key={s}>{s}</option>)}</select></label>}
-      <div className="directory-form-actions"><Button disabled={busy || (selectedRole === "teacher" && !teacherName) || (selectedRole === "student" && !studentName)}>{t("\u521B\u5EFA\u8D26\u53F7")}</Button></div>
+    const [username,setUsername]=useState(''),[password,setPassword]=useState('');
+    const [role,setRole]=useState<'teacher'|'student'|'parent'|'admin'>('student');
+    const [person,setPerson]=useState(()=>createPersonIdentityDraft());
+    const [resetUserId,setResetUserId]=useState(''),[resetPassword,setResetPassword]=useState('');
+    const can=useAdminAction(),canManageAdministrators=account.canManageAdministrators===true;
+    const selectedRole=role==='admin'&&!canManageAdministrators||role==='parent'&&!can('parents.manage')?'student':role;
+    const localUsers=(state?.users||[]).filter(u=>(u.role!=='parent'||can('parents.manage'))&&u.username&&!u.disabledAt&&u.id!==account.id&&!u.isOwner&&(!u.isGroupChief||account.isOwner)&&(u.role!=='admin'||canManageAdministrators));
+    return <section className="local-account-admin"><p className="muted">{getLanguage()==='zh'?'创建后会自动加入对应名单。请把临时密码交给本人。':'The person is added to the matching directory. Give them their temporary password.'}</p>
+    {can('accounts.create')&&<form className="account-provisioning-form" onSubmit={async e=>{e.preventDefault();if(!personIdentityReady(selectedRole,person))return;if(await mutate({action:'createLocalAccount',username,password,role:selectedRole,...personIdentityPayload(selectedRole,person)})){setUsername('');setPassword('');setPerson(createPersonIdentityDraft('',can(selectedRole==='teacher'?'teachers.create':'students.create')?'new':'existing'));onCreated?.(selectedRole);}}}>
+      <label>{t('角色')}<select value={selectedRole} disabled={busy} onChange={e=>{const next=e.target.value as typeof role;setRole(next);setPerson(createPersonIdentityDraft('',can(next==='teacher'?'teachers.create':'students.create')?'new':'existing'));}}><option value="student">{t('学生')}</option><option value="teacher">{t('老师')}</option>{can('parents.manage')&&<option value="parent">{t('家长')}</option>}{canManageAdministrators&&<option value="admin">{t('admin.regularAdministrator')}</option>}</select></label>
+      <PersonIdentityFields role={selectedRole} value={person} onChange={setPerson} teachers={state?.teachers||[]} students={state?.students||[]} canCreatePerson={can(selectedRole==='teacher'?'teachers.create':'students.create')} disabled={busy}/>
+      <div className="account-login-grid"><label>{t('用户名')}<input required minLength={3} maxLength={40} pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,39}" autoComplete="off" value={username} disabled={busy} onChange={e=>setUsername(e.target.value)}/></label><label>{t('临时密码（至少 8 个字符）')}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={password} disabled={busy} onChange={e=>setPassword(e.target.value)}/></label></div>
+      <div className="directory-form-actions"><Button disabled={busy||!personIdentityReady(selectedRole,person)}>{t('创建账号')}</Button></div>
     </form>}
     {can("accounts.resetPassword")&&<details className="local-password-reset settings-disclosure"><summary><span>{t("\u91CD\u7F6E\u5FD8\u8BB0\u7684\u5BC6\u7801")}</span><ChevronDown size={18} aria-hidden="true"/></summary><p className="muted">{t("\u91CD\u7F6E\u540E\uFF0C\u8BE5\u8D26\u53F7\u73B0\u6709\u767B\u5F55\u4F1A\u9000\u51FA\uFF0C\u4E0B\u6B21\u767B\u5F55\u5FC5\u987B\u518D\u6B21\u4FEE\u6539\u5BC6\u7801\u3002")}</p>
     <form onSubmit={async (e) => { e.preventDefault(); if (!localUsers.some(user => user.id === resetUserId)) return; if (await mutate({ action: "resetLocalPassword", userId: resetUserId, password: resetPassword })) {

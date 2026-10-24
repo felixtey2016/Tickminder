@@ -10,6 +10,7 @@ import { getLanguage, t } from "@/lib/i18n";
 import { showActionToast } from "@/lib/action-feedback";
 import { DeleteButton, type Mutate } from "./directory-tools";
 import { PR } from "@/lib/parents-i18n";
+import { PersonIdentityFields, createPersonIdentityDraft, personIdentityPayload, personIdentityReady } from "./person-identity-fields";
 import "./people-compact.css";
 
 const ParentChildrenManager = lazy(() => import("./parent-children-manager").then(module => ({default: module.ParentChildrenManager})));
@@ -19,11 +20,12 @@ const AdminPermissionEditor = lazy(() => import("./admin-permission-editor").the
 type User = { id: string; name: string; role: string; username?: string | null; email?: string; disabledAt?: string | null; teacherName?: string | null; studentName?: string | null; assignmentStatus?: string; pendingExpiresAt?: string | null; isOwner?: boolean; isGroupChief?: boolean; parentChildren?: string[] };
 type Actor = { id?: string; groupId?: string | null; isOwner?: boolean; isGroupChief?: boolean; canManageAdministrators?: boolean };
 
-export function AccountDirectory({ users, actor, teachers, students, mutate, busy, createForm, onAccountsChanged }: { users: User[]; actor: Actor; teachers: string[]; students: string[]; mutate: Mutate; busy: boolean; createForm: React.ReactNode; onAccountsChanged?: () => void }) {
+export function AccountDirectory({ users, actor, teachers, students, mutate, busy, createForm, onAccountsChanged }: { users: User[]; actor: Actor; teachers: string[]; students: string[]; mutate: Mutate; busy: boolean; createForm: React.ReactNode | ((onCreated:(role:string)=>void)=>React.ReactNode); onAccountsChanged?: () => void }) {
   const can=useAdminAction();
   const [search, setSearch] = useFilterPreference<string>("accounts-search", ""), [removed, setRemoved] = useFilterPreference<boolean>("accounts-removed", false);
   const [editing, setEditing] = useDialogState<User | null>("account-edit", null);
   const [create, setCreate] = useDialogState<boolean | null>("account-create", null);
+  const [createdRole,setCreatedRole]=useState('');
   const [permissionTarget, setPermissionTarget] = useState<User | null>(null);
   const [parentTarget, setParentTarget] = useDialogState<User | null>("parent-children", null);
   const closeParents = useCallback(() => setParentTarget(null), [setParentTarget]);
@@ -33,7 +35,7 @@ export function AccountDirectory({ users, actor, teachers, students, mutate, bus
   const [permissionUnavailable, setPermissionUnavailable] = useState(false);
   const closePermissions = useCallback(() => setPermissionTarget(null), []);
   const permissionAuthorityLost = useCallback(() => { setPermissionUnavailable(true); setPermissionTarget(null); showActionToast("error", "permissions.authorityLost"); }, []);
-  const [role, setRole] = useState("teacher"), [identity, setIdentity] = useState("");
+  const [role, setRole] = useState("teacher"), [person, setPerson] = useState(() => createPersonIdentityDraft());
   const canManageAdministrators = actor.canManageAdministrators === true;
   const permissionManager = !permissionUnavailable && canManageAdministrators && (actor.isOwner === true || actor.isGroupChief === true);
   const currentPermissionTarget = users.find(user => user.id === permissionTarget?.id);
@@ -43,13 +45,21 @@ export function AccountDirectory({ users, actor, teachers, students, mutate, bus
   const visible = users.filter(u => Boolean(u.disabledAt) === removed && `${u.name} ${u.email || ""} ${u.username || ""} ${u.teacherName || ""} ${u.studentName || ""} ${(u.parentChildren || []).join(" ")}`.toLowerCase().includes(search.toLowerCase()));
   function canManage(u: User) { return u.id !== actor.id && !u.isOwner && !u.isGroupChief && (u.role !== "admin" || canManageAdministrators) && (u.role !== "parent" || can("parents.manage")); }
   function roleLabel(u: User) { return u.isOwner ? "admin.platformOwner" : u.isGroupChief ? "admin.groupChief" : u.role === "admin" ? "admin.regularAdministrator" : u.role === "teacher" ? "老师" : u.role === "student" ? "学生" : u.role === "parent" ? "parents.parentRole" : "待分配角色"; }
-  function edit(u: User) { if (!canManage(u)) return; setRole(u.role === "pending" ? "teacher" : u.role); setIdentity(u.teacherName || u.studentName || ""); setEditing(u); }
+  function edit(u: User) {
+    if (!canManage(u)) return;
+    const nextRole = u.role === "pending" ? "teacher" : u.role;
+    const identity = u.teacherName || u.studentName || "";
+    const canCreate = can(nextRole === "student" ? "students.create" : "teachers.create");
+    setRole(nextRole);
+    setPerson(createPersonIdentityDraft(u.name, identity || !canCreate ? "existing" : "new", identity));
+    setEditing(u);
+  }
   return <section className="panel directory-panel account-directory people-compact">
     <div className="section-head directory-section-head"><h2>{t("账号管理")}</h2>{can("accounts.resetPassword")&&!can("accounts.create")&&<Button onClick={()=>setCreate(true)}>{t("重置密码")}</Button>}<Button adminGrant="accounts.create" onClick={() => setCreate(true)}>{t("新建登录账号")}</Button></div>
     <details className="people-help"><summary>{getLanguage()==='en'?'Account permissions':'账号权限说明'}</summary><p className="muted">{t(actor.isOwner ? "admin.accountScopeOwner" : actor.isGroupChief && canManageAdministrators ? "admin.accountScopeChief" : "admin.accountScopeAdministrator")}</p></details>
     <div className="directory-filters"><label>{t("搜索账号")}<input value={search} onChange={e => setSearch(e.target.value)} placeholder={PR("searchAccounts")}/></label><label>{t("显示记录")}<select value={removed ? "removed" : "active"} onChange={e => setRemoved(e.target.value === "removed")}><option value="active">{t("启用中账号")}</option><option value="removed">{t("已停用账号")}</option></select></label></div>
     <div className="directory-toolbar people-list-toolbar"><span className="muted">{getLanguage()==='en'?`${visible.length} accounts`:`${visible.length} 个账号`}</span>{(search||removed)&&<Button variant="outline" size="sm" onClick={() => { setSearch(""); setRemoved(false); }}>{t("重置筛选")}</Button>}{can("accounts.delete")&&<details className="people-batch"><summary>{getLanguage()==='en'?'Bulk actions':'批量操作'}</summary><BulkDeleteTool kind="account" records={visible.filter(canManage).map(u => ({ id: u.id, label: u.name + " · " + t(roleLabel(u)) }))} mutate={mutate} busy={busy}/></details>}</div>
-    {[["pending", "待分配角色"], ["student", "学生账号"], ["teacher", "老师账号"], ["parent", "parents.parentAccounts"], ["admin", "管理员账号"]].map(([r, label]) => <details className="directory-group" key={r} open={r === "pending" || Boolean(search)}>
+    {[["pending", "待分配角色"], ["student", "学生账号"], ["teacher", "老师账号"], ["parent", "parents.parentAccounts"], ["admin", "管理员账号"]].map(([r, label]) => <details className="directory-group" key={r} open={r === "pending" || r===createdRole || Boolean(search)}>
       <summary>{t(label)} <span>{visible.filter(u => u.role === r).length}</span></summary>
       {visible.filter(u => u.role === r).map(u => <article key={u.id} className="user-row directory-person-row">
         <div className="directory-person-identity"><div className="people-name-line"><strong>{u.name}</strong><span className="account-authority-badge" data-authority={u.isOwner ? "owner" : u.isGroupChief ? "chief" : u.role}>{t(roleLabel(u))}</span></div>
@@ -76,13 +86,13 @@ export function AccountDirectory({ users, actor, teachers, students, mutate, bus
     {!visible.length && <p className="empty">{t("没有符合条件的记录")}</p>}
     {parentTarget && parentTargetAllowed && <Suspense fallback={<Dialog open onOpenChange={open => { if (!open) closeParents(); }}><DialogContent className="lesson-dialog directory-dialog"><DialogHeader><DialogTitle>{PR("manageChildren")}</DialogTitle></DialogHeader><p role="status">{PR("loading")}</p></DialogContent></Dialog>}><ParentChildrenManager key={`${actor.groupId}:${parentTarget.id}`} accountId={parentTarget.id} accountName={currentParentTarget?.name || parentTarget.name} canManage={can("parents.manage")} onClose={closeParents} onChanged={onAccountsChanged}/></Suspense>}
     {permissionTarget && permissionTargetAllowed && <Suspense fallback={<Dialog open onOpenChange={open => { if (!open) closePermissions(); }}><DialogContent className="admin-permission-dialog" overlayClassName="admin-permission-overlay"><DialogHeader><DialogTitle>{t("permissions.title")}</DialogTitle></DialogHeader><p role="status">{t("permissions.loading")}</p><div className="settings-actions"><Button variant="outline" onClick={closePermissions}>{t("permissions.cancel")}</Button></div></DialogContent></Dialog>}><AdminPermissionEditor key={`${actor.groupId}:${permissionTarget.id}`} groupId={actor.groupId} accountId={permissionTarget.id} accountName={currentPermissionTarget?.name || permissionTarget.name} onClose={closePermissions} onAuthorityLost={permissionAuthorityLost}/></Suspense>}
-    <Dialog open={Boolean(create)&&(can("accounts.create")||can("accounts.resetPassword"))} onOpenChange={open => setCreate(open ? true : null)}><DialogContent className="lesson-dialog directory-dialog"><DialogHeader><DialogTitle>{t(can("accounts.create")?"创建登录账号":"重置密码")}</DialogTitle></DialogHeader>{createForm}</DialogContent></Dialog>
-    <Dialog open={Boolean(editing)&&can("accounts.assign")} onOpenChange={open => { if (!open) setEditing(null); }}><DialogContent className="lesson-dialog"><DialogHeader><DialogTitle>{t("分配角色与身份")}</DialogTitle></DialogHeader><div className="directory-dialog-identity"><strong>{editing?.name}</strong><span className="muted">{editing?.email || editing?.username}</span></div>
-      <form onSubmit={async e => { e.preventDefault(); const current = users.find(user => user.id === editing?.id); if (!current || !canManage(current)) { setEditing(null); return; } if (await mutate({ action: "bind", userId: current.id, role: selectedRole, teacherName: selectedRole === "teacher" ? identity : "", studentName: selectedRole === "student" ? identity : "" })) setEditing(null); }}>
-        <label>{t("角色")}<select value={selectedRole} onChange={e => { setRole(e.target.value); setIdentity(""); }}><option value="teacher">{t("老师")}</option><option value="student">{t("学生")}</option>{can("parents.manage") && <option value="parent">{PR("parentRole")}</option>}{canManageAdministrators && <option value="admin">{t("admin.regularAdministrator")}</option>}</select></label>
-        {(selectedRole === "teacher" || selectedRole === "student") && <label>{t(selectedRole === "teacher" ? "关联老师" : "关联学生")}<select required value={identity} onChange={e => setIdentity(e.target.value)}><option value="">{t("请选择")}</option>{(selectedRole === "teacher" ? teachers : students).map(n => <option key={n}>{n}</option>)}</select></label>}
+    <Dialog open={Boolean(create)&&(can("accounts.create")||can("accounts.resetPassword"))} onOpenChange={open => setCreate(open ? true : null)}><DialogContent className="lesson-dialog directory-dialog"><DialogHeader><DialogTitle>{t(can("accounts.create")?"创建登录账号":"重置密码")}</DialogTitle></DialogHeader>{typeof createForm==='function'?createForm(role=>{setCreate(null);setCreatedRole(role);setSearch('');setRemoved(false);onAccountsChanged?.();}):createForm}</DialogContent></Dialog>
+    <Dialog open={Boolean(editing)&&can("accounts.assign")} onOpenChange={open => { if (!open) setEditing(null); }}><DialogContent className="lesson-dialog directory-dialog"><DialogHeader><DialogTitle>{editing?.role === "pending" ? getLanguage() === "en" ? "Complete account profile" : "完善账号资料" : t("分配角色与身份")}</DialogTitle></DialogHeader><div className="directory-dialog-identity"><span className="muted">{editing?.email || editing?.username || editing?.name}</span></div>
+      <form className="account-provisioning-form" onSubmit={async e => { e.preventDefault(); const current = users.find(user => user.id === editing?.id); if (!current || !canManage(current)) { setEditing(null); return; } if (!personIdentityReady(selectedRole, person)) return; if (await mutate({ action: "bind", userId: current.id, role: selectedRole, ...personIdentityPayload(selectedRole, person) })) {setEditing(null); onAccountsChanged?.();} }}>
+        <label>{t("角色")}<select disabled={busy} value={selectedRole} onChange={e => { const nextRole=e.target.value; setRole(nextRole); setPerson(createPersonIdentityDraft(person.name || editing?.name || "", can(nextRole === "student" ? "students.create" : "teachers.create") ? "new" : "existing")); }}><option value="teacher">{t("老师")}</option><option value="student">{t("学生")}</option>{can("parents.manage") && <option value="parent">{PR("parentRole")}</option>}{canManageAdministrators && <option value="admin">{t("admin.regularAdministrator")}</option>}</select></label>
+        <PersonIdentityFields role={selectedRole} value={person} onChange={setPerson} teachers={teachers} students={students} canCreatePerson={can(selectedRole === "student" ? "students.create" : "teachers.create")} disabled={busy}/>
         {selectedRole === "parent" && <p className="field-hint">{PR("newRoleHint")}</p>}
-        <div className="directory-form-actions"><Button disabled={busy}>{t("保存身份分配")}</Button></div>
+        <div className="directory-form-actions"><Button disabled={busy || !personIdentityReady(selectedRole, person)}>{editing?.role === "pending" ? getLanguage() === "en" ? "Save & enable account" : "保存并启用账号" : t("保存身份分配")}</Button></div>
       </form>
     </DialogContent></Dialog>
   </section>;

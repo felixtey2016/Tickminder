@@ -23,9 +23,10 @@ import { first, learningDb } from "@/lib/learning-server";
 import { normalizeOnlineLink } from "@/lib/online-link";
 import {classPlanSubjectSql} from "@/lib/academic-subject-match";
 import {ensurePlanClassroom,planClassroomStatements,planSessionClassroomStatements} from "@/lib/student-classrooms";
-import { adminAuthority, assertParentAccountManagement,parentAccountManagementGuard,adminActorGuard, accountAuthorityGuard, assertAccountAuthority, AdminAuthorityError, isAdminAuthorityFailure } from "@/lib/admin-authority";
+import { adminAuthority, assertParentAccountManagement,parentAccountManagementGuard,adminActorGuard,accountAuthorityGuard,authorityGuard,assertAccountAuthority,AdminAuthorityError,isAdminAuthorityFailure } from "@/lib/admin-authority";
 import {requireCorePermissions,corePermissionKeys,rejectUnknownAdminAction,guardedCoreDb} from '@/lib/admin-core-permissions';
 import {adminPermissionFailure} from '@/lib/admin-permission-access';
+import {AccountProvisioningError,isAccountProvisioningFailure,prepareAccountPerson} from '@/lib/account-provisioning';
 
 type Body = Record<string, unknown>;
 const str = (v: unknown) => typeof v === "string" ? v.trim() : "";
@@ -62,6 +63,10 @@ export async function POST(request: Request) {
   const now = new Date().toISOString();
   const permissionKeys=corePermissionKeys(action);
   try {
+    if(['createLocalAccount','bind'].includes(action)&&str(data.identityMode)==='new'){
+      if(str(data.role)==='student')permissionKeys.push('students.create');
+      if(str(data.role)==='teacher')permissionKeys.push('teachers.create');
+    }
     if(action==='saveTeacher'){
       const before=await first<{active:number}>('SELECT active FROM teachers WHERE name=?',str(data.name));
       permissionKeys.push(!before?'teachers.create':data.active===false?'teachers.disable':'teachers.restore');
@@ -82,25 +87,25 @@ export async function POST(request: Request) {
       const username = normalizeUsername(data.username);
       const password = data.password;
       const name = str(data.name);
-      const role = str(data.role), teacherName = str(data.teacherName), studentName = str(data.studentName);
+      const role = str(data.role);
       if (!validUsername(username)) return bad("账号需为 3–40 位英文字母、数字、点、横线或底线，且以字母或数字开头");
       if (!validPassword(password)) return bad("初始密码需为 8–128 个字符");
       if (!name || name.length > 80 || !["admin", "teacher", "student", "parent"].includes(role)) return bad("请输入姓名并选择角色");
       if(role==='parent')await assertParentAccountManagement(actor);
       if(role==='admin'&&!(await adminAuthority(actor)).canManageAdministrators)return bad('admin.administratorAccessRequired',403);
       if (await db.select({ accountId: localCredentials.accountId }).from(localCredentials).where(eq(localCredentials.username, username)).get()) return bad("此账号名已被使用");
-      if (role === "teacher" && !(await readRoster(actor)).teachers.includes(teacherName)) return bad("请选择启用的老师");
-      if (role === "student" && !(await readRoster(actor)).students.includes(studentName)) return bad("请选择已登记的学生");
-      if (["teacher","student"].includes(role) && await first("SELECT 1 AS found FROM accounts WHERE role = ? AND " + (role === "teacher" ? "teacher_name" : "student_name") + " = ? AND disabled_at IS NULL", role, role === "teacher" ? teacherName : studentName)) return bad("此身份已有账号，请使用现有账号连接 Google，避免重复创建", 409);
+      const person=await prepareAccountPerson(actor,data,role,now);permissionKeys.push(...person.permissions);await requireCorePermissions(actor,permissionKeys);
       const id = `local:${crypto.randomUUID()}`;
       const passwordHash = await hashPassword(password);
-      const raw=guardedCoreDb(actor,permissionKeys),after={username,name,role,teacherName:role==='teacher'?teacherName:null,studentName:role==='student'?studentName:null};
+      const raw=guardedCoreDb(actor,permissionKeys),after={username,name,role,teacherName:person.teacherName,studentName:person.studentName,identityMode:person.identityMode},classroomStatements=await accountClassroomStatements(groupId,actor.id,person.studentName,person.teacherName);
       await raw.batch([
         adminActorGuard(actor,role==='admin'),
         ...(role==='parent'?[parentAccountManagementGuard(actor)]:[]),
-        raw.prepare("INSERT INTO accounts(group_id,id,email,name,role,teacher_name,student_name,created_at,activated_at,activation_reason) VALUES(?,?,'',?,?,?,?,?,?,'admin-created')").bind(groupId,id,name,role,after.teacherName,after.studentName,now,now),
+        ...person.statements,
+        raw.prepare("INSERT INTO accounts(group_id,id,email,name,role,teacher_name,student_name,created_at,activated_at,activation_reason,name_confirmed_at) VALUES(?,?,'',?,?,?,?,?,?,'admin-created',?)").bind(groupId,id,name,role,after.teacherName,after.studentName,now,now,now),
         raw.prepare("INSERT INTO local_credentials(account_id,username,password_hash,must_change_password,updated_at) VALUES(?,?,?,1,?)").bind(id,username,passwordHash,now),
         appendAudit(raw,{groupId,lessonId:`account:${id}`,actorId:actor.id,actorName:actor.name,objectName:name,action:'createLocalAccount',after,at:now}),
+        ...classroomStatements,
       ]);
       return NextResponse.json({ ok: true });
     }
@@ -278,28 +283,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
     if (action === "bind") {
-      const userId = str(data.userId), role = str(data.role), teacherName = str(data.teacherName), studentName = str(data.studentName);
+      const userId = str(data.userId), role = str(data.role);
       const target = await db.select().from(accounts).where(groupWhere(accounts,actor.groupId,eq(accounts.id, userId))).get();
       if (!target || !["teacher", "admin", "student", "parent"].includes(role)) return bad("Choose an account and role");
       const authority={action:'bind' as const,nextRole:role,expected:target};
       await assertAccountAuthority(actor,userId,authority);
-      if (role === "teacher") {
-        const roster = await readRoster(actor);
-        if (!roster.teachers.includes(teacherName)) return bad("Choose an active teacher");
-      }
-      if (role === "student") {
-        const roster = await readRoster(actor);
-        if (!roster.students.includes(studentName)) return bad("Choose a student from the roster");
-      }
       if (target.disabledAt) return bad("请先恢复账号", 409);
-      if (role !== "admin" && await first("SELECT 1 AS found FROM accounts WHERE role = ? AND " + (role === "teacher" ? "teacher_name" : "student_name") + " = ? AND id <> ? AND disabled_at IS NULL", role, role === "teacher" ? teacherName : studentName, userId)) return bad("此身份已有账号，请使用现有账号连接 Google，避免重复创建", 409);
-      const update = { role, teacherName: role === "teacher" ? teacherName : null, studentName: role === "student" ? studentName : null, activatedAt: target.activatedAt || now, activationReason: target.activationReason || "identity-bound", pendingExpiresAt: null };
-      const raw=guardedCoreDb(actor,permissionKeys),classroomStatements=await accountClassroomStatements(groupId,actor.id,role==='student'?studentName:null,role==='teacher'?teacherName:null);
+      const name=data.name===undefined?target.name:str(data.name);if(!name||name.length>80)return bad('请输入不超过 80 个字符的姓名');
+      const person=await prepareAccountPerson(actor,{...data,name},role,now,userId);permissionKeys.push(...person.permissions);await requireCorePermissions(actor,permissionKeys);
+      const update = {name,role, teacherName:person.teacherName,studentName:person.studentName,nameConfirmedAt:data.name===undefined?target.nameConfirmedAt:now,activatedAt: target.activatedAt || now, activationReason: target.activationReason || "identity-bound", pendingExpiresAt: null };
+      const raw=guardedCoreDb(actor,permissionKeys),classroomStatements=await accountClassroomStatements(groupId,actor.id,person.studentName,person.teacherName);
       await raw.batch([
         accountAuthorityGuard(actor,userId,authority),
-        raw.prepare("UPDATE accounts SET role=?,teacher_name=?,student_name=?,activated_at=?,activation_reason=?,pending_expires_at=NULL WHERE id=? AND group_id=?").bind(role,update.teacherName,update.studentName,update.activatedAt,update.activationReason,userId,groupId),
+        authorityGuard({sql:'EXISTS(SELECT 1 FROM accounts WHERE group_id=? AND id=? AND name=? AND name_confirmed_at IS ?)',args:[groupId,userId,target.name,target.nameConfirmedAt]},'account_provisioning_changed'),
+        ...person.statements,
+        raw.prepare("UPDATE accounts SET name=?,name_confirmed_at=?,role=?,teacher_name=?,student_name=?,activated_at=?,activation_reason=?,pending_expires_at=NULL WHERE id=? AND group_id=?").bind(name,update.nameConfirmedAt,role,update.teacherName,update.studentName,update.activatedAt,update.activationReason,userId,groupId),
         raw.prepare("DELETE FROM sessions WHERE account_id=?").bind(userId),
-        appendAudit(raw,{groupId,lessonId:`account:${userId}`,actorId:actor.id,actorName:actor.name,objectName:target.name,action:'bind',before:{name:target.name,role:target.role,teacherName:target.teacherName,studentName:target.studentName},after:{name:target.name,...update},at:now}),
+        appendAudit(raw,{groupId,lessonId:`account:${userId}`,actorId:actor.id,actorName:actor.name,objectName:name,action:'bind',before:{name:target.name,role:target.role,teacherName:target.teacherName,studentName:target.studentName},after:{...update,identityMode:person.identityMode},at:now}),
         ...classroomStatements,
       ]);
       return NextResponse.json({ ok: true });
@@ -442,6 +442,9 @@ export async function POST(request: Request) {
     }
     return bad("Unknown action");
   } catch (error) {
+    if(error instanceof AccountProvisioningError)return bad(error.message,error.status);
+    if(isAccountProvisioningFailure(error))return bad('人员或账号资料已改变，请刷新后重试',409);
+    if(['createLocalAccount','bind'].includes(action)&&/UNIQUE constraint/.test(String(error)))return bad('姓名或账号已存在，请刷新后选择现有人员或账号',409);
     if(isInvoiceLocked(error))return bad(invoiceLockedMessage,409);
     const permissionFailure=adminPermissionFailure(error);if(permissionFailure)return bad(permissionFailure.error,permissionFailure.status);
     if(error instanceof AdminAuthorityError)return bad(error.message,error.status);

@@ -1,0 +1,18 @@
+.account-person-fields{display:grid;gap:16px;min-width:0}
+.account-person-fields label,.account-provisioning-form>label{display:grid;gap:8px;min-width:0}
+.account-identity-mode{border:0;padding:0;margin:0;min-width:0}
+.account-identity-mode legend{padding:0;margin-bottom:8px;font-weight:600}
+.account-identity-options{display:flex;flex-wrap:wrap;gap:10px}
+.account-identity-options>label{display:flex;flex-direction:row;align-items:center;gap:8px;min-height:44px;padding:10px 12px;border:1px solid #ddd6ed;border-radius:10px;cursor:pointer;background:#fff}
+.account-identity-options>label:has(input:checked){border-color:#7753d9;background:#f4efff;color:#4c308c}
+.account-identity-options input[type=radio]{width:18px;height:18px;min-height:0;margin:0;flex:none;accent-color:#6542cb}
+.account-person-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.account-person-name,.account-person-notice{grid-column:1/-1}
+.account-person-notice{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin:0;font-size:.9em;color:#686177}
+.account-person-error{color:#a22d48}
+.account-provisioning-form{display:grid;gap:18px;min-width:0}
+.account-provisioning-form .directory-form-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:4px}
+.account-provisioning-form .directory-form-actions button{white-space:normal;min-height:44px}
+.account-login-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.account-login-grid>label{display:grid;gap:8px;min-width:0}
+@media(max-width:380px){.account-person-grid,.account-login-grid{grid-template-columns:minmax(0,1fr)}.account-identity-options>label{flex:1 1 100%}}

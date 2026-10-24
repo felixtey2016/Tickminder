@@ -1,5 +1,6 @@
 import {t,registerTranslations} from './i18n';
 const entries:Record<string,[string,string]>={
+ 'action.googleLinkPromptSkipped':['跳过 Google 绑定引导','Skip Google linking guidance'],
  'action.updateOnlineLink':['修改网课链接','Update online lesson link'],'action.updateClassSessionLink':['修改整班网课链接','Update class session link'],
  'action.invoice.generate':['生成账单草稿','Generate invoice draft'],'action.invoice.refresh':['更新账单草稿依据','Refresh invoice sources'],'action.invoice.delete':['删除账单草稿','Delete draft invoice'],
  'action.invoice.finance.recordPayment':['登记收款并开收据','Record payment and receipt'],'action.invoice.finance.reversePayment':['撤销收款','Reverse payment'],'action.invoice.finance.refund':['登记退款','Record refund'],'action.invoice.finance.adjust':['调整账单金额','Adjust invoice amount'],'action.invoice.finance.void':['作废账单','Void invoice'],'action.invoice.finance.correctAttendance':['更正已开单考勤账务','Adjust invoiced attendance finance'],
