@@ -118,6 +118,8 @@ form input:not([type=checkbox]):not([type=radio]), form select, form textarea { 
 .lesson-actions, .portal-actions { gap: 12px; margin: 12px 0 0; }
 .lesson-more { z-index: 90; display: grid; gap: 8px; padding: 12px; width: min(300px,calc(100vw - 32px)); background: white; border-color: var(--ui-line); border-radius: 8px; }
 .lesson-more [data-slot="button"] { justify-content: flex-start; min-height: 44px; white-space: normal; }
+/* Nested actions own dialogs; hide the menu surface without unmounting those dialogs. */
+body:has([data-slot="dialog-overlay"]) .lesson-more { visibility: hidden; pointer-events: none; }
 .portal-card { padding: 20px; border-radius: 8px; margin-top: 16px; gap: 12px; }
 .portal-card > div:first-child strong { font-size: 18px; color: var(--ui-ink); }
 .portal-card .course-time { font-weight: 600; color: var(--ui-ink); }
