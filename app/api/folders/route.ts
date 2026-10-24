@@ -9,7 +9,7 @@ import { FolderError,folderTree,folderRevision,folderDescendants,validateFolderP
 import {readAcademicCatalogue} from "@/lib/academic-catalogue-server";
 import {findCatalogueSubject,findCatalogueSyllabus} from "@/lib/academic-catalogue";
 import {requireCorePermissions,rejectUnknownAdminAction,guardedCoreDb,guardedCoreChange} from '@/lib/admin-core-permissions';
-import {adminPermissionFailure} from '@/lib/admin-permission-access';
+import {adminPermissionFailure,hasAdminPermission} from '@/lib/admin-permission-access';
 
 const str=(value:unknown)=>typeof value==="string"?value.trim():"";
 function failure(error:unknown) {
@@ -100,11 +100,17 @@ export async function POST(request:Request) {
       const scoreHistory=await rows<{id:string}>(`SELECT id FROM homework_score_history WHERE homework_id IN (${hwMarks}) ORDER BY id`,hwList);
       const feedback=await rows<{id:string;fileId:string|null}>(`SELECT id,file_id AS fileId FROM homework_feedback WHERE homework_id IN (${hwMarks}) ORDER BY id`,hwList);
       const grants=await rows<{id:string}>(`SELECT id FROM homework_resubmission_grants WHERE homework_id IN (${hwMarks}) ORDER BY id`,hwList);
+      const resourceAssignments=await rows<{id:string;resourceId:string;revision:number;active:number}>(`SELECT id,resource_id AS resourceId,revision,active FROM resource_assignments WHERE group_id=? AND classroom_id=? AND folder_id IN (${marks}) ORDER BY id`,groupId,classroomId,folderList);
+      if(resourceAssignments.length) {
+        if(actor.role==='admin'&&(!await hasAdminPermission(actor,'resources.assign')||!await hasAdminPermission(actor,'folders.placeContent')))throw new FolderError("此文件夹包含资源分配，删除前需要资源分配及内容整理权限",403);
+        // Deleting a folder also revokes its placements. Keep that authority in the write transaction.
+        permissionKeys.push('resources.assign','folders.placeContent');
+      }
       // Include current record IDs as well as revision, so legacy recipient edits cannot hide impact.
-      const signature=JSON.stringify([actor.id,groupId,classroomId,id,revision,ids,materials,homework,submissions,scores,versionFiles,scoreHistory,feedback,grants]);
+      const signature=JSON.stringify([actor.id,groupId,classroomId,id,revision,ids,materials,homework,submissions,scores,versionFiles,scoreHistory,feedback,grants,resourceAssignments]);
       const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(signature));
       const token=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,"0")).join("");
-      const preview={name:folder.name,folders:ids.length-1,materials:materials.length,homework:homework.length,submissions:submissions.length,scores:scores.length,versions:versionFiles.length,scoreHistory:scoreHistory.length,feedback:feedback.length,grants:grants.length,revision,token};
+      const preview={name:folder.name,folders:ids.length-1,materials:materials.length,homework:homework.length,submissions:submissions.length,scores:scores.length,versions:versionFiles.length,scoreHistory:scoreHistory.length,feedback:feedback.length,grants:grants.length,resourceAssignments:resourceAssignments.length,revision,token};
       if(action==="previewDelete"){await requireCorePermissions(actor,permissionKeys);return NextResponse.json({preview});}
       ensureRevision();
       if(data.confirmed!==true || data.token!==token) throw new FolderError("删除范围已改变，请重新确认",409);

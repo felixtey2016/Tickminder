@@ -1,0 +1,4 @@
+import {NextResponse} from 'next/server';
+import {currentBusinessAccount} from '@/lib/auth';
+import {teachingStatistics,teachingStatisticsDetails,TeachingStatisticsError} from '@/lib/teaching-statistics-server';
+export async function GET(request:Request){const actor=await currentBusinessAccount(),headers={'Cache-Control':'private, no-store'};if(!actor)return NextResponse.json({error:'请先登录'},{status:401,headers});try{const params=new URL(request.url).searchParams;return NextResponse.json(await(params.get('view')==='details'?teachingStatisticsDetails(actor,params):teachingStatistics(actor,params)),{headers});}catch(error){return NextResponse.json({error:error instanceof TeachingStatisticsError?error.message:'教学统计暂时无法加载，请重试'},{status:error instanceof TeachingStatisticsError?error.status:503,headers});}}

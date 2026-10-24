@@ -1,0 +1,18 @@
+export type ResourceKind='link'|'file';
+export type ResourceType='directory'|'past_year'|'worksheet'|'original'|'reference';
+export type ResourceVisibility='private'|'pending'|'approved'|'rejected';
+export type ResourceLinkStatus='active'|'reported'|'invalid';
+export type ResourceEntry={id:string;groupId:string;ownerId:string;kind:ResourceKind;url:string|null;fileId?:string|null;title:string;description:string;syllabusId:string;syllabusName:string;subjectId:string|null;subjectName:string;year:number|null;paperCode:string;chapter:string;resourceType:ResourceType;sourceName:string;sourceUrl:string;licenseType:'official_link'|'permission'|'original';authorizationNote?:string;publicStatus:ResourceVisibility;moderationNote?:string;linkStatus:ResourceLinkStatus;revision:number;active:boolean;createdAt:string;updatedAt:string;canEdit:boolean;canDelete:boolean;canAssign:boolean;canShare:boolean;assignmentId?:string;assignmentRevision?:number;folderId?:string|null};
+export type ResourcePage={items:ResourceEntry[];page:number;pages:number;total:number;pageSize:20;canCreate:boolean;canModerate:boolean;canAssign:boolean;role:string};
+export type ResourceGuard={sql:string;args:unknown[]};
+export class ResourceError extends Error{constructor(message:string,readonly status=400){super(message);}}
+export const resourceText=(v:unknown)=>typeof v==='string'?v.trim():'';
+export function resourceId(v:unknown){const value=resourceText(v);if(!/^[A-Za-z0-9:_-]{1,200}$/.test(value))throw new ResourceError('resource.error.missing',404);return value;}
+export function resourcePage(v:unknown){const n=v===null||v===undefined||v===''?1:Number(v);if(!Number.isSafeInteger(n)||n<1||n>100000)throw new ResourceError('resource.error.page');return n;}
+export function resourceRevision(v:unknown){if(!Number.isSafeInteger(v)||Number(v)<1)throw new ResourceError('resource.error.changed',409);return Number(v);}
+export function resourceUrl(v:unknown){const value=resourceText(v);try{const url=new URL(value),host=url.hostname.toLowerCase();if(value.length>2048||url.protocol!=='https:'||url.username||url.password||url.port&&url.port!=='443'||!host.includes('.')||host==='localhost'||host.endsWith('.localhost')||host.endsWith('.local')||host.includes(':')||/^\d+(?:\.\d+){3}$/.test(host))throw Error();return url.href;}catch{throw new ResourceError('resource.error.url');}}
+export function resourceFields(data:Record<string,unknown>){
+ const title=resourceText(data.title),description=resourceText(data.description),syllabusId=resourceId(data.syllabusId),subjectId=resourceText(data.subjectId)||null,paperCode=resourceText(data.paperCode).toUpperCase(),chapter=resourceText(data.chapter),sourceName=resourceText(data.sourceName),authorizationNote=resourceText(data.authorizationNote),resourceType=resourceText(data.resourceType),licenseType=resourceText(data.licenseType),year=data.year===null||data.year===undefined||data.year===''?null:Number(data.year);
+ if(!title||title.length>200||description.length>3000||paperCode.length>80||chapter.length>200||!sourceName||sourceName.length>200||!authorizationNote||authorizationNote.length>2000||!['directory','past_year','worksheet','original','reference'].includes(resourceType)||!['official_link','permission','original'].includes(licenseType)||year!==null&&(!Number.isInteger(year)||year<1900||year>2100))throw new ResourceError('resource.error.fields');
+ return{title,description,syllabusId,subjectId,paperCode,chapter,sourceName,sourceUrl:resourceUrl(data.sourceUrl),authorizationNote,resourceType:resourceType as ResourceType,licenseType:licenseType as ResourceEntry['licenseType'],year};
+}

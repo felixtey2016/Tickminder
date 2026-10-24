@@ -1,0 +1,13 @@
+export type TeachingStatisticsFilters={month:string;teacher:string;subject:string;classroomId:string};
+export type TeachingStatisticsSchedule={scheduledMilliseconds:number;scheduledSessions:number;studentCount:number;subjectCount:number};
+export type TeachingStatisticsAttendance={completedMilliseconds:number;completedSessions:number;pendingMilliseconds:number;chargeableStudentMilliseconds:number;presentCount:number;absentCount:number;attendanceRate:number|null;absenceRate:number|null;makeupCount:number;makeupMilliseconds:number;activeTeacherCount:number};
+export type TeachingStatisticsHomework={publishedCount:number;recipientCount:number;dueRecipients:number;submittedCount:number;dueSubmittedCount:number;lateCount:number;missingCount:number;gradedCount:number;submissionRate:number|null;lateRate:number|null;missingRate:number|null;gradingRate:number|null};
+export type TeachingStatisticsMonth={month:string;schedule:TeachingStatisticsSchedule|null;attendance:TeachingStatisticsAttendance|null;homework:TeachingStatisticsHomework|null};
+export type TeachingStatisticsWorkload={teacher:string;scheduledMilliseconds:number;completedMilliseconds:number;pendingMilliseconds:number;completedSessions:number;studentCount:number};
+export type TeachingStatisticsMissing={student:string;streak:number;latestDueAt:string;homeworkId:string;title:string;classroomId:string|null};
+export type TeachingStatisticsPage<T>={items:T[];page:number;pages:number;total:number;pageSize:20};
+export type TeachingStatisticsMetric='scheduled'|'completed'|'pending'|'chargeable'|'present'|'absent'|'makeup'|'published'|'submitted'|'late'|'missing'|'graded';
+export type TeachingStatisticsDetailTarget={view:'schedule'|'attendance'|'makeup'|'homework';metric?:TeachingStatisticsMetric;month:string;teacher?:string;subject?:string;classroomId?:string;homeworkId?:string;student?:string};
+export type TeachingStatisticsDetailRow={id:string;sessionId?:string;homeworkId?:string;student?:string;teacher:string;subject:string;classroomId:string|null;title?:string;start:string;end:string|null;status:string;durationMilliseconds?:number};
+export type TeachingStatisticsDetailsPage=TeachingStatisticsPage<TeachingStatisticsDetailRow>;
+export type TeachingStatisticsState={filters:TeachingStatisticsFilters;role:'admin'|'teacher';capabilities:{schedule:boolean;attendance:boolean;homework:boolean};current:TeachingStatisticsMonth;previous:TeachingStatisticsMonth;trend:TeachingStatisticsMonth[];options:{teachers:string[];subjects:string[];classrooms:Array<{id:string;title:string}>};workload:TeachingStatisticsPage<TeachingStatisticsWorkload>|null;missing:TeachingStatisticsPage<TeachingStatisticsMissing>|null;generatedAt:string};

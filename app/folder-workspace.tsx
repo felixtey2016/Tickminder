@@ -8,12 +8,16 @@ import { Button } from "@/components/ui/button";
 import { Dialog,DialogContent,DialogTitle,DialogDescription } from "@/components/ui/dialog";
 import { groupFetch } from "@/lib/group-client";
 import { readApiJson,alertActionFailure,showActionToast } from "@/lib/action-feedback";
-import { t } from "@/lib/i18n";
+import { t,registerTranslations } from "@/lib/i18n";
+import {resourceLabel} from "@/lib/resource-catalog-client";
+import {ResourceFolderList} from "./resource-folder-list";
 import type { LearningState,Material,Homework } from "./learning-portal";
+
+registerTranslations({"此文件夹包含资源分配，删除前需要资源分配及内容整理权限":"此文件夹包含资源分配，删除前需要资源分配及内容整理权限"},{"此文件夹包含资源分配，删除前需要资源分配及内容整理权限":"Deleting this folder also removes resource assignments. Resource assignment and content placement permissions are required."});
 
 export type FolderClass = {id:string;title?:string;teacherName?:string;subject:string;members?:string[];archived?:number|boolean};
 type Node={id:string;parentId:string|null;name:string};
-type Preview={name:string;folders:number;materials:number;homework:number;submissions:number;scores:number;versions?:number;scoreHistory?:number;feedback?:number;grants?:number;revision:number;token:string};
+type Preview={name:string;folders:number;materials:number;homework:number;submissions:number;scores:number;versions?:number;scoreHistory?:number;feedback?:number;grants?:number;resourceAssignments?:number;revision:number;token:string};
 type Editor={action:"create"|"rename"|"move"|"delete"|"placeContent";id:string;name?:string;kind?:"material"|"homework"};
 async function send(body:Record<string,unknown>) {
   const response=await groupFetch("/api/folders",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body),cache:"no-store"});
@@ -62,7 +66,7 @@ export function FolderWorkspace({classroom,role,learning,view,onChanged,children
     setEditor(next);setName(next.name||"");setTarget(next.action==="create"?current:tree.find(f=>f.id===next.id)?.parentId||"");setPreview(null);setEditError("");
     setWorking(true);
     try {if(next.action==="delete") {const result=await send({action:"previewDelete",classroomId:classroom.id,id:next.id});setPreview(result.preview!);} else {const result=await load();if(!result)throw new Error(t("文件夹加载失败，请重试"));setEditorRevision(result.revision||0);}}
-    catch(e){setEditError(e instanceof Error?e.message:t("文件夹操作失败，请稍后重试"));} finally {setWorking(false);}
+    catch(e){setEditError(alertActionFailure(e,"文件夹操作失败，请稍后重试"));} finally {setWorking(false);}
   }
   async function save(event:React.FormEvent) {
     event.preventDefault();if(!editor || working) return;setWorking(true);setEditError("");
@@ -70,7 +74,7 @@ export function FolderWorkspace({classroom,role,learning,view,onChanged,children
       const result=await send({action:editor.action,classroomId:classroom.id,id:editor.id,name,parentId:target,folderId:target,kind:editor.kind,revision:editor.action==="delete"?preview?.revision:editorRevision,confirmed:editor.action==="delete",token:preview?.token});
       await load();await onChanged?.();setEditor(null);
       showActionToast("success",editor.action==="delete"?"文件夹已删除":"文件夹更改已保存");if(result.warning) showActionToast("error",result.warning);
-    } catch(e) {setEditError(e instanceof Error?e.message:t("文件夹操作失败，请稍后重试"));const fresh=await load();if(fresh)setEditorRevision(fresh.revision||0);if(editor.action==="delete")setPreview(null);} finally {setWorking(false);}
+    } catch(e) {setEditError(alertActionFailure(e,"文件夹操作失败，请稍后重试"));const fresh=await load();if(fresh)setEditorRevision(fresh.revision||0);if(editor.action==="delete")setPreview(null);} finally {setWorking(false);}
   }
   if(!canRead)return <div className="folder-learning-content">{children({...learning,materials,homework},"",materials)}</div>;
   if(!ready) return <section className="panel folder-status" role={error?"alert":"status"}><p>{error||t("正在加载文件夹…")}</p>{error && <Button variant="outline" onClick={()=>void load()}>{t("重试")}</Button>}</section>;
@@ -84,12 +88,12 @@ export function FolderWorkspace({classroom,role,learning,view,onChanged,children
       {!folders.length && !records.length && <p className="muted folder-empty-hint">{t("此位置没有子文件夹")}</p>}
       {canManage && can("folders.placeContent") && records.length>0 && <details className="folder-organize"><summary className="folder-organize-heading"><span>{t("整理本层内容")}</span><span className="learning-record-count">{records.length}</span></summary>{records.map(item=><div className="folder-content-row" key={item.id}><span>{item.title}</span><Button adminGrant="folders.placeContent" size="sm" variant="outline" onClick={()=>void openEditor({action:"placeContent",id:item.id,name:item.title,kind:view==="materials"?"material":"homework"})}>{t("移动到文件夹")}</Button></div>)}</details>}
     </section>
-    <div className="folder-learning-content">{children(filtered,current,materials)}</div>
-    <Dialog open={Boolean(editor)} onOpenChange={open=>{if(!open && !working)setEditor(null);}}><DialogContent className="folder-dialog"><DialogTitle>{t(editor?.action==="delete"?"删除文件夹":editor?.action==="create"?"新建文件夹":editor?.action==="rename"?"重命名":editor?.action==="placeContent"?"移动到文件夹":"移动文件夹")}</DialogTitle><DialogDescription>{editor?.action==="delete"?t("将永久删除此文件夹及其全部内容。共用 PDF 会保留，此操作无法恢复。"):editor?.name||t("按科目、章节或资料类型命名")}</DialogDescription>
+    <div className="folder-learning-content">{view==="materials"&&can("resources.view")&&<ResourceFolderList key={classroom.id+":"+current} classroomId={classroom.id} folderId={current} contentRevision={revision}/>}{children(filtered,current,materials)}</div>
+    <Dialog open={Boolean(editor)} onOpenChange={open=>{if(!open && !working)setEditor(null);}}><DialogContent className="folder-dialog"><DialogTitle>{t(editor?.action==="delete"?"删除文件夹":editor?.action==="create"?"新建文件夹":editor?.action==="rename"?"重命名":editor?.action==="placeContent"?"移动到文件夹":"移动文件夹")}</DialogTitle><DialogDescription>{editor?.action==="delete"?resourceLabel("将永久删除此文件夹及其内容，并移除本层和子文件夹的资源分配；原资源及共用 PDF 保留。此操作无法恢复。","This permanently deletes the folder and its contents and removes resource assignments in this folder and its subfolders. Original resources and shared PDFs are retained. This cannot be undone."):editor?.name||t("按科目、章节或资料类型命名")}</DialogDescription>
       <form className="learning-form" onSubmit={save}>
         {(editor?.action==="create" || editor?.action==="rename") && <label>{t("文件夹名称")}<input autoFocus required maxLength={80} value={name} onChange={e=>setName(e.target.value)}/></label>}
         {(editor?.action==="move" || editor?.action==="placeContent") && <label>{t("目标文件夹")}<select aria-label={t("目标文件夹")} value={target} onChange={e=>setTarget(e.target.value)}><option value="">{t("班级根目录")}</option>{tree.filter(f=>editor.action!=="move" || !descendant(tree,f.id,editor.id)).map(f=><option key={f.id} value={f.id}>{pathLabel(tree,f.id)}</option>)}</select></label>}
-        {editor?.action==="delete" && (preview?<><strong>{preview.name}</strong><dl className="folder-impact">{([["子文件夹",preview.folders],["教学资料",preview.materials],["功课",preview.homework],["学生提交",preview.submissions],["已录入分数",preview.scores],["内容历史版本",preview.versions||0],["历史评分记录",preview.scoreHistory||0],["老师批改反馈",preview.feedback||0],["重交授权记录",preview.grants||0]] as const).map(([label,count])=><div key={label}><dt>{t(label)}</dt><dd>{count}</dd></div>)}</dl></>:!editError?<p role="status">{t("正在读取删除范围…")}</p>:<Button type="button" variant="outline" onClick={()=>void openEditor(editor)}>{t("重新读取删除范围")}</Button>)}
+        {editor?.action==="delete" && (preview?<><strong>{preview.name}</strong><dl className="folder-impact">{([["子文件夹",preview.folders],["教学资料",preview.materials],[resourceLabel("移除资源分配（原资源保留）","Resource assignments removed (originals retained)"),preview.resourceAssignments||0],["功课",preview.homework],["学生提交",preview.submissions],["已录入分数",preview.scores],["内容历史版本",preview.versions||0],["历史评分记录",preview.scoreHistory||0],["老师批改反馈",preview.feedback||0],["重交授权记录",preview.grants||0]] as const).map(([label,count])=><div key={label}><dt>{t(label)}</dt><dd>{count}</dd></div>)}</dl></>:!editError?<p role="status">{t("正在读取删除范围…")}</p>:<Button type="button" variant="outline" onClick={()=>void openEditor(editor)}>{t("重新读取删除范围")}</Button>)}
         {editError && <p className="notice" role="alert">{editError}</p>}
         <div className="learning-card-actions"><Button type="button" variant="outline" disabled={working} onClick={()=>setEditor(null)}>{t("取消")}</Button><Button adminGrant={editor?.action==="delete"?"folders.delete":editor?.action==="create"?"folders.create":editor?.action==="placeContent"?"folders.placeContent":"folders.edit"} variant={editor?.action==="delete"?"destructive":"default"} disabled={working || (editor?.action==="delete" && !preview)}>{t(working?"处理中…":editor?.action==="delete"?"确认永久删除":"保存")}</Button></div>
       </form>

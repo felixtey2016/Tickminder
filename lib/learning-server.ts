@@ -6,6 +6,7 @@ import {groupReader,groupStatement} from "@/lib/group-data";
 import { env } from "cloudflare:workers";
 import type { Account } from "@/lib/auth";
 import { configuredBytes, DEFAULT_PDF_MAX_BYTES, displayPdfName } from "@/lib/learning";
+import {pdfReaderIdentity} from './pdf-read-access';
 
 type Row = Record<string, unknown>;
 
@@ -69,6 +70,12 @@ export async function studentHasMaterial(account: Account, materialId: string) {
 }
 
 export async function pdfMayRead(account: Account, fileId: string) {
+  const file=await authorizedPdf(account,fileId);
+  if(!file)return null;
+  const identity=pdfReaderIdentity(account);
+  return await learningDb().prepare(`SELECT 1 WHERE ${identity.sql}`).bind(...identity.args).first()?file:null;
+}
+async function authorizedPdf(account: Account, fileId: string) {
   const {first,rows}=groupReader(account.groupId);
   const file = await first<{ id: string; objectKey: string; filename: string; bytes: number; status: string; ownerId: string }>(`SELECT id, object_key AS objectKey, filename, bytes, status, owner_id AS ownerId FROM pdf_files WHERE id = ?`, fileId);
   if (!file || !["staged", "attached"].includes(file.status)) return null;
@@ -96,6 +103,13 @@ export async function pdfMayRead(account: Account, fileId: string) {
     if (material || homework || submission || historic || feedback) return file;
   }
   if (account.role === "teacher") {
+    // A catalog PDF can be owned by another teacher. Access here follows the
+    // teacher's own published content/version, never the bare file identifier.
+    const shared=await first(`SELECT 1 FROM teaching_materials m WHERE m.file_id=? AND m.owner_id=?
+      UNION ALL SELECT 1 FROM homework h WHERE h.attachment_file_id=? AND h.owner_id=?
+      UNION ALL SELECT 1 FROM learning_versions v JOIN teaching_materials m ON v.kind='material' AND m.id=v.record_id WHERE v.file_id=? AND m.owner_id=?
+      UNION ALL SELECT 1 FROM learning_versions v JOIN homework h ON v.kind='homework' AND h.id=v.record_id WHERE v.file_id=? AND h.owner_id=? LIMIT 1`,fileId,account.id,fileId,account.id,fileId,account.id,fileId,account.id);
+    if(shared)return file;
     const submission = await first(`SELECT 1 AS allowed FROM homework_submissions s JOIN homework h ON h.id = s.homework_id WHERE s.file_id = ? AND h.owner_id = ?`, fileId, account.id);
     if (submission) return file;
   }

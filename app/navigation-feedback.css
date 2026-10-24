@@ -5,3 +5,6 @@
 .workspace-backbar .workspace-back-button:focus-visible{outline:3px solid #9f8ade;outline-offset:3px}
 @media(max-width:650px){.workspace-backbar{margin-bottom:16px}.workspace-backbar .workspace-back-button{min-height:46px}}
 
+
+/* An opaque sticky row prevents underlying names and controls showing through. */
+.workspace-backbar{width:100%;background:var(--background,#f8f7fc);padding-block:4px;isolation:isolate}

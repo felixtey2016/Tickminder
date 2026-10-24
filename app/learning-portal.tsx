@@ -12,6 +12,7 @@ import { FolderWorkspace,LegacyOrganizer,useTeachingClasses,type FolderClass } f
 
 import {HomeworkReview} from "./homework-review";
 import { ContentActions, SubmissionVersion } from "./learning-content-actions";
+import {SharedFilePicker} from "./shared-file-picker";
 
 type TeachingOwner = { revision?:number;updatedAt?:string|null; ownerId?: string; teacherName?: string; classroomTitle?: string | null };
 export type Material = TeachingOwner & { id: string; title: string; description: string | null; fileId: string; filename: string; subject?: string; classroomId?: string | null; folderId?: string | null; recipients?: Array<{ studentName: string; subject: string }> };
@@ -99,6 +100,7 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
   const [materialStudents, setMaterialStudents] = useState<string[]>(classroom?.members || []);
   const [materialFile, setMaterialFile] = useState<File | null>(null);
   const [materialUploaded, setMaterialUploaded] = useState("");
+  const [materialSource,setMaterialSource]=useState("upload"),[materialResource,setMaterialResource]=useState("");
   const [homeworkTitle, setHomeworkTitle] = useState("");
   const [homeworkSubject, setHomeworkSubject] = useState(classroom?.subject || "");
   const [homeworkDescription, setHomeworkDescription] = useState("");
@@ -108,6 +110,7 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
   const [homeworkMaterial, setHomeworkMaterial] = useState("");
   const [homeworkFile, setHomeworkFile] = useState<File | null>(null);
   const [homeworkUploaded, setHomeworkUploaded] = useState("");
+  const [homeworkResource,setHomeworkResource]=useState(""),[homeworkResourceMode,setHomeworkResourceMode]=useState(false);
   const [scoreEnabled, setScoreEnabled] = useState(false);
   const [maxScore, setMaxScore] = useState("");
   const [working, setWorking] = useState(false);
@@ -118,21 +121,22 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
   async function saveMaterial(event: React.FormEvent) {
     event.preventDefault(); const form = event.currentTarget as HTMLFormElement; setWorking(true); setError("");
     try {
-      const fileId = materialId ? learning.materials.find(m => m.id === materialId)?.fileId || "" : materialUploaded || (materialFile ? await uploadPdf(materialFile, "material", undefined, pdfLimit(learning),classroom?.id) : "");
-      if (!fileId) throw new Error(t("请选择 PDF 文件"));
+      const fileId = materialSource==="resource"&&!materialId?"":materialId ? learning.materials.find(m => m.id === materialId)?.fileId || "" : materialUploaded || (materialFile ? await uploadPdf(materialFile, "material", undefined, pdfLimit(learning),classroom?.id) : "");
+      if (!fileId && !(materialSource==="resource"&&materialResource)) throw new Error(t("请选择 PDF 文件"));
       if (!materialId) setMaterialUploaded(fileId);
-      const ok = await mutate({ action: "saveMaterial", id: materialId, title: materialTitle, description: materialDescription, subject: materialSubject, students: materialStudents, fileId, classroomId: classroom?.id, folderId });
-      if (ok) { form.reset(); setMaterialId(""); setMaterialTitle(""); setMaterialDescription(""); setMaterialSubject(classroom?.subject || ""); setMaterialStudents(classroom?.members || []); setMaterialFile(null); setMaterialUploaded(""); materialInputKey[1](x => x + 1); }
+      const ok = await mutate({ action: "saveMaterial", id: materialId, title: materialTitle, description: materialDescription, subject: materialSubject, students: materialStudents, fileId, resourceId:materialSource==="resource"&&!materialId?materialResource:"", classroomId: classroom?.id, folderId });
+      if (ok) { form.reset(); setMaterialId(""); setMaterialTitle(""); setMaterialDescription(""); setMaterialSubject(classroom?.subject || ""); setMaterialStudents(classroom?.members || []); setMaterialFile(null); setMaterialUploaded(""); setMaterialResource("");setMaterialSource("upload"); materialInputKey[1](x => x + 1); }
     } catch (caught) { setError(alertActionFailure(caught)); }
     finally { setWorking(false); }
   }
   async function publishHomework(event: React.FormEvent) {
     event.preventDefault(); const form = event.currentTarget as HTMLFormElement; setWorking(true); setError("");
     try {
-      const fileId = homeworkMaterial ? "" : homeworkUploaded || (homeworkFile ? await uploadPdf(homeworkFile, "homework", undefined, pdfLimit(learning),classroom?.id) : "");
+      if(homeworkResourceMode&&!homeworkResource&&!homeworkMaterial)throw new Error(t("请选择集团共享 PDF"));
+      const fileId = homeworkMaterial || homeworkResource ? "" : homeworkUploaded || (homeworkFile ? await uploadPdf(homeworkFile, "homework", undefined, pdfLimit(learning),classroom?.id) : "");
       if (fileId) setHomeworkUploaded(fileId);
-      const ok = await mutate({ action: "publishHomework", title: homeworkTitle, subject: homeworkSubject, description: homeworkDescription, students: homeworkStudents, startsAt: homeworkStart, dueAt: homeworkDue, materialId: homeworkMaterial, fileId, scoreEnabled, maxScore, classroomId: classroom?.id, folderId });
-      if (ok) { form.reset(); setHomeworkTitle(""); setHomeworkSubject(classroom?.subject || ""); setHomeworkDescription(""); setHomeworkStudents(classroom?.members || []); setHomeworkStart(""); setHomeworkDue(""); setHomeworkMaterial(""); setHomeworkFile(null); setHomeworkUploaded(""); setScoreEnabled(false); setMaxScore(""); homeworkInputKey[1](x => x + 1); }
+      const ok = await mutate({ action: "publishHomework", title: homeworkTitle, subject: homeworkSubject, description: homeworkDescription, students: homeworkStudents, startsAt: homeworkStart, dueAt: homeworkDue, materialId: homeworkMaterial, fileId, resourceId:homeworkResource, scoreEnabled, maxScore, classroomId: classroom?.id, folderId });
+      if (ok) { form.reset(); setHomeworkTitle(""); setHomeworkSubject(classroom?.subject || ""); setHomeworkDescription(""); setHomeworkStudents(classroom?.members || []); setHomeworkStart(""); setHomeworkDue(""); setHomeworkMaterial("");setHomeworkResource("");setHomeworkResourceMode(false); setHomeworkFile(null); setHomeworkUploaded(""); setScoreEnabled(false); setMaxScore(""); homeworkInputKey[1](x => x + 1); }
     } catch (caught) { setError(alertActionFailure(caught)); }
     finally { setWorking(false); }
   }
@@ -150,9 +154,9 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
         <label>{t("说明（可选）")}<textarea maxLength={2000} value={materialDescription} onChange={e => setMaterialDescription(e.target.value)}/></label>
         </fieldset><fieldset className="learning-form-section"><legend>{t("分配对象")}</legend><label>{t("科目")}<select required disabled={Boolean(classroom)} value={materialSubject} onChange={e => { setMaterialSubject(e.target.value); setMaterialStudents([]); }}><option value="">{t("请选择")}</option>{subjects.map(subject => <option key={subject}>{subject}</option>)}</select></label>
         {classroom ? <p className="muted">{t("发布给班级所有学生")} · {classroom.members.length}</p> : <StudentChecks eligible={learning.eligible} subject={materialSubject} selected={materialStudents} onChange={setMaterialStudents}/>}
-        </fieldset><fieldset className="learning-form-section"><legend>{t("PDF 文件")}</legend>{!materialId && <label>{t("选择一份 PDF")} · {t("最多")} {maxPdfLabel(learning)}<input key={materialInputKey[0]} type="file" accept="application/pdf,.pdf" required={!materialUploaded} onChange={e => { setMaterialFile(e.target.files?.[0] || null); setMaterialUploaded(""); }}/></label>}
+        </fieldset><fieldset className="learning-form-section"><legend>{t("PDF 文件")}</legend>{!materialId && <><label>{t("PDF 来源")}<select value={materialSource} onChange={e=>{setMaterialSource(e.target.value);setMaterialFile(null);setMaterialUploaded("");setMaterialResource("");materialInputKey[1](x=>x+1);}}><option value="upload">{t("上传 PDF")}</option><option value="resource">{t("使用集团共享 PDF")}</option></select></label>{materialSource==="resource"?<SharedFilePicker value={materialResource} onChange={setMaterialResource} disabled={disabled}/>:<label>{t("选择一份 PDF")} · {t("最多")} {maxPdfLabel(learning)}<input key={materialInputKey[0]} type="file" accept="application/pdf,.pdf" required={!materialUploaded} onChange={e => { setMaterialFile(e.target.files?.[0] || null); setMaterialUploaded(""); }}/></label>}</>}
         {materialUploaded && <p className="muted">{t("PDF 已上传，尚未发布。保存资料后才会分配给学生。")}</p>}
-        </fieldset><div className="learning-action-row learning-form-actions"><Button disabled={disabled || !materialStudents.length || (!materialId && !materialFile && !materialUploaded)}><UploadCloud size={17}/>{materialId ? t("保存修改") : t("发布资料")}</Button>
+        </fieldset><div className="learning-action-row learning-form-actions"><Button disabled={disabled || !materialStudents.length || (!materialId && !(materialSource==="resource"?materialResource:materialFile||materialUploaded))}><UploadCloud size={17}/>{materialId ? t("保存修改") : t("发布资料")}</Button>
         {materialId && <Button type="button" variant="outline" onClick={() => { setMaterialId(""); setMaterialTitle(""); setMaterialDescription(""); setMaterialStudents(classroom?.members || []); setMaterialSubject(classroom?.subject || ""); }}>{t("取消编辑")}</Button>}</div>
       </form>
       {!readOnly && !legacyOnly && learning.materials.length>0 && <header className="learning-list-toolbar"><h3>{t("教学资料")}</h3><span className="learning-record-count">{learning.materials.length}</span></header>}
@@ -166,8 +170,8 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
         {classroom ? <p className="muted">{t("发布给班级所有学生")} · {classroom.members.length}</p> : <StudentChecks eligible={learning.eligible} subject={homeworkSubject} selected={homeworkStudents} onChange={setHomeworkStudents}/>}
         </fieldset><fieldset className="learning-form-section"><legend>{t("开始与截止时间")}</legend>
         <div className="form-pair"><label>{t("开始日期与时间")}<input type="datetime-local" required value={homeworkStart} onChange={e => { setHomeworkStart(e.target.value); if (!homeworkDue || homeworkDue < e.target.value) setHomeworkDue(e.target.value); }}/>{homeworkStart && <small className="date-value">{homeworkStart.replace("T", " ")}</small>}</label><label>{t("截止日期与时间")}<input type="datetime-local" required min={homeworkStart} value={homeworkDue} onChange={e => setHomeworkDue(e.target.value)}/>{homeworkDue && <small className="date-value">{homeworkDue.replace("T", " ")}</small>}</label></div><p className="muted">{t("马来西亚时间（GMT+8）")}</p></fieldset><fieldset className="learning-form-section"><legend>{t("附件与分数（可选）")}</legend>
-        <label>{t("已有教学资料（可选）")}<select value={homeworkMaterial} onChange={e => { setHomeworkMaterial(e.target.value); if (e.target.value) { setHomeworkFile(null); setHomeworkUploaded(""); homeworkInputKey[1](x => x + 1); } }}><option value="">{t("不附加已有资料")}</option>{(availableMaterials || learning.materials).filter(m => m.recipients?.some(r => r.subject === homeworkSubject) && (m.classroomId || null) === (classroom?.id || null)).map(m => <option key={m.id} value={m.id}>{m.title}</option>)}</select></label>
-        {!homeworkMaterial && <label>{t("或上传新 PDF（可选）")} · {t("最多")} {maxPdfLabel(learning)}<input key={homeworkInputKey[0]} type="file" accept="application/pdf,.pdf" onChange={e => { setHomeworkFile(e.target.files?.[0] || null); setHomeworkUploaded(""); }}/></label>}
+        <label>{t("已有教学资料（可选）")}<select value={homeworkMaterial} onChange={e => { setHomeworkMaterial(e.target.value);setHomeworkResource(""); if (e.target.value) { setHomeworkFile(null); setHomeworkUploaded(""); homeworkInputKey[1](x => x + 1); } }}><option value="">{t("不附加已有资料")}</option>{(availableMaterials || learning.materials).filter(m => m.recipients?.some(r => r.subject === homeworkSubject) && (m.classroomId || null) === (classroom?.id || null)).map(m => <option key={m.id} value={m.id}>{m.title}</option>)}</select></label>
+        {!homeworkMaterial && <><label className="learning-score-toggle"><input type="checkbox" checked={Boolean(homeworkResource)||homeworkResourceMode} onChange={e=>{setHomeworkResourceMode(e.target.checked);setHomeworkResource("");setHomeworkFile(null);setHomeworkUploaded("");homeworkInputKey[1](x=>x+1);}}/>{t("使用集团共享 PDF")}</label>{homeworkResourceMode?<SharedFilePicker value={homeworkResource} onChange={setHomeworkResource} disabled={disabled}/>:<label>{t("或上传新 PDF（可选）")} · {t("最多")} {maxPdfLabel(learning)}<input key={homeworkInputKey[0]} type="file" accept="application/pdf,.pdf" onChange={e => { setHomeworkFile(e.target.files?.[0] || null); setHomeworkUploaded(""); }}/></label>}</>}
         {homeworkUploaded && <p className="muted">{t("PDF 已上传，发布功课后学生才会看到")}</p>}
                 <label className="learning-score-toggle"><input type="checkbox" checked={scoreEnabled} onChange={event => { setScoreEnabled(event.target.checked); if (!event.target.checked) setMaxScore(""); }}/>{t("记录分数（适用于历年试题等）")}</label>
         {scoreEnabled && <label>{t("满分")}<input required type="number" min="0.01" max="10000" step="0.01" value={maxScore} onChange={event => setMaxScore(event.target.value)}/></label>}

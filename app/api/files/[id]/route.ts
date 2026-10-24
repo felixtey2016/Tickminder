@@ -23,6 +23,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     if (!file) return failure("文件不存在或无权访问", 404);
     const object = await pdfBucket().get(file.objectKey);
     if (!object) return failure("PDF 文件暂时不可用", 503);
+    // R2 yields to revocation/logout. Re-evaluate module permission, current
+    // recipients/classroom and the live session before returning any bytes.
+    if(!await pdfMayRead(actor,id))return failure("文件不存在或无权访问",404);
     const download = url.searchParams.get("download") === "1";
     return new Response(object.body, { headers: {
       "Content-Type": "application/pdf",

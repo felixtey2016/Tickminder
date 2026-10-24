@@ -7,6 +7,7 @@ import { groupFetch } from "@/lib/group-client";
 import { readApiJson, showActionToast } from "@/lib/action-feedback";
 import { getLanguage, t } from "@/lib/i18n";
 import { FileLinks, uploadPdf, type Material } from "./learning-portal";
+import {SharedFilePicker} from './shared-file-picker';
 
 type Snapshot={title:string;description:string|null;fileId:string|null;startsAt?:string;dueAt?:string;maxScore?:number|null;subject?:string};
 type RecordData=Snapshot & {id:string;revision:number;classroomId:string|null};
@@ -35,8 +36,9 @@ export function ContentActions({kind,id,editable=false,onChanged,maxBytes=10*102
   const [mode,setMode]=useState<"edit"|"history"|null>(null),[data,setData]=useState<HistoryData|null>(null),[ready,setReady]=useState(false),[error,setError]=useState(""),[working,setWorking]=useState(false),[conflict,setConflict]=useState(false),[latestVisible,setLatestVisible]=useState(false);
   const [draft,setDraft]=useState<RecordData|null>(null),[scoreEnabled,setScoreEnabled]=useState(false),[maxScore,setMaxScore]=useState(""),[attachment,setAttachment]=useState("keep"),[file,setFile]=useState<File|null>(null),[uploaded,setUploaded]=useState(""),[materialId,setMaterialId]=useState("");
   const [notifyStudents,setNotifyStudents]=useState(true);
+  const [resourceId,setResourceId]=useState('');
   const sequence=useRef(0),inFlight=useRef(false),saveOperation=useRef<{body:string;id:string}|null>(null);
-  function fill(record:RecordData){setDraft({...record,startsAt:record.startsAt?local(record.startsAt):undefined,dueAt:record.dueAt?local(record.dueAt):undefined});setScoreEnabled(record.maxScore!=null);setMaxScore(record.maxScore==null?"":String(record.maxScore));setAttachment("keep");setFile(null);setUploaded("");setMaterialId("");setConflict(false);setNotifyStudents(true);saveOperation.current=null;}
+  function fill(record:RecordData){setDraft({...record,startsAt:record.startsAt?local(record.startsAt):undefined,dueAt:record.dueAt?local(record.dueAt):undefined});setScoreEnabled(record.maxScore!=null);setMaxScore(record.maxScore==null?"":String(record.maxScore));setAttachment("keep");setFile(null);setUploaded("");setMaterialId("");setResourceId("");setConflict(false);setNotifyStudents(true);saveOperation.current=null;}
   async function load(nextMode:"edit"|"history",retainDraft=false){
     const requestId=++sequence.current;setMode(nextMode);setReady(false);setError("");
     try{
@@ -50,7 +52,8 @@ export function ContentActions({kind,id,editable=false,onChanged,maxBytes=10*102
     try{
       let fileId="";if(attachment==="upload"){if(!file && !uploaded)throw new Error(t("请选择 PDF 文件"));fileId=uploaded||await uploadPdf(file!,kind,undefined,maxBytes,draft.classroomId||undefined);setUploaded(fileId);}
       if(attachment==="material"&&!materialId)throw new Error(t("请选择教学资料"));
-      const body={...draft,kind,scoreEnabled,maxScore,fileId,materialId:attachment==="material"?materialId:"",removeAttachment:attachment==="remove",notifyStudents};
+      if(attachment==='resource'&&!resourceId)throw new Error(t('请选择集团共享 PDF'));
+      const body={...draft,kind,scoreEnabled,maxScore,fileId,resourceId:attachment==='resource'?resourceId:'',materialId:attachment==="material"?materialId:"",removeAttachment:attachment==="remove",notifyStudents};
       const fingerprint=JSON.stringify(body);if(saveOperation.current?.body!==fingerprint)saveOperation.current={body:fingerprint,id:crypto.randomUUID()};
       const response=await groupFetch(`/api/learning/versions?lang=${getLanguage()}`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...body,requestId:saveOperation.current.id}),cache:"no-store"});
       const result=await readApiJson<{error?:string}>(response);if(!response.ok){setConflict(response.status===409);throw new Error(t(result.error||"内容操作失败，请稍后重试"));}
@@ -66,8 +69,9 @@ export function ContentActions({kind,id,editable=false,onChanged,maxBytes=10*102
         <label>{t(kind==="homework"?"功课标题":"资料标题")}<input required maxLength={120} value={draft.title} onChange={event=>setDraft({...draft,title:event.target.value})}/></label>
         <label>{t(kind==="homework"?"完成要求（可选）":"说明（可选）")}<textarea maxLength={kind==="homework"?4000:2000} value={draft.description||""} onChange={event=>setDraft({...draft,description:event.target.value})}/></label>
         {kind==="homework"&&<><div className="form-pair"><label>{t("开始日期与时间")}<input type="datetime-local" aria-label={t("开始日期与时间")} required value={draft.startsAt||""} onChange={event=>setDraft({...draft,startsAt:event.target.value})}/><small>{draft.startsAt?.replace("T"," ")}</small></label><label>{t("截止日期与时间")}<input type="datetime-local" aria-label={t("截止日期与时间")} required min={draft.startsAt} value={draft.dueAt||""} onChange={event=>setDraft({...draft,dueAt:event.target.value})}/><small>{draft.dueAt?.replace("T"," ")}</small></label></div><small>{t("马来西亚时间（GMT+8）")}</small><p className="muted">{t("已有提交保留当时的迟交判断；新提交按新的截止日期判断。")}</p><label className="learning-score-toggle"><input type="checkbox" checked={scoreEnabled} onChange={event=>setScoreEnabled(event.target.checked)}/>{t("记录分数（适用于历年试题等）")}</label>{scoreEnabled&&<label>{t("满分")}<input type="number" required min="0.01" max="10000" step="0.01" value={maxScore} onChange={event=>setMaxScore(event.target.value)}/></label>}</>}
-        <label>{t("PDF 文件")}<select value={attachment} onChange={event=>{setAttachment(event.target.value);setFile(null);setUploaded("");}}><option value="keep">{t("保留当前附件")}</option>{draft.classroomId&&<option value="upload">{t("上传新 PDF 替换")}</option>}{kind==="homework"&&draft.classroomId&&available.length>0&&<option value="material">{t("使用已有教学资料")}</option>}{kind==="homework"&&draft.fileId&&<option value="remove">{t("移除当前附件（保留历史文件）")}</option>}</select></label>
+        <label>{t("PDF 文件")}<select value={attachment} onChange={event=>{setAttachment(event.target.value);setFile(null);setUploaded("");}}><option value="keep">{t("保留当前附件")}</option>{draft.classroomId&&<><option value="upload">{t("上传新 PDF 替换")}</option><option value="resource">{t("使用集团共享 PDF")}</option></>}{kind==="homework"&&draft.classroomId&&available.length>0&&<option value="material">{t("使用已有教学资料")}</option>}{kind==="homework"&&draft.fileId&&<option value="remove">{t("移除当前附件（保留历史文件）")}</option>}</select></label>
         {attachment==="upload"&&<label>{t("新的 PDF")} · {t("最多")} {Math.round(maxBytes/1048576)} MB<input type="file" required={!uploaded} accept="application/pdf,.pdf" onChange={event=>{setFile(event.target.files?.[0]||null);setUploaded("");}}/></label>}
+        {attachment==="resource"&&<SharedFilePicker value={resourceId} onChange={setResourceId} disabled={working}/>}
         {attachment==="material"&&<label>{t("教学资料")}<select required value={materialId} onChange={event=>setMaterialId(event.target.value)}><option value="">{t("请选择")}</option>{available.map(item=><option key={item.id} value={item.id}>{item.title}</option>)}</select></label>}
         {attachment==="keep"&&draft.fileId&&<FileLinks fileId={draft.fileId}/>}{!draft.classroomId&&<small>{t("请先将旧内容整理到有效班级，再替换 PDF")}</small>}
         {uploaded&&<small>{t("新 PDF 已上传，保存修改后才会替换当前附件。")}</small>}

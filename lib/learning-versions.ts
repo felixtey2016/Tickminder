@@ -6,6 +6,9 @@ import { learningDb, studentHasMaterial, studentHasHomework } from "./learning-s
 import { malaysiaInputToIso, STAGED_FILE_TTL_MS } from "./learning";
 import {operationId,operationHash} from "./learning-operations";
 import {learningNoticeStatement} from "./learning-notices";
+import {readResourceFile} from './resource-catalog-server';
+import {ResourceError} from './resource-catalog';
+import {pdfUploadAuthority} from './pdf-upload-access';
 
 export class LearningEditError extends Error {
   constructor(message: string, readonly status = 400) { super(message); }
@@ -65,7 +68,7 @@ export async function editPublishedContent(actor: Account, kind: ContentKind, da
   const groupId = requireGroup(actor.groupId), id = text(data.id), revision = requireRevision(data.revision);
   const record = await contentRecord(actor, kind, id, true);
   const requestId=data.requestId===undefined?crypto.randomUUID():operationId(data.requestId);
-  const requestHash=await operationHash([kind,id,revision,text(data.title),text(data.description),text(data.startsAt),text(data.dueAt),data.scoreEnabled===true,String(data.maxScore??""),text(data.fileId),text(data.materialId),data.removeAttachment===true,data.notifyStudents===true]);
+  const requestHash=await operationHash([kind,id,revision,text(data.title),text(data.description),text(data.startsAt),text(data.dueAt),data.scoreEnabled===true,String(data.maxScore??""),text(data.fileId),text(data.materialId),data.removeAttachment===true,data.notifyStudents===true,...(text(data.resourceId)?[text(data.resourceId)]:[])]);
   const previousOperation=await groupReader(groupId).first<{afterJson:string}>("SELECT after_json AS afterJson FROM audit WHERE id=? AND actor_id=? AND lesson_id=?","edit:"+requestId,actor.id,"learning:"+id);
   if(previousOperation){const saved=JSON.parse(previousOperation.afterJson);if(saved.requestHash!==requestHash)throw new LearningEditError("重复操作的内容不一致，请重新打开窗口",409);return {ok:true,id,revision:saved.revision,replayed:true};}
   if (record.revision !== revision) throw new LearningEditError("内容已有新版本。请查看最新版本，再重新打开编辑窗口。你的输入尚未保存。", 409);
@@ -73,14 +76,18 @@ export async function editPublishedContent(actor: Account, kind: ContentKind, da
   if (!title || title.length > 120 || description.length > (kind === "material" ? 2000 : 4000)) throw new LearningEditError("请填写有效的标题与内容");
   const { first } = groupReader(groupId);
   let fileId = record.fileId, staged = false;
-  const replacement = text(data.fileId), materialId = text(data.materialId);
-  if (replacement && materialId) throw new LearningEditError("请选择已有资料或新 PDF，不能同时选择");
+  const replacement = text(data.fileId), materialId = text(data.materialId),resourceId=text(data.resourceId);
+  let source:Awaited<ReturnType<typeof readResourceFile>>|null=null;
+  if ([replacement,materialId,resourceId].filter(Boolean).length>1) throw new LearningEditError("请选择一种 PDF 来源");
   if (data.removeAttachment === true) {
-    if (kind !== "homework" || replacement || materialId) throw new LearningEditError("附件选项无效");
+    if (kind !== "homework" || replacement || materialId || resourceId) throw new LearningEditError("附件选项无效");
     fileId = null;
-  } else if (replacement && replacement !== record.fileId || materialId) {
+  } else if (replacement && replacement !== record.fileId || materialId || resourceId) {
     if (!record.classroomId) throw new LearningEditError("请先将旧内容整理到有效班级，再替换 PDF", 409);
-    if (materialId) {
+    if(resourceId){
+      try{source=await readResourceFile(actor,resourceId);}catch(error){if(error instanceof ResourceError)throw new LearningEditError(error.message,error.status);throw error;}
+      fileId=source.fileId;
+    } else if (materialId) {
       if (kind !== "homework") throw new LearningEditError("附件选项无效");
       const material = await first<{fileId:string}>("SELECT file_id AS fileId FROM teaching_materials WHERE id=? AND owner_id=? AND classroom_id=?", materialId, actor.id, record.classroomId);
       if (!material) throw new LearningEditError("只能选择自己上传且属于当前班级的教学资料", 403);
@@ -110,8 +117,9 @@ export async function editPublishedContent(actor: Account, kind: ContentKind, da
   const after = {title,description,fileId,...(kind==="homework"?{startsAt,dueAt,maxScore}:{})};
   const changedFields=Object.keys(after).filter(key=>JSON.stringify(before[key as keyof typeof before] ?? null)!==JSON.stringify(after[key as keyof typeof after] ?? null));
   if (!changedFields.length) return {ok:true,id,revision,unchanged:true};
-  const update = db.prepare(`UPDATE ${table} SET title=?,description=?,${kind === "material" ? "file_id=?" : "attachment_file_id=?,starts_at=?,due_at=?,max_score=?"},revision=revision+1,updated_at=?,edit_token=? WHERE id=? AND group_id=? AND owner_id=? AND revision=? AND ${classGuard}`)
-    .bind(title,description|| (kind==="material"?null:""),fileId,...(kind==="homework"?[startsAt,dueAt,maxScore]:[]),now,token,id,groupId,actor.id,revision,actor.id,groupId,groupId,actor.teacherName);
+  const authority=record.classroomId?pdfUploadAuthority(actor,kind,{classroomId:record.classroomId,homeworkId:'',submissionId:''}):null;
+  const update = db.prepare(`UPDATE ${table} SET title=?,description=?,${kind === "material" ? "file_id=?" : "attachment_file_id=?,starts_at=?,due_at=?,max_score=?"},revision=revision+1,updated_at=?,edit_token=? WHERE id=? AND group_id=? AND owner_id=? AND revision=? AND ${classGuard}${authority?` AND (${authority.sql})`:''}${source?` AND (${source.scope.sql})`:''}`)
+    .bind(title,description|| (kind==="material"?null:""),fileId,...(kind==="homework"?[startsAt,dueAt,maxScore]:[]),now,token,id,groupId,actor.id,revision,actor.id,groupId,groupId,actor.teacherName,...(authority?.values||[]),...(source?.scope.args||[]));
   const claim=`EXISTS(SELECT 1 FROM ${table} WHERE id=? AND group_id=? AND edit_token=?)`,claimArgs=[id,groupId,token];
   try {
     const results=await db.batch([

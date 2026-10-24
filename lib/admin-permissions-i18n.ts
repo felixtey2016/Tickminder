@@ -243,7 +243,7 @@ const permissionCatalogueLabels: Record<string, [string, string]> = {
   "permissions.scope.invoices": ["按授权查看账单、维护草稿、正式开单，以及调整或作废正式账单。", "View invoices, maintain drafts, issue invoices, and adjust or void issued invoices according to the assigned permissions."],
   "permissions.scope.payments": ["查看本集团收款与收据，按授权登记收款、撤销误登记或记录退款；需要账单查看权限。", "View this group's payments and receipts, and record payments, reverse mistaken entries or record refunds as authorised. Invoice viewing access is required."],
   "permissions.scope.parents": ["查看本集团家长及孩子授权，按授权管理亲子关联和家长账号。账号操作还需对应账号权限。", "View this group’s parents and child authorisations. Managing links and parent accounts requires the corresponding parent and account permissions."],
-  "permissions.scope.resources": ["资源权限模块尚未接入，当前不可分配。", "Resource permissions are pending and cannot be assigned yet."],
+  "permissions.scope.resources": ["管理本集团资源目录与班级分配；公开链接须平台最高管理员审核，文件不公开共享。", "Manage this group’s resource catalogue and class placements. Public links require platform owner approval; files remain within their group."],
   "permissions.scope.progress": ["学习进度权限尚未接入，当前不可分配。", "Learning progress permissions are pending and cannot be assigned yet."],
   "permissions.scope.publicModeration": ["公开内容审核权限尚未接入，当前不可分配。", "Public moderation permissions are pending and cannot be assigned yet."],
   "permissions.scope.exports": ["下载获授权查看的财务 CSV。导出不会额外开放薪资、收款或支出的查看权限。", "Download CSV files for financial data the administrator may view. Export access does not grant payroll, payment or expense viewing."],

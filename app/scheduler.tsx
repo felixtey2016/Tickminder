@@ -37,6 +37,9 @@ import { useLessonWebMcp } from "./webmcp";
 import { monthlyAttendanceForPair } from "@/lib/lesson-rules";
 import { StudentPortal, TeacherPortal } from "./portals";
 import {TeachingResources} from "./teaching-resources";
+import type {TeachingStatisticsDetailTarget} from "@/lib/teaching-statistics-types";
+const TeachingStatistics=lazy(()=>import("./teaching-statistics").then(m=>({default:m.TeachingStatistics})));
+const TeachingStatisticsDetails=lazy(()=>import("./teaching-statistics-details").then(m=>({default:m.TeachingStatisticsDetails})));
 import { HomeDashboard } from "./home-dashboard";
 import type { LearningState } from "./learning-portal";
 const GroupConsole=lazy(()=>import("./group-console").then(m=>({default:m.GroupConsole})));
@@ -616,7 +619,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "homework", label: "功课总览", Icon: BookOpen },
         { id: "quizzes", label: "quiz.hubTitle", Icon: NotebookPen },
         { id: "materials", label: "教学资料", Icon: FileText },
-        { id: "overview", label: "课程总览", Icon: BarChart3 },
+        { id: "overview", label: "教学统计", Icon: BarChart3 },
         { id: "attention", label: "出席待处理", Icon: AlertCircle },
         { id: "schedule", label: "安排课程", Icon: SquarePen },
         { id: "calendar", label: "课程日历", Icon: CalendarDays },
@@ -639,7 +642,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "lessons", label: "课程与出席", Icon: CalendarDays },
         { id: "attendance", label: "出席记录", Icon: ListChecks },
         { id: "reschedule", label: "改期申请", Icon: ArrowLeftRight },
-        { id: "hours", label: "课时统计", Icon: Clock3 },
+        { id: "hours", label: "教学统计", Icon: Clock3 },
         { id: "students", label: "负责的学生与科目", Icon: ContactRound },
         { id: "materials", label: "教学资料", Icon: FileText },
         { id: "homework", label: "布置功课", Icon: BookOpen },
@@ -700,6 +703,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     const taskCount=badgeCounts.lessons+badgeCounts.reschedule+badgeCounts.attention;
     const [selectedView, setSelectedView] = useState(items[0].id);
     const [openInvoiceList,setOpenInvoiceList]=useState(false);
+    const [statisticsDetail,setStatisticsDetail]=useDialogState<TeachingStatisticsDetailTarget|null>("teaching-statistics-detail",null);
     const lastCourseView = useRef<string>(defaultCourseView(role) || "calendar");
     const lastManagementViews = useRef({ people: defaultManagementView('people'), settings: defaultManagementView('settings') });
     const currentViewRef=useRef(selectedView);currentViewRef.current=selectedView;
@@ -780,7 +784,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     }, [state?.account.id, state?.loadedScopes, state?.scopeErrors?.learning, requiredScope, scopeLoaded, scopeError, activeView, role, ensureScope]);
     const learning = state?.learning || { materials: [], homework: [], submissions: [], studyBlocks: [], eligible: [] };
     const learningReady = Boolean(state?.learning && (!state.loadedScopes || state.loadedScopes.includes("learning")));
-    const showMonth = (role === "student" && activeView === "list") || (role === "teacher" && ["hours","lessons","attendance"].includes(activeView)) || (role === "admin" && ["overview", "list"].includes(activeView));
+    const showMonth = (role === "student" && activeView === "list") || (role === "teacher" && ["lessons","attendance"].includes(activeView)) || (role === "admin" && activeView === "list");
     const closeMobileMenu = () => {
         if (desktop) return;
         if (window.history.state?.timelyoMenu) window.history.back();
@@ -829,7 +833,9 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     } else if (role === "admin") {
         if (activeView === "homework" || activeView === "materials") {
             pageContent = <AdminLearning key={activeView} learning={learning} view={activeView} onChanged={()=>ensureScope("learning",true)}/>;
-        } else if (["overview", "attention", "activity"].includes(activeView)) {
+        } else if (activeView === "overview") {
+            pageContent=<TeachingStatistics lang={language} onOpenDetail={setStatisticsDetail}/>;
+        } else if (["attention", "activity"].includes(activeView)) {
             pageContent = <AdminDashboard onOpenFinance={openAttendanceFinance} mutate={mutate} busy={busy} state={state} lessons={lessons} open={setModal} view={activeView as "overview" | "attention" | "activity"}/>;
         } else if (["schedule", "calendar", "list"].includes(activeView)) {
             pageContent = <Schedule onOpenFinance={openAttendanceFinance} calendarDate={calendarDate} onCalendarDateChange={setCalendarDate} onCalendarRangeChange={onCalendarRangeChange} calendarLoading={!calendarReady} state={state?{...state,month:selectedMonth}:state} lessons={activeView==="calendar"?calendarLessons:lessons} mutate={mutate} open={setModal} busy={busy} view={activeView === "schedule" ? "create" : activeView as "calendar" | "list"}/>;
@@ -857,15 +863,15 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
         } else if (["calendar", "lessons", "attendance", "students", "reschedule"].includes(activeView)) {
             pageContent = <TeacherPortal pendingAttendance={state?.taskCounts?.pendingAttendance} month={selectedMonth} calendarDate={calendarDate} onCalendarDateChange={setCalendarDate} onCalendarRangeChange={onCalendarRangeChange} calendarLoading={!calendarReady} attendanceSessions={calendarReady?state?.attendanceSessions:[]} onReschedule={() => choose("reschedule")} lessons={activeView==="calendar"?calendarLessons:lessons} plans={state?.plans || []} proposals={state?.proposals || []} classSessions={state?.classSessions||[]} classSessionRequests={state?.classSessionRequests||[]} mutate={mutate} busy={busy} view={activeView as "calendar" | "lessons" | "attendance" | "students" | "reschedule"}/>;
         } else if (activeView === "hours") {
-            pageContent = <StatsPanel state={state}/>;
+            pageContent = <TeachingStatistics lang={language} onOpenDetail={setStatisticsDetail}/>;
         } else {
             pageContent = <TeacherLearning learning={learning} mutate={learningMutate} busy={busy} view={activeView as "materials" | "homework"} onChanged={()=>ensureScope("learning",true)}/>;
         }
     }
-    if(["overview","hours"].includes(activeView)&&state?.month!==selectedMonth)pageContent=<PageState kind={state?.coreError?"error":"loading"} title={state?.coreError?"页面加载失败":"正在加载…"} description={state?.coreError} action={state?.coreError?"重试":undefined} onAction={()=>void reload()}/>;
+
     if(activeView==="calendar"&&!calendarReady&&state?.coreError)pageContent=<><PageState kind="error" title="页面加载失败" description={state.coreError} action="重试" onAction={()=>void reload()}/>{pageContent}</>;
     if(activeView === "materials" && role !== "pending") pageContent=<TeachingResources key={account.groupId} ready={learningReady} error={state?.scopeErrors?.learning} load={force=>ensureScope("learning",force)} setActiveScopes={setActiveScopes}>{pageContent}</TeachingResources>;
-    return <NotificationsProvider groupId={account.groupId || ""} key={`${account.id}:${role}:${account.groupId}`} accountId={account.id || ""} language={language}><div className="app-shell">
+    return <NotificationsProvider groupId={account.groupId || ""} key={`${account.id}:${role}:${account.groupId}`} accountId={account.id || ""} language={language}><div className="app-shell">{statisticsDetail&&(role==="admin"||role==="teacher")&&<Suspense fallback={<PageState kind="loading" title="正在加载…"/>}><TeachingStatisticsDetails key={account.groupId+permissionSignature} target={statisticsDetail} role={role} lang={language} mutate={mutate} busy={busy} close={()=>setStatisticsDetail(null)} onOpenFinance={openAttendanceFinance}/></Suspense>}
         <header className="topbar">
             <div className="brand"><BrandLogo small/><div><strong>{BRAND_NAME}</strong><span>{account.groupName || t("学习与协作平台")} · GMT+8</span></div></div>
             <div className="top-actions">

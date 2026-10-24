@@ -1,3 +1,4 @@
+import {sharedFileEn} from './shared-file-i18n';
 import {quizPart18Zh,quizPart18En} from './quiz-part18-i18n';
 import {quizComposeZh,quizComposeEn} from './quiz-compose-i18n';
 import {quizManagementEn,quizManagementZh} from './quiz-management-i18n';
@@ -20,6 +21,7 @@ export function getLanguage() { return currentLanguage; }
 
 const en: Record<string, string> = {
   "返回": "Back",
+  "教学统计": "Teaching statistics",
   "返回上一页": "Go back",
   "请检查必填内容": "Check the required fields.",
   "页面出现问题，请刷新后重试": "Something went wrong. Refresh the page and try again.",
@@ -1546,7 +1548,7 @@ Object.assign(en,{
   "Quiz 有待批改的提交":"Quiz submissions need marking",
   "查看 Quiz":"View Quiz",
   "暂无新通知。课程变更、功课更新、Quiz 安排和批改反馈会显示在这里。":"No new notifications. Lesson changes, homework updates, Quiz assignments and marking feedback will appear here.",
-},quizPart18En,quizComposeEn,quizEn,quizPracticeEn,quizManagementEn,academicEn,billingEn,adminHierarchyEn);Object.assign(zh,quizPart18Zh,quizComposeZh,quizZh,quizPracticeZh,quizManagementZh,academicZh,adminHierarchyZh);
+},quizPart18En,quizComposeEn,quizEn,quizPracticeEn,quizManagementEn,academicEn,billingEn,adminHierarchyEn,sharedFileEn);Object.assign(zh,quizPart18Zh,quizComposeZh,quizZh,quizPracticeZh,quizManagementZh,academicZh,adminHierarchyZh);
 // Optional feature chunks register their own labels only when opened.
 export function registerTranslations(zhEntries: Record<string, string>, enEntries: Record<string, string>) {
   Object.assign(zh, zhEntries);

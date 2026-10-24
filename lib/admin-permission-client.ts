@@ -12,13 +12,13 @@ export type AdminPermissionAccount = {
 export function canAdminAction(account: AdminPermissionAccount | null | undefined, key: AdminGrantKey): boolean {
   if (account?.role !== "admin") return true;
   const permissions = account.adminPermissions;
-  if (!permissions?.enforced && (key.startsWith("prepayments.")||key.startsWith("parents."))) return hasAdminGrant([key],key) && (account.isOwner === true || account.isGroupChief === true || permissions?.privileged === true || hasAdminGrant(permissions?.grants || [],key));
+  if (!permissions?.enforced && (key.startsWith("prepayments.")||key.startsWith("parents.")||key.startsWith("resources."))) return hasAdminGrant([key],key) && (account.isOwner === true || account.isGroupChief === true || permissions?.privileged === true || hasAdminGrant(permissions?.grants || [],key));
   if (!permissions?.enforced) return true;
   return hasAdminGrant(permissions.grants || [], key) || (permissions.privileged === true && hasAdminGrant([key], key));
 }
 
 const viewGrants: Record<string, AdminGrantKey[]> = {
-  classrooms: ["classrooms.view"], homework: ["homework.view"], materials: ["materials.view", "recordings.view"],
+  classrooms: ["classrooms.view"], homework: ["homework.view"], materials: ["materials.view", "recordings.view", "resources.view"],
   quizzes: ["quizzes.view", "quizAssignments.view"], quizBank: ["quizzes.view"],
   overview: ["statistics.view"], attention: ["attendance.view"], schedule: ["lessons.create"],
   calendar: ["lessons.view"], list: ["lessons.view"], students: ["lessons.view"], teachers: ["lessons.view"],

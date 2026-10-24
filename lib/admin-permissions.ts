@@ -16,6 +16,7 @@ const currentModules = [
   { id: "announcements", actions: ["view", "create", "edit", "delete"] },
   { id: "folders", actions: ["view", "create", "edit", "delete", "placeContent"] },
   { id: "materials", actions: ["view"] },
+  { id: "resources", actions: ["view", "create", "edit", "delete", "assign", "share"] },
   { id: "recordings", actions: ["view", "create", "edit", "delete"] },
   // Publishing, editing, feedback and scoring remain the owning teacher's work.
   { id: "homework", actions: ["view", "delete"] },
@@ -35,7 +36,7 @@ const currentModules = [
   { id: "exports", actions: ["view", "finance"] },
 ] as const;
 
-const reservedModules = ["resources", "progress", "publicModeration", "adminIdentity", "groups", "academicCatalogues", "backup"] as const;
+const reservedModules = [ "progress", "publicModeration", "adminIdentity", "groups", "academicCatalogues", "backup"] as const;
 type GrantOf<T> = T extends { id: infer I extends string; actions: readonly (infer A extends string)[] } ? `${I}.${A}` : never;
 export type AdminGrantKey = GrantOf<typeof currentModules[number]>;
 export type AdminPermissionModuleId = typeof currentModules[number]["id"] | typeof reservedModules[number];
@@ -49,6 +50,7 @@ const extraDependencies: Partial<Record<AdminGrantKey, AdminGrantKey[]>> = {
   "reschedules.view": ["lessons.view"],
   "announcements.view": ["classrooms.view"],
   "folders.view": ["classrooms.view"],
+  "resources.assign": ["folders.placeContent"],
   // Target selectors and content-specific checks are integrated in round 2;
   // assigning work must not grant the complete student profile, and placing
   // one content kind must not expose the other kind's learning records.

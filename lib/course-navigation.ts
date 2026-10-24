@@ -27,13 +27,13 @@ const COURSE_TABS: Record<NavigationRole, readonly CourseTab[]> = {
     { id: "list", label: "列表", views: ["list"], defaultView: "list" },
     { id: "timetable", label: "时间表", views: ["students", "teachers"], defaultView: "students" },
     { id: "attention", label: "出席待处理", views: ["attention"], defaultView: "attention" },
-    { id: "overview", label: "课程总览", views: ["overview"], defaultView: "overview" },
+    { id: "overview", label: "教学统计", views: ["overview"], defaultView: "overview" },
   ],
   teacher: [
     { id: "calendar", label: "course.nav.calendar", views: ["calendar"], defaultView: "calendar" },
     { id: "attendance", label: "课程与考勤", views: ["lessons", "attendance"], defaultView: "lessons" },
     { id: "reschedule", label: "改期申请", views: ["reschedule"], defaultView: "reschedule" },
-    { id: "hours", label: "课时统计", views: ["hours"], defaultView: "hours" },
+    { id: "hours", label: "教学统计", views: ["hours"], defaultView: "hours" },
   ],
   student: [
     { id: "calendar", label: "course.nav.calendar", views: ["calendar"], defaultView: "calendar" },

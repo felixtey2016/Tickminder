@@ -1,0 +1,14 @@
+.resource-folder-list { display:grid;gap:16px;min-width:0;margin-block:0 24px; }
+.resource-folder-heading { display:flex;align-items:center;flex-wrap:wrap;gap:12px; }
+.resource-folder-heading h3 { margin:0;line-height:1.5; }
+.resource-folder-list p { margin:0;white-space:pre-wrap;overflow-wrap:anywhere; }
+.resource-folder-cards { display:grid;gap:16px;min-width:0; }
+.resource-folder-card { display:grid;gap:12px;min-width:0;padding:16px;border:1px solid var(--border);border-radius:8px; }
+.resource-folder-card strong { overflow-wrap:anywhere; }
+.resource-folder-source { display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;font-size:13px;min-width:0; }
+.resource-folder-source span { min-width:0;overflow-wrap:anywhere; }
+.resource-folder-source a,.resource-folder-open { display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;max-width:100%;white-space:normal;overflow-wrap:anywhere; }
+.resource-folder-open { padding:8px 12px;border:1px solid var(--border);border-radius:6px;text-decoration:none; }
+.resource-folder-list button { min-height:44px;height:auto;max-width:100%;white-space:normal; }
+.resource-folder-pagination { display:flex;align-items:center;flex-wrap:wrap;gap:12px; }
+.resource-folder-pagination span { overflow-wrap:anywhere; }
