@@ -14,6 +14,7 @@ import {requireCorePermissions,guardedCoreDb} from '@/lib/admin-core-permissions
 import {adminPermissionFailure,AdminPermissionDenied,adminPermissionsEnforced} from '@/lib/admin-permission-access';
 import {cancelledStudentDeletion,CancelledStudentDeletionError} from '@/lib/cancelled-student-deletion';
 import {classroomDeletion,ClassroomDeletionError} from '@/lib/classroom-deletion';
+import {d1ReadBatch,type D1BatchRead} from '@/lib/d1-read-batch';
 
 
 class DeleteError extends Error { constructor(message: string, public status = 409) { super(message); } }
@@ -34,8 +35,10 @@ const planFinancialHistory=`SELECT 1 AS found FROM plans p JOIN students s ON s.
  OR EXISTS(SELECT 1 FROM billing_adjustments a WHERE a.group_id=b.group_id AND a.student_id=b.id AND (
  substr(a.line_id,1,length('monthly:'||b.id||':'||bs.subject_key||':'))='monthly:'||b.id||':'||bs.subject_key||':'
  OR EXISTS(SELECT 1 FROM lessons l WHERE l.group_id=p.group_id AND l.student=p.student AND a.line_id='lesson:'||l.id AND ${planSubjectLabelSql('p','s','l.subject')})))) LIMIT 1`;
-async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof currentAccount>>>, kind: string, id: string,selectedClasses:string[] = []) {
-    const groupId=requireGroup(actor.groupId); const {first,rows}=groupReader(groupId);
+async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof currentAccount>>>, kind: string, id: string,selectedClasses:string[] = [],read?:D1BatchRead) {
+    const groupId=requireGroup(actor.groupId),reader=groupReader(groupId);
+    async function rows<T extends Record<string,unknown> = Record<string,unknown>>(query:string,...values:unknown[]):Promise<T[]>{return read?((await read(groupStatement(groupId,query).bind(...values))).results||[]) as T[]:reader.rows<T>(query,...values);}
+    async function first<T extends Record<string,unknown> = Record<string,unknown>>(query:string,...values:unknown[]):Promise<T|null>{return(await rows<T>(query,...values))[0]||null;}
     if (!id || !["account", "teacher", "student", "plan", "lesson", "classroom", "homework"].includes(kind)) throw new DeleteError("请求格式无效", 400);
     if (actor.role !== "admin" && !(actor.role === "teacher" && ["classroom", "homework"].includes(kind))) throw new DeleteError("没有权限执行此操作", 403);
     await requireCorePermissions(actor,[deletionPermission[kind]]);
@@ -120,7 +123,7 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
       statements.push(db.prepare("DELETE FROM homework WHERE (id = ?) AND group_id = ?").bind(id,groupId));
     } else {
       if (!await classroomMayManage(actor, id)) throw new DeleteError("班级不存在或无权修改", 404);
-      const cascade=await classroomDeletion(actor,groupId,id,selectedClasses.length?selectedClasses:[id],(sql,...params)=>db.prepare(sql).bind(...params));
+      const cascade=await classroomDeletion(actor,groupId,id,selectedClasses.length?selectedClasses:[id],(sql,...params)=>db.prepare(sql).bind(...params),read);
       statements.push(...cascade.statements);checks.push(...cascade.guards);watches.push(...cascade.watches);extraSnapshots.push(...cascade.extraSnapshots);requiredPermissions.push(...cascade.permissions);
       const fileRows = await rows<{ fileId: string }>("SELECT file_id AS fileId FROM teaching_materials WHERE classroom_id = ? UNION SELECT attachment_file_id AS fileId FROM homework WHERE classroom_id = ? AND attachment_file_id IS NOT NULL UNION SELECT s.file_id AS fileId FROM homework_submissions s JOIN homework h ON h.id = s.homework_id WHERE h.classroom_id = ?", id, id, id);
       files.push(...fileRows.map(f => f.fileId));
@@ -141,22 +144,25 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
     }
 
     const snapshots: Snapshot[] = [...extraSnapshots];
-    for (const op of operations) {
+    const inspected=await Promise.all(operations.map(async op => {
       const deleted = op.sql.match(/^DELETE FROM (\w+) WHERE ([\s\S]+)$/);
       const updated = op.sql.match(/^UPDATE (\w+) SET homework_id = NULL WHERE ([\s\S]+)$/);
       const match = deleted || updated;
       if (match) {
         const records=await rows<Record<string, unknown>>('SELECT * FROM '+match[1]+' WHERE '+match[2], ...op.params);
-        snapshots.push({table:match[1],records});
         if(kind==='classroom'){
           const fields=Object.keys(records[0]||{}).sort();
           const source='SELECT * FROM '+match[1]+' WHERE '+match[2]+(fields.length?' ORDER BY '+fields.map(f=>'"'+f+'"').join(','):'');
           const query=fields.length?`SELECT coalesce(json_group_array(json_object(${fields.map(f=>"'"+f+"',source.\""+f+'\"').join(',')})),'[]') value FROM (${source}) source`:`SELECT CAST(count(*) AS TEXT) value FROM (${source})`;
-          const value=(await groupStatement(groupId,query).bind(...op.params).first<{value:string}>())?.value||'0';
-          checks.push(groupStatement(groupId,`SELECT CASE WHEN (${query})=? THEN 1 ELSE json_extract('[]','$[classroom_delete_changed') END`).bind(...op.params,value));
+          const value=(await first<{value:string}>(query,...op.params))?.value||'0';
+          if(!fields.length&&value!=='0')throw new DeleteError('记录已更新，请重新预览后确认删除');
+          return{snapshot:{table:match[1],records:fields.length?JSON.parse(value) as Record<string,unknown>[]:[]},check:groupStatement(groupId,`SELECT CASE WHEN (${query})=? THEN 1 ELSE json_extract('[]','$[classroom_delete_changed') END`).bind(...op.params,value)};
         }
+        return{snapshot:{table:match[1],records},check:null};
       }
-    }
+      return null;
+    }));
+    for(const item of inspected)if(item){snapshots.push(item.snapshot);if(item.check)checks.push(item.check);}
     const primary = snapshots.find(s => s.table === ({account:'accounts',teacher:'teachers',student:'students',plan:'plans',lesson:'lessons',homework:'homework',classroom:'classrooms'} as Record<string,string>)[kind])?.records[0];
     const label = primary ? String(primary.title || primary.name || (primary.student ? String(primary.student)+' · '+String(primary.subject) : id)) : id;
     const effects = snapshots.map(s => ({table: s.table, count: s.records.length, retained: s.table === 'study_blocks' && kind !== 'account',action:s.action})).filter(s=>s.count);
@@ -186,9 +192,12 @@ export async function POST(request: Request) {
     const entries = (Array.isArray(data.entries) ? data.entries : [{kind:data.kind,id:data.id}]) as Entry[];
     if (!entries.length || entries.length > 50 || entries.some(e=>!e || typeof e.kind !== 'string' || typeof e.id !== 'string') || new Set(entries.map(e=>e.kind+':'+e.id)).size !== entries.length || new Set(entries.map(e=>e.kind)).size !== 1) throw new DeleteError("请选择 1 至 50 条同类记录",400);
     const plans: Array<Awaited<ReturnType<typeof planDeletion>>> = [], blocked: Array<{kind:string;id:string;error:string}> = [];
-    for (const entry of entries) {
-      try { plans.push(await planDeletion(actor,entry.kind,entry.id,entries.filter(e=>e.kind==='classroom').map(e=>e.id))); }
-      catch (e) { if (!preview) throw e; if (!(e instanceof DeleteError) && !(e instanceof ClassroomDeletionError) && !(e instanceof CancelledStudentDeletionError) && !(e instanceof AdminAuthorityError) && !(e instanceof AdminPermissionDenied)) throw e; blocked.push({...entry,error:e.message}); }
+    const read=d1ReadBatch(learningDb()),selectedClasses=entries.filter(e=>e.kind==='classroom').map(e=>e.id);
+    for(let start=0;start<entries.length;start+=4){
+      const wave=entries.slice(start,start+4),results=await Promise.allSettled(wave.map(entry=>planDeletion(actor,entry.kind,entry.id,selectedClasses,read)));
+      for(let i=0;i<results.length;i++){const result=results[i],entry=wave[i];if(result.status==='fulfilled'){plans.push(result.value);continue;}
+       const e=result.reason;if(!preview)throw e;if(!(e instanceof DeleteError)&&!(e instanceof ClassroomDeletionError)&&!(e instanceof CancelledStudentDeletionError)&&!(e instanceof AdminAuthorityError)&&!(e instanceof AdminPermissionDenied))throw e;blocked.push({...entry,error:e.message});
+      }
     }
     const previewAt = preview ? new Date().toISOString() : String(data.previewAt || '');
     if (preview) return NextResponse.json({ok:true,items:plans.map(p=>p.summary),blocked,previewAt,fingerprint:await proof(actor.id,plans,previewAt)});
@@ -204,8 +213,9 @@ export async function POST(request: Request) {
       statements.push(appendAudit(db,{groupId,lessonId:entry.kind+':'+entry.id,actorId:actor.id,actorName:actor.name,objectName:label,action:'permanentDelete',before:account?{id:account.id,name:account.name,role:account.role,disabledAt:account.disabled_at}:null,after:entry}));
     }
     await db.batch(statements);
-    let cleanupPending=false;
-    for (const file of new Set(plans.flatMap(p=>p.files))) {try {await deleteUnreferencedFile(file);} catch {cleanupPending=true;}}
+    // Keep post-commit storage work bounded; later uploads retry unreferenced files.
+    const files=[...new Set(plans.flatMap(p=>p.files))];let cleanupPending=files.length>1;
+    for (const file of files.slice(0,1)) {try {await deleteUnreferencedFile(file);} catch {cleanupPending=true;}}
     return NextResponse.json({ok:true,deletedCount:entries.length,warning:cleanupPending?"记录已删除，部分文件清理尚未完成，请联系管理员":undefined});
   } catch (e) {if(e instanceof ClassroomDeletionError||e instanceof CancelledStudentDeletionError)return NextResponse.json({error:e.message},{status:e.status});if(e instanceof Error&&/student_delete_changed|classroom_delete_changed/.test(e.message))return NextResponse.json({error:'记录已更新，请重新预览后确认删除',status:409},{status:409});if(isInvoiceLocked(e))return NextResponse.json({error:invoiceLockedMessage},{status:409});const permissionFailure=adminPermissionFailure(e);if(permissionFailure)return NextResponse.json({error:permissionFailure.error},{status:permissionFailure.status});if(e instanceof AdminAuthorityError)return NextResponse.json({error:e.message},{status:e.status});if(isAdminAuthorityFailure(e))return NextResponse.json({error:'admin.authorityChanged'},{status:409});if(isClassroomCoverageFailure(e))return NextResponse.json({error:classroomRequiredMessage},{status:409});if(e instanceof Error&&/financial history/i.test(e.message))return NextResponse.json({error:financialHistoryMessage},{status:409});return NextResponse.json({error:e instanceof DeleteError?e.message:"删除未能确认，请刷新列表后再试"},{status:e instanceof DeleteError?e.status:503});}
 }

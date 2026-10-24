@@ -1,6 +1,6 @@
+"use client";
 import {SessionAttendanceBoard,SessionAttendanceDialog,SessionAttendanceLoaderDialog,TeachingHoursPanel} from "./session-attendance";
 import type {AttendanceSession} from "@/lib/attendance-types";
-"use client";
 import '@/lib/finance-round2-i18n';
 import '@/lib/parents-i18n';
 import {GroupSessionPlanner,GroupSessionBoard,type GroupSession,type GroupSessionRequest} from "./class-session-schedule";
@@ -447,7 +447,7 @@ export function Scheduler() {
         showActionToast("success", result.deletedCount ? t("记录已永久删除") + ` · ${result.deletedCount}` : result.count ? (language === "zh" ? `已更新 ${result.count} 堂课` : `Updated ${result.count} lessons`) : actionSuccessText(String(body.action || "")));
         setModal(null);
         await reload();
-        if (result.warning) showActionToast("error", result.warning);
+        if (result.warning) showActionToast(body.action==='permanentDelete'?"success":"error", result.warning);
         return true;
     }
     catch (e) {

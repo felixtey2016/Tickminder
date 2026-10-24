@@ -12,7 +12,7 @@ const prepare = sql => ({ bind(...values) { return {
   first: async () => db.prepare(sql).get(...values) || null,
   all: async () => ({ results: db.prepare(sql).all(...values) }),
   run: async () => ({ meta: db.prepare(sql).run(...values) }),
-  execute: () => db.prepare(sql).run(...values),
+  execute: () => {const query=db.prepare(sql);return query.columns().length?{results:query.all(...values),meta:{changes:0}}:{results:[],meta:query.run(...values)};},
 }; } });
 const d1 = { prepare, async batch(statements) { db.exec('BEGIN'); try { const results = statements.map(s => s.execute()); db.exec('COMMIT'); return results; } catch (e) { db.exec('ROLLBACK'); throw e; } } };
 let actor;
