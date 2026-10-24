@@ -1,6 +1,6 @@
 "use client";
 import {lazy,Suspense,useEffect,useRef,useState} from 'react';
-import {BarChart3,Bell,BookOpen,CalendarDays,ClipboardCheck,LibraryBig,LogOut,Menu,UserRound,WalletCards,X,type LucideIcon} from 'lucide-react';
+import {BarChart3,Bell,BookOpen,CalendarDays,House,LibraryBig,LogOut,Menu,UserRound,WalletCards,X,type LucideIcon} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {FloatingBackButton} from '@/components/floating-back-button';
 import {LegalLinks} from '@/components/legal-links';
@@ -9,21 +9,23 @@ import {t,type Language} from '@/lib/i18n';
 import {BRAND_NAME} from '@/lib/brand';
 import {PNav} from '@/lib/parent-nav-i18n';
 import type {ParentWorkspaceView} from '@/lib/parent-navigation';
+import type {ParentWorkspaceTarget} from '@/lib/parent-workspace-ui';
 import './parent-shell.css';
 import '@/lib/parent30-i18n';
 import {MenuBadge,NotificationsProvider} from './notifications';
 import type {ParentNoticeNavigation} from './parent-notifications-pane';
 
 const ParentsWorkspace=lazy(()=>import('./parents-workspace'));
+const ParentHome=lazy(()=>import('./parent-home'));
 const ParentNotificationsPane=lazy(()=>import('./parent-notifications-pane'));
 const AccountSettings=lazy(()=>import('./account-settings').then(m=>({default:m.AccountSettings})));
 
 type ParentIdentity={id?:string;name:string;groupId?:string|null;groupName?:string|null};
 type ParentShellProps={account:ParentIdentity;language:Language;changeLanguage:(value:Language)=>void;logout:()=>void;refreshIdentity:()=>Promise<void>};
-type ParentShellView=ParentWorkspaceView|'account'|'notifications';
+type ParentShellView=ParentWorkspaceView|'home'|'account'|'notifications';
 const menuItems:Array<{view:ParentShellView;Icon:LucideIcon}>=[
+  {view:'home',Icon:House},
   {view:'calendar',Icon:CalendarDays},
-  {view:'attendance',Icon:ClipboardCheck},
   {view:'homework',Icon:BookOpen},
   {view:'materials',Icon:LibraryBig},
   {view:'learning',Icon:BarChart3},
@@ -31,8 +33,8 @@ const menuItems:Array<{view:ParentShellView;Icon:LucideIcon}>=[
   {view:'notifications',Icon:Bell},
   {view:'account',Icon:UserRound},
 ];
-const shellViews=new Set<string>([...menuItems.map(item=>item.view),'lessons','recordings']);
-function moduleFor(view:ParentShellView){return view==='calendar'||view==='lessons'?'calendar':view==='recordings'?'materials':view;}
+const shellViews=new Set<string>([...menuItems.map(item=>item.view),'lessons','attendance','recordings']);
+function moduleFor(view:ParentShellView){return view==='calendar'||view==='lessons'||view==='attendance'?'calendar':view==='recordings'?'materials':view;}
 
 export default function ParentShell(props:ParentShellProps){
   return <NotificationsProvider key={props.account.id+':'+props.account.groupId} accountId={props.account.id||''} groupId={props.account.groupId||''} language={props.language} audience="parent"><ParentShellContent {...props}/></NotificationsProvider>;
@@ -40,9 +42,10 @@ export default function ParentShell(props:ParentShellProps){
 
 function ParentShellContent({account,language,changeLanguage,logout,refreshIdentity}:ParentShellProps){
   const shellRef=useRef<HTMLDivElement>(null),headerRef=useRef<HTMLElement>(null),menuRef=useRef<HTMLElement>(null),menuButtonRef=useRef<HTMLButtonElement>(null);
-  const [storedView,setView]=usePageHistoryState<ParentShellView>('parent.shell.view','calendar');
-  const view=shellViews.has(storedView)?storedView:'calendar';
+  const [storedView,setView]=usePageHistoryState<ParentShellView>('parent.shell.view','home');
+  const view=shellViews.has(storedView)?storedView:'home';
   const [navigation,setNavigation]=useState<ParentNoticeNavigation|null>(null),[pendingNotice,setPendingNotice]=useState('');
+  const [target,setTarget]=useState<ParentWorkspaceTarget|null>(null);
   const [desktop,setDesktop]=useState(false),[menuOpen,setMenuOpen]=useState(false);
 
   useEffect(()=>{
@@ -99,10 +102,14 @@ function ParentShellContent({account,language,changeLanguage,logout,refreshIdent
 
   function choose(next:ParentShellView){
     if(moduleFor(next)!==moduleFor(view))setNavigation(null);
+    setTarget(null);
     setPendingNotice('');setView(next);setMenuOpen(false);
     if(next!==view)window.scrollTo(0,0);
   }
-  const workspaceView:ParentWorkspaceView=view==='account'||view==='notifications'?'calendar':view;
+  function openWorkspace(next:Omit<ParentWorkspaceTarget,'targetId'>){
+    setNavigation(null);setPendingNotice('');setTarget({...next,targetId:crypto.randomUUID()});setView(next.view);setMenuOpen(false);window.scrollTo(0,0);
+  }
+  const workspaceView:ParentWorkspaceView=view==='home'||view==='account'||view==='notifications'?'calendar':view;
   const drawerOpen=menuOpen&&!desktop;
 
   return <div ref={shellRef} className="app-shell parent-shell">
@@ -121,10 +128,10 @@ function ParentShellContent({account,language,changeLanguage,logout,refreshIdent
         <div className="menu-utilities"><button type="button" className="menu-link" onClick={logout}><LogOut size={19} aria-hidden="true"/><span>{PNav('logout')}</span></button><LegalLinks language={language} className="menu-legal"/></div>
       </aside>}
       <main className="parent-shell-main" inert={drawerOpen?true:undefined}>
-        <FloatingBackButton context={account.id+':parent:'+account.groupId} isHome={view==='calendar'} onHome={()=>choose('calendar')}/>
+        <FloatingBackButton context={account.id+':parent:'+account.groupId} isHome={view==='home'} onHome={()=>choose('home')}/>
         {view==='account'&&<div className="page-head parent-page-head"><h1>{PNav(view)}</h1></div>}
         <Suspense fallback={<p role="status">{t('正在加载…')}</p>}>
-          {view==='account'?<AccountSettings/>:view==='notifications'?<ParentNotificationsPane onOpen={target=>{setNavigation(target);setView(target.kind==='invoice'?'finance':'lessons');}} pendingNotice={pendingNotice} onPendingHandled={()=>setPendingNotice('')} onAuthorityLost={()=>void refreshIdentity()}/>:<ParentsWorkspace key={account.id+':'+account.groupId} view={workspaceView} onViewChange={next=>setView(next)} navigation={navigation} onAuthorityLost={()=>void refreshIdentity()}/>}
+          {view==='home'?<ParentHome name={account.name} onOpen={openWorkspace} onNotifications={()=>choose('notifications')} onAuthorityLost={()=>void refreshIdentity()}/>:view==='account'?<AccountSettings/>:view==='notifications'?<ParentNotificationsPane onOpen={next=>{setTarget(null);setNavigation(next);setView(next.kind==='invoice'?'finance':'lessons');}} pendingNotice={pendingNotice} onPendingHandled={()=>setPendingNotice('')} onAuthorityLost={()=>void refreshIdentity()}/>:<ParentsWorkspace key={account.id+':'+account.groupId} view={workspaceView} onViewChange={next=>setView(next)} navigation={navigation} target={target} onAuthorityLost={()=>void refreshIdentity()}/>}
         </Suspense>
       </main>
     </div>

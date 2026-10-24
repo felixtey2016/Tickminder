@@ -16,7 +16,7 @@ const queryId=(value:unknown)=>{const id=str(value);if(!id||id.length>200)throw 
 function manager(actor:Account,key:'parents.view'|'parents.manage'):Predicate {if(actor.role!=='admin')throw new ParentsError('没有家长账号管理权限',403);return configuredAdminGrantPredicate(actor,key);}
 async function assertPredicate(predicate:Predicate,status=403,message='权限已改变，请刷新后重试'){if(!await learningDb().prepare(`SELECT 1 AS ok WHERE ${predicate.sql}`).bind(...predicate.args).first())throw new ParentsError(message,status);}
 export async function requireParentManagement(actor:Account,key:'parents.view'|'parents.manage'='parents.view'){const p=manager(actor,key);await assertPredicate(p);return p;}
-function parentIdentity(actor:Account):Predicate {
+export function parentIdentity(actor:Account):Predicate {
  if(actor.role!=='parent')throw new ParentsError('此入口仅供家长查看已授权的孩子资料',403);
  const session=accountSessionPredicate(actor);
  return{sql:`EXISTS(SELECT 1 FROM accounts parent_actor JOIN tuition_groups parent_group ON parent_group.id=parent_actor.group_id WHERE parent_actor.id=? AND parent_actor.group_id=? AND parent_actor.role='parent' AND parent_actor.disabled_at IS NULL AND parent_group.active=1 AND NOT EXISTS(SELECT 1 FROM local_credentials c WHERE c.account_id=parent_actor.id AND c.must_change_password=1) AND ${session.sql})`,args:[actor.id,requireGroup(actor.groupId),...session.args]};
@@ -108,7 +108,7 @@ export async function saveParentLink(actor:Account,data:Record<string,unknown>){
  return result;
 }
 /** Apply exactly the child's current classroom and subject assignment, never a parent's identity. */
-export function classroomAccess(alias:string){return`(${alias}.classroom_id IS NULL OR EXISTS(SELECT 1 FROM classroom_members cm JOIN classrooms c ON c.group_id=cm.group_id AND c.id=cm.classroom_id JOIN students s ON s.group_id=cm.group_id AND s.name=cm.student_name AND s.active=1 JOIN plans p ON p.group_id=cm.group_id AND p.student=cm.student_name AND p.teacher_name=c.teacher_name AND p.active=1 AND ${classPlanSubjectSql('p','c','s')} JOIN teachers t ON t.group_id=c.group_id AND t.name=c.teacher_name AND t.active=1 WHERE cm.group_id=${alias}.group_id AND cm.classroom_id=${alias}.classroom_id AND cm.student_name=?))`;}
+export function classroomAccess(alias:string,studentSql='?'){return`(${alias}.classroom_id IS NULL OR EXISTS(SELECT 1 FROM classroom_members cm JOIN classrooms c ON c.group_id=cm.group_id AND c.id=cm.classroom_id JOIN students s ON s.group_id=cm.group_id AND s.name=cm.student_name AND s.active=1 JOIN plans p ON p.group_id=cm.group_id AND p.student=cm.student_name AND p.teacher_name=c.teacher_name AND p.active=1 AND ${classPlanSubjectSql('p','c','s')} JOIN teachers t ON t.group_id=c.group_id AND t.name=c.teacher_name AND t.active=1 WHERE cm.group_id=${alias}.group_id AND cm.classroom_id=${alias}.classroom_id AND cm.student_name=${studentSql}))`;}
 async function paged<T>(select:string,from:string,where:string,args:unknown[],page:number,order:string):Promise<ParentPage<T>>{
  const total=(await learningDb().prepare(`SELECT count(*) AS total ${from} WHERE ${where}`).bind(...args).first<{total:number}>())?.total||0;
  const items=(await learningDb().prepare(`SELECT ${select} ${from} WHERE ${where} ORDER BY ${order} LIMIT 20 OFFSET ?`).bind(...args,(page-1)*20).all<T>()).results||[];
