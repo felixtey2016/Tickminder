@@ -16,6 +16,6 @@ const Workspace = dynamic(() => import("./scheduler").then(module => module.Sche
   ),
 });
 
-export function SchedulerEntry() {
-  return <Workspace />;
+export function SchedulerEntry({initialQuizId}:{initialQuizId?:string}={}) {
+  return <Workspace initialQuizId={initialQuizId}/>;
 }

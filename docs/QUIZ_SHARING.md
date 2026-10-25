@@ -54,6 +54,14 @@ Sharing uses the existing Quiz endpoint:
 
 The server rechecks the live account, group, session, author identity, administrative permission and teacher/student relationship inside the write transaction. Shared readers use the same central access predicate. Removing a teaching relationship or disabling a target revokes live selected access without erasing historical audience records. Creator-only recipient details and search results never include email addresses.
 
+## Copying and opening Quiz links
+
+Saved Quiz cards and the creator sharing panel offer **Copy link**. The stable URL is `/quiz/<quizId>` and contains only a strictly validated Quiz ID. It carries no session, account, group, recipient grant or answer key. Clipboard failures provide a selectable read-only URL for manual copying.
+
+The link renders the existing login and account-setup flow in place. Password login, Google sign-in, required password/name/account setup, approval and optional Google linking preserve the destination. They do not enrol a new identity into the author group. Once authorised, the page loads a read-only summary through the existing Quiz preview API and requires an explicit Start action before creating or resuming an attempt.
+
+Public, private and selected audiences are checked by the same live server policy as the library. Missing, removed and inaccessible Quizzes show a generic failure after sign-in. Private authors may open their own saved draft; other readers need a published version and the applicable live grant. Browser navigation away from the link clears its intent; closing an attempt returns to the linked summary. There is no arbitrary return URL or new authentication token.
+
 ## Schema and backups
 
 Migration `0059_quiz_sharing.sql` adds `quiz_share_settings` and `quiz_share_recipients`. The existing Quiz visibility CHECK remains unchanged: selected sharing is represented internally as `organisation` with an explicit selected policy. Private policies have no version; public/selected policies point to an immutable version of that same Quiz and group. Structural guards validate policy ownership, group identity and revision increments. Recipient-account deletion cascades only that recipient grant.

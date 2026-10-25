@@ -1,6 +1,7 @@
 'use client';
 import {useEffect,useId,useRef,useState} from 'react';
 import {Button} from '@/components/ui/button';
+import QuizCopyLinkButton from './quiz-copy-link-button';
 import {groupFetch} from '@/lib/group-client';
 import {alertActionFailure,readApiJson,showActionToast} from '@/lib/action-feedback';
 import {getLanguage,t} from '@/lib/i18n';
@@ -68,6 +69,6 @@ export default function QuizPublicationPanel({id,revision,visibility,sharedRevis
   </div>}
   {scope!=='private'&&<p className="quiz-note">{text('分享当前已保存的版本。以后修改题目，需要再次保存可见范围才会更新题库中的版本。','The saved version is shared. After editing the questions, save visibility again to update the library version.')}</p>}
   {error&&<div className="quiz-error" role="alert"><span>{t(error)}</span>{!saved&&<Button type="button" variant="outline" disabled={disabled||busy||loading} onClick={()=>void load()}>{t('quiz.retry')}</Button>}</div>}
-  <div className="quiz-share-actions"><Button type="button" disabled={inactive||!saved||scope==='selected'&&(!selected.length||Boolean(missing.length)||targetsLoading||Boolean(targetsError))} onClick={()=>void save()}>{t(busy?'quiz.saving':'quiz.shareSave')}</Button>{sharedRevision!==null&&<span className="quiz-note">{t('quiz.sharedVersion')} {sharedRevision}</span>}</div>
+  <div className="quiz-share-actions"><Button type="button" disabled={inactive||!saved||scope==='selected'&&(!selected.length||Boolean(missing.length)||targetsLoading||Boolean(targetsError))} onClick={()=>void save()}>{t(busy?'quiz.saving':'quiz.shareSave')}</Button>{revision>0&&<QuizCopyLinkButton quizId={id} disabled={inactive}/>} {sharedRevision!==null&&<span className="quiz-note">{t('quiz.sharedVersion')} {sharedRevision}</span>}</div>
  </section>;
 }

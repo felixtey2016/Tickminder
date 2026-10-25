@@ -23,7 +23,7 @@ const AccountSettings=lazy(()=>import('./account-settings').then(m=>({default:m.
 const QuizWorkspace=lazy(()=>import('./quiz-workspace'));
 
 type ParentIdentity={id?:string;name:string;groupId?:string|null;groupName?:string|null};
-type ParentShellProps={account:ParentIdentity;language:Language;changeLanguage:(value:Language)=>void;logout:()=>void;refreshIdentity:()=>Promise<void>};
+type ParentShellProps={account:ParentIdentity;language:Language;changeLanguage:(value:Language)=>void;logout:()=>void;refreshIdentity:()=>Promise<void>;initialQuizId?:string;onLinkedQuizExit?:()=>void};
 type ParentShellView=ParentWorkspaceView|'home'|'account'|'notifications'|'quizzes';
 const menuItems:Array<{view:ParentShellView;Icon:LucideIcon}>=[
   {view:'home',Icon:House},
@@ -43,9 +43,9 @@ export default function ParentShell(props:ParentShellProps){
   return <NotificationsProvider key={props.account.id+':'+props.account.groupId} accountId={props.account.id||''} groupId={props.account.groupId||''} language={props.language} audience="parent"><ParentShellContent {...props}/></NotificationsProvider>;
 }
 
-function ParentShellContent({account,language,changeLanguage,logout,refreshIdentity}:ParentShellProps){
+function ParentShellContent({account,language,changeLanguage,logout,refreshIdentity,initialQuizId,onLinkedQuizExit}:ParentShellProps){
   const shellRef=useRef<HTMLDivElement>(null),headerRef=useRef<HTMLElement>(null),menuRef=useRef<HTMLElement>(null),menuButtonRef=useRef<HTMLButtonElement>(null);
-  const [storedView,setView]=usePageHistoryState<ParentShellView>('parent.shell.view','home');
+  const [storedView,setView,replaceView]=usePageHistoryState<ParentShellView>('parent.shell.view',initialQuizId?'quizzes':'home');
   const view=shellViews.has(storedView)?storedView:'home';
   const [navigation,setNavigation]=useState<ParentNoticeNavigation|null>(null),[pendingNotice,setPendingNotice]=useState('');
   const [target,setTarget]=useState<ParentWorkspaceTarget|null>(null);
@@ -103,13 +103,26 @@ function ParentShellContent({account,language,changeLanguage,logout,refreshIdent
     return()=>window.removeEventListener('tickminder:open-notifications',open);
   },[setView]);
 
+  useEffect(()=>{
+    if(!initialQuizId)return;
+    setNavigation(null);setTarget(null);setPendingNotice('');setMenuOpen(false);replaceView('quizzes');
+  },[initialQuizId,replaceView]);
+  const linkedViewOpened=useRef(false);
+  useEffect(()=>{
+    if(!initialQuizId){linkedViewOpened.current=false;return;}
+    if(view==='quizzes')linkedViewOpened.current=true;
+    else if(linkedViewOpened.current)onLinkedQuizExit?.();
+  },[initialQuizId,view,onLinkedQuizExit]);
+
   function choose(next:ParentShellView){
+    if(initialQuizId&&next!=='quizzes')onLinkedQuizExit?.();
     if(moduleFor(next)!==moduleFor(view))setNavigation(null);
     setTarget(null);
     setPendingNotice('');setView(next);setMenuOpen(false);
     if(next!==view)window.scrollTo(0,0);
   }
   function openWorkspace(next:Omit<ParentWorkspaceTarget,'targetId'>){
+    if(initialQuizId)onLinkedQuizExit?.();
     setNavigation(null);setPendingNotice('');setTarget({...next,targetId:crypto.randomUUID()});setView(next.view);setMenuOpen(false);window.scrollTo(0,0);
   }
   const workspaceView:ParentWorkspaceView=view==='home'||view==='account'||view==='notifications'||view==='quizzes'?'calendar':view;
@@ -133,7 +146,7 @@ function ParentShellContent({account,language,changeLanguage,logout,refreshIdent
       <main className="parent-shell-main parent-compact" inert={drawerOpen?true:undefined}>
         <FloatingBackButton context={account.id+':parent:'+account.groupId} isHome={view==='home'} onHome={()=>choose('home')} title={PNav(moduleFor(view))}/>
         <Suspense fallback={<p role="status">{t('正在加载…')}</p>}>
-          {view==='home'?<ParentHome name={account.name} onOpen={openWorkspace} onNotifications={()=>choose('notifications')} onAuthorityLost={()=>void refreshIdentity()}/>:view==='account'?<AccountSettings/>:view==='notifications'?<ParentNotificationsPane onOpen={next=>{setTarget(null);setNavigation(next);setView(next.kind==='invoice'?'finance':'lessons');}} pendingNotice={pendingNotice} onPendingHandled={()=>setPendingNotice('')} onAuthorityLost={()=>void refreshIdentity()}/>:view==='quizzes'?<QuizWorkspace key={account.id+':'+account.groupId} view="quizBank" language={language} role="parent"/>:<ParentsWorkspace key={account.id+':'+account.groupId} view={workspaceView} onViewChange={next=>setView(next)} navigation={navigation} target={target} onAuthorityLost={()=>void refreshIdentity()}/>}
+          {view==='home'?<ParentHome name={account.name} onOpen={openWorkspace} onNotifications={()=>choose('notifications')} onAuthorityLost={()=>void refreshIdentity()}/>:view==='account'?<AccountSettings/>:view==='notifications'?<ParentNotificationsPane onOpen={next=>{setTarget(null);setNavigation(next);setView(next.kind==='invoice'?'finance':'lessons');}} pendingNotice={pendingNotice} onPendingHandled={()=>setPendingNotice('')} onAuthorityLost={()=>void refreshIdentity()}/>:view==='quizzes'?<QuizWorkspace key={account.id+':'+account.groupId} view="quizBank" language={language} role="parent" initialQuizId={initialQuizId} onLinkedQuizExit={onLinkedQuizExit}/>:<ParentsWorkspace key={account.id+':'+account.groupId} view={workspaceView} onViewChange={next=>setView(next)} navigation={navigation} target={target} onAuthorityLost={()=>void refreshIdentity()}/>}
         </Suspense>
       </main>
     </div>

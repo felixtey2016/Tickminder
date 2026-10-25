@@ -44,6 +44,7 @@ const TeachingStatisticsDetails=lazy(()=>import("./teaching-statistics-details")
 import { HomeDashboard } from "./home-dashboard";
 import {PersonIdentityFields,createPersonIdentityDraft,personIdentityPayload,personIdentityReady} from "./person-identity-fields";
 import {GoogleLinkOnboarding} from './google-link-onboarding';
+import {validQuizLinkId,quizLinkIdFromPath} from '@/lib/quiz-link';
 import type { LearningState } from "./learning-portal";
 const GroupConsole=lazy(()=>import("./group-console").then(m=>({default:m.GroupConsole})));
 const TeacherLearning = lazy(() => import("./learning-portal").then(module => ({default: module.TeacherLearning})));
@@ -216,7 +217,17 @@ function actionSuccessText(action: string) {
 }
 async function request(url: string, options?: RequestInit): Promise<any> { const r = await groupFetch(url, { ...options, cache: "no-store" }); const v = await readApiJson<{ error?: string; [key: string]: any }>(r); if (!r.ok)
     throw Object.assign(new Error(v.conflict ? conflictDescription(v.conflict as ConflictDetail) : t(r.status === 401 && url !== "/api/auth" ? "登录已过期，请重新登录" : v.error || "请求失败")), { status: r.status }); return v; }
-export function Scheduler() {
+export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
+    const [linkedQuizId,setLinkedQuizId]=useState<string|undefined>(()=>validQuizLinkId(initialQuizId)?initialQuizId:undefined);
+    useEffect(()=>{setLinkedQuizId(validQuizLinkId(initialQuizId)?initialQuizId:undefined);},[initialQuizId]);
+    const exitLinkedQuiz=useCallback(()=>{
+        setLinkedQuizId(undefined);
+        // Only replace our strict internal route; never accept a return URL.
+        if(quizLinkIdFromPath(window.location.pathname)){
+            const url=new URL(window.location.href);url.pathname='/';
+            window.history.replaceState(window.history.state,'',url);
+        }
+    },[]);
     const [language, setLanguageState] = useState<Language>("zh");
     useEffect(() => {
         const saved = window.localStorage.getItem(LANGUAGE_KEY);
@@ -557,9 +568,9 @@ export function Scheduler() {
     if(account.role==='pending')return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><h1>{language==='zh'?'等待管理员分配身份':'Waiting for account approval'}</h1><SignedInIdentity account={account}/><p>{language==='zh'?'请联系所属集团管理员填写资料并分配身份，完成后即可使用。':'Ask your centre administrator to complete your profile and assign a role.'}</p><div className="directory-form-actions"><Button onClick={async()=>{try{setAuth(await request('/api/auth'));}catch(error){alertActionFailure(error);}}}>{t('刷新')}</Button><Button variant="outline" onClick={logout}>{t('退出登录')}</Button></div></div></main>;
     if(account.groupUnavailable)return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><h1>{t("补习集团暂不可用")}</h1><p>{t("请联系所属集团的管理员，或稍后重试。")}</p><Button onClick={()=>window.location.reload()}>{t("刷新")}</Button><Button variant="outline" onClick={logout}>{t("退出登录")}</Button></div></main>;
     if(account.showGoogleLinkOnboarding)return <GoogleLinkOnboarding name={account.name} clientId={auth.clientId} language={language} changeLanguage={changeLanguage} onCompleted={async()=>setAuth(await request('/api/auth'))} logout={logout}/>;
-    if(account.role==='parent')return <Suspense fallback={<p role="status">{t('正在加载…')}</p>}><ParentShell account={account} language={language} changeLanguage={changeLanguage} logout={logout} refreshIdentity={async()=>setAuth(await request('/api/auth'))}/></Suspense>;
+    if(account.role==='parent')return <Suspense fallback={<p role="status">{t('正在加载…')}</p>}><ParentShell account={account} initialQuizId={linkedQuizId} onLinkedQuizExit={exitLinkedQuiz} language={language} changeLanguage={changeLanguage} logout={logout} refreshIdentity={async()=>setAuth(await request('/api/auth'))}/></Suspense>;
     const admin = account.role === "admin";
-    return <AdminPermissionContext.Provider value={account}><Workspace key={`${account.id}:${account.groupId}:${JSON.stringify(account.adminPermissions)}`} account={account} state={state} ensureScope={ensureScope} setActiveScopes={setActiveScopes} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} calendarDate={calendarDate} setCalendarDate={setCalendarDate} calendarRange={calendarRange} onCalendarRangeChange={onCalendarRangeChange} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/></AdminPermissionContext.Provider>;
+    return <AdminPermissionContext.Provider value={account}><Workspace key={`${account.id}:${account.groupId}:${JSON.stringify(account.adminPermissions)}`} initialQuizId={linkedQuizId} onLinkedQuizExit={exitLinkedQuiz} account={account} state={state} ensureScope={ensureScope} setActiveScopes={setActiveScopes} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} calendarDate={calendarDate} setCalendarDate={setCalendarDate} calendarRange={calendarRange} onCalendarRangeChange={onCalendarRangeChange} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/></AdminPermissionContext.Provider>;
 }
 function BrandLogo({ small = false }: { small?: boolean }) { return <span className={`brand-logo ${small ? "small" : ""}`}><img src="/tickminder-logo.svg" width={small ? 40 : 80} height={small ? 40 : 80} alt={BRAND_NAME} /></span>; }
 function LanguageSwitcher({ language, change }: { language: Language; change: (next: Language) => void }) { return <div className="language-switch" role="group" aria-label={t("语言")}><button type="button" aria-pressed={language === "zh"} onClick={() => change("zh")}>中文</button><span className="language-separator" aria-hidden="true">|</span><button type="button" aria-pressed={language === "en"} onClick={() => change("en")}>EN</button></div>; }
@@ -672,7 +683,8 @@ const NAV_GROUPS: Record<NavigationRole, Array<{ label: string; ids: string[] }>
  pending: [{label:"",ids:["home"]},{label:"我的账号",ids:["notifications","myAccount"]}],
 };
 
-function Workspace({ account, state, ensureScope, setActiveScopes, lessons, message, setMessage, reload, logout, modal, setModal, mutate, learningMutate, classroomMutate, busy, selectedMonth, setSelectedMonth, language, changeLanguage,calendarDate,setCalendarDate,calendarRange,onCalendarRangeChange }: {
+function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope, setActiveScopes, lessons, message, setMessage, reload, logout, modal, setModal, mutate, learningMutate, classroomMutate, busy, selectedMonth, setSelectedMonth, language, changeLanguage,calendarDate,setCalendarDate,calendarRange,onCalendarRangeChange }: {
+    initialQuizId?:string;onLinkedQuizExit?:()=>void;
     calendarDate:string;setCalendarDate:(date:string)=>void;calendarRange:CalendarRange;onCalendarRangeChange:(range:CalendarRange)=>void;
     account: Account;
     state: State | null;
@@ -705,7 +717,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     const calendarLessons=calendarReady?lessons:[];
     const badgeCounts=role==="admin"&&!canAdminAction(account,"attendance.view")?{...rawBadgeCounts,attention:0,overview:0}:rawBadgeCounts;
     const taskCount=badgeCounts.lessons+badgeCounts.reschedule+badgeCounts.attention;
-    const [selectedView, setSelectedView] = useState(items[0].id);
+    const [selectedView, setSelectedView] = useState(initialQuizId?'quizzes':items[0].id);
     const [openInvoiceList,setOpenInvoiceList]=useState(false);
     const [statisticsDetail,setStatisticsDetail]=useDialogState<TeachingStatisticsDetailTarget|null>("teaching-statistics-detail",null);
     const lastCourseView = useRef<string>(defaultCourseView(role) || "calendar");
@@ -719,7 +731,13 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
         const valid = (view: unknown) => view === "notifications" || (typeof view === "string" && items.some(item => item.id === normalizedView(view)));
         const state = window.history.state || {};
         const url = new URL(window.location.href);
-        if (sessionStorage.getItem("tickminder-group-view")==="home") {sessionStorage.removeItem("tickminder-group-view");setSelectedView("home");window.history.replaceState({...state,timelyoRole:role,timelyoGroup:account.groupId,timelyoView:"home",timelyoMenu:false},"",url);}
+        if (initialQuizId) {
+            sessionStorage.removeItem('tickminder-group-view');
+            url.searchParams.delete('view');
+            setSelectedView('quizzes');
+            window.history.replaceState({...state,timelyoRole:role,timelyoGroup:account.groupId,timelyoView:'quizzes',timelyoQuizTab:'bank',timelyoMenu:false},'',url);
+        }
+        else if (sessionStorage.getItem("tickminder-group-view")==="home") {sessionStorage.removeItem("tickminder-group-view");setSelectedView("home");window.history.replaceState({...state,timelyoRole:role,timelyoGroup:account.groupId,timelyoView:"home",timelyoMenu:false},"",url);}
         else if (url.searchParams.get("view") === "notifications") {
             url.searchParams.delete("view");
             setSelectedView("notifications");
@@ -743,11 +761,12 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
             const target=sameContext && valid(next.timelyoView) ? next.timelyoView : home;
             if(target!==currentViewRef.current&&!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true}))){window.history.pushState({...next,timelyoRole:role,timelyoGroup:account.groupId,timelyoView:currentViewRef.current,timelyoMenu:false},'');return;}
             setMenuOpen(window.matchMedia("(min-width: 901px)").matches || Boolean(sameContext && next.timelyoMenu));
+            if(initialQuizId&&target!=='quizzes')onLinkedQuizExit?.();
             setSelectedView(target);
         };
         window.addEventListener("popstate", onPopState);
         return () => window.removeEventListener("popstate", onPopState);
-    }, [role, account.id,account.groupId,permissionSignature]);
+    }, [role, account.id,account.groupId,permissionSignature,initialQuizId,onLinkedQuizExit]);
     useEffect(() => {
         const query = window.matchMedia("(min-width: 901px)");
         const sync = () => {
@@ -766,7 +785,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
         window.addEventListener("keydown", closeOnEscape);
         return () => window.removeEventListener("keydown", closeOnEscape);
     }, [menuOpen, desktop]);
-    const activeView = items.some(item => item.id === selectedView) ? selectedView : items[0].id;
+    const activeView = initialQuizId&&selectedView==='quizzes'?'quizzes':items.some(item => item.id === selectedView) ? selectedView : items[0].id;
     const courseView = isCourseView(role, activeView);
     const managementView = managementArea(role, activeView);
     if (courseView) lastCourseView.current = activeView;
@@ -808,6 +827,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
         const id = requested === "courses" ? courseTarget : normalizeManagementView(role,normalizeCourseView(role,managementTarget));
         if (!id || !items.some(item => item.id === id)) return;
         if(id!==activeView&&!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;
+        if(initialQuizId&&id!=='quizzes')onLinkedQuizExit?.();
         if (id !== activeView) {
             const next = { ...(window.history.state || {}), timelyoRole: role, timelyoGroup: account.groupId, timelyoView: id, timelyoMenu: false };
             if (!desktop && menuOpen && window.history.state?.timelyoMenu) window.history.replaceState(next, "");
@@ -821,7 +841,7 @@ function Workspace({ account, state, ensureScope, setActiveScopes, lessons, mess
     let pageContent: React.ReactNode = null;
     if((activeView==="groups"&&account.isOwner)||(activeView==="groupInfo"&&role==="admin")){pageContent=<div className="settings-compact"><GroupConsole isOwner={activeView==="groups"&&Boolean(account.isOwner)} currentGroupId={account.groupId}/>{activeView==="groupInfo"&&canAdminAction(account,"terms.view")&&<div className="settings-tools"><TermManager terms={state?.terms||state?.termOptions||[]} mutate={classroomMutate} busy={busy}/></div>}</div>;}
     else if (activeView==='quizzes'&&(role==='teacher'||role==='admin'||role==='student')) {
-        pageContent=<QuizWorkspace key={`${account.groupId}:${activeView}`} view={activeView} language={language} role={role}/>;
+        pageContent=<QuizWorkspace key={`${account.groupId}:${activeView}`} view={activeView} language={language} role={role} initialQuizId={initialQuizId} onLinkedQuizExit={onLinkedQuizExit}/>;
     }
     else if (activeView === "home" && role === "pending") {
         pageContent = <section className="panel pending-home"><h2>{t(account.assignmentStatus === "ACTIVE" ? "账号已启用" : "等待分配")}</h2><p>{t("管理员分配身份后，课程、功课及班级会显示在这里。")}</p>{account.pendingExpiresAt && <p className="notice">{t("待分配期限")} · {new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-GB",{timeZone:"Asia/Kuala_Lumpur",dateStyle:"medium",timeStyle:"short"}).format(new Date(account.pendingExpiresAt))}<br/>{t("新注册账号在 7 天内未启用或绑定，会到期清理。请联系管理员。")}</p>}<Button variant="outline" onClick={()=>choose("myAccount")}>{t("我的账号")}</Button></section>;
