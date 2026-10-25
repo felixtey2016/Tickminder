@@ -15,10 +15,10 @@ import {uploadQuizImages} from '@/lib/quiz-upload';
 import {useAcademicCatalogue} from '@/lib/use-academic-catalogue';
 import {findCatalogueSyllabus,findCatalogueSubject,catalogueGradeValid} from '@/lib/academic-catalogue';
 import {checkQuizAcademic} from '@/lib/quiz-academic';
-import QuizPublicationPanel from './quiz-publication-panel';
+import QuizPublicationPanel,{type QuizSharingState} from './quiz-publication-panel';
 import '@/lib/quiz-upgrade-i18n';
 
-export type LocalQuiz=QuizDraft & {sourceKey?:string;pendingImages?:Map<string,Uint8Array>;importWarnings?:string[];bank?:boolean;maintenanceImport?:boolean;canShare?:boolean};
+export type LocalQuiz=QuizDraft & Partial<Pick<QuizSharingState,'sharingMode'|'sharingRevision'|'recipientIds'|'creator'>> & {sourceKey?:string;pendingImages?:Map<string,Uint8Array>;importWarnings?:string[];bank?:boolean;maintenanceImport?:boolean;canShare?:boolean};
 type SaveReply={id:string;revision:number;existingImport?:boolean;error?:string};
 type Confirmation={title:string;description:string;accept:string;run:()=>void};
 const TYPES:QuizType[]=['mcq','true_false','blank','math','written'];
@@ -44,6 +44,7 @@ export default function QuizEditor({initial,onBack,onSaved}:{initial:LocalQuiz;o
  const [confirmation,setConfirmation]=useState<Confirmation|null>(null);
  const [preview,setPreview]=useState<QuizContent|null>(null);
  const [visibility,setVisibility]=useState<QuizVisibility>(initial.visibility);
+ const [sharingDirty,setSharingDirty]=useState(false);
  const [answerInputs,setAnswerInputs]=useState<Record<string,string>>({});
  const [imageSources,setImageSources]=useState<Record<string,string>>({});
  const saveOperation=useRef<{stamp:string;id:string}|null>(null);
@@ -55,7 +56,7 @@ export default function QuizEditor({initial,onBack,onSaved}:{initial:LocalQuiz;o
  const mayShare=can("quizzes.share")&&Boolean(draft.canShare??draft.canEdit);
  const locked=Boolean(busy)||!mayEdit;
  const dirty=contentStamp(draft)!==savedStamp;
- const visibilityDirty=visibility!==draft.visibility;
+ const visibilityDirty=sharingDirty;
  const dirtyRef=useRef(dirty||visibilityDirty);
  dirtyRef.current=dirty||visibilityDirty;
  const active=draft.content.questions.find(q=>q.id===activeId)||draft.content.questions[0];
@@ -146,13 +147,12 @@ export default function QuizEditor({initial,onBack,onSaved}:{initial:LocalQuiz;o
  </div>;}
 
  return <section className="quiz-editor" aria-busy={Boolean(busy)}>
-  <header className="quiz-editor-header"><Button type="button" variant="outline" onClick={leave} disabled={Boolean(busy)}><ArrowLeft size={17}/>{t('quiz.back')}</Button><div className="quiz-editor-title"><h2>{draft.content.title||t('quiz.new')}</h2><span className="quiz-status" role="status">{busy?busyLabel:status?t(status):t(!mayEdit?'quiz.permissionReadOnly':dirty?'quiz.unsaved':draft.canEdit?'quiz.saved':'quiz.readOnly')}</span></div><div className="quiz-editor-tools"><Button type="button" variant="outline" disabled={Boolean(busy)||!draft.revision} onClick={()=>void openPreview()}><Eye size={17}/>{t('quiz.preview')}</Button>{mayEdit&&<Button type="button" disabled={Boolean(busy)||!dirty} onClick={()=>void save()}><Save size={17}/>{t('quiz.save')}</Button>}</div></header>
+  <header className="quiz-editor-header"><Button type="button" variant="outline" onClick={leave} disabled={Boolean(busy)}><ArrowLeft size={17}/>{t('quiz.back')}</Button><div className="quiz-editor-title"><h2>{draft.content.title||t('quiz.new')}</h2>{draft.creator&&<p className="quiz-share-creator">{t('quiz.creator')} · {draft.creator}</p>}<span className="quiz-status" role="status">{busy?busyLabel:status?t(status):t(!mayEdit?'quiz.permissionReadOnly':dirty?'quiz.unsaved':draft.canEdit?'quiz.saved':'quiz.readOnly')}</span></div><div className="quiz-editor-tools"><Button type="button" variant="outline" disabled={Boolean(busy)||!draft.revision} onClick={()=>void openPreview()}><Eye size={17}/>{t('quiz.preview')}</Button>{mayEdit&&<Button type="button" disabled={Boolean(busy)||!dirty} onClick={()=>void save()}><Save size={17}/>{t('quiz.save')}</Button>}</div></header>
   {busy&&<div className="quiz-upload-progress" role="status" aria-live="polite"><span>{busyLabel}</span>{uploadProgress&&<progress value={uploadProgress.completed} max={uploadProgress.total} aria-label={busyLabel}/>}</div>}
   {catalogueError&&<div className="quiz-alert quiz-editor-notice" role="alert"><span>{t('quiz.catalogueUnavailable')}</span><Button variant="outline" onClick={()=>void reloadCatalogue()}>{t('quiz.retry')}</Button></div>}
   {error&&<div className="quiz-alert" role="alert">{t(error)}</div>}
   {draft.importWarnings?.length?<section className="quiz-alert quiz-import-warnings"><h3>{t('quiz.importReview')}</h3><ul>{draft.importWarnings.map((warning,i)=><li key={i}>{warning}</li>)}</ul></section>:null}
   <fieldset className="quiz-panel" disabled={locked}><legend>{t('quiz.settings')}</legend><div className="quiz-fields">
-   {draft.maintenanceImport&&<Field label={t('quiz.source')} wide><select value={draft.content.bankKind||'creator'} onChange={e=>{const bankKind=e.target.value as 'creator'|'platform';setDraft(d=>({...d,content:{...d.content,bankKind,catalog:bankKind==='platform'&&!d.content.catalog?{kind:'subtopic',level:grades[0]||'',chapterCode:'1',chapterTitle:'',subtopicCode:'1.1',subtopicTitle:'',setNumber:1}:d.content.catalog}}));setStatus('');}}><option value="creator">{t('quiz.creatorBank')}</option><option value="platform">{t('quiz.platformBank')}</option></select></Field>}
    {draft.content.bankKind==='platform'&&<p className="quiz-note quiz-field-wide">{t('quiz.standardSetHint')}</p>}
    <Field label={t('quiz.quizTitle')} wide><input required maxLength={160} value={draft.content.title} onChange={e=>updateContent({title:e.target.value})}/></Field>
    <Field label={t('quiz.instructions')} wide><textarea rows={3} maxLength={4000} value={draft.content.instructions} onChange={e=>updateContent({instructions:e.target.value})}/></Field>
@@ -188,9 +188,9 @@ export default function QuizEditor({initial,onBack,onSaved}:{initial:LocalQuiz;o
     <Field label={t('quiz.explanation')} wide><textarea rows={3} maxLength={4000} value={key.explanation} onChange={e=>updateKey(active.id,{explanation:e.target.value})}/></Field>
    </fieldset>
   </article>:<div className="quiz-question-card quiz-question-empty"><p>{t('quiz.createFirst')}</p></div>}</div>
-  {mayShare&&<QuizPublicationPanel id={draft.id} revision={draft.revision} visibility={draft.visibility} sharedRevision={draft.sharedRevision} disabled={Boolean(busy)||dirty} onChanged={(next,shared)=>{setVisibility(next);setDraft(value=>({...value,visibility:next,sharedRevision:shared}));onSaved({...draft,visibility:next,sharedRevision:shared});}}/>}
+  {mayShare&&<QuizPublicationPanel id={draft.id} revision={draft.revision} visibility={draft.visibility} sharedRevision={draft.sharedRevision} disabled={Boolean(busy)||dirty} onDirtyChange={setSharingDirty} onChanged={(next,shared,sharing)=>{setVisibility(next);setSharingDirty(false);setDraft(value=>({...value,...sharing,visibility:next,sharedRevision:shared}));onSaved({...draft,...sharing,visibility:next,sharedRevision:shared});}}/>}
   <footer className="quiz-editor-footer"><span>{t('quiz.questions')} {draft.content.questions.length} · {t('quiz.total')} {total}</span><div className="quiz-editor-tools"><Button type="button" variant="outline" disabled={Boolean(busy)||!draft.revision} onClick={()=>void openPreview()}><Eye size={17}/>{t('quiz.preview')}</Button>{mayEdit&&<Button type="button" disabled={Boolean(busy)||!dirty} onClick={()=>void save()}><Save size={17}/>{t(busy==='save'?'quiz.saving':'quiz.save')}</Button>}</div><p className="quiz-note">{t('quiz.savedVersionNotice')}</p></footer>
   {confirmation&&<Dialog open onOpenChange={open=>{if(!open)setConfirmation(null);}}><DialogContent className="quiz-confirm-dialog" overlayClassName="content-edit-overlay"><DialogTitle>{confirmation.title}</DialogTitle><DialogDescription>{confirmation.description}</DialogDescription><div className="quiz-editor-tools"><Button type="button" variant="outline" onClick={()=>setConfirmation(null)}>{t('quiz.cancel')}</Button><Button type="button" onClick={()=>{const action=confirmation.run;setConfirmation(null);action();}}>{confirmation.accept}</Button></div></DialogContent></Dialog>}
-  {preview&&<QuizPlayer content={preview} onClose={()=>setPreview(null)}/>}
+  {preview&&<QuizPlayer content={preview} creator={draft.creator} onClose={()=>setPreview(null)}/>}
  </section>;
 }

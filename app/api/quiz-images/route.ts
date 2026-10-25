@@ -7,7 +7,7 @@ import {quizActor,quizFailure,quizHeaders,quizResponse,quizRequestBytes,quizAuth
 import {learningDb} from '@/lib/learning-server';
 import {pdfBucket,pdfLimits} from '@/lib/pdf-storage';
 import {QuizError,quizImageMime} from '@/lib/quiz';
-import {quizApprovedPublicSql} from '@/lib/quiz-moderation-types';
+import {quizSharedAccess} from '@/lib/quiz-sharing-access';
 export async function POST(request:Request){try{
  if(new URL(request.url).origin!==request.headers.get('origin'))throw new QuizError('quiz.forbidden',403);
  const actor=await quizActor();let permissionKey:AdminGrantKey='quizzes.create';
@@ -25,8 +25,8 @@ export async function POST(request:Request){try{
  }catch(e){return quizFailure(e);}}
 export async function GET(request:Request){try{
  const actor=await quizActor(true),id=new URL(request.url).searchParams.get('id')||'';if(!/^[a-zA-Z0-9_-]{1,100}$/.test(id))throw new QuizError('quiz.notFound',404);
- const permission=adminPermissionPredicate(actor,'quizzes.view');
- let file=await learningDb().prepare(`SELECT i.object_key,i.mime FROM quiz_images i WHERE i.id=? AND i.status='ready' AND (${permission.sql}) AND ((i.owner_id=? AND i.group_id=? AND ?<>'student') OR EXISTS(SELECT 1 FROM quiz_version_images l JOIN quiz_versions v ON v.id=l.version_id JOIN quizzes q ON q.id=v.quiz_id JOIN tuition_groups g ON g.id=q.group_id AND g.active=1 WHERE l.image_id=i.id AND q.deleted_at IS NULL AND q.public_blocked_at IS NULL AND ((q.group_id=? AND (q.owner_id=? OR ?='admin') AND v.revision=q.revision) OR (v.revision=q.shared_revision AND (q.visibility='public' AND ${quizApprovedPublicSql('q','v')} OR q.visibility='organisation' AND q.group_id=?)))))`).bind(id,...permission.args,actor.id,actor.groupId,actor.role,actor.groupId,actor.role==='student'?'':actor.id,actor.role,actor.groupId).first<{object_key:string;mime:string}>();
+ const permission=adminPermissionPredicate(actor,'quizzes.view'),shared=quizSharedAccess(actor);
+ let file=await learningDb().prepare(`SELECT i.object_key,i.mime FROM quiz_images i WHERE i.id=? AND i.status='ready' AND (${permission.sql}) AND ((i.owner_id=? AND i.group_id=? AND ? IN('teacher','admin')) OR EXISTS(SELECT 1 FROM quiz_version_images l JOIN quiz_versions v ON v.id=l.version_id JOIN quizzes q ON q.id=v.quiz_id JOIN tuition_groups g ON g.id=q.group_id AND g.active=1 WHERE l.image_id=i.id AND q.deleted_at IS NULL AND q.public_blocked_at IS NULL AND ((q.group_id=? AND q.owner_id=? AND ? IN('teacher','admin') AND v.revision=q.revision) OR ${shared.sql})))`).bind(id,...permission.args,actor.id,actor.groupId,actor.role,actor.groupId,actor.id,actor.role,...shared.args).first<{object_key:string;mime:string}>();
  if(!file)file=await practiceImageFile(actor,id);
  if(!file)throw new QuizError('quiz.notFound',404);const object=await pdfBucket().get(file.object_key);if(!object)throw new QuizError('quiz.unavailable',503);
  return new Response(object.body,{headers:{...quizHeaders,'Content-Type':file.mime,'Content-Length':String(object.size),'Content-Security-Policy':"default-src 'none'; sandbox",'Content-Disposition':'inline'}});

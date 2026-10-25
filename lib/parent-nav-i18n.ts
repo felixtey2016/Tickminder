@@ -12,6 +12,7 @@ const labels:Record<string,[string,string]>={
   attendance:['出勤','Attendance'],
   homework:['功课','Homework'],
   materials:['教学资料','Learning materials'],
+  quizzes:['Quiz','Quiz'],
   recordings:['课程录影','Lesson recordings'],
   learning:['学习表现','Learning performance'],
   finance:['财务','Finance'],

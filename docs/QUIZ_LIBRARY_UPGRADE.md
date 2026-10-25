@@ -16,15 +16,15 @@ Assignment analysis is limited to its fixed version. The default is each student
 
 ## Publication and reports
 
-Organisation sharing remains within its existing scope. Cross-organisation public access requires approval of the specific immutable version by the platform Owner. A group chief cannot approve global publication. Applications retain the public author name, original/licensed source type, source URL when licensed, permission statement and explicit rights confirmation. Approval validates the content and grading keys. A later draft does not replace an approved version; a new version needs review.
+The current unified Quiz library uses private, public and selected-person sharing, described in [QUIZ_SHARING.md](QUIZ_SHARING.md). New explicit public sharing publishes the saved immutable version immediately to signed-in users; it no longer requires platform Owner approval. Selected recipients remain within the creator's group: teachers can select linked students, while authorised administrators can select eligible accounts of any supported role. Existing organisation shares keep their group-wide scope until their creator explicitly changes sharing. Later draft edits do not replace a pinned shared version.
 
-Review supports approval, return, rejection, withdrawal, platform takedown, problem reports and appeals. Changes retain a reason, actor, time and version, and use operation IDs and revision checks. Authors changing to private/organisation sharing or deleting a quiz also withdraw pending publication requests. Reports are visible only to the reporter and the platform Owner. Public cards omit internal account/group IDs and display the reviewed author name. Student responses never receive marking keys before their configured release.
+Historical review supports approval, return, rejection, withdrawal, platform takedown, problem reports and appeals. Its declarations and copyright records remain stored. Existing approved public versions retain access only when no explicit new sharing policy supersedes them. Changes retain their actor, time, version and operation identity. Saving a new sharing choice withdraws pending publication requests. Platform takedown also applies to direct public shares. Reports are visible only to the reporter and the platform Owner. Public cards omit internal account/group IDs and show creator attribution. Student and parent preview responses do not receive author marking keys.
 
-Migration `0039` records existing public versions as `legacy_pending`, without treating the old share as an approval. They are excluded from new public browsing, copying and starts. Existing assignments retain their saved grant. Their metadata is not automatically assigned a syllabus or grade.
+Migration `0039` recorded existing public versions as `legacy_pending`, without treating the old share as an approval. They remain excluded from new public browsing, copying and starts unless their creator explicitly saves public sharing under the new policy. Existing assignments retain their saved grant. Their metadata is not automatically assigned a syllabus or grade.
 
 ## Original starter content
 
-Migration `0041` installs one private 40-question original mathematics foundations draft for the existing platform Owner in Next Genn Edu. It is labelled SPM / Mathematics / Form 5, medium, overall Set 1; this is a foundation practice set, not a complete syllabus assessment. It contains no third-party paper text or images. It remains a draft for the Owner to review and submit through the normal publication process. The Owner-only seed action opens/recreates the corresponding draft idempotently.
+Migration `0041` installs one private 40-question original mathematics foundations draft for the existing platform Owner in Next Genn Edu. It is labelled SPM / Mathematics / Form 5, medium, overall Set 1; this is a foundation practice set, not a complete syllabus assessment. It contains no third-party paper text or images. It remains a draft until the Owner reviews it and explicitly chooses sharing. The Owner-only seed action opens/recreates the corresponding draft idempotently.
 
 ## Schema, backup and validation
 
@@ -32,4 +32,6 @@ Additive migrations `0039`, `0040` and `0041` add six tables, a nullable platfor
 
 Release evidence is retained privately outside the public repository: focused fictional API/database checks, isolated built-Worker and browser checks, migration rehearsal, encrypted production snapshots, deployment version and GitHub commit. Existing unsupported historical question-type records are not rewritten by this release to make a strict semantic backup check pass.
 
-Code rollback must account for public moderation: old code does not enforce approval. Keep the additive schema and saved history; prefer correcting or redeploying the current release rather than exposing legacy unreviewed shares through an old public reader.
+Migration `0059` subsequently adds the explicit sharing policy and recipient tables. Backup format v35 includes those tables and migration 0058's student/classroom lifecycle records while retaining support for prior formats. The original v24 description above records the Parts 18–20 release, rather than the current export format.
+
+Code rollback must account for both public moderation and selected audiences: old code can expose legacy unreviewed shares or treat internally stored selected `organisation` shares as group-wide. Keep the additive schema and saved history; use sharing-aware readers or fix forward.
