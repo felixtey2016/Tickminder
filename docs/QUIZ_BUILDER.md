@@ -49,48 +49,53 @@ The 20 MiB compressed-file limit is checked before reading the browser File into
 
 ## ZIP import contract
 
-Use UTF-8 and the following layout:
+Open **Upload ZIP**, then choose one ZIP file or drag one ZIP into the dialog on desktop. Both paths use the same validation and draft-review workflow. The **Tutorial / 教学** panel is closed by default; clicking it reveals the short English guide and these downloads, without printing the full AI prompt in the main page:
+
+- [Download the universal English AI prompt](/downloads/tickminder-quiz-ai-prompt.txt). It works for any subject and explains the existing machine format; its Chinese field names are protocol tokens and must not be translated.
+- [Download the validated example ZIP](/downloads/tickminder-quiz-example.zip). This small package has two original English science questions, four options each and no images. Its root `questions.txt` passes the actual importer without warnings.
+
+This ZIP format currently supports **1–150 single-answer MCQs with exactly four options A–D**. The manual builder's other question types are not extra ZIP formats. Do not silently convert written, true/false or multi-answer questions; use the manual builder or resolve the intended format first. The AI prompt defaults to faithful source conversion and permits original generation only when explicitly requested. Missing answers or required diagrams must be resolved rather than invented.
+
+Use UTF-8 plain text with `questions.txt` at the ZIP root and an `images/` folder only when referenced source crops are needed. Do not add an enclosing project folder:
 
 ```text
-paper.zip
-  questions.txt
-  images/
-    qb0001_q01_box.png
+questions.txt
+images/                 (optional; referenced PNG/JPG/WebP only)
 ```
 
-Example question block (repeat with distinct question/source IDs):
+Canonical English-only question block (repeat with distinct question/source IDs):
 
 ```text
 [Q01]
-题目编码：MATH-QB0001-Q01
-原题号：1
-所属年级：Form 4
-所属章节：Bab 2: Asas Nombor / Chapter 2: Number Bases
-所属子章节：2.1 Asas Nombor / Number Bases
+题目编码：TM-EXAMPLE-001
+所属年级：
+所属章节：
+所属子章节：
 难度等级：easy
-题干 (BM)：Nyatakan nilai digit...
-题干 (EN)：State the digit value...
-图片入口：images/qb0001_q01_box.png
-选项 A (BM)：50
-选项 A (EN)：50
+题干 (BM)：
+题干 (EN)：Which instrument is used to measure temperature?
+图片入口：NONE
+选项 A (BM)：
+选项 A (EN)：Ruler
 选项 A 图片入口：NONE
-选项 B (BM)：100
-选项 B (EN)：100
+选项 B (BM)：
+选项 B (EN)：Thermometer
 选项 B 图片入口：NONE
-选项 C (BM)：200
-选项 C (EN)：200
+选项 C (BM)：
+选项 C (EN)：Balance
 选项 C 图片入口：NONE
-选项 D (BM)：250
-选项 D (EN)：250
+选项 D (BM)：
+选项 D (EN)：Stopwatch
 选项 D 图片入口：NONE
 选项合图入口：NONE
-标准答案：D
+标准答案：B
 ```
 
-- Image paths are case-sensitive and relative to the ZIP root. Use `NONE` for absent images. Difficulty must be `easy`, `medium` or `hard`; MCQ keys must be A–D. Both individual option images and composite option diagrams are retained.
-- Import rejects missing prompts/options/answers/images, duplicate question/source identifiers, unsafe/duplicate paths, invalid image signatures, invalid UTF-8 and oversized archives. Limits: 20 MiB compressed, 60 MiB declared/actual unpacked data, 300 entries and 150 questions. `questions.txt` has a 1 MiB limit; each image 5 MiB.
-- Source text, answers and mathematical notation are preserved; importing does not verify the educational correctness of supplied answers or infer LaTeX from ambiguous plain text. To typeset math, use `$...$` inline and `$$...$$` for a separate formula.
-- Import opens a private reviewable draft. Confirm subject/year/classification, inspect diagrams and answer keys, then save. Exact ZIP SHA256 is retained per author/group; importing the same ZIP again opens that owned draft instead of duplicating it. Changing an existing source bank does not silently overwrite used versions.
+- Keep each field name, space, parenthesis and fullwidth colon `：` exactly as shown; English field-name substitutions and ASCII colons are not compatible. For English-only questions, leave BM fields empty and populate EN fields; do not fill missing text with `NONE`. Unknown grade/chapter/subchapter values may remain empty. Quiz-level title, subject, syllabus and other required classification are reviewed in the editor, rather than assumed from this text format.
+- Image paths are case-sensitive and relative to the ZIP root. Use uppercase `NONE` for absent images. Difficulty must be `easy`, `medium` or `hard`; the answer must be one uppercase A–D letter. Both individual option images and composite option diagrams are retained, but a composite alone does not supply the required text or image for every option.
+- Import rejects missing prompts/options/answers/images, duplicate question/source identifiers, unsafe/duplicate paths, invalid image signatures, invalid UTF-8 and oversized archives. Limits: 20 MiB compressed, 60 MiB declared/actual unpacked data, 300 entries and 150 questions. `questions.txt` has a 1 MiB limit; each image 5 MiB. Use an unencrypted, single-volume ZIP, with no unsupported extra file formats or unsafe paths.
+- Source text, answers and mathematical notation are preserved; importing does not verify the educational correctness of supplied answers or infer LaTeX from ambiguous plain text. To typeset math, use `$...$` inline and `$$...$$` for a separate formula. Obtain needed image crops from the authorised source; do not invent missing diagrams.
+- Import opens a private reviewable draft. Confirm title, subject and classification, inspect diagrams and answer keys, then save. Exact ZIP SHA256 is retained per author/group; importing the same ZIP again opens that owned draft instead of duplicating it. Changing an existing source bank does not silently overwrite used versions. Import does not automatically publish or assign the Quiz.
 - The attached Kedah sample contains **40 questions / 39 images**, with **16 easy / 23 medium / 1 hard**. It is used as a local QA fixture; it is not automatically published to the production creator library.
 
 ## Future bank preparation: two stages

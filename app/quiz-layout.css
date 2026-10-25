@@ -141,3 +141,36 @@
 .quiz-moderation .quiz-card{min-width:0;overflow-wrap:anywhere}.quiz-moderation .quiz-review-reason{white-space:pre-wrap;overflow-wrap:anywhere}
 .quiz-moderation input,.quiz-moderation select,.quiz-moderation button,.quiz-sampling-settings select,.quiz-share-panel input:not([type=checkbox]){min-height:44px}
 @media(max-width:480px){.quiz-review-dialog{padding:20px}.quiz-moderation .quiz-card-actions>*{flex:1 1 130px}.quiz-sampling-settings{padding:16px}.quiz-moderation .quiz-editor-header{flex-wrap:wrap;gap:14px}}
+
+.quiz-import-dialog[data-slot=dialog-content] { z-index: 104; display: grid; gap: 16px; width: 560px; max-width: calc(100vw - 24px); max-height: 90dvh; overflow: auto; padding: 24px; color: #25213f; background: #f8f7fb; }
+.quiz-import-dialog [data-slot=dialog-title] { padding-right: 40px; font-size: 20px; font-weight: 600; line-height: 1.4; }
+.quiz-import-dialog > [data-slot=dialog-close] { top: 8px; right: 8px; display: inline-flex; align-items: center; justify-content: center; width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; }
+.quiz-import-dialog [data-slot=dialog-description] { margin: 0; font-size: 14px; color: #605a75; line-height: 1.5; }
+.quiz-import-dropzone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 164px; padding: 20px 12px; border: 2px dashed #b7afcd; border-radius: 8px; background: #fff; color: #51486b; text-align: center; cursor: pointer; }
+.quiz-import-dropzone strong { font-size: 16px; line-height: 1.5; }
+.quiz-import-dropzone span,.quiz-import-dropzone small { font-size: 13px; line-height: 1.5; }
+.quiz-import-dropzone small { color: #716881; }
+.quiz-import-dropzone.is-dragging { border-color: #6245bd; background: #f0ebfa; }
+.quiz-import-dropzone:focus-visible,.quiz-import-tutorial > summary:focus-visible,.quiz-import-downloads a:focus-visible { outline: 2px solid #6245bd; outline-offset: 3px; }
+.quiz-import-dropzone:disabled { cursor: progress; opacity: .65; }
+.quiz-import-status { margin: 0; font-size: 13px; color: #605a75; }
+.quiz-import-error { padding: 12px; border: 1px solid #c68b85; border-radius: 6px; color: #8b3028; background: #fff7f5; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.quiz-import-error p { margin: 0; }
+.quiz-import-error details { margin-top: 8px; }
+.quiz-import-error summary { min-height: 44px; cursor: pointer; }
+.quiz-import-error pre { white-space: pre-wrap; font: inherit; max-height: 200px; overflow: auto; }
+.quiz-import-tutorial { min-width: 0; border-top: 1px solid #d9d4e8; }
+.quiz-import-tutorial > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; color: #4e329c; font-size: 14px; font-weight: 600; list-style: none; cursor: pointer; }
+.quiz-import-tutorial > summary::-webkit-details-marker { display: none; }
+.quiz-import-tutorial > summary > svg:last-child { margin-left: auto; }
+.quiz-import-tutorial[open] > summary > svg:last-child { transform: rotate(180deg); }
+.quiz-import-tutorial > div { font-size: 13px; line-height: 1.6; color: #605a75; }
+.quiz-import-tutorial ol { list-style: decimal; padding-left: 20px; margin: 0 0 12px; }
+.quiz-import-tutorial li + li { margin-top: 8px; }
+.quiz-import-tutorial pre { padding: 10px 12px; margin: 0 0 12px; border: 1px solid #d9d4e8; border-radius: 6px; background: #fff; white-space: pre-wrap; font-size: 13px; }
+.quiz-import-downloads { display: flex; flex-wrap: wrap; gap: 8px; }
+.quiz-import-downloads a { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; max-width: 100%; padding: 8px 12px; border: 1px solid #b7afcd; border-radius: 6px; background: #fff; color: #4e329c; text-decoration: none; }
+.quiz-import-spinner { animation: quiz-import-spin 1s linear infinite; }
+@keyframes quiz-import-spin { to { transform: rotate(360deg); } }
+@media(max-width:480px) { .quiz-import-dialog[data-slot=dialog-content] { padding: 20px 16px; } .quiz-import-dropzone { min-height: 148px; } .quiz-import-downloads a { flex: 1 1 160px; } }
+@media(prefers-reduced-motion:reduce) { .quiz-import-spinner { animation: none; } }
