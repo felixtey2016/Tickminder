@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict';
+import {createFixtureLoader} from './fixture-loader.mjs';
+const load=createFixtureLoader({runtimeUrl:'data:text/javascript,export {}',environmentUrl:'data:text/javascript,export const env={};'});
+const {resolveLanguagePreference:resolve,readBrowserLanguagePreference:read,rememberLanguagePreference:remember}=(await load('lib/language-preference.ts')).module;
+const {LANGUAGE_KEY}=(await load('lib/i18n.ts')).module;
+let checks=0;function check(label,fn){fn();checks++;}
+for(const locale of ['zh','zh-CN','zh-TW','zh-HK','zh-Hans','zh-Hant-HK','ZH-hant-TW'])check(locale,()=>assert.equal(resolve(null,[locale]),'zh'));
+for(const locale of ['en','en-US','en-GB','EN-my','en-SG'])check(locale,()=>assert.equal(resolve(null,[locale]),'en'));
+check('first supported preference',()=>assert.equal(resolve(null,['ms-MY','zh-TW','en-GB']),'zh'));
+check('English preference before Chinese',()=>assert.equal(resolve(null,['fr-FR','en-GB','zh-CN']),'en'));
+check('unsupported preferences default English',()=>assert.equal(resolve(null,['ms-MY','de-DE']),'en'));
+check('empty preferences use primary language',()=>assert.equal(resolve(null,[],'zh-TW'),'zh'));
+check('missing preference list uses primary language',()=>assert.equal(resolve(null,undefined,'en-SG'),'en'));
+check('unsupported list may fall back to a usable primary language',()=>assert.equal(resolve(null,['ms-MY'],'zh-HK'),'zh'));
+for(const saved of ['zh','en'])check('saved '+saved+' overrides device',()=>assert.equal(resolve(saved,[saved==='zh'?'en-GB':'zh-CN']),saved));
+for(const saved of [null,undefined,'','fr','zh-CN','EN',0,{}])check('invalid saved choice ignored '+String(saved),()=>assert.equal(resolve(saved,['en-US','zh-CN']),'en'));
+for(const bad of ['zh_CN','zh-<script>','en/GB','zh--TW','zh-'+'a'.repeat(20),'en\nGB',null,12,{}])check('malformed preference ignored '+String(bad),()=>assert.equal(resolve(null,[bad,'en-US']),'en'));
+check('server read has no browser globals or mutation',()=>assert.equal(read(),'en'));
+check('server remember is a no-op',()=>assert.doesNotThrow(()=>remember('en')));
+const previous=Object.getOwnPropertyDescriptor(globalThis,'window');
+try{
+ let writes=[],stored=null;
+ const browser={navigator:{languages:['zh-TW'],language:'zh-TW'},localStorage:{getItem(key){assert.equal(key,LANGUAGE_KEY);return stored;},setItem(key,value){writes.push([key,value]);stored=value;}}};
+ Object.defineProperty(globalThis,'window',{configurable:true,value:browser});
+ check('browser detects Traditional Chinese',()=>assert.equal(read(),'zh'));
+ check('automatic choice is not written',()=>assert.deepEqual(writes,[]));
+ browser.navigator.languages=['en-GB'];browser.navigator.language='en-GB';
+ check('changed device preference is detected next time',()=>assert.equal(read(),'en'));
+ remember('zh');
+ check('manual switch persists existing storage key',()=>assert.deepEqual(writes,[[LANGUAGE_KEY,'zh']]));
+ check('manual Chinese wins on English device',()=>assert.equal(read(),'zh'));
+ remember('en');browser.navigator.languages=['zh-CN'];
+ check('manual English wins on Chinese device',()=>assert.equal(read(),'en'));
+ Object.defineProperty(browser,'localStorage',{configurable:true,get(){throw Error('SecurityError');}});
+ check('blocked storage read falls back to browser',()=>assert.equal(read(),'zh'));
+ check('blocked storage write cannot break manual switching',()=>assert.doesNotThrow(()=>remember('en')));
+ Object.defineProperty(browser.navigator,'languages',{configurable:true,get(){throw Error('unavailable');}});browser.navigator.language='en-SG';
+ check('blocked preferred list still uses primary language',()=>assert.equal(read(),'en'));
+ Object.defineProperty(browser.navigator,'language',{configurable:true,get(){throw Error('unavailable');}});
+ check('blocked navigator preferences use English',()=>assert.equal(read(),'en'));
+}finally{if(previous)Object.defineProperty(globalThis,'window',previous);else delete globalThis.window;}
+console.log(JSON.stringify({suite:'device-language-preference',checks,networkRequests:0,productionWrites:false}));

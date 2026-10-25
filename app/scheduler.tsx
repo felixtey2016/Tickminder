@@ -13,7 +13,8 @@ import {groupFetch,setClientGroup} from "@/lib/group-client";
 
 import { BulkDeleteTool } from "./bulk-delete";
 import { FilterScope, useFilterPreference } from "@/lib/filter-preferences";
-import { getLanguage, LANGUAGE_KEY, setLanguage, t, type Language } from "@/lib/i18n";
+import { getLanguage, setLanguage, t, type Language } from "@/lib/i18n";
+import {readBrowserLanguagePreference,rememberLanguagePreference} from '@/lib/language-preference';
 import {formatDurationHours} from '@/lib/duration-format';
 import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
 import { clearDialogHistory, useDialogState } from "@/lib/use-dialog-state";
@@ -229,11 +230,12 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
         }
     },[]);
     const [language, setLanguageState] = useState<Language>("zh");
+    const [languageReady,setLanguageReady]=useState(false);
     useEffect(() => {
-        const saved = window.localStorage.getItem(LANGUAGE_KEY);
-        if (saved === "en") { setLanguage("en"); setLanguageState("en"); }
+        const next=readBrowserLanguagePreference();
+        setLanguage(next);setLanguageState(next);setLanguageReady(true);
     }, []);
-    function changeLanguage(next: Language) { setLanguage(next); window.localStorage.setItem(LANGUAGE_KEY, next); setLanguageState(next); }
+    function changeLanguage(next: Language) { setLanguage(next);setLanguageState(next);rememberLanguagePreference(next); }
     const [auth, setAuth] = useState<{
         account: Account | null;
         clientId: string | null;
@@ -554,6 +556,7 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
     } }
     const lessons = useMemo(() => [...(state?.lessons || [])].sort((a, b) => a.plannedStart.localeCompare(b.plannedStart)), [state?.lessons]);
     useLessonWebMcp(auth?.account?.role, lessons, reload);
+    if (!languageReady)return <main className="auth-loading" data-testid="device-language-loading"><p role="status">正在加载… / Loading…</p></main>;
     if (!auth)
         return <main className="auth-loading"><LanguageSwitcher language={language} change={changeLanguage}/><PageState kind={message ? "error" : "loading"} title={message ? "页面加载失败" : "正在加载…"} description={message ? actionFailureMessage(new Error(message)) : undefined} action={message ? "重试" : undefined} onAction={() => { setMessage(""); void request("/api/auth").then(setAuth).catch(error => setMessage(actionFailureMessage(error))); }}/></main>;
     if (!auth.account)
