@@ -36,10 +36,15 @@ const monthlyPeopleSql=`WITH target AS(SELECT ? AS gid,? AS month),monthly_sourc
  UNION ALL
  SELECT t.teacher_name,0,0 FROM payroll_runs r JOIN payroll_teachers t ON t.group_id=r.group_id AND t.id=r.teacher_id,target WHERE r.group_id=target.gid AND r.month=target.month AND NOT EXISTS(SELECT 1 FROM monthly m WHERE m.teacherName=t.teacher_name)
 )`;
-export async function payrollTeachers(actor:Account,pageValue=1,monthValue=''){
+export async function payrollTeachers(actor:Account,pageValue=1,monthValue='',searchValue='',selectedIdValue='',selectedNameValue=''){
  const gid=await requirePayrollPermission(actor),m=monthValue?month(monthValue):'',query=m?`${monthlyPeopleSql},roster AS(SELECT t.name AS teacherName,t.active,0 AS rosterMissing FROM teachers t,target WHERE t.group_id=target.gid UNION ALL SELECT c.teacherName,0,1 FROM candidates c,target WHERE NOT EXISTS(SELECT 1 FROM teachers t WHERE t.group_id=target.gid AND t.name=c.teacherName)) SELECT * FROM roster`:'SELECT name AS teacherName,active,0 AS rosterMissing FROM teachers WHERE group_id=?',values=m?[gid,m]:[gid];
- const total=(await read<{n:number}>(actor,'payroll.view',`SELECT count(*) AS n FROM (${query})`,...values))[0]?.n||0,{pages,page}=paging(pageValue,total),rows=await read<{teacherName:string;active:number;rosterMissing:number}>(actor,'payroll.view',`${query} ORDER BY rosterMissing,active DESC,lower(teacherName),teacherName LIMIT 20 OFFSET ?`,...values,(page-1)*20);
- return{items:await Promise.all(rows.map(async t=>({teacherId:await payrollTeacherId(gid,t.teacherName),teacherName:t.teacherName,active:Boolean(t.active),rosterMissing:Boolean(t.rosterMissing)}))),total,page,pages};
+ const search=limited(searchValue,100,'搜索姓名'),selectedId=text(selectedIdValue),selectedName=limited(selectedNameValue,160,'老师姓名'),where=search?' WHERE instr(lower(teacherName),lower(?))>0':'',args=[...values,...(search?[search]:[])];
+ if(selectedId.length>100)throw new PayrollError('请选择有效老师');
+ const total=(await read<{n:number}>(actor,'payroll.view',`SELECT count(*) AS n FROM (${query}) picker${where}`,...args))[0]?.n||0,{pages,page}=paging(pageValue,total),rows=await read<{teacherName:string;active:number;rosterMissing:number}>(actor,'payroll.view',`SELECT * FROM (${query}) picker${where} ORDER BY rosterMissing,active DESC,lower(teacherName),teacherName LIMIT 20 OFFSET ?`,...args,(page-1)*20);
+ const mapTeacher=async(t:{teacherName:string;active:number;rosterMissing:number})=>({teacherId:await payrollTeacherId(gid,t.teacherName),teacherName:t.teacherName,active:Boolean(t.active),rosterMissing:Boolean(t.rosterMissing)});
+ let selected:PayrollTeacher|null=null;
+ if(selectedId&&selectedName){const row=(await read<{teacherName:string;active:number;rosterMissing:number}>(actor,'payroll.view',`SELECT * FROM (${query}) picker WHERE teacherName=?`,...values,selectedName))[0];if(row&&await payrollTeacherId(gid,row.teacherName)===selectedId)selected=await mapTeacher(row);}
+ return{items:await Promise.all(rows.map(mapTeacher)),total,page,pages,selected};
 }
 async function teacher(actor:Account,teacherId:string,key='payroll.view'):Promise<PayrollTeacher>{
  const gid=group(actor),stored=(await read<{teacherName:string;active:number}>(actor,key,'SELECT p.teacher_name AS teacherName,t.active FROM payroll_teachers p JOIN teachers t ON t.group_id=p.group_id AND t.name=p.teacher_name WHERE p.group_id=? AND p.id=?',gid,teacherId))[0];

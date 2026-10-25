@@ -13,6 +13,7 @@ import "./whatsapp-layout.css";
 import "./recordings-layout.css";
 import "./round-one-layout.css";
 import "./workspace-startup.css";
+import "./form-action-bar.css";
 import { ActionToastHost } from "@/components/action-toast";
 
 export const metadata: Metadata = {

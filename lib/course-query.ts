@@ -88,6 +88,25 @@ export async function courseRangeState(actor:Account,range:CourseRange){
  const groupIds=new Set(sessionData.sessions.map(s=>s.id));
  return{lessons,attendanceSessions:actor.role==='student'?undefined:sessionData.allSessions,classSessions:actor.role==='student'?sessionData.sessions.map(s=>studentSessionResponse(s,actor.studentName)):sessionData.sessions,proposals:requests.filter(r=>!r.sessionId||!groupIds.has(r.sessionId)).map(r=>actor.role==='student'?studentRescheduleResponse(r):r),classSessionRequests:actor.role==='student'?[]:requests.filter(r=>r.sessionId&&groupIds.has(r.sessionId))};
 }
+// A notification opens one current record without depending on the selected
+// calendar month, filters or list pagination. Use the ordinary course scope and
+// projection, including the student's personal-attendance privacy rules.
+export async function courseLessonTarget(actor:Account,id:string){
+ if(!id||id.length>200)throw new CourseQueryError('请选择课程');
+ await assertCourseActor(actor,['lessons.view']);
+ const scope=courseLessonScope(actor),reader=guardedCoreReader(actor,['lessons.view']);
+ const source=await reader.rows<Lesson>(`SELECT ${lessonColumns} FROM lessons l WHERE l.id=? AND ${scope.sql}`,id,...scope.args);
+ if(!source.length)throw new CourseQueryError('课程不存在或没有查看权限',404);
+ const sessionData=await classSessionState(actor,{sessionIds:source[0].sessionId?[source[0].sessionId]:[]}),result=(await decorateLessons(actor,source,sessionData))[0];
+ const selected=source[0].sessionId?sessionData.byId.get(source[0].sessionId):undefined;
+ const session=actor.role!=='student'&&selected?.sessionType==='group'?selected:undefined;
+ const canRequests=Boolean(session)&&await hasAdminPermission(actor,'reschedules.view');
+ const requests=canRequests?await guardedCoreReader(actor,['reschedules.view']).rows<{id:string;sessionId:string|null;proposedStart:string;proposedEnd:string;status:string;note:string|null}>(`SELECT r.id,r.session_id AS sessionId,r.proposed_start AS proposedStart,r.proposed_end AS proposedEnd,r.status,r.note FROM reschedule_requests r JOIN lessons l ON l.group_id=r.group_id AND l.id=r.lesson_id WHERE r.session_id=? AND r.status='pending' AND ${scope.sql}`,session!.id,...scope.args):[];
+ await assertCourseActor(actor,['lessons.view',...canRequests?['reschedules.view']:[]]);
+ if(!await reader.first(`SELECT 1 FROM lessons l WHERE l.id=? AND ${scope.sql}`,id,...scope.args))throw new CourseQueryError('课程权限已改变，请刷新后重试',403);
+ return{lesson:result,session,requests};
+}
+
 export async function courseAggregates(actor:Account,month:string,plans:SummaryPlan[]){
  const emptyTasks:CourseTaskCounts={lessons:0,reschedule:0,overview:0,attention:0,pendingAttendance:0,pendingReview:0,makeupNeeded:0,todayLessons:0,todayPendingAttendance:0},emptyTeaching:CourseTeachingSummary={month,recordedMilliseconds:0,approvedMilliseconds:0,count:0};
  const range=courseRange(new URLSearchParams({month})),now=new Date().toISOString(),scope=courseLessonScope(actor),ss=sessionScope(actor),canStats=actor.role!=='student'&&await hasAdminPermission(actor,'statistics.view'),canAttendance=actor.role!=='student'&&await hasAdminPermission(actor,'attendance.view'),canLessons=await hasAdminPermission(actor,'lessons.view'),canRequests=await hasAdminPermission(actor,'reschedules.view');

@@ -216,7 +216,7 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
   </div>;
 }
 
-function StudentHomeworkCard({ item, submissions, mutate, busy, onPlan, maxLabel, maxBytes, illustrateSuccess, onSubmitted }: { illustrateSuccess: boolean; onSubmitted: () => void; item: Homework; submissions: Submission[]; mutate: LearningMutate; busy: boolean; onPlan: (item: Homework) => void; maxLabel: string; maxBytes: number }) {
+export function StudentHomeworkCard({ item, submissions, mutate, busy, onPlan, maxLabel, maxBytes, illustrateSuccess, onSubmitted }: { illustrateSuccess: boolean; onSubmitted: () => void; item: Homework; submissions: Submission[]; mutate: LearningMutate; busy: boolean; onPlan?: (item: Homework) => void; maxLabel: string; maxBytes: number }) {
   const [file, setFile] = useState<File | null>(null);
   const [fileRevision,setFileRevision]=useState<number|undefined>();
   const [uploadedId, setUploadedId] = useState("");
@@ -252,7 +252,7 @@ function StudentHomeworkCard({ item, submissions, mutate, busy, onPlan, maxLabel
   }
   return <article className="learning-card student-homework-card"><header className="student-homework-detail-head"><div className="learning-record-head"><strong>{item.title}</strong><small>{item.subject} · {t("截止")}: {readable(item.dueAt)}</small></div><span>{latest ? `${t("已提交")}${latest.late ? ` · ${t("迟交")}` : ""}` : notStarted ? t("尚未开始") : now > item.dueAt ? t("已逾期，仍可提交") : t("待提交")}</span></header>
     <div className="learning-card-detail">{item.description && <p>{item.description}</p>}<div className="learning-record-meta"><small>{t("开始")}: {readable(item.startsAt)}</small><small>{t("截止")}: {readable(item.dueAt)}</small>{item.maxScore != null && <small>{t("满分")}: {item.maxScore}{item.score != null && <> · {t("得分")}: {item.score}</>}</small>}</div>{item.attachmentFileId && <div className="learning-record-content"><strong>{t("功课附件（PDF）")}</strong><div className="learning-action-row"><FileLinks fileId={item.attachmentFileId}/></div></div>}
-      {latest&&<HomeworkReview homeworkId={item.id} maxBytes={maxBytes}/>}{item.resubmitGrantId&&<p className="notice">{t("老师已允许重新提交一次，提交后需要重新评分。")}</p>}<div className="learning-action-row"><ContentActions kind="homework" id={item.id}/><Button size="sm" variant="outline" onClick={() => onPlan(item)}>{t("加入学习计划")}</Button></div>
+      {latest&&<HomeworkReview homeworkId={item.id} maxBytes={maxBytes}/>}{item.resubmitGrantId&&<p className="notice">{t("老师已允许重新提交一次，提交后需要重新评分。")}</p>}<div className="learning-action-row"><ContentActions kind="homework" id={item.id}/>{onPlan&&<Button size="sm" variant="outline" onClick={() => onPlan(item)}>{t("加入学习计划")}</Button>}</div>
       {latest && !success && <div className="learning-submission-success"><strong>{t("提交成功")}</strong><span>{latest.filename} · {readable(latest.submittedAt)}{latest.late ? ` · ${t("迟交")}` : ""}</span><FileLinks fileId={latest.fileId}/><SubmissionVersion revision={latest.homeworkRevision} dueAt={latest.dueAtSubmission}/></div>}
       {success && <div role="status" className="homework-submit-confirmation">{illustrateSuccess && <Mascot pose="homework-submitted" size={136}/>}<strong>{t("提交成功")}</strong><p>{latest ? `${latest.filename} · ${readable(latest.submittedAt)}` : success}</p>{latest && <FileLinks fileId={latest.fileId}/>}</div>}
       {error && <p role="alert" className="notice">{error}</p>}

@@ -93,7 +93,7 @@ export async function notificationState(account:Account) {
   // for the cloud scheduler, whose last successful dispatch is shown separately.
   await generateReminders(Date.now(),account.id);
   const [reminders,inbox,health]=await Promise.all([
-    rows<{id:string;minutes:number;dueAt:string;readAt:string|null;unreadTotal:number}>(`SELECT n.id,n.offset_minutes AS minutes,n.due_at AS dueAt,n.read_at AS readAt,l.subject,l.teacher_name AS teacherName,l.planned_start AS plannedStart,l.planned_end AS plannedEnd,sum(n.read_at IS NULL) OVER () AS unreadTotal
+    rows<{id:string;lessonId:string;minutes:number;dueAt:string;readAt:string|null;unreadTotal:number}>(`SELECT n.id,l.id AS lessonId,n.offset_minutes AS minutes,n.due_at AS dueAt,n.read_at AS readAt,l.subject,l.teacher_name AS teacherName,l.planned_start AS plannedStart,l.planned_end AS plannedEnd,sum(n.read_at IS NULL) OVER () AS unreadTotal
       FROM notification_items n JOIN lessons l ON l.id=n.lesson_id JOIN accounts a ON a.id=n.account_id
       WHERE n.account_id=? AND n.group_id=? AND n.group_id=l.group_id AND n.planned_start=l.planned_start AND l.status<>'cancelled' AND ${participantSql}
       ORDER BY (n.read_at IS NULL) DESC,n.due_at DESC LIMIT 100`,account.id,account.groupId),

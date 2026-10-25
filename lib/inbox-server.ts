@@ -29,7 +29,7 @@ const date = (value: unknown, fallback: string) => typeof value === "string" && 
 
 export async function inboxState(account: Account) {
   const permission=adminPermissionPredicate(account,"lessons.view");
-  const messages = await rows<{ id: string; kind: string; createdAt: string; readAt: string | null; subject: string; teacherName: string; plannedStart: string; plannedEnd: string; beforeJson: string | null; afterJson: string | null; unreadTotal: number }>(`SELECT n.id,n.kind,n.created_at AS createdAt,n.read_at AS readAt,
+  const messages = await rows<{ id: string; lessonId:string; kind: string; createdAt: string; readAt: string | null; subject: string; teacherName: string; plannedStart: string; plannedEnd: string; beforeJson: string | null; afterJson: string | null; unreadTotal: number }>(`SELECT n.id,l.id AS lessonId,n.kind,n.created_at AS createdAt,n.read_at AS readAt,
     l.subject,l.teacher_name AS teacherName,l.planned_start AS plannedStart,l.planned_end AS plannedEnd,
     e.before_json AS beforeJson,e.after_json AS afterJson,sum(n.read_at IS NULL) OVER () AS unreadTotal
     FROM site_notifications n JOIN audit e ON e.id=n.event_id JOIN lessons l ON l.id=n.lesson_id JOIN accounts a ON a.id=n.account_id
@@ -38,7 +38,7 @@ export async function inboxState(account: Account) {
   const [learning,quiz]=await Promise.all([learningInbox(account),quizAssignmentInbox(account)]);
   return { unreadCount: Number(messages[0]?.unreadTotal || 0)+learning.unreadCount+quiz.unreadCount, unreadQuizCount:quiz.unreadCount, items: [...quiz.items,...learning.items,...messages.map(message => {
     const before = snapshot(message.beforeJson), after = snapshot(message.afterJson);
-    return { id: "change:" + message.id, kind: message.kind, dueAt: message.createdAt, readAt: message.readAt, subject: message.subject, teacherName: message.teacherName,
+    return { id: "change:" + message.id, lessonId:message.lessonId, kind: message.kind, dueAt: message.createdAt, readAt: message.readAt, subject: message.subject, teacherName: message.teacherName,
       previousStart: date(before.originalStart ?? before.plannedStart, message.plannedStart),
       plannedStart: date(message.kind === "acceptReschedule" ? before.proposedStart : after.plannedStart ?? before.originalStart ?? before.plannedStart, message.plannedStart),
       plannedEnd: date(message.kind === "acceptReschedule" ? before.proposedEnd : after.plannedEnd ?? before.originalEnd ?? before.plannedEnd, message.plannedEnd) };

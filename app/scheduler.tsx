@@ -45,6 +45,7 @@ const TeachingStatisticsDetails=lazy(()=>import("./teaching-statistics-details")
 import { HomeDashboard } from "./home-dashboard";
 import {PersonIdentityFields,createPersonIdentityDraft,personIdentityPayload,personIdentityReady} from "./person-identity-fields";
 import {GoogleLinkOnboarding} from './google-link-onboarding';
+import {FormActionBar} from '@/components/form-action-bar';
 import {validQuizLinkId,quizLinkIdFromPath} from '@/lib/quiz-link';
 import type { LearningState } from "./learning-portal";
 const GroupConsole=lazy(()=>import("./group-console").then(m=>({default:m.GroupConsole})));
@@ -61,7 +62,8 @@ const SheetSyncPanel = lazy(() => import("./sheet-sync-panel").then(module => ({
 const TermManager = lazy(() => import("./term-manager").then(module => ({default: module.TermManager})));
 const AccountDirectory = lazy(() => import("./account-directory").then(module => ({default: module.AccountDirectory})));
 import { AccountSettings } from "./account-settings";
-import { NotificationsProvider, NotificationCentre, MenuBadge, detachPushOnLogout } from "./notifications";
+import { NotificationsProvider, MenuBadge, detachPushOnLogout } from "./notifications";
+const NotificationWorkspace=lazy(()=>import('./notification-workspace').then(module=>({default:module.NotificationWorkspace})));
 import type {CourseTaskCounts,CourseTeachingSummary} from "@/lib/course-query";
 import {monthCalendarRange,type CalendarRange} from "@/lib/course-calendar-range";
 import {PagedAttendanceBoard,PagedGroupSessions,PagedLessonRows,PagedReschedules,TeachingSummary,MakeupOriginalPicker} from "./course-panels";
@@ -851,7 +853,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
     } else if (activeView === "home" && role !== "pending") {
         pageContent = <HomeDashboard role={role} name={account.name} taskCounts={state?.taskCounts} lessons={lessons} learning={learning} learningReady={learningReady || role === "admin"} learningError={state?.scopeErrors?.learning} onNavigate={choose}/>;
     } else if (activeView === "notifications") {
-        pageContent = <NotificationCentre onQuiz={()=>choose("quizzes")} onLearning={kind=>choose(kind==="homework"?"homework":"materials")} language={language} onLesson={() => choose(role === "teacher" ? "lessons" : role === "pending" ? "home" : "calendar")}/>;
+        pageContent = <NotificationWorkspace key={`${account.groupId}:${role}`} role={role} language={language} learningMutate={learningMutate} courseMutate={mutate} onLesson={lesson=>setModal({type:'edit',lesson})} busy={busy}/>;
     } else if (activeView === "myAccount") {
         pageContent = <AccountSettings/>;
     } else if (activeView === "classrooms" && role !== "pending") {
@@ -1038,6 +1040,7 @@ function Schedule({ state, lessons, mutate, open, busy, view,calendarDate,onCale
     const [startTime, setStartTime] = useState("");
     const [endTime, setEndTime] = useState("");
     const [until, setUntil] = useState("");
+    const scheduleOptionsRef=useRef<HTMLDetailsElement>(null);
     const [replacementFor, setReplacementFor] = useState("");
     const [classroomId,setClassroomId]=useState(""),[classOptions,setClassOptions]=useState<ScheduleClassOption[]|null>(null),[classError,setClassError]=useState("");
     const classRequest=useRef(0);
@@ -1048,6 +1051,7 @@ function Schedule({ state, lessons, mutate, open, busy, view,calendarDate,onCale
     const eligibleClasses=chosen?(classOptions||[]).filter(item=>item.teacherName===chosen.teacher&&item.members.includes(student)&&item.planKeys.includes(chosen.key)):[];
     const selectedClassId=eligibleClasses.length===1?eligibleClasses[0].id:eligibleClasses.some(item=>item.id===classroomId)?classroomId:"";
     const originals = lessons.filter(l => l.student === student && l.subject === chosen?.subject && ["student_absent", "teacher_absent", "cancelled"].includes(l.status));
+    const scheduleSummary=chosen&&student&&startDate&&startTime&&endTime?[student,chosen.subject,`${startDate} ${startTime}–${endTime}`,kind==='regular'?'':t(kind==='makeup'?'补课':'临时加课'),until?`${getLanguage()==='zh'?'重复至':'Repeat until'} ${until}`:''].filter(Boolean).join(' · '):getLanguage()==='zh'?'填写课程和时间后，在这里核对排课。':'Choose a lesson and time to review the schedule here.';
     async function submit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault();
         if (!chosen||!selectedClassId) return;
@@ -1055,11 +1059,12 @@ function Schedule({ state, lessons, mutate, open, busy, view,calendarDate,onCale
             start: `${startDate}T${startTime}`, end: `${startDate}T${endTime}`, until, replacementFor })) {
             setStudent("");setScheduleTeacher(""); setKey(""); setKind("regular"); setStartDate(""); setStartTime("");
             setEndTime(""); setUntil(""); setReplacementFor("");setClassroomId("");
-        }
+            if(scheduleOptionsRef.current)scheduleOptionsRef.current.open=false;
+        }else if(scheduleOptionsRef.current&&(until||kind!=='regular'))scheduleOptionsRef.current.open=true;
     }
     if(view==="list")return <div className="course-query-stack">{can("reschedules.view")&&<PagedReschedules requestsOnly role="admin" month={state?.month||""} mutate={mutate} busy={busy}/>}<div className="course-type-switch" role="group" aria-label={t("课程类型")}><Button variant={listType!=="group"?"default":"outline"} aria-pressed={listType!=="group"} onClick={()=>setListType("one_to_one")}>{t("一对一课程")}</Button><Button variant={listType==="group"?"default":"outline"} aria-pressed={listType==="group"} onClick={()=>setListType("group")}>{t("整班课次")}</Button></div>{listType==="group"?<PagedGroupSessions onOpenFinance={onOpenFinance} role="admin" month={state?.month||""} classrooms={state?.classroomOptions||state?.classrooms} mutate={mutate} busy={busy}/>:<PagedLessonRows title="课程列表" month={state?.month||""} teachers={state?.teachers} students={state?.students} renderTools={rows=><BulkDeleteTool kind="lesson" records={rows.map(l=>({id:l.id,label:l.student+" · "+l.subject+" · "+day(l.plannedStart)+" "+time(l.plannedStart)}))} mutate={mutate} busy={busy}/>} renderLesson={l=><LessonCard key={l.id} lesson={l} admin open={open} mutate={mutate} busy={busy}/>}/>}</div>;
     return <div className="schedule-layout schedule-single-view">{view==="create"&&<div className="class-session-mode" role="group" aria-label={t("排课方式")}><Button variant={scheduleMode==="one_to_one"?"default":"outline"} onClick={()=>setScheduleMode("one_to_one")}>{t("一对一课程")}</Button><Button variant={scheduleMode==="group"?"default":"outline"} onClick={()=>setScheduleMode("group")}>{t("整班课程")}</Button></div>}{view==="create"&&scheduleMode==="group"&&<GroupSessionPlanner mutate={mutate} busy={busy}/>}<section className="panel create-panel" hidden={view !== "create"||scheduleMode!=="one_to_one"}><h2>{t("一对一课程")}</h2>
-        <form onSubmit={submit}>
+        <form className="schedule-edit-form form-action-surface" onSubmit={submit} onInvalidCapture={event=>{if(scheduleOptionsRef.current?.contains(event.target as Node))scheduleOptionsRef.current.open=true;}}>
             <div className="schedule-person-filters"><DirectoryFilters teachers={[...new Set([...(state?.teachers||[]),...plans.map(plan=>plan.teacher)])].sort()} students={[...new Set([...(state?.students||[]),...plans.map(plan=>plan.student)])].sort()} pairs={schedulePairs} teacher={scheduleTeacher} student={student} onTeacher={value=>{setScheduleTeacher(value);setKey('');setReplacementFor('');setClassroomId('');}} onStudent={value=>{setStudent(value);setKey('');setReplacementFor('');setClassroomId('');}}/></div>
             {student && <label>{t("学生科目配对")}<select required value={key} onChange={e => { const plan=subjects.find(item=>item.key===e.target.value);setKey(e.target.value);if(plan)setScheduleTeacher(plan.teacher); setReplacementFor("");setClassroomId(""); }}><option value="">{t("请选择")}</option>{subjects.map(p => <option value={p.key} key={p.key}>{p.subject} · {p.teacher}</option>)}</select></label>}
             {(student&&!subjects.length||!plans.length)&&<p className="muted">{t('请先设置学生课程，再安排老师与学生的课程。')}</p>}
@@ -1068,10 +1073,12 @@ function Schedule({ state, lessons, mutate, open, busy, view,calendarDate,onCale
             <div className="schedule-time-fields"><label>{t("上课日期")}<input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)}/></label><label>{t("开始时间")}<input required type="time" value={startTime} onChange={e => setStartTime(e.target.value)}/></label><label>{t("结束时间")}<input required type="time" value={endTime} onChange={e => setEndTime(e.target.value)}/></label></div>
             <p className="muted schedule-date-note">{t("开始和结束时间使用同一天日期。")}</p>
             <ConflictPreview enabled={Boolean(chosen && selectedClassId && startDate && startTime && endTime && startTime < endTime)} value={{ action: "create", student, subject: chosen?.subject, teacherName: chosen?.teacher,classroomId:selectedClassId, start: `${startDate}T${startTime}`, end: `${startDate}T${endTime}`, until }}/>
-            <label>{t("课程类型")}<select value={kind} onChange={e => setKind(e.target.value)}><option value="regular">{t("常规课程")}</option><option value="extra">{t("临时加课")}</option><option value="makeup">{t("补课")}</option></select></label>
-            {kind === "makeup" && student&&chosen&&selectedClassId&&<MakeupOriginalPicker key={student+chosen.key+selectedClassId} student={student} subject={chosen.subject} value={replacementFor} onChange={setReplacementFor}/>}
-            <label>{t("每周重复至（可留空）")}<input type="date" value={until} onChange={e => setUntil(e.target.value)}/></label>
-            <Button adminGrant="lessons.create" disabled={busy || !chosen || !selectedClassId || classOptions===null} className="primary-full">{t("保存排课")}</Button>
+            <details ref={scheduleOptionsRef} className="schedule-extra-options" data-testid="schedule-extra-options"><summary>{getLanguage()==='zh'?'重复与其他设置':'Repeat and other options'}{(until||kind!=='regular')&&<span>{getLanguage()==='zh'?'已设置':'Set'}</span>}</summary><div>
+              <label>{t("课程类型")}<select value={kind} onChange={e => setKind(e.target.value)}><option value="regular">{t("常规课程")}</option><option value="extra">{t("临时加课")}</option><option value="makeup">{t("补课")}</option></select></label>
+              {kind === "makeup" && student&&chosen&&selectedClassId&&<MakeupOriginalPicker key={student+chosen.key+selectedClassId} student={student} subject={chosen.subject} value={replacementFor} onChange={setReplacementFor}/>}
+              <label>{t("每周重复至（可留空）")}<input type="date" value={until} onChange={e => setUntil(e.target.value)}/></label>
+            </div></details>
+            <FormActionBar summary={scheduleSummary}><Button adminGrant="lessons.create" disabled={busy || !chosen || !selectedClassId || classOptions===null} className="primary-full">{t("保存排课")}</Button></FormActionBar>
         </form></section>
         {view==="create"&&<details className="course-existing-sessions"><summary>{t("已安排的整班课次")}</summary><PagedGroupSessions role={state?.account.role==="teacher"?"teacher":"admin"} month={state?.month||""} mutate={mutate} busy={busy}/></details>}
         <section className="panel" hidden={view === "create"}>

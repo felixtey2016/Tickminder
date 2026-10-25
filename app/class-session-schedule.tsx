@@ -2,6 +2,7 @@
 import {useEffect,useRef,useState} from "react";
 import {CalendarClock,Link as LinkIcon} from "lucide-react";
 import {Button} from "@/components/ui/button";
+import {FormActionBar} from '@/components/form-action-bar';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from "@/components/ui/dialog";
 import {groupFetch} from "@/lib/group-client";
 import {getLanguage,t} from "@/lib/i18n";
@@ -23,17 +24,20 @@ function useOperation(){const ref=useRef<{body:string;id:string}|null>(null);ret
 export function GroupSessionPlanner({mutate,busy}:{mutate:Mutate;busy:boolean}){
  const [options,setOptions]=useState<Option[]|null>(null),[error,setError]=useState(""),[classroomId,setClassroomId]=useState(""),[start,setStart]=useState(""),[end,setEnd]=useState(""),[until,setUntil]=useState(""),[link,setLink]=useState(""),[saving,setSaving]=useState(false);
  const loadSeq=useRef(0),operation=useOperation(),selected=options?.find(c=>c.id===classroomId);
+ const extraOptionsRef=useRef<HTMLDetailsElement>(null);
  async function load(){const seq=++loadSeq.current;setError("");setOptions(null);try{const response=await groupFetch("/api/class-sessions?lang="+getLanguage(),{cache:"no-store"}),data=await readApiJson<{classes:Option[];error?:string}>(response);if(!response.ok)throw Error(t(data.error||"班级名单加载失败，请重试"));if(seq===loadSeq.current)setOptions(data.classes);}catch(e){if(seq===loadSeq.current)setError(e instanceof Error?e.message:t("班级名单加载失败，请重试"));}}
  useEffect(()=>{void load();return()=>{loadSeq.current++;};},[]);
  const body={action:"createClassSession",classroomId,optionKey:selected?.optionKey,start,end,until,onlineLink:link};
- return <section className="panel class-session-planner"><h2>{t("整班排课")}</h2>{error&&<p className="notice" role="alert">{error}</p>}{options===null?<><p role="status">{error?"":t("正在加载…")}</p><Button variant="outline" onClick={()=>void load()}>{t("重新载入")}</Button></>:!options.length?<p>{t("暂无可排课的有效班级，请先建立班级并加入学生。")}</p>:<form className="learning-form" onSubmit={async event=>{event.preventDefault();if(saving||busy||!selected)return;setSaving(true);setError("");try{if(await mutate(operation(body))){setStart("");setEnd("");setUntil("");}else setError(t("未能保存，请检查提示后重试。"));}finally{setSaving(false);}}}>
+ return <section className="panel class-session-planner"><h2>{t("整班排课")}</h2>{error&&<p className="notice" role="alert">{error}</p>}{options===null?<><p role="status">{error?"":t("正在加载…")}</p><Button variant="outline" onClick={()=>void load()}>{t("重新载入")}</Button></>:!options.length?<p>{t("暂无可排课的有效班级，请先建立班级并加入学生。")}</p>:<form className="learning-form form-action-surface" onInvalidCapture={event=>{if(extraOptionsRef.current?.contains(event.target as Node))extraOptionsRef.current.open=true;}} onSubmit={async event=>{event.preventDefault();if(saving||busy||!selected)return;setSaving(true);setError("");try{if(await mutate(operation(body))){setStart("");setEnd("");setUntil("");if(extraOptionsRef.current)extraOptionsRef.current.open=false;}else setError(t("未能保存，请检查提示后重试。"));}finally{setSaving(false);}}}>
   <label>{t("选择班级")}<select required value={classroomId} disabled={busy||saving} onChange={event=>{setClassroomId(event.target.value);setLink(options.find(c=>c.id===event.target.value)?.onlineLink||"");}}><option value="">{t("请选择")}</option>{options.map(c=><option value={c.id} key={c.id}>{c.title} · {c.subject} · {c.teacherName}</option>)}</select></label>
-  {selected&&<div className="class-session-roster"><strong>{t("本次参与学生")} · {selected.members.length}</strong><p>{selected.members.join("、")||t("暂无有效学生")}</p><small>{t("排课后保留本次名单，班级增减成员不会自动改动已有课次。")}</small></div>}
+  {selected&&<details className="class-session-roster schedule-roster-preview"><summary>{t("本次参与学生")} · {selected.members.length}</summary><p>{selected.members.join("、")||t("暂无有效学生")}</p><small>{t("排课后保留本次名单，班级增减成员不会自动改动已有课次。")}</small></details>}
   <div className="form-pair"><label>{t("开始日期与时间")}<input type="datetime-local" aria-label={t("开始日期与时间")} required value={start} onChange={event=>setStart(event.target.value)}/><small>{start.slice(0,10)||"YYYY-MM-DD"} · GMT+8</small></label><label>{t("结束日期与时间")}<input type="datetime-local" aria-label={t("结束日期与时间")} required value={end} onChange={event=>setEnd(event.target.value)}/><small>{end.slice(0,10)||"YYYY-MM-DD"} · GMT+8</small></label></div>
-  <label>{t("每周重复至（可留空）")}<input type="date" value={until} onChange={event=>setUntil(event.target.value)}/></label>
-  <label>{t("线上课堂链接（可选）")}<input type="url" inputMode="url" maxLength={2048} value={link} onChange={event=>setLink(event.target.value)} placeholder="https://meet.google.com/..."/></label>
+  <details ref={extraOptionsRef} className="schedule-extra-options" data-testid="group-schedule-extra-options"><summary>{getLanguage()==='zh'?'重复与其他设置':'Repeat and other options'}{(until||link)&&<span>{getLanguage()==='zh'?'已设置':'Set'}</span>}</summary><div>
+   <label>{t("每周重复至（可留空）")}<input type="date" value={until} onChange={event=>setUntil(event.target.value)}/></label>
+   <label>{t("线上课堂链接（可选）")}<input type="url" inputMode="url" maxLength={2048} value={link} onChange={event=>setLink(event.target.value)} placeholder="https://meet.google.com/..."/></label>
+  </div></details>
   <ConflictPreview endpoint="/api/class-sessions" value={body} enabled={Boolean(selected&&selected.members.length&&start&&end&&start<end)}/>
-  <div className="class-session-controls"><Button variant="outline" type="button" disabled={saving||busy} onClick={()=>void load()}>{t("刷新班级名单")}</Button><Button adminGrant="lessons.create" disabled={!selected?.members.length||busy||saving}>{t(saving?"正在保存…":"保存整班排课")}</Button></div>
+  <FormActionBar summary={selected&&start&&end?[selected.title,`${start.replace('T',' ')} – ${end.replace('T',' ')}`,until?`${getLanguage()==='zh'?'重复至':'Repeat until'} ${until}`:''].filter(Boolean).join(' · '):getLanguage()==='zh'?'选择班级和时间后，在这里核对排课。':'Choose a class and time to review the schedule here.'}><Button variant="outline" type="button" disabled={saving||busy} onClick={()=>void load()}>{t("刷新班级名单")}</Button><Button adminGrant="lessons.create" disabled={!selected?.members.length||busy||saving}>{t(saving?"正在保存…":"保存整班排课")}</Button></FormActionBar>
  </form>}</section>;
 }
 export function GroupSessionBoard({sessions,requests,role,mutate,busy,month,onAttendance,onSessionAttendance,completionScope='class-sessions',serverMode=false,total}:{serverMode?:boolean;total?:number;sessions:GroupSession[];requests:GroupSessionRequest[];role:"admin"|"teacher";mutate:Mutate;busy:boolean;month?:string;onAttendance?:(id:string)=>void;onSessionAttendance?:(id:string)=>void;completionScope?:string}){
