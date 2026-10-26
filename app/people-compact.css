@@ -57,3 +57,9 @@
  .people-manager-compact .parents-details{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px}
 }
 @media(max-width:360px){.people-compact .directory-filters{grid-template-columns:minmax(0,1fr) 112px}}
+/* Keep each account's common action visible while secondary actions stay folded. */
+.account-directory.people-compact .directory-person-row{grid-template-columns:minmax(0,1fr);gap:10px}
+.account-directory .account-row-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:12px;min-width:0}
+.account-directory .account-quick-action{align-self:start;min-height:44px;min-width:76px;max-width:148px;white-space:normal;overflow-wrap:anywhere;padding:10px 12px;border-color:#c6b8e8;background:#f3eeff;color:#4d3193;font-size:13px;font-weight:600;line-height:1.5}
+.account-directory .account-quick-action:hover{background:#eae1fc;border-color:#a68bcf}
+@media(max-width:360px){.account-directory .account-row-heading{gap:8px}.account-directory .account-quick-action{max-width:128px;padding-inline:10px}}

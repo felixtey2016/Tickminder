@@ -3,6 +3,7 @@ import {lazy,Suspense,useEffect,useRef,useState} from 'react';
 import {BarChart3,Bell,BookOpen,CalendarDays,House,LibraryBig,LogOut,Menu,UserRound,WalletCards,X,type LucideIcon} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {FloatingBackButton} from '@/components/floating-back-button';
+import {MobileBottomNavigation} from '@/components/mobile-bottom-navigation';
 import {LegalLinks} from '@/components/legal-links';
 import {usePageHistoryState} from '@/lib/page-history';
 import {t,type Language} from '@/lib/i18n';
@@ -44,7 +45,7 @@ export default function ParentShell(props:ParentShellProps){
 }
 
 function ParentShellContent({account,language,changeLanguage,logout,refreshIdentity,initialQuizId,onLinkedQuizExit}:ParentShellProps){
-  const shellRef=useRef<HTMLDivElement>(null),headerRef=useRef<HTMLElement>(null),menuRef=useRef<HTMLElement>(null),menuButtonRef=useRef<HTMLButtonElement>(null);
+  const shellRef=useRef<HTMLDivElement>(null),headerRef=useRef<HTMLElement>(null),menuRef=useRef<HTMLElement>(null),menuButtonRef=useRef<HTMLButtonElement>(null),menuTriggerRef=useRef<HTMLElement|null>(null);
   const [storedView,setView,replaceView]=usePageHistoryState<ParentShellView>('parent.shell.view',initialQuizId?'quizzes':'home');
   const view=shellViews.has(storedView)?storedView:'home';
   const [navigation,setNavigation]=useState<ParentNoticeNavigation|null>(null),[pendingNotice,setPendingNotice]=useState('');
@@ -82,7 +83,8 @@ function ParentShellContent({account,language,changeLanguage,logout,refreshIdent
       else if(!event.shiftKey&&(document.activeElement===last||!menuRef.current?.contains(document.activeElement))){event.preventDefault();first.focus();}
     };
     document.addEventListener('keydown',keydown);
-    return()=>{document.body.style.overflow=previousOverflow;document.removeEventListener('keydown',keydown);menuButtonRef.current?.focus();};
+    const returnFocus=menuTriggerRef.current;
+    return()=>{document.body.style.overflow=previousOverflow;document.removeEventListener('keydown',keydown);let attempts=2;const restore=()=>{if(!shellRef.current?.isConnected||window.matchMedia('(min-width: 901px)').matches||menuRef.current?.getAttribute('aria-modal')==='true')return;if(returnFocus?.isConnected&&returnFocus.getClientRects().length&&!returnFocus.closest('[hidden]'))returnFocus.focus();else if(attempts-->0)requestAnimationFrame(restore);else menuButtonRef.current?.focus();};requestAnimationFrame(restore);};
   },[menuOpen,desktop]);
 
   useEffect(()=>{
@@ -127,13 +129,14 @@ function ParentShellContent({account,language,changeLanguage,logout,refreshIdent
   }
   const workspaceView:ParentWorkspaceView=view==='home'||view==='account'||view==='notifications'||view==='quizzes'?'calendar':view;
   const drawerOpen=menuOpen&&!desktop;
+  function openMenu(){menuTriggerRef.current=document.activeElement instanceof HTMLElement?document.activeElement:menuButtonRef.current;setMenuOpen(true);}
 
   return <div ref={shellRef} className="app-shell parent-shell">
     <header ref={headerRef} className="topbar">
       <div className="brand"><span className="brand-logo small"><img src="/tickminder-logo.svg" width="40" height="40" alt={BRAND_NAME}/></span><div><strong>{BRAND_NAME}</strong><span>{account.groupName||PNav('portal')} · GMT+8</span></div></div>
       <div className="top-actions">
         <div className="language-switch" role="group" aria-label={t('语言')}><button type="button" aria-pressed={language==='zh'} onClick={()=>changeLanguage('zh')}>中文</button><span aria-hidden="true">|</span><button type="button" aria-pressed={language==='en'} onClick={()=>changeLanguage('en')}>EN</button></div>
-        <Button ref={menuButtonRef} type="button" variant="outline" className="menu-toggle parent-menu-toggle" onClick={()=>setMenuOpen(value=>!value)} aria-label={PNav(menuOpen?'closeMenu':'openMenu')} aria-expanded={drawerOpen} aria-controls="parent-workspace-menu"><Menu size={20} aria-hidden="true"/><MenuBadge includeUnread header/></Button>
+        <Button ref={menuButtonRef} type="button" variant="outline" className="menu-toggle parent-menu-toggle" onClick={()=>menuOpen?setMenuOpen(false):openMenu()} aria-label={PNav(menuOpen?'closeMenu':'openMenu')} aria-expanded={drawerOpen} aria-controls="parent-workspace-menu"><Menu size={20} aria-hidden="true"/><MenuBadge includeUnread header/></Button>
       </div>
     </header>
     {drawerOpen&&<button type="button" className="menu-backdrop parent-menu-backdrop" onClick={()=>setMenuOpen(false)} aria-label={PNav('closeMenu')} tabIndex={-1}/>}
@@ -150,5 +153,6 @@ function ParentShellContent({account,language,changeLanguage,logout,refreshIdent
         </Suspense>
       </main>
     </div>
+    <MobileBottomNavigation items={[{value:'home',label:PNav('home'),Icon:House},{value:'calendar',label:language==='zh'?'课程':'Courses',Icon:CalendarDays},{value:'finance',label:PNav('finance'),Icon:WalletCards}]} active={['home','calendar','finance'].includes(moduleFor(view))?moduleFor(view):'more'} onNavigate={value=>choose(value as ParentShellView)} onMore={openMenu} moreLabel={language==='zh'?'更多':'More'} ariaLabel={language==='zh'?'常用功能':'Quick navigation'} hidden={drawerOpen}/>
   </div>;
 }

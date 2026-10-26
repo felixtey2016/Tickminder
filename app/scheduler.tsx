@@ -46,6 +46,7 @@ import { HomeDashboard } from "./home-dashboard";
 import {PersonIdentityFields,createPersonIdentityDraft,personIdentityPayload,personIdentityReady} from "./person-identity-fields";
 import {GoogleLinkOnboarding} from './google-link-onboarding';
 import {FormActionBar} from '@/components/form-action-bar';
+import {MobileBottomNavigation} from '@/components/mobile-bottom-navigation';
 import {validQuizLinkId,quizLinkIdFromPath} from '@/lib/quiz-link';
 import type { LearningState } from "./learning-portal";
 const GroupConsole=lazy(()=>import("./group-console").then(m=>({default:m.GroupConsole})));
@@ -730,6 +731,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
     const currentViewRef=useRef(selectedView);currentViewRef.current=selectedView;
     const [menuOpen, setMenuOpen] = useState(false);
     const [desktop, setDesktop] = useState(false);
+    const workspaceMenuRef=useRef<HTMLElement>(null),headerMenuRef=useRef<HTMLButtonElement>(null),menuTriggerRef=useRef<HTMLElement|null>(null);
     useEffect(() => {
         const home = account.isOwner?"groups":NAV_ITEMS[role][0].id;
         const normalizedView=(view:unknown):string=>typeof view==='string'?normalizeManagementView(role,normalizeCourseView(role,view)):home;
@@ -784,11 +786,19 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
     }, []);
     useEffect(() => {
         if (!menuOpen || desktop) return;
-        const closeOnEscape = (event: KeyboardEvent) => {
-            if (event.key === "Escape") { if (window.history.state?.timelyoMenu) window.history.back(); setMenuOpen(false); }
+        const previousOverflow=document.body.style.overflow;
+        document.body.style.overflow='hidden';
+        const focusable=()=>Array.from(workspaceMenuRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href]')||[]);
+        const frame=requestAnimationFrame(()=>{(workspaceMenuRef.current?.querySelector<HTMLElement>('[aria-current="page"]')||focusable()[0])?.focus();});
+        const closeOnKeydown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") { event.preventDefault(); if (window.history.state?.timelyoMenu) window.history.back(); setMenuOpen(false); }
+            if(event.key!=='Tab')return;
+            const elements=focusable(),first=elements[0],last=elements.at(-1);if(!first||!last)return;
+            if(event.shiftKey&&(document.activeElement===first||!workspaceMenuRef.current?.contains(document.activeElement))){event.preventDefault();last.focus();}
+            else if(!event.shiftKey&&(document.activeElement===last||!workspaceMenuRef.current?.contains(document.activeElement))){event.preventDefault();first.focus();}
         };
-        window.addEventListener("keydown", closeOnEscape);
-        return () => window.removeEventListener("keydown", closeOnEscape);
+        window.addEventListener("keydown", closeOnKeydown);
+        return () => {cancelAnimationFrame(frame);document.body.style.overflow=previousOverflow;window.removeEventListener("keydown", closeOnKeydown);requestAnimationFrame(()=>requestAnimationFrame(()=>{if(window.matchMedia('(min-width: 901px)').matches)return;const trigger=menuTriggerRef.current;const target=trigger?.isConnected&&trigger.getClientRects().length?trigger:headerMenuRef.current;if(target?.getClientRects().length)target.focus({preventScroll:true});}));};
     }, [menuOpen, desktop]);
     const activeView = initialQuizId&&selectedView==='quizzes'?'quizzes':items.some(item => item.id === selectedView) ? selectedView : items[0].id;
     const courseView = isCourseView(role, activeView);
@@ -820,6 +830,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
     };
     const toggleMenu = () => {
         if (!desktop && !menuOpen) {
+            menuTriggerRef.current=document.activeElement instanceof HTMLElement?document.activeElement:null;
             window.history.pushState({ ...(window.history.state || {}), timelyoMenu: true }, "");
             setMenuOpen(true);
         } else if (!desktop && menuOpen) closeMobileMenu();
@@ -843,6 +854,13 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
         window.scrollTo(0, 0);
     };
     const openAttendanceFinance=canAdminAction(account,"invoices.view")?()=>{const next={...(window.history.state||{})};delete next.timelyoOverlay;window.history.replaceState(next,"");setModal(null);setOpenInvoiceList(true);choose("billing");}:undefined;
+    const bottomShortcut=role==='admin'&&canView('billing')?{value:'billing',label:t('财务'),Icon:FileText}:canView('homework')?{value:'homework',label:language==='zh'?'功课':'Homework',Icon:BookOpen}:null;
+    const bottomItems=[
+        ...(canView('home')?[{value:'home',label:language==='zh'?'首页':'Home',Icon:LayoutDashboard}]:[]),
+        ...(canView('courses')?[{value:'courses',label:t('course.nav.title'),Icon:CalendarDays,badge:<MenuBadge count={courseBadgeCount(role,badgeCounts)}/>}]:[]),
+        ...(bottomShortcut?[bottomShortcut]:[]),
+    ];
+    const bottomActive=courseView?'courses':bottomItems.some(item=>item.value===activeView)?activeView:'more';
     let pageContent: React.ReactNode = null;
     if((activeView==="groups"&&account.isOwner)||(activeView==="groupInfo"&&role==="admin")){pageContent=<div className="settings-compact"><GroupConsole isOwner={activeView==="groups"&&Boolean(account.isOwner)} currentGroupId={account.groupId}/>{activeView==="groupInfo"&&canAdminAction(account,"terms.view")&&<div className="settings-tools"><TermManager terms={state?.terms||state?.termOptions||[]} mutate={classroomMutate} busy={busy}/></div>}</div>;}
     else if (activeView==='quizzes'&&(role==='teacher'||role==='admin'||role==='student')) {
@@ -905,12 +923,12 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
             <div className="brand"><BrandLogo small/><div><strong>{BRAND_NAME}</strong><span>{account.groupName || t("学习与协作平台")} · GMT+8</span></div></div>
             <div className="top-actions">
                 <LanguageSwitcher language={language} change={changeLanguage}/>
-                <Button size="sm" variant="outline" className="menu-toggle" onClick={toggleMenu} aria-label={t(menuOpen ? "关闭功能菜单" : "打开功能菜单")} aria-expanded={menuOpen} aria-controls="workspace-menu" aria-describedby="menu-pending-count"><Menu size={20}/><span id="menu-pending-count"><MenuBadge count={taskCount} includeUnread header/></span></Button>
+                <Button ref={headerMenuRef} size="sm" variant="outline" className="menu-toggle" onClick={toggleMenu} aria-label={t(menuOpen ? "关闭功能菜单" : "打开功能菜单")} aria-expanded={menuOpen} aria-controls="workspace-menu" aria-describedby="menu-pending-count"><Menu size={20}/><span id="menu-pending-count"><MenuBadge count={taskCount} includeUnread header/></span></Button>
             </div>
         </header>
         {menuOpen && !desktop && <button type="button" className="menu-backdrop" onClick={closeMobileMenu} aria-label={t("关闭功能菜单")}/>}
         <div className={"app-body" + (menuOpen ? " menu-open" : "")}>
-            {menuOpen && <aside id="workspace-menu" className="workspace-menu" aria-label={t("功能菜单")}>
+            {menuOpen && <aside ref={workspaceMenuRef} id="workspace-menu" className="workspace-menu" aria-label={t("功能菜单")} role={!desktop?'dialog':undefined} aria-modal={!desktop?true:undefined}>
                 <SignedInIdentity account={account}/>
                 <nav className="menu-links" aria-label={t("功能菜单")}>
                     {NAV_GROUPS[role].filter(group=>group.ids.some(id=>items.some(item=>item.id===id))).map(group => <div className="menu-group" key={group.ids.join('-')}>{group.label && <h2 className="menu-group-title">{t(group.label)}</h2>}{group.ids.map(id => items.find(item => item.id === id)!).filter(Boolean).map(item => <button key={item.id} type="button" data-testid={`menu-${item.id}`} className={"menu-link" + (activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? " active" : "")} aria-current={activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? "page" : undefined} onClick={() => choose(item.id)}><item.Icon size={19} aria-hidden="true"/><span>{t(item.label)}</span><MenuBadge count={item.id === "courses" ? courseBadgeCount(role,badgeCounts) : badgeCounts[item.id as keyof typeof badgeCounts] || 0} includeUnread={item.id==="notifications"} quizOnly={item.id==="quizzes"}/></button>)}</div>)}
@@ -922,7 +940,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
                 </div>
                 <LegalLinks language={language} className="menu-legal"/>
             </aside>}
-            <main className="workspace workspace-compact"><FloatingBackButton context={`${account.id}:${role}:${account.groupId}`} isHome={activeView===(account.isOwner?"groups":"home")} onHome={()=>choose(account.isOwner?"groups":"home")} title={t(title)} subtitle={account.groupName||undefined} actions={courseView&&(role==='admin'||role==='teacher')&&canView('schedule')?<Button className="workspace-arrange" data-testid="course-arrange" aria-label={t('安排课程')} onClick={()=>choose('schedule')}><CalendarPlus size={18} aria-hidden="true"/><span>{t('安排课程')}</span></Button>:undefined}/>
+            <main className="workspace workspace-compact" inert={menuOpen&&!desktop?true:undefined}><FloatingBackButton context={`${account.id}:${role}:${account.groupId}`} isHome={activeView===(account.isOwner?"groups":"home")} onHome={()=>choose(account.isOwner?"groups":"home")} title={t(title)} subtitle={account.groupName||undefined} actions={courseView&&(role==='admin'||role==='teacher')&&canView('schedule')?<Button className="workspace-arrange" data-testid="course-arrange" aria-label={t('安排课程')} onClick={()=>choose('schedule')}><CalendarPlus size={18} aria-hidden="true"/><span>{t('安排课程')}</span></Button>:undefined}/>
                 {showMonth && <div className="workspace-period"><label className="month-select"><span>{t("月份")}</span><input aria-label={t("统计月份")} type="month" value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)}/></label></div>}
                 {courseView && <CourseNavigation showArrange={false} role={role} activeView={activeView} onChoose={choose} badges={badgeCounts} canView={canView}/>}
                 {managementView && <ManagementNavigation area={managementView} activeView={activeView} onChoose={choose} canView={canView}/>}
@@ -932,6 +950,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
                 <FilterScope.Provider value={`${account.id || "anonymous"}:${account.groupId || "none"}`}>{role !== "pending" && activeView !== "quizzes" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "页面加载失败" : "正在加载…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : !scopeLoaded ? <PageState kind={scopeError ? "error" : "loading"} title={scopeError ? "页面加载失败" : "正在加载…"} description={scopeError} action={scopeError ? "重试" : undefined} onAction={() => { if (requiredScope) void ensureScope(requiredScope, true); }}/> : <Suspense fallback={<PageState kind="loading" title="正在加载…"/>}>{courseView ? <div id="course-view-content" data-testid="course-view-content" data-course-leaf={activeView}>{pageContent}</div> : managementView ? <div id="management-view-content" data-testid="management-view-content" data-management-leaf={activeView}>{pageContent}</div> : pageContent}</Suspense>}</FilterScope.Provider>
             </main>
         </div>
+        <MobileBottomNavigation items={bottomItems} active={bottomActive} onNavigate={choose} onMore={toggleMenu} moreLabel={language==='zh'?'更多':'More'} ariaLabel={language==='zh'?'常用入口':'Quick navigation'} hidden={menuOpen||role==='pending'||activeView==='schedule'||busy}/>
         {modal && ["attendance","review"].includes(modal.type)&&modal.lesson.sessionId?<SessionAttendanceLoaderDialog onOpenFinance={openAttendanceFinance} key={modal.lesson.sessionId} sessionId={modal.lesson.sessionId} review={modal.type==="review"} role="admin" close={()=>setModal(null)} mutate={mutate} busy={busy}/>:modal&&<LessonDialog modal={modal} close={() => setModal(null)} mutate={mutate} busy={busy}/>}
     </div></NotificationsProvider>;
 }

@@ -1,0 +1,11 @@
+.mobile-bottom-nav{display:none}
+@media(max-width:900px){
+ .mobile-bottom-nav:not([hidden]){position:fixed;z-index:55;right:0;bottom:0;left:0;display:grid;grid-template-columns:repeat(var(--mobile-nav-columns,4),minmax(0,1fr));gap:4px;padding:6px max(10px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left));border-top:1px solid #e1dcea;background:#fff;box-shadow:0 -3px 14px #30234408}
+ .mobile-bottom-nav>button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:0;min-height:54px;padding:5px 3px;border:0;border-radius:8px;background:transparent;color:#6a6179;font:inherit;font-size:12px;font-weight:600;line-height:1.25;overflow-wrap:anywhere}
+ .mobile-bottom-nav>button[aria-current=page]{background:#f1ebff;color:#5330c6}
+ .mobile-bottom-nav>button:focus-visible{outline:3px solid #aa95f3;outline-offset:-3px}
+ .mobile-nav-icon{position:relative;display:flex;align-items:center;justify-content:center}
+ .mobile-nav-badge{position:absolute;left:14px;top:-8px;display:flex;align-items:center;justify-content:center}
+ .mobile-nav-badge .menu-count{position:static;min-width:17px;height:17px;padding-inline:4px;font-size:10px}
+ .app-shell[data-mobile-bottom-nav-visible=true] :is(.workspace,.parent-shell-main){padding-bottom:calc(24px + var(--mobile-bottom-nav-height,70px))}
+}
