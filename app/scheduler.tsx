@@ -45,6 +45,7 @@ const TeachingStatisticsDetails=lazy(()=>import("./teaching-statistics-details")
 import { HomeDashboard } from "./home-dashboard";
 import {PersonIdentityFields,createPersonIdentityDraft,personIdentityPayload,personIdentityReady} from "./person-identity-fields";
 import {GoogleLinkOnboarding} from './google-link-onboarding';
+import {StudentContactOnboarding} from './student-contact-onboarding';
 import {FormActionBar} from '@/components/form-action-bar';
 import {MobileBottomNavigation} from '@/components/mobile-bottom-navigation';
 import {validQuizLinkId,quizLinkIdFromPath} from '@/lib/quiz-link';
@@ -87,6 +88,9 @@ type Account = AdminPermissionAccount & {
     mustChangePassword?: boolean;
     requiresAccountSetup?: boolean;
     showGoogleLinkOnboarding?: boolean;
+    requiresStudentPhone?: boolean;
+    contactPhone?: string | null;
+    contactPhoneKind?: "student" | "parent" | null;
     assignmentStatus?: string;
     pendingExpiresAt?: string | null;
     activatedAt?: string | null;
@@ -373,10 +377,10 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
     }, []);
     useEffect(() => { loadedScopes.current.clear(); wantedScopes.current.clear(); scopeRequests.current.clear(); }, [auth?.account?.id]);
     useEffect(() => { let active = true; request("/api/auth").then(a => { if (active) setAuth(a); }).catch(e => { if (active) setMessage(e.message); }); return () => { active = false; }; }, []);
-    useEffect(() => { if (auth?.account && auth.account.role!=='parent' && !auth.account.requiresAccountSetup && !auth.account.mustChangePassword && auth.account.nameConfirmedAt) void reload(); }, [auth?.account?.id, auth?.account?.role, auth?.account?.requiresAccountSetup, auth?.account?.mustChangePassword, auth?.account?.nameConfirmedAt, reload]);
+    useEffect(() => { if (auth?.account && auth.account.role!=='parent' && !auth.account.requiresAccountSetup && !auth.account.mustChangePassword && !auth.account.requiresStudentPhone && auth.account.nameConfirmedAt) void reload(); }, [auth?.account?.id, auth?.account?.role, auth?.account?.requiresAccountSetup, auth?.account?.requiresStudentPhone, auth?.account?.mustChangePassword, auth?.account?.nameConfirmedAt, reload]);
     useEffect(() => {
         const account = auth?.account;
-        if (!account || account.mustChangePassword || account.requiresAccountSetup || !account.nameConfirmedAt) return;
+        if (!account || account.mustChangePassword || account.requiresAccountSetup || account.requiresStudentPhone || !account.nameConfirmedAt) return;
         let active = true;
         let checking = false;
         let lastForegroundCheck = 0;
@@ -415,7 +419,7 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
         document.addEventListener("visibilitychange", foregroundCheck);
         window.addEventListener("focus", foregroundCheck);
         return () => { active = false; window.clearInterval(timer); channel?.close(); if (channelRef.current === channel) channelRef.current = null; document.removeEventListener("visibilitychange", foregroundCheck); window.removeEventListener("focus", foregroundCheck); };
-    }, [auth?.account?.id, auth?.account?.role, auth?.account?.requiresAccountSetup, auth?.account?.mustChangePassword, auth?.account?.nameConfirmedAt, auth?.account?.adminPermissions, busy, refreshState]);
+    }, [auth?.account?.id, auth?.account?.role, auth?.account?.requiresAccountSetup, auth?.account?.requiresStudentPhone, auth?.account?.mustChangePassword, auth?.account?.nameConfirmedAt, auth?.account?.adminPermissions, busy, refreshState]);
     useEffect(() => {
         if (!auth || auth.account || !auth.clientId || !googleButton.current)
             return;
@@ -573,6 +577,7 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
         return <AccountSetup email={account.email} onSaved={async()=>setAuth(await request("/api/auth"))} logout={logout} language={language} changeLanguage={changeLanguage}/>;
     if(account.role==='pending')return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><h1>{language==='zh'?'等待管理员分配身份':'Waiting for account approval'}</h1><SignedInIdentity account={account}/><p>{language==='zh'?'请联系所属集团管理员填写资料并分配身份，完成后即可使用。':'Ask your centre administrator to complete your profile and assign a role.'}</p><div className="directory-form-actions"><Button onClick={async()=>{try{setAuth(await request('/api/auth'));}catch(error){alertActionFailure(error);}}}>{t('刷新')}</Button><Button variant="outline" onClick={logout}>{t('退出登录')}</Button></div></div></main>;
     if(account.groupUnavailable)return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><h1>{t("补习集团暂不可用")}</h1><p>{t("请联系所属集团的管理员，或稍后重试。")}</p><Button onClick={()=>window.location.reload()}>{t("刷新")}</Button><Button variant="outline" onClick={logout}>{t("退出登录")}</Button></div></main>;
+    if(account.role==='student'&&account.requiresStudentPhone)return <StudentContactOnboarding name={account.studentName||account.name} language={language} changeLanguage={changeLanguage} onCompleted={async()=>setAuth(await request('/api/auth'))} logout={logout}/>;
     if(account.showGoogleLinkOnboarding)return <GoogleLinkOnboarding name={account.name} clientId={auth.clientId} language={language} changeLanguage={changeLanguage} onCompleted={async()=>setAuth(await request('/api/auth'))} logout={logout}/>;
     if(account.role==='parent')return <Suspense fallback={<p role="status">{t('正在加载…')}</p>}><ParentShell account={account} initialQuizId={linkedQuizId} onLinkedQuizExit={exitLinkedQuiz} language={language} changeLanguage={changeLanguage} logout={logout} refreshIdentity={async()=>setAuth(await request('/api/auth'))}/></Suspense>;
     const admin = account.role === "admin";

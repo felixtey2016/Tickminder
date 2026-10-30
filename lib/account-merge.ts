@@ -3,6 +3,9 @@ import type { Account } from "@/lib/auth";
 import { first, learningDb } from "@/lib/learning-server";
 import { authorityGuard } from "@/lib/admin-authority";
 
+type ContactTuple={contact_phone:string|null;contact_phone_kind:string|null;contact_phone_updated_at:string|null};
+function validContact(value:ContactTuple){return value.contact_phone===null&&value.contact_phone_kind===null&&value.contact_phone_updated_at===null||typeof value.contact_phone==='string'&&/^\+[1-9][0-9]{7,14}$/.test(value.contact_phone)&&['student','parent'].includes(value.contact_phone_kind||'')&&typeof value.contact_phone_updated_at==='string'&&Number.isFinite(Date.parse(value.contact_phone_updated_at))&&new Date(value.contact_phone_updated_at).toISOString()===value.contact_phone_updated_at;}
+
 // Account IDs are globally unique. Check every organisation because shared
 // versions and historical practice can outlive an account's group membership.
 export async function hasQuizAccountHistory(accountId: string) {
@@ -22,7 +25,7 @@ export async function hasQuizAccountHistory(accountId: string) {
 // have both been verified. A second explicit confirmation is required for a merge.
 export async function prepareAccountMerge(actor: Account, duplicateId: string, confirmed: boolean) {
   const db = learningDb();
-  const duplicate = await first<{ id: string; name: string; role: string; teacher_name: string | null; student_name: string | null; disabled_at: string | null; group_id: string | null }>("SELECT * FROM accounts WHERE id = ?", duplicateId);
+  const duplicate = await first<ContactTuple&{ id: string; name: string; role: string; teacher_name: string | null; student_name: string | null; disabled_at: string | null; group_id: string | null }>("SELECT * FROM accounts WHERE id = ?", duplicateId);
   if (!duplicate || duplicate.disabled_at) return { error: "此 Google 账号已停用，请联系管理员", statements: [] };
   if (duplicate.group_id !== actor.groupId) return {error:"两个账号属于不同补习集团，请联系管理员",statements:[]};
   let parentMergeGuard:{sql:string;args:unknown[]}|null=null;
@@ -41,16 +44,23 @@ export async function prepareAccountMerge(actor: Account, duplicateId: string, c
   if (await hasQuizAccountHistory(duplicate.id)) return {error:"account.quizHistoryMergeBlocked",statements:[]};
   if(await first("SELECT 1 FROM class_recordings WHERE created_by=? LIMIT 1",duplicate.id))return{error:"此账号拥有课堂录影，请联系管理员处理后再合并",statements:[]};
   if (!confirmed) return { mergeName: duplicate.name, error: "发现已有 Google 账号，确认后会合并登录方式并保留资料", statements: [] };
+  const contact=await first<ContactTuple>('SELECT contact_phone,contact_phone_kind,contact_phone_updated_at FROM accounts WHERE id=?',actor.id);
+  if(!contact||!validContact(contact)||!validContact(duplicate))return{error:'联系资料需要核对，请刷新后再连接',statements:[]};
   const statements = [authorityGuard({
     sql: `EXISTS(SELECT 1 FROM accounts d JOIN tuition_groups g ON g.id=d.group_id
       WHERE d.id=? AND d.group_id=? AND d.role=? AND d.teacher_name IS ? AND d.student_name IS ?
+      AND d.contact_phone IS ? AND d.contact_phone_kind IS ? AND d.contact_phone_updated_at IS ?
       AND d.disabled_at IS NULL AND g.chief_admin_id IS NOT d.id)
       AND EXISTS(SELECT 1 FROM accounts a JOIN local_credentials c ON c.account_id=a.id
       WHERE a.id=? AND a.group_id IS ? AND a.role=? AND a.teacher_name IS ? AND a.student_name IS ?
+      AND a.contact_phone IS ? AND a.contact_phone_kind IS ? AND a.contact_phone_updated_at IS ?
       AND a.disabled_at IS NULL AND c.must_change_password=0)`,
-    args:[duplicate.id,actor.groupId,duplicate.role,duplicate.teacher_name,duplicate.student_name,actor.id,actor.groupId,actor.role,actor.teacherName,actor.studentName],
+    args:[duplicate.id,actor.groupId,duplicate.role,duplicate.teacher_name,duplicate.student_name,duplicate.contact_phone,duplicate.contact_phone_kind,duplicate.contact_phone_updated_at,actor.id,actor.groupId,actor.role,actor.teacherName,actor.studentName,contact.contact_phone,contact.contact_phone_kind,contact.contact_phone_updated_at],
   })];
   if(parentMergeGuard)statements.push(authorityGuard(parentMergeGuard));
+  // Prefer the kept account's explicit contact. Inherit only an absent contact;
+  // both tuples above are guarded before the duplicate can be removed.
+  if(contact.contact_phone===null&&duplicate.contact_phone!==null)statements.push(db.prepare('UPDATE accounts SET contact_phone=?,contact_phone_kind=?,contact_phone_updated_at=? WHERE id=?').bind(duplicate.contact_phone,duplicate.contact_phone_kind,duplicate.contact_phone_updated_at,actor.id));
   statements.push(db.prepare("INSERT INTO site_notifications (group_id,id,account_id,event_id,lesson_id,kind,created_at,read_at) SELECT group_id,lower(hex(randomblob(16))),?,event_id,lesson_id,kind,created_at,read_at FROM site_notifications WHERE account_id=? ON CONFLICT(account_id,event_id) DO UPDATE SET read_at=coalesce(site_notifications.read_at,excluded.read_at)").bind(actor.id,duplicate.id));
   statements.push(db.prepare("DELETE FROM site_notifications WHERE account_id=?").bind(duplicate.id));
   statements.push(db.prepare("DELETE FROM notification_deliveries WHERE item_id IN (SELECT n.id FROM notification_items n JOIN notification_items kept ON kept.account_id=? AND kept.lesson_id=n.lesson_id AND kept.planned_start=n.planned_start AND kept.offset_minutes=n.offset_minutes WHERE n.account_id=?)").bind(actor.id,duplicate.id));
