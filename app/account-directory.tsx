@@ -17,7 +17,7 @@ const ParentChildrenManager = lazy(() => import("./parent-children-manager").the
 
 const AdminPermissionEditor = lazy(() => import("./admin-permission-editor").then(module => ({default: module.AdminPermissionEditor})));
 
-type User = { id: string; name: string; role: string; username?: string | null; email?: string; disabledAt?: string | null; teacherName?: string | null; studentName?: string | null; assignmentStatus?: string; pendingExpiresAt?: string | null; isOwner?: boolean; isGroupChief?: boolean; parentChildren?: string[] };
+type User = { id: string; name: string; role: string; username?: string | null; email?: string; disabledAt?: string | null; teacherName?: string | null; studentName?: string | null; assignmentStatus?: string; pendingExpiresAt?: string | null; isOwner?: boolean; isGroupChief?: boolean; parentChildren?: string[]; contactPhone?: string | null; contactPhoneKind?: "student" | "parent" | null };
 type Actor = { id?: string; groupId?: string | null; isOwner?: boolean; isGroupChief?: boolean; canManageAdministrators?: boolean };
 
 export function AccountDirectory({ users, actor, teachers, students, mutate, busy, createForm, onAccountsChanged }: { users: User[]; actor: Actor; teachers: string[]; students: string[]; mutate: Mutate; busy: boolean; createForm: React.ReactNode | ((onCreated:(role:string)=>void)=>React.ReactNode); onAccountsChanged?: () => void }) {
@@ -42,7 +42,7 @@ export function AccountDirectory({ users, actor, teachers, students, mutate, bus
   const permissionTargetAllowed = Boolean(permissionManager && currentPermissionTarget?.role === "admin" && currentPermissionTarget.id !== actor.id && !currentPermissionTarget.isOwner && !currentPermissionTarget.isGroupChief);
   useEffect(() => { if (permissionTarget && !permissionTargetAllowed) { closePermissions(); showActionToast("error", "permissions.authorityLost"); } }, [permissionTarget, permissionTargetAllowed, closePermissions]);
   const selectedRole = role === "admin" && !canManageAdministrators || role === "parent" && !can("parents.manage") ? "teacher" : role;
-  const visible = users.filter(u => Boolean(u.disabledAt) === removed && `${u.name} ${u.email || ""} ${u.username || ""} ${u.teacherName || ""} ${u.studentName || ""} ${(u.parentChildren || []).join(" ")}`.toLowerCase().includes(search.toLowerCase()));
+  const visible = users.filter(u => Boolean(u.disabledAt) === removed && `${u.name} ${u.email || ""} ${u.username || ""} ${u.teacherName || ""} ${u.studentName || ""} ${u.contactPhone || ""} ${(u.parentChildren || []).join(" ")}`.toLowerCase().includes(search.toLowerCase()));
   function canManage(u: User) { return u.id !== actor.id && !u.isOwner && !u.isGroupChief && (u.role !== "admin" || canManageAdministrators) && (u.role !== "parent" || can("parents.manage")); }
   function canEdit(u: User) { return !u.disabledAt && can("accounts.assign") && canManage(u); }
   function showsChildrenAction(u: User) { return u.role === "parent" && can("parents.view"); }
@@ -71,6 +71,7 @@ export function AccountDirectory({ users, actor, teachers, students, mutate, bus
         </div>{showsChildrenAction(u)?<Button type="button" disabled={busy} size="sm" variant="outline" className="account-quick-action" aria-label={PR("manageChildren")+' · '+u.name} onClick={() => setParentTarget(u)}>{PR("manageChildren")}</Button>:canEdit(u)?<Button type="button" disabled={busy} size="sm" variant="outline" className="account-quick-action" aria-label={(u.role==='pending'?(getLanguage()==='en'?'Complete account profile':'完善账号资料'):t("编辑"))+' · '+u.name} onClick={() => edit(u)}>{u.role==='pending'?(getLanguage()==='en'?'Complete profile':'完善资料'):t("编辑")}</Button>:null}</div>
         <details className="people-row-details"><summary aria-label={(getLanguage()==='en'?'More':'更多')+' · '+u.name}>{getLanguage()==='en'?'More':'更多'}</summary><div className="people-row-content"><div className="people-account-fields">
           <small>{u.username ? `${t("用户名")} · ${u.username}` : t("未设置密码登录")}</small><small>{u.email ? `Google · ${u.email}` : t("未连接 Google")}</small>
+          {u.role === "student" && u.contactPhone && <small>{getLanguage() === "en" ? (u.contactPhoneKind === "parent" ? "Parent contact" : "Student contact") : (u.contactPhoneKind === "parent" ? "家长联系号码" : "学生联系号码")} · <a href={"tel:" + u.contactPhone}>{u.contactPhone}</a></small>}
           <small>{t(u.disabledAt ? "已停用账号" : u.assignmentStatus === "PENDING_ASSIGNMENT" ? "待分配" : "已启用")}{u.pendingExpiresAt ? ` · ${Date.parse(u.pendingExpiresAt) <= Date.now() ? t("已到期") : `${t("剩余天数")} ${Math.ceil((Date.parse(u.pendingExpiresAt) - Date.now()) / 86400000)}`}` : u.role === "pending" && u.assignmentStatus !== "ACTIVE" ? ` · ${t("不纳入自动清理")}` : ""}</small>
           {actor.isOwner && u.isGroupChief && <small className="field-hint">{t("admin.chiefAccountProtected")}</small>}
         </div>

@@ -44,3 +44,9 @@ migration is required for the personnel-provisioning changes.
 Class enrollment and subject/teacher pairings remain explicit teaching choices.
 Existing pairings continue to provision their normal classroom access when an
 existing identity is bound. Account creation does not invent a class or subject.
+
+## Student contact details
+
+After required login setup, students without a saved contact complete the
+[contact-number step](STUDENT_CONTACT_ONBOARDING.md). Existing names remain
+read-only; student or parent numbers are accepted without WhatsApp verification.

@@ -118,6 +118,10 @@ export const accounts = sqliteTable("accounts", {
   email: text("email").notNull(),
   name: text("name").notNull(),
   nameConfirmedAt: text("name_confirmed_at"),
+  // Self-declared contact details are separate from verified WhatsApp identity.
+  contactPhone: text("contact_phone"),
+  contactPhoneKind: text("contact_phone_kind").$type<"student" | "parent">(),
+  contactPhoneUpdatedAt: text("contact_phone_updated_at"),
   role: text("role").notNull().default("pending"),
   teacherName: text("teacher_name"),
   studentName: text("student_name"),

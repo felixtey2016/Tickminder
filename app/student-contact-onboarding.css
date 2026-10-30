@@ -1,0 +1,19 @@
+.student-contact-form{display:grid;gap:18px;min-width:0;max-width:540px;margin:20px 0 0}
+.student-contact-form>label,.student-contact-phone{display:grid;gap:8px;min-width:0;font-size:14px;font-weight:600}
+.student-contact-form input[type=tel],.student-contact-form input[readonly]{width:100%;min-width:0;min-height:48px;border:1px solid var(--border,#d9d6ea);border-radius:10px;padding:10px 12px;background:#fff;color:var(--foreground,#292338);font:inherit;font-size:16px;line-height:1.5}
+.student-contact-form input[readonly]{background:#f5f3fa;color:var(--ui-secondary,#60576f)}
+.student-contact-form input:focus-visible{outline:2px solid #795bc5;outline-offset:2px}
+.student-contact-form small{font-size:12px;font-weight:400;line-height:1.6;color:var(--ui-secondary,#60576f)}
+.student-contact-form fieldset{padding:0;border:0;margin:0;min-width:0}
+.student-contact-form legend{font-size:14px;font-weight:600;margin:0 0 8px;padding:0}
+.student-contact-kinds{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.student-contact-kinds label{display:flex;flex-direction:row;align-items:center;gap:9px;min-height:46px;border:1px solid var(--border,#d9d6ea);border-radius:10px;padding:10px 12px;font-size:14px;cursor:pointer}
+.student-contact-kinds label.selected{border-color:#795bc5;background:#f3effc;color:#4b2b92}
+.student-contact-kinds input{width:17px;height:17px;margin:0;accent-color:#6240bd;flex:0 0 auto}
+.student-contact-submit{min-height:46px;width:100%;white-space:normal;background:var(--timelyo-purple,#6240bd);color:#fff;border:1px solid var(--timelyo-purple,#6240bd);padding:10px 14px}
+.student-contact-onboarding h1{font-size:24px;margin:20px 0 10px}
+.student-contact-onboarding>p{font-size:14px;line-height:1.7;margin:0;color:var(--ui-secondary,#60576f)}
+.student-contact-onboarding .student-contact-logout{margin-top:14px;width:100%;min-height:44px}
+.account-settings-compact .account-contact-panel>h2{font-size:18px;margin:0}
+.account-contact-panel .student-contact-form{margin-top:16px}
+@media(max-width:480px){.student-contact-onboarding{padding:24px!important}.student-contact-kinds{gap:8px}.student-contact-kinds label{padding:10px}}
