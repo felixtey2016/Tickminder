@@ -118,7 +118,7 @@ async function applyAdjustments(actor:Account,studentId:string,month:string,line
  if(!includeBasis&&!adjustments.length)return;
  const snapshot=await basisSnapshot(actor,studentId,month);
  snapshots?.set(studentId,snapshot);
- for(const line of lines){const {plannedStart:_plannedStart,plannedEnd:_plannedEnd,actualStart:_actualStart,actualEnd:_actualEnd,lessonStatus:_lessonStatus,sessionStatus:_sessionStatus,...original}=line,basisHash=await hash({line:original,snapshot}),adjustment=adjustments.find(item=>item.lineId===line.id);line.basisHash=basisHash;line.originalAmountCents=line.amountCents;line.adjustmentRevision=adjustment?.revision||0;line.adjustment=null;if(!adjustment)continue;
+ for(const line of lines){const adjustment=adjustments.find(item=>item.lineId===line.id);if(!includeBasis&&!adjustment)continue;const {plannedStart:_plannedStart,plannedEnd:_plannedEnd,actualStart:_actualStart,actualEnd:_actualEnd,lessonStatus:_lessonStatus,sessionStatus:_sessionStatus,...original}=line,basisHash=await hash({line:original,snapshot});line.basisHash=basisHash;line.originalAmountCents=line.amountCents;line.adjustmentRevision=adjustment?.revision||0;line.adjustment=null;if(!adjustment)continue;
   line.adjustment={id:adjustment.id,amountCents:adjustment.amountCents,reason:adjustment.reason,createdAt:adjustment.createdAt,stale:adjustment.basisHash!==basisHash};
   if(includeBasis)line.adjustmentHistory=adjustments.filter(item=>item.lineId===line.id).slice(0,20).map(item=>({id:item.id,amountCents:item.amountCents,reason:item.reason,createdAt:item.createdAt}));
   if(adjustment.amountCents===null)continue;
@@ -171,7 +171,7 @@ function lessonLine(studentId:string,subject:Subject|null,source:Source,rates:Bi
  line.billableMinutes=line.billableSeconds/60;return line;
 }
 
-export async function billingPreview(actor:Account,monthValue:string,pageValue=1,pageSizeValue=20,studentId?:string,studentName?:string,snapshots?:Map<string,string>):Promise<BillingPreview>{
+export async function billingPreview(actor:Account,monthValue:string,pageValue=1,pageSizeValue=20,studentId?:string,studentName?:string,snapshots?:Map<string,string>,includeBasis=true):Promise<BillingPreview>{
  const parent=parentReadGrants.get(actor);if(parent&&(studentId!==parent.studentId||studentName!==parent.studentName))throw new BillingError('没有权限查看或修改财务资料',403);
  const group=await requireBillingViewer(actor),month=billingMonth(monthValue),pageSize=Math.min(20,Math.max(1,Math.trunc(pageSizeValue)||20)),requestedPage=Math.max(1,Math.trunc(pageValue)||1),from=month+'-01',last=new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5,7)),0)).toISOString().slice(0,10),until=new Date(Date.parse(last+'T00:00:00Z')+86400000).toISOString().slice(0,10),start=from+'T00:00:00+08:00',end=until+'T00:00:00+08:00',policies=await billingPolicies(actor);
  const eligible=`b.group_id=? AND (s.active=1 OR EXISTS(SELECT 1 FROM lessons l LEFT JOIN class_sessions cs ON cs.group_id=l.group_id AND cs.id=l.session_id WHERE l.group_id=b.group_id AND l.student=b.student_name AND coalesce(cs.actual_start,l.actual_start,l.planned_start)>=? AND coalesce(cs.actual_start,l.actual_start,l.planned_start)<?) OR EXISTS(SELECT 1 FROM billing_rates r WHERE r.group_id=b.group_id AND r.student_id=b.id))${studentName?' AND b.student_name=?':''}`,eligibleArgs=[group,new Date(start).toISOString(),new Date(end).toISOString(),...(studentName?[studentName]:[])];
@@ -211,7 +211,7 @@ export async function billingPreview(actor:Account,monthValue:string,pageValue=1
    }
   }
   lines.sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
-  await applyAdjustments(actor,student.studentId,month,lines,Boolean(studentId),snapshots,pageAdjustments.filter(item=>item.studentId===student.studentId));
+  await applyAdjustments(actor,student.studentId,month,lines,Boolean(studentId)&&includeBasis,snapshots,pageAdjustments.filter(item=>item.studentId===student.studentId));
   const summary:BillingSummary={studentId:student.studentId,student:student.student,active:Boolean(student.active),subtotalCents:lines.reduce((sum,line)=>sum+(line.amountCents??0),0),estimatedSubtotalCents:lines.reduce((sum,line)=>sum+(line.amountCents??line.estimatedAmountCents??0),0),pendingCount:lines.filter(line=>line.status==='pending').length,lineCount:lines.length};if(!Number.isSafeInteger(summary.subtotalCents)||!Number.isSafeInteger(summary.estimatedSubtotalCents))throw new BillingError('费用超出可计算范围');summaries.push(summary);details.set(student.studentId,lines);
  }
  await requireBillingViewer(actor);

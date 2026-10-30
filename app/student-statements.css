@@ -1,0 +1,22 @@
+.student-statements-workspace{min-width:0}
+.student-statements-workspace h2,.student-statements-workspace h3{margin:0;overflow-wrap:anywhere}
+.statement-student{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;min-width:0}
+.statement-student>strong{overflow-wrap:anywhere}
+.statement-month{display:grid;gap:8px;max-width:300px;font-size:14px;margin-top:16px}
+.statement-month>input{width:100%;min-width:0;min-height:44px;border:1px solid #d9d1e4;border-radius:8px;padding:10px 12px;background:#fff;color:inherit;font:inherit;font-size:16px}
+.statement-ledger{display:grid;gap:14px;margin:0}
+.statement-ledger>div{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto);align-items:baseline;gap:12px;min-width:0}
+.statement-ledger dt{font-size:14px;color:#71697d}
+.statement-ledger dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.statement-closing{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:10px 20px;padding:18px 0;margin-top:18px;border-top:1px solid #e4dfee}
+.statement-closing>span{font-size:14px;color:#71697d}
+.statement-closing>strong{color:#5130b1;font-size:24px;line-height:1.3;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.statement-summary .finance2-badge[data-status=review]{background:#fff2d9;color:#825313}
+.statement-summary .finance2-badge[data-status=reconciled]{background:#e8f6ee;color:#236246}
+.statement-history{display:grid;gap:12px;min-width:0}
+.statement-history>article{padding:14px;border:1px solid #e4dfee;border-radius:10px;display:grid;gap:10px;min-width:0}
+.statement-history>article>div{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px 12px}
+.statement-history p{margin:0;font-size:13px;line-height:1.5}
+.statement-history button{justify-self:start;min-height:44px}
+.statement-review{display:flex;gap:6px 12px;flex-wrap:wrap;color:#825313}
+@media(max-width:450px){.statement-summary .finance2-section-head{align-items:flex-start}.statement-summary .finance2-section-head h3{font-size:17px}.statement-summary .finance2-badge{font-size:12px}.statement-closing{display:grid}.statement-ledger dt{font-size:13px}.statement-ledger dd{font-size:15px}.statement-summary .finance2-actions>button{flex:1 1 auto}.statement-month{max-width:none}}
