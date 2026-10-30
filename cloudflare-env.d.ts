@@ -6,6 +6,8 @@ declare namespace Cloudflare {
     DIAGNOSTICS_FEED_URL?: string;
     CF_VERSION_METADATA?: {id:string;tag?:string;timestamp?:string};
     GOOGLE_CLIENT_ID?: string;
+    GOOGLE_PICKER_API_KEY?: string;
+    GOOGLE_DRIVE_APP_ID?: string;
     ADMIN_EMAIL?: string;
     SHEET_SYNC_URL?: string;
     SHEET_SYNC_SECRET?: string;

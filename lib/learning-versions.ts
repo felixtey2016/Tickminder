@@ -1,3 +1,4 @@
+import {teacherAdminMaterialRead} from "./material-import-access";
 import {guardedLearningReader} from "@/lib/learning-permission-read";
 import type { Account } from "./auth";
 import { groupReader, requireGroup } from "./group-data";
@@ -47,6 +48,8 @@ export async function contentRecord(actor: Account, kind: ContentKind, id: strin
     }
   } else if (actor.role === "teacher" && record.ownerId === actor.id || actor.role === "admin") {
     // Group scope was enforced by the reader.
+  } else if(actor.role==="teacher"&&kind==="material"&&await first("SELECT 1 FROM teaching_materials m WHERE m.id=? AND "+teacherAdminMaterialRead(actor).sql,id,...teacherAdminMaterialRead(actor).values)){
+    // Assigned teacher may read administrator-published class material; write checks stay unchanged.
   } else if (actor.role === "student" && (kind === "homework" ? await studentHasHomework(actor, id) : await studentHasMaterial(actor,id))) {
     // Authorized recipients may read content history, never other students' grading history.
   } else throw new LearningEditError("内容不存在或无权访问", 404);
@@ -55,7 +58,8 @@ export async function contentRecord(actor: Account, kind: ContentKind, id: strin
 export async function versionHistory(actor: Account, kind: ContentKind, id: string) {
   const record = await contentRecord(actor, kind, id);
   const { rows } = guardedLearningReader(actor,kind === "material" ? "materials.view" : "homework.view");
-  const versions = await rows(`SELECT v.revision,v.file_id AS fileId,v.snapshot_json AS snapshotJson,v.actor_id AS actorId,v.changed_at AS changedAt,v.reason,coalesce(a.teacher_name,a.name,'老师') AS actorName,f.filename FROM learning_versions v LEFT JOIN accounts a ON a.id=v.actor_id LEFT JOIN pdf_files f ON f.id=v.file_id WHERE v.kind=? AND v.record_id=? ORDER BY v.revision DESC`, kind, id);
+  const importedRead=actor.role==="teacher"&&kind==="material"&&record.ownerId!==actor.id?teacherAdminMaterialRead(actor):null;
+  const versions = await rows(`SELECT v.revision,v.file_id AS fileId,v.snapshot_json AS snapshotJson,v.actor_id AS actorId,v.changed_at AS changedAt,v.reason,coalesce(a.teacher_name,a.name,'老师') AS actorName,f.filename FROM learning_versions v LEFT JOIN accounts a ON a.id=v.actor_id LEFT JOIN pdf_files f ON f.id=v.file_id WHERE v.kind=? AND v.record_id=?${importedRead?` AND EXISTS(SELECT 1 FROM teaching_materials m WHERE m.id=v.record_id AND (${importedRead.sql}))`:""} ORDER BY v.revision DESC`, kind, id,...(importedRead?.values||[]));
   const scores = kind === "homework" ? await rows(`SELECT s.id,s.student_name AS studentName,s.submission_id AS submissionId,s.homework_revision AS homeworkRevision,s.score,s.previous_score AS previousScore,s.max_score AS maxScore,s.changed_at AS changedAt,s.reason,coalesce(a.teacher_name,a.name,'老师') AS actorName FROM homework_score_history s LEFT JOIN accounts a ON a.id=s.actor_id WHERE s.homework_id=?${actor.role === "student" ? " AND s.student_name=?" : ""} ORDER BY s.changed_at DESC,s.id DESC`, id, ...(actor.role === "student" ? [actor.studentName] : [])) : [];
   if(actor.role==="student")return {
     record:{id:record.id,title:record.title,description:record.description,fileId:record.fileId,classroomId:record.classroomId,folderId:record.folderId,revision:record.revision,updatedAt:record.updatedAt,subject:record.subject,startsAt:record.startsAt,dueAt:record.dueAt,maxScore:record.maxScore},

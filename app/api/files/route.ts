@@ -1,3 +1,4 @@
+import {requireMaterialCreateAuthority,MaterialImportError} from "@/lib/material-import-access";
 import {groupReader,requireGroup} from "@/lib/group-data";
 import { NextResponse } from "next/server";
 import { currentBusinessAccount as currentAccount } from "@/lib/auth";
@@ -15,7 +16,7 @@ const errorResponse = (message: string, status: number) => NextResponse.json({ e
 export async function POST(request: Request) {
   if (new URL(request.url).origin !== request.headers.get("origin")) return errorResponse("Origin mismatch", 403);
   const actor = await currentAccount();
-  if (!actor || !["teacher", "student"].includes(actor.role)) return errorResponse("没有上传权限", 403);
+  if (!actor || !["teacher", "student", "admin"].includes(actor.role)) return errorResponse("没有上传权限", 403);
   const groupId=requireGroup(actor.groupId); const {first,rows}=groupReader(groupId);
   if (await first("SELECT 1 AS mustChange FROM local_credentials WHERE account_id = ? AND must_change_password = 1", actor.id)) return errorResponse("请先修改初始密码", 403);
   try {
@@ -31,6 +32,7 @@ export async function POST(request: Request) {
     const submissionId=String(form.get("submissionId")||"").trim(),uploadRequestId=form.get("requestId")?operationId(form.get("requestId")):null;
     if (!(file instanceof File) || file.type !== "application/pdf") return errorResponse("请选择 PDF 文件", 400);
     if (file.size <= 0 || file.size > limits.perFile) return errorResponse("PDF 超过单份大小限制", 413);
+    if(actor.role==='admin'){if(kind!=='material')return errorResponse('管理员只能上传教学资料',403);await requireMaterialCreateAuthority(actor,{classroomId});}
     if (actor.role === "teacher" && !["material", "homework","feedback"].includes(kind)) return errorResponse("老师只能上传教学资料、功课附件或批改 PDF", 403);
     if (actor.role === "teacher") {
       if (!classroomId) return errorResponse("请选择有效班级",400);
@@ -58,6 +60,7 @@ export async function POST(request: Request) {
     if(uploadRequestId){const previous=await first<{id:string;filename:string;bytes:number;kind:string;contextId:string;sha256:string;status:string;objectKey:string}>("SELECT id,filename,bytes,kind,context_id AS contextId,sha256,status,object_key AS objectKey FROM pdf_files WHERE owner_id=? AND upload_request_id=?",actor.id,uploadRequestId);
       if(previous){if(previous.kind!==kind || previous.contextId!==uploadContext || previous.sha256!==contentHash)return errorResponse("重复上传的文件或对象不一致，请重新选择文件",409);
         if(!["staged","attached"].includes(previous.status)||!await bucket.head(previous.objectKey))return errorResponse("上传尚未完成或已失效，请稍后重试",409);
+        const replayGuard=pdfUploadAuthority(actor,kind,{classroomId,homeworkId:contextId,submissionId});if(!await learningDb().prepare(`SELECT 1 WHERE ${replayGuard.sql}`).bind(...replayGuard.values).first())return errorResponse("账号或班级权限已改变，请刷新后重试",403);
         return NextResponse.json({id:previous.id,filename:previous.filename,bytes:previous.bytes,replayed:true});}}
     await cleanOldStagedFiles();
     const db = learningDb();
@@ -96,7 +99,7 @@ export async function POST(request: Request) {
       throw error;
     }
   } catch (error) {
-    if(error instanceof LearningEditError)return errorResponse(error.message,error.status);
+    if(error instanceof LearningEditError||error instanceof MaterialImportError)return errorResponse(error.message,error.status);
     if(/UNIQUE constraint/.test(String(error)))return errorResponse("上传正在处理，请稍后重试",409);
     const message = error instanceof Error ? error.message : "";
     return errorResponse(/PDF storage|储存.*配置|storage.*configured/i.test(message) ? "PDF 储存暂未配置，请联系管理员" : "PDF 上传失败，请稍后重试", 503);

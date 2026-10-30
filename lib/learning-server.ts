@@ -1,3 +1,4 @@
+import {teacherAdminMaterialRead} from "./material-import-access";
 import {hasAdminPermission} from "@/lib/admin-permission-access";
 import {appendAudit} from './audit-log';
 import {guardedLearningReader} from "@/lib/learning-permission-read";
@@ -105,6 +106,7 @@ async function authorizedPdf(account: Account, fileId: string) {
   if (account.role === "teacher") {
     // A catalog PDF can be owned by another teacher. Access here follows the
     // teacher's own published content/version, never the bare file identifier.
+    const imported=teacherAdminMaterialRead(account);if(await first("SELECT 1 FROM teaching_materials m WHERE m.file_id=? AND "+imported.sql,fileId,...imported.values))return file;
     const shared=await first(`SELECT 1 FROM teaching_materials m WHERE m.file_id=? AND m.owner_id=?
       UNION ALL SELECT 1 FROM homework h WHERE h.attachment_file_id=? AND h.owner_id=?
       UNION ALL SELECT 1 FROM learning_versions v JOIN teaching_materials m ON v.kind='material' AND m.id=v.record_id WHERE v.file_id=? AND m.owner_id=?
@@ -122,17 +124,18 @@ export async function learningState(account: Account) {
   if (account.role === "teacher" || account.role === "admin") {
     const ownerWhere = (alias: string) => account.role === "admin" ? "" : ` WHERE ${alias}.owner_id = ?`;
     const ownerValues = account.role === "admin" ? [] : [account.id];
+    const imported=teacherAdminMaterialRead(account),materialWhere=account.role==="admin"?"":` WHERE (m.owner_id=? OR ${imported.sql})`,materialValues=account.role==="admin"?[]:[account.id,...imported.values];
     const mayMaterials=await hasAdminPermission(account,"materials.view"),mayHomework=await hasAdminPermission(account,"homework.view"),materialRows=guardedLearningReader(account,"materials.view").rows,homeworkRows=guardedLearningReader(account,"homework.view").rows;
     const [materials, materialRecipients, homework, homeworkRecipients, submissions, eligible] = await Promise.all([
-      mayMaterials?materialRows(`SELECT m.id, m.revision,m.updated_at AS updatedAt,m.title, m.description, m.file_id AS fileId, m.created_at AS createdAt, m.folder_id AS folderId, m.classroom_id AS classroomId, m.owner_id AS ownerId, coalesce(u.teacher_name,u.name,'老师') AS teacherName, c.title AS classroomTitle, f.filename FROM teaching_materials m JOIN pdf_files f ON f.id = m.file_id LEFT JOIN accounts u ON u.id = m.owner_id LEFT JOIN classrooms c ON c.id = m.classroom_id${ownerWhere("m")} ORDER BY m.created_at DESC`, ...ownerValues):Promise.resolve([]),
-      mayMaterials?materialRows<{ materialId: string; studentName: string; subject: string }>(`SELECT r.material_id AS materialId, r.student_name AS studentName, r.subject FROM material_recipients r JOIN teaching_materials m ON m.id = r.material_id${ownerWhere("m")}`, ...ownerValues):Promise.resolve([]),
+      mayMaterials?materialRows(`SELECT m.id, m.revision,m.updated_at AS updatedAt,m.title, m.description, m.file_id AS fileId, m.created_at AS createdAt, m.folder_id AS folderId, m.classroom_id AS classroomId, m.owner_id AS ownerId, coalesce(c.teacher_name,u.teacher_name,u.name,'老师') AS teacherName,u.name AS uploaderName, c.title AS classroomTitle, f.filename FROM teaching_materials m JOIN pdf_files f ON f.id = m.file_id LEFT JOIN accounts u ON u.id = m.owner_id LEFT JOIN classrooms c ON c.id = m.classroom_id${materialWhere} ORDER BY m.created_at DESC`, ...materialValues):Promise.resolve([]),
+      mayMaterials?materialRows<{ materialId: string; studentName: string; subject: string }>(`SELECT r.material_id AS materialId, r.student_name AS studentName, r.subject FROM material_recipients r JOIN teaching_materials m ON m.id = r.material_id${materialWhere}`, ...materialValues):Promise.resolve([]),
       mayHomework?homeworkRows(`SELECT h.id,h.revision,h.updated_at AS updatedAt,h.title, h.subject, h.description, h.starts_at AS startsAt, h.due_at AS dueAt, h.max_score AS maxScore, h.attachment_file_id AS attachmentFileId, h.folder_id AS folderId, h.classroom_id AS classroomId, h.created_at AS createdAt, h.owner_id AS ownerId, coalesce(u.teacher_name,u.name,'老师') AS teacherName, c.title AS classroomTitle FROM homework h LEFT JOIN accounts u ON u.id = h.owner_id LEFT JOIN classrooms c ON c.id = h.classroom_id${ownerWhere("h")} ORDER BY h.created_at DESC`, ...ownerValues):Promise.resolve([]),
       mayHomework?homeworkRows<{ homeworkId: string; studentName: string; score: number | null; scoredAt: string | null;scoreRevision:number }>(`SELECT r.homework_id AS homeworkId, r.student_name AS studentName, r.score,r.score_revision AS scoreRevision,r.scored_at AS scoredAt FROM homework_recipients r JOIN homework h ON h.id = r.homework_id${ownerWhere("h")}`, ...ownerValues):Promise.resolve([]),
       mayHomework?homeworkRows(`SELECT s.id, s.homework_id AS homeworkId, s.student_name AS studentName, s.file_id AS fileId, s.submitted_at AS submittedAt,s.attempt,s.homework_revision AS homeworkRevision,s.due_at_submission AS dueAtSubmission,s.max_score_submission AS maxScoreSubmission,s.late, f.filename FROM homework_submissions s JOIN homework h ON h.id = s.homework_id JOIN pdf_files f ON f.id = s.file_id${ownerWhere("h")} ORDER BY s.attempt DESC,s.submitted_at DESC,s.id DESC`, ...ownerValues):Promise.resolve([]),
       teacherSubjects(account),
     ]);
     return {
-      materials: materials.map(m => ({ ...m, filename: displayPdfName(String(m.filename), "教学资料"), recipients: materialRecipients.filter(r => r.materialId === m.id) })),
+      materials: materials.map(m => ({ ...m,canEdit:account.role==="teacher"&&m.ownerId===account.id, filename: displayPdfName(String(m.filename), "教学资料"), recipients: materialRecipients.filter(r => r.materialId === m.id) })),
       homework: homework.map(h => ({ ...h, recipients: homeworkRecipients.filter(r => r.homeworkId === h.id).map(r => r.studentName), scores: homeworkRecipients.filter(r => r.homeworkId === h.id).map(r => ({ studentName: r.studentName, score: r.score, scoredAt: r.scoredAt,scoreRevision:r.scoreRevision })) })),
       submissions: submissions.map(s => ({ ...s, filename: displayPdfName(String(s.filename), "功课提交") })),
       eligible,

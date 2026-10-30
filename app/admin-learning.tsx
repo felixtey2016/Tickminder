@@ -7,12 +7,13 @@ import { FilterPanel } from "@/components/filter-panel";
 import { PageState } from "@/components/page-state";
 import { Button } from "@/components/ui/button";
 import { getLanguage, t } from "@/lib/i18n";
-import { FileLinks, type Homework, type LearningState, type Material } from "./learning-portal";
+import { FileLinks,uploadPdf,publishDriveMaterial, type Homework, type LearningState, type Material } from "./learning-portal";
 
 import {HomeworkReview} from "./homework-review";
 import { ContentActions, SubmissionVersion } from "./learning-content-actions";
 import { LearningListDetail, homeworkSummary, latestSubmissions, learningLabel } from "./learning-list-detail";
 import {ClassroomMaterialBrowser} from "./classroom-material-browser";
+import {GoogleDriveImport} from "./google-drive-import";
 
 const dateFormatters = {
   zh: new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
@@ -21,8 +22,8 @@ const dateFormatters = {
 const readable = (iso: string) => dateFormatters[getLanguage()].format(new Date(iso));
 const subjectOf = (item: Material | Homework) => "subject" in item && item.subject || (item as Material).recipients?.[0]?.subject || "";
 
-export function AdminLearning({ learning, view, inClassroom = false,onChanged,historyScope = "global" }: {
-  historyScope?: string; learning: LearningState; view: "materials" | "homework"; inClassroom?: boolean;onChanged?:()=>Promise<unknown>|void;
+export function AdminLearning({ learning, view, inClassroom = false,onChanged,historyScope = "global",classroom,folderId,readOnly=false }: {
+  classroom?:{id:string;subject:string;members:string[]};folderId?:string;readOnly?:boolean;historyScope?: string; learning: LearningState; view: "materials" | "homework"; inClassroom?: boolean;onChanged?:()=>Promise<unknown>|void;
 }) {
   const MaterialList=inClassroom?ClassroomMaterialBrowser:LearningListDetail<Material>;
   const can=useAdminAction();
@@ -30,7 +31,7 @@ export function AdminLearning({ learning, view, inClassroom = false,onChanged,hi
   const [teacher, setTeacher] = useState("");
   const [subject, setSubject] = useState("");
   const records = view === "materials" ? learning.materials : learning.homework;
-  const teachers = [...new Map(records.filter(item => item.ownerId).map(item => [item.ownerId!, item.teacherName || t("老师")])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  const teachers = [...new Map(records.filter(item => item.ownerId).map(item => [item.ownerId!, item.uploaderName || item.teacherName || t("老师")])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const subjects = [...new Set(records.map(subjectOf).filter(Boolean))].sort();
   const matches = (item: Material | Homework) => (!teacher || item.ownerId === teacher) && (!subject || subjectOf(item) === subject);
   const materials = learning.materials.filter(matches);
@@ -39,6 +40,7 @@ export function AdminLearning({ learning, view, inClassroom = false,onChanged,hi
   const filtered = Boolean(teacher || subject);
 
   return <section className={`panel learning-admin${inClassroom ? " learning-content-surface" : ""}`}>
+    {inClassroom&&classroom&&view==="materials"&&can("materials.create")&&can("classrooms.view")&&(!folderId||can("folders.placeContent"))&&!readOnly&&<GoogleDriveImport key={classroom.id+":"+(folderId||"")} classroomId={classroom.id} folderId={folderId} contextKey={classroom.id+":"+(folderId||"")} maxBytes={learning.limits?.pdfMaxBytes||10*1024*1024} upload={(file,requestId,signal)=>uploadPdf(file,"material",undefined,learning.limits?.pdfMaxBytes||10*1024*1024,classroom.id,undefined,{signal,requestId,quiet:true})} publish={(item,signal)=>publishDriveMaterial(item,classroom,folderId,signal)} onChanged={onChanged}/>}
     {!inClassroom && classError && records.some(item=>!item.classroomId) && <div className="notice teaching-notice-actions" role="alert"><span>{classError}</span><Button variant="outline" onClick={()=>void loadClasses()}>{t("重试")}</Button></div>}
     {!inClassroom && records.length > 0 && <FilterPanel active={filtered}>
       <label>{t("老师")}<select value={teacher} onChange={event => setTeacher(event.target.value)}><option value="">{t("所有老师")}</option>{teachers.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>

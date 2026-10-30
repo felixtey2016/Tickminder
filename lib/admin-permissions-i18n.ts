@@ -229,7 +229,7 @@ const permissionCatalogueLabels: Record<string, [string, string]> = {
   "permissions.scope.terms": ["本集团学期的查看、新建与调整。", "View, create and edit this group's terms."],
   "permissions.scope.announcements": ["本集团班级公告；需要对应班级的查看权限。", "Class announcements in this group. Classroom viewing access is also required."],
   "permissions.scope.folders": ["本集团班级资料夹及内容摆放；资料与功课本身仍沿用归属规则。", "Class folders and content placement in this group. Ownership rules still apply to the materials and homework themselves."],
-  "permissions.scope.materials": ["查看现有规则允许访问的教学资料。资料发布与编辑仍由所属老师处理。", "View teaching materials available under existing access rules. Publishing and editing remain with the owning teacher."],
+  "permissions.scope.materials": ["查看教学资料；获新增权限后可在本集团班级上传及发布资料。编辑仍按现有归属规则处理。", "View teaching materials. The create permission allows uploads and publishing in this group's classes. Editing retains existing ownership rules."],
   "permissions.scope.recordings": ["管理本集团的课堂录影链接、发布状态及学生观看名单。", "Manage recording links, publication and student access within this organisation."],
   "permissions.scope.homework": ["查看与删除现有规则允许管理的功课；老师的发布、反馈与评分职责保持原有归属。", "View and delete homework within the existing management scope. Publishing, feedback and scoring retain their current teacher ownership."],
   "permissions.scope.quizzes": ["Quiz 题库操作仍须满足现有题库、创建人及集团范围约束。", "Quiz bank actions remain subject to existing bank, creator and group scope rules."],

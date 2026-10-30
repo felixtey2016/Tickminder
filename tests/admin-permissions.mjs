@@ -95,6 +95,14 @@ const snapshotTables=names=>JSON.stringify(names.map(name=>[name,sqlite.prepare(
 const oldTables=tableNames(),beforeMigration=snapshotTables(oldTables);
 migrate(preparationMigration);
 const afterMigration=snapshotTables(oldTables);
+// Preserve the historical 0032 migration assertion above, then run today's
+// authentication and routes against today's schema. In particular the current
+// Drizzle identity projection includes the nullable 0060 contact columns.
+for(const name of migrations.filter(name=>name>preparationMigration))migrate(name);
+const materialClassroom='permissions-material-class';
+sqlite.prepare('INSERT INTO plans(group_id,key,student,subject,subject_id,teacher_name,created_at) VALUES(?,?,?,?,?,?,?)').run(groups.a,'permissions-science','Fixture Student','Science','science','Fixture Teacher',now);
+sqlite.prepare('INSERT INTO classrooms(id,group_id,title,subject,teacher_name,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').run(materialClassroom,groups.a,'Permissions fixture class','Science','Fixture Teacher','teacher-a',now,now);
+sqlite.prepare('INSERT INTO classroom_members(id,group_id,classroom_id,student_name,created_at) VALUES(?,?,?,?,?)').run('permissions-material-member',groups.a,materialClassroom,'Fixture Student',now);
 const snapshot=()=>snapshotTables(tableNames());
 const profileRow=id=>sqlite.prepare('SELECT * FROM admin_permission_profiles WHERE account_id=?').get(id);
 const auditCount=()=>sqlite.prepare('SELECT count(*) AS n FROM audit').get().n;
@@ -140,7 +148,9 @@ await section('catalog exposes implemented finance actions and denies reserved o
   await login('chief-a');const data=await readProfile('admin-a'),keys=data.catalog.flatMap(module=>module.actions.map(action=>action.key));
   assert.equal(new Set(keys).size,keys.length);assert.ok(keys.length>60);
   assert.ok(keys.every(key=>/^[A-Za-z]+\.[A-Za-z]+$/.test(key)),'all grants are explicit module.action keys');
-  for(const id of ['resources','progress','publicModeration','adminIdentity','groups','academicCatalogues','backup']){const module=data.catalog.find(item=>item.id===id);assert.ok(module,id+' reserved entry exists');assert.equal(module.availability,'reserved');assert.deepEqual(module.actions,[]);assert.deepEqual(module.supportedActions,[]);}
+  for(const id of ['progress','publicModeration','adminIdentity','groups','academicCatalogues','backup']){const module=data.catalog.find(item=>item.id===id);assert.ok(module,id+' reserved entry exists');assert.equal(module.availability,'reserved');assert.deepEqual(module.actions,[]);assert.deepEqual(module.supportedActions,[]);}
+  assert.equal(data.catalog.find(module=>module.id==='resources').availability,'current');
+  assert.deepEqual(data.catalog.find(module=>module.id==='resources').supportedActions,['view','create','edit','delete','assign','share']);
   assert.equal(data.catalog.find(module=>module.id==='parents').availability,'current');
   assert.deepEqual(data.catalog.find(module=>module.id==='parents').supportedActions,['view','manage']);
   assert.deepEqual(permission.normalizeAdminGrants(['parents.manage']),['parents.view','parents.manage','accounts.view']);
@@ -148,12 +158,15 @@ await section('catalog exposes implemented finance actions and denies reserved o
   assert.deepEqual(data.catalog.find(module=>module.id==='payments').supportedActions,['view','record','reverse','refund']);
   assert.deepEqual(permission.normalizeAdminGrants(['payments.record']),['invoices.view','payments.view','payments.record']);
   assert.deepEqual(permission.normalizeAdminGrants(['invoices.adjust']),['invoices.view','invoices.adjust','payments.view']);
-  assert.deepEqual(data.catalog.find(module=>module.id==='materials').supportedActions,['view']);
+  assert.deepEqual(data.catalog.find(module=>module.id==='materials').supportedActions,['view','create']);
+  assert.deepEqual(permission.normalizeAdminGrants(['materials.create']),['classrooms.view','materials.view','materials.create']);
+  assert(!permission.LEGACY_ADMIN_GRANTS.includes('materials.create'));
+  assert(data.templates.every(template=>!template.grants.includes('materials.create')));
   assert.deepEqual(data.catalog.find(module=>module.id==='finance').supportedActions,['view']);
   assert.deepEqual(data.catalog.find(module=>module.id==='payroll').supportedActions,['view','rates','edit','delete','confirm','pay','reverse']);
   assert.deepEqual(data.catalog.find(module=>module.id==='expenses').supportedActions,['view','record','reverse']);
   assert.deepEqual(data.catalog.find(module=>module.id==='exports').supportedActions,['view','finance']);
-  for(const key of ['materials.create','materials.edit','homework.create','homework.edit','homework.grade','finance.edit','invoices.delete','payments.delete','payments.*','adminIdentity.assign','groups.edit','backup.export','futureWidget.view','*','lessons.*','*.view','LESSONS.view','lessons.view ']){
+  for(const key of ['materials.edit','homework.create','homework.edit','homework.grade','finance.edit','invoices.delete','payments.delete','payments.*','adminIdentity.assign','groups.edit','backup.export','futureWidget.view','*','lessons.*','*.view','LESSONS.view','lessons.view ']){
     assert.equal(permission.hasAdminGrant([key],key),false,'unknown/unsupported grant must default deny: '+key);
     assert.throws(()=>permission.normalizeAdminGrants([key]),permission.AdminPermissionValidationError,key);
     await unchanged('invalid grant '+key,()=>denied('admin-permissions',{accountId:'admin-a',expectedRevision:1,grants:[key]},'',[400]));
@@ -326,16 +339,20 @@ await section('unauthenticated and ordinary users receive no permission configur
     sqlite.prepare('DELETE FROM sessions WHERE account_id=?').run('read-chief');
     committed=snapshot();auditReadReached=true;
   };
-  const raced=await ok('state',undefined,'?scope=activity');assert.equal(auditReadReached,true,'handover was injected at the actual audit SELECT');
+  const raced=await call('state',undefined,'?scope=activity');assert.equal(auditReadReached,true,'handover was injected at the actual audit SELECT');
   assert.equal(snapshot(),committed,'activity read adds no mutation after the independently committed handover');
-  assert.equal(raced.activity.some(item=>item.id===privateAudit.id),false,'former chief cannot read permission snapshots after the handover commits');
-  assert.equal(/draftGrants|draft_grants_json|configuredGrants/.test(JSON.stringify(raced.activity)),false,'stale preflight authority cannot leak a private snapshot');
-  assert.ok(raced.activity.some(item=>item.id===businessAudit.id),'ordinary business activity remains readable');
+  assert.equal(raced.status,403,'revoking the authenticated session denies the complete activity response');
+  assert.equal(Object.hasOwn(raced.data,'activity'),false,'revoked sessions receive no activity projection');
+  assert.equal(/draftGrants|draft_grants_json|configuredGrants/.test(JSON.stringify(raced.data)),false,'stale preflight authority cannot leak a private snapshot');
+  await login('read-chief');const ordinaryActivity=(await ok('state',undefined,'?scope=activity')).activity;
+  assert.equal(ordinaryActivity.some(item=>item.id===privateAudit.id),false,'former chief with a fresh ordinary session still cannot read permission snapshots');
+  assert.ok(ordinaryActivity.some(item=>item.id===businessAudit.id),'ordinary business activity remains readable through a valid fresh session');
   for(const actor of ['read-next','owner']){
     await login(actor,actor==='owner'?groups.raceRead:undefined);
     const activity=(await ok('state',undefined,'?scope=activity')).activity,entry=activity.find(item=>item.id===privateAudit.id);
     assert.ok(entry,'new chief and Owner retain permission-audit access: '+actor);
-    assert.deepEqual(JSON.parse(entry.after).profile.draftGrants,['students.view'],'authorized reader receives the stored permission snapshot');
+    assert.deepEqual(entry.afterSummary.filter(field=>field.field==='draftGrants'),[{field:'draftGrants',value:'students.view'}],'authorized reader receives the current sanitized permission summary');
+    for(const raw of ['before','after','beforeJson','afterJson'])assert.equal(Object.hasOwn(entry,raw),false,'raw audit JSON is not exposed');
   }
 });
 
@@ -349,7 +366,7 @@ await section('deny-all draft preserves existing reads, chief fee settings and p
   assert.ok(sqlite.prepare('SELECT id FROM academic_terms WHERE group_id=? AND name=?').get(groups.a,'Fictional term after deny-all draft'));
   await ok('action',{action:'resetLocalPassword',userId:'teacher-a',password:'Fictional-reset-after-draft-456'});
   await unchanged('ordinary admin still cannot create an administrator',()=>denied('action',{action:'createLocalAccount',username:'forbidden-after-draft',password,name:'Forbidden administrator',role:'admin'},'',[403]));
-  await unchanged('admin still cannot publish teacher-owned material',()=>denied('learning',{action:'saveMaterial'},'',[403]));
+  await unchanged('ordinary legacy admin cannot create material without explicit materials.create',()=>denied('learning',{action:'saveMaterial',title:'Denied fixture material',subject:'Science',classroomId:materialClassroom,fileId:'unpublished-fixture-pdf'},'',[403]));
   await unchanged('admin still cannot publish teacher-owned homework',()=>denied('learning',{action:'saveHomework'},'',[403]));
   for(const actor of ['admin-a','chief-a']){
     await login(actor);assert.equal((await call('billing',undefined,'?month=2032-01')).status,200,'preparation mode preserves the existing administrator tuition read');

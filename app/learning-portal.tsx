@@ -15,9 +15,10 @@ import { ContentActions, SubmissionVersion } from "./learning-content-actions";
 import {SharedFilePicker} from "./shared-file-picker";
 import { LearningListDetail, homeworkSummary, latestSubmissions, learningLabel } from "./learning-list-detail";
 import {ClassroomMaterialBrowser} from './classroom-material-browser';
+import {GoogleDriveImport,type DrivePublishItem} from "./google-drive-import";
 import { canNavigateBack, usePageHistoryState } from "@/lib/page-history";
 
-type TeachingOwner = { revision?:number;updatedAt?:string|null; ownerId?: string; teacherName?: string; classroomTitle?: string | null };
+type TeachingOwner = { revision?:number;updatedAt?:string|null; ownerId?: string; teacherName?: string; uploaderName?:string; canEdit?:boolean; classroomTitle?: string | null };
 export type Material = TeachingOwner & { id: string; title: string; description: string | null; fileId: string; filename: string; subject?: string; classroomId?: string | null; folderId?: string | null; recipients?: Array<{ studentName: string; subject: string }> };
 export type Homework = TeachingOwner & { id: string; title: string; subject: string; description: string; startsAt: string; dueAt: string; maxScore?: number | null; score?: number | null; scoredAt?: string | null; resubmitGrantId?:string|null;resubmitRevision?:number;attachmentFileId: string | null; classroomId?: string | null; folderId?: string | null; recipients?: string[]; scores?: Array<{ studentName: string; score: number | null; scoredAt: string | null;scoreRevision?:number }> };
 export type Submission = { attempt?:number; id: string; homeworkId: string; studentName?: string; fileId: string; filename: string; submittedAt: string;homeworkRevision?:number|null;dueAtSubmission?:string|null;maxScoreSubmission?:number|null;late: number | boolean };
@@ -31,7 +32,7 @@ const maxPdfLabel = (learning: LearningState) => `${Math.round((learning.limits?
 const pdfLimit = (learning: LearningState) => learning.limits?.pdfMaxBytes || 10 * 1024 * 1024;
 
 const uploadRequests=new WeakMap<File,Map<string,string>>();
-export async function uploadPdf(file: File, kind: "material" | "homework" | "submission" | "feedback", homeworkId?: string, maxBytes = 10 * 1024 * 1024, classroomId?: string,submissionId?:string) {
+export async function uploadPdf(file: File, kind: "material" | "homework" | "submission" | "feedback", homeworkId?: string, maxBytes = 10 * 1024 * 1024, classroomId?: string,submissionId?:string,options?:{signal?:AbortSignal;requestId?:string;quiet?:boolean}) {
   if (file.size > maxBytes) throw new Error(`${t("PDF 超过单份大小限制")} (${(file.size / 1048576).toFixed(1)} MB > ${(maxBytes / 1048576).toFixed(0)} MB)`);
   const form = new FormData();
   form.set("file", file);
@@ -39,15 +40,19 @@ export async function uploadPdf(file: File, kind: "material" | "homework" | "sub
   if (homeworkId) form.set("homeworkId", homeworkId);
   if (classroomId) form.set("classroomId",classroomId);
   if(submissionId)form.set("submissionId",submissionId);
-  const context=[kind,homeworkId,classroomId,submissionId].join(":");let keys=uploadRequests.get(file);if(!keys){keys=new Map();uploadRequests.set(file,keys);}if(!keys.has(context))keys.set(context,crypto.randomUUID());form.set("requestId",keys.get(context)!);
-  const response = await groupFetch("/api/files", { method: "POST", body: form, cache: "no-store" });
+  const context=[kind,homeworkId,classroomId,submissionId].join(":");let keys=uploadRequests.get(file);if(!keys){keys=new Map();uploadRequests.set(file,keys);}if(!keys.has(context))keys.set(context,crypto.randomUUID());form.set("requestId",options?.requestId||keys.get(context)!);
+  const response = await groupFetch("/api/files", { method: "POST", body: form, cache: "no-store",signal:options?.signal });
   if (response.status === 413) throw new Error(t("PDF 超过单份大小限制"));
   const result = await readApiJson<{ id?: string; error?: string }>(response);
   if (!response.ok || !result.id) throw new Error(result.error || (response.status === 413 ? t("PDF 超过单份大小限制") : t("PDF 上传失败，请重试")));
-  showActionToast("success", kind === "submission" ? "PDF 已上传，尚未提交功课" : "PDF 已上传，尚未发布给学生");
+  if(!options?.quiet)showActionToast("success", kind === "submission" ? "PDF 已上传，尚未提交功课" : "PDF 已上传，尚未发布给学生");
   return result.id;
 }
 
+export async function publishDriveMaterial(item:DrivePublishItem,classroom:{id:string;subject:string;members:string[]},folderId:string|undefined,signal:AbortSignal){
+ const response=await groupFetch("/api/learning",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"saveMaterial",title:item.title,description:"",subject:classroom.subject,students:classroom.members,fileId:item.fileId,classroomId:classroom.id,folderId:folderId||"",importOperationId:item.importOperationId}),signal,cache:"no-store"});
+ const result=await readApiJson<{ok?:boolean;id?:string;error?:string}>(response);if(!response.ok||!result.ok||!result.id)throw new Error(t(result.error||"资料未能发布，请重试"));
+}
 export function FileLinks({ fileId }: { fileId: string }) {
   return <span className="learning-file-actions"><a href={`/api/files/${encodeURIComponent(fileId)}?lang=${getLanguage()}`} target="_blank" rel="noopener noreferrer"><FileText size={16}/>{t("查看 PDF")}</a><a href={`/api/files/${encodeURIComponent(fileId)}?download=1&lang=${getLanguage()}`}><Download size={16}/>{t("下载")}</a></span>;
 }
@@ -188,6 +193,7 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
   return <div className="learning-teacher learning-single-view">
     {error && <p className="notice" role="alert">{error}</p>}
     <section className={`panel teaching-content-panel${classroom ? " learning-content-surface" : ""}`} id={formId} data-material-form hidden={view !== "materials"}><header className="learning-compose-toolbar"><h2>{t(formOpen ? materialId ? "编辑教学资料" : "上传教学资料" : "教学资料")}{!formOpen && <span className="learning-record-count"> {learning.materials.length}</span>}</h2>{!readOnly && !legacyOnly && <Button type="button" variant={formOpen ? "outline" : "default"} disabled={disabled} onClick={()=>formOpen ? closeCreateForm() : openCreateForm()}>{formOpen ? learningLabel("返回列表", "Back to list") : t("上传教学资料")}</Button>}</header>
+      {classroom&&!readOnly&&!legacyOnly&&!formOpen&&<GoogleDriveImport key={classroom.id+":"+(folderId||"")} classroomId={classroom.id} folderId={folderId} contextKey={classroom.id+":"+(folderId||"")} maxBytes={pdfLimit(learning)} disabled={disabled} upload={(file,requestId,signal)=>uploadPdf(file,"material",undefined,pdfLimit(learning),classroom.id,undefined,{signal,requestId,quiet:true})} publish={(item,signal)=>publishDriveMaterial(item,classroom,folderId,signal)} onChanged={onChanged}/>}
       <form className="learning-form" hidden={Boolean(!formOpen || readOnly || (legacyOnly && !materialId))} onSubmit={saveMaterial}><fieldset className="learning-form-section"><legend>{t("资料内容")}</legend>
         <label>{t("资料标题")}<input required maxLength={120} value={materialTitle} onChange={e => setMaterialTitle(e.target.value)}/></label>
         <label>{t("说明（可选）")}<textarea maxLength={2000} value={materialDescription} onChange={e => setMaterialDescription(e.target.value)}/></label>
@@ -199,7 +205,7 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
         {materialId && <Button type="button" variant="outline" onClick={() => { setMaterialId(""); setMaterialTitle(""); setMaterialDescription(""); setMaterialStudents(classroom?.members || []); setMaterialSubject(classroom?.subject || ""); }}>{t("取消编辑")}</Button>}</div>
       </form>
 
-      <div hidden={formOpen}><MaterialList historyKey={`teacher:materials:${classroom?.id || "legacy"}:${folderId || "root"}`} items={learning.materials} summary={material=>({context:[material.recipients?.[0]?.subject,!classroom&&material.classroomTitle].filter(Boolean).join(" · "),meta:`PDF · ${material.recipients?.length || 0} ${learningLabel("位学生","students")}`})} renderDetail={material => <article className="learning-card" key={material.id}><div className="learning-record-content"><header className="learning-record-head"><strong>{material.title}</strong><small>{material.recipients?.[0]?.subject}</small></header>{material.description && <p>{material.description}</p>}<details className="learning-detail-recipients"><summary>{t("分配给学生")} · {material.recipients?.length || 0}</summary><p>{material.recipients?.map(r=>r.studentName).join("、")}</p></details></div><div className="learning-action-row"><FileLinks fileId={material.fileId}/></div><div className="learning-card-actions">{!material.classroomId && legacyClasses && <LegacyOrganizer item={material} kind="material" classes={legacyClasses} onChanged={()=>onChanged?.()}/>}<ContentActions kind="material" id={material.id} editable={!readOnly} onChanged={onChanged} maxBytes={pdfLimit(learning)}/><Button size="sm" variant="outline" hidden={readOnly} disabled={disabled} onClick={() => { if (window.confirm(t("确定删除这份教学资料及所有版本？共用 PDF 会保留。"))) void mutate({ action: "deleteMaterial", id: material.id }); }}>{t("删除资料")}</Button></div></article>}/>{view === "materials" && !legacyOnly && !learning.materials.length && <PageState kind="empty" title="尚未发布教学资料"/>}</div>
+      <div hidden={formOpen}><MaterialList historyKey={`teacher:materials:${classroom?.id || "legacy"}:${folderId || "root"}`} items={learning.materials} summary={material=>({context:[material.recipients?.[0]?.subject,!classroom&&material.classroomTitle].filter(Boolean).join(" · "),meta:`PDF · ${material.recipients?.length || 0} ${learningLabel("位学生","students")}`})} renderDetail={material => <article className="learning-card" key={material.id}><div className="learning-record-content"><header className="learning-record-head"><strong>{material.title}</strong><small>{material.recipients?.[0]?.subject}</small></header>{material.description && <p>{material.description}</p>}<details className="learning-detail-recipients"><summary>{t("分配给学生")} · {material.recipients?.length || 0}</summary><p>{material.recipients?.map(r=>r.studentName).join("、")}</p></details></div><div className="learning-action-row"><FileLinks fileId={material.fileId}/></div><div className="learning-card-actions">{!material.classroomId && legacyClasses && <LegacyOrganizer item={material} kind="material" classes={legacyClasses} onChanged={()=>onChanged?.()}/>}<ContentActions kind="material" id={material.id} editable={!readOnly&&material.canEdit!==false} onChanged={onChanged} maxBytes={pdfLimit(learning)}/><Button size="sm" variant="outline" hidden={readOnly||material.canEdit===false} disabled={disabled} onClick={() => { if (window.confirm(t("确定删除这份教学资料及所有版本？共用 PDF 会保留。"))) void mutate({ action: "deleteMaterial", id: material.id }); }}>{t("删除资料")}</Button></div></article>}/>{view === "materials" && !legacyOnly && !learning.materials.length && <PageState kind="empty" title="尚未发布教学资料"/>}</div>
     </section>
     <section className={`panel teaching-content-panel${classroom ? " learning-content-surface" : ""}`} hidden={view !== "homework"}><header className="learning-compose-toolbar"><h2>{t(formOpen ? "新功课" : "功课")}{!formOpen && <span className="learning-record-count"> {learning.homework.length}</span>}</h2>{!readOnly && !legacyOnly && <Button type="button" variant={formOpen ? "outline" : "default"} disabled={disabled} onClick={()=>formOpen ? closeCreateForm() : openCreateForm()}>{formOpen ? learningLabel("返回列表", "Back to list") : t("新功课")}</Button>}</header>
       <form className="learning-form" hidden={Boolean(!formOpen || readOnly || legacyOnly)} onSubmit={publishHomework}><fieldset className="learning-form-section"><legend>{t("功课内容")}</legend>

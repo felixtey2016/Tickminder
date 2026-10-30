@@ -15,7 +15,7 @@ const currentModules = [
   { id: "terms", actions: ["view", "create", "edit"] },
   { id: "announcements", actions: ["view", "create", "edit", "delete"] },
   { id: "folders", actions: ["view", "create", "edit", "delete", "placeContent"] },
-  { id: "materials", actions: ["view"] },
+  { id: "materials", actions: ["view", "create"] },
   { id: "resources", actions: ["view", "create", "edit", "delete", "assign", "share"] },
   { id: "recordings", actions: ["view", "create", "edit", "delete"] },
   // Publishing, editing, feedback and scoring remain the owning teacher's work.
@@ -50,6 +50,7 @@ const extraDependencies: Partial<Record<AdminGrantKey, AdminGrantKey[]>> = {
   "reschedules.view": ["lessons.view"],
   "announcements.view": ["classrooms.view"],
   "folders.view": ["classrooms.view"],
+  "materials.create": ["classrooms.view"],
   "resources.assign": ["folders.placeContent"],
   // Target selectors and content-specific checks are integrated in round 2;
   // assigning work must not grant the complete student profile, and placing
