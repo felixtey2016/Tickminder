@@ -1,3 +1,4 @@
+import {validInvoiceIssuerIdentity} from './invoice-identity-backup.mjs';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {stripTypeScriptTypes} from 'node:module';
@@ -39,6 +40,7 @@ export function checkRestoredPrepayments(db){
   if(!match||match[1]!== (kind==='request'?'ADV':'APR')||match[2]!==year||!int(Number(match[3]),1)||!sequence||Number(match[3])>sequence.last_value)fail();
  };
  const institution=doc=>{
+  if(!validInvoiceIssuerIdentity(doc))fail();
   if(!doc||!str(doc.institutionName,160)||!doc.institutionName.trim()||!['standard','centered','brand'].includes(doc.template)||!/^#[a-f0-9]{6}$/i.test(doc.themeColor))fail();
  };
  for(const r of requests.values()){

@@ -1,3 +1,4 @@
+import {validInvoiceIssuerIdentity,validInvoiceBillTo,validInvoicePrintMetadata} from './invoice-identity-backup.mjs';
 import {checkRestoredResources,RESOURCE_TABLES,RESOURCE_REPLAY_TRIGGERS} from './resource-backup.mjs';
 import {checkRestoredQuizSharing,QUIZ_SHARING_TABLES,OFFBOARDING_TABLES,QUIZ_SHARING_REPLAY_TRIGGERS} from './quiz-sharing-backup.mjs';
 export {checkRestoredResources} from './resource-backup.mjs';
@@ -342,9 +343,12 @@ export function checkRestoredInvoiceStructure(db){
  const tables=['invoice_brand_assets','invoice_brand_settings','invoices','invoice_items','invoice_operations','invoice_sequences','invoice_source_locks'];
  const count=db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='table' AND name IN ("+tables.map(()=>'?').join(',')+")").get(...tables).n;if(!count)return;
  const fail=()=>{throw Error('Restored invoice snapshot, source locks or brand metadata is invalid');};if(count!==tables.length)fail();
+ for(const row of db.prepare('SELECT * FROM invoice_brand_settings').all()){let settings;try{settings=JSON.parse(row.settings_json);}catch{fail();}if(!validInvoiceIssuerIdentity(settings))fail();}
  for(const row of db.prepare('SELECT * FROM invoices').all()){
   let doc;try{doc=JSON.parse(row.document_json);}catch{fail();}
   if(!doc||doc.id!==row.id||doc.groupId!==row.group_id||doc.studentId!==row.student_id||doc.month!==row.month||doc.status!==row.status||doc.revision!==row.revision||doc.number!==row.number||doc.issuedAt!==row.issued_at||doc.totalCents!==row.total_cents||doc.currency!=='MYR'||!Array.isArray(doc.sourceLines)||!Array.isArray(doc.additions)||!Array.isArray(doc.lines)||!doc.institution)fail();
+  if(!validInvoiceIssuerIdentity(doc.institution)||!validInvoiceBillTo(doc.billTo)||!validInvoicePrintMetadata(doc))fail();
+  if(doc.extension?.printVersion===2){let extension;try{extension=JSON.parse(row.extension_json);}catch{fail();}if(extension?.printVersion!==2)fail();}
   const items=db.prepare('SELECT * FROM invoice_items WHERE group_id=? AND invoice_id=? ORDER BY position').all(row.group_id,row.id);
   if(items.reduce((sum,x)=>sum+x.amount_cents,0)!==row.total_cents)fail();
   const locks=db.prepare('SELECT * FROM invoice_source_locks WHERE group_id=? AND invoice_id=?').all(row.group_id,row.id);
