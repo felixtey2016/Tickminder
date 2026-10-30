@@ -70,6 +70,17 @@ Google selection and download must be checked with an authorized test user. See
    existing private `BUCKET`, and published through the existing learning API.
    Published copies appear in the normal file library and its PDF preview.
 
+For an account with a verified Google binding, the protected config response
+provides `loginHint` from that account's `google_identities.subject`. It never
+falls back to a local account email or username. The client supplies this as
+Google's `login_hint` with `prompt:""` to prefer the bound account. Google may
+still require consent, sign-in or security checks; a hint is an account-selection
+preference, not proof that the returned Drive token belongs to that identity.
+Unlinked accounts receive no hint and retain the existing Google selection and
+authorization flow, also using `prompt:""`; an account chooser is not forced.
+No broader scope or lasting token is introduced. See the
+[GIS token client reference](https://developers.google.com/identity/oauth2/web/reference/js-reference#TokenClientConfig).
+
 The current import ceiling is **10 MiB per PDF** (10,485,760 bytes, shown as
 10 MB), or a lower configured `PDF_MAX_BYTES` limit. Existing group storage quota
 still applies. Google-native documents are not exported to PDF by this feature.
