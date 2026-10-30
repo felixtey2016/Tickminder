@@ -1,10 +1,12 @@
+import {adminMaterialCreateAuthority} from "./material-import-access";
 import {accountSessionPredicate} from "./account-session";
 import type {Account} from "./auth";
 import {classPlanSubjectSql} from "./academic-subject-match";
 
 // Re-evaluate identity and context in the write statement, after body parsing,
 // hashing and cleanup have yielded. All names and identifiers remain bound.
-export function pdfUploadAuthority(actor: Account, kind: string, context: {classroomId: string; homeworkId: string; submissionId: string}) {
+export function pdfUploadAuthority(actor: Account, kind: string, context: {classroomId: string; homeworkId: string; submissionId: string;folderId?:string|null;subject?:string}) {
+  if(actor.role==='admin'&&kind==='material')return adminMaterialCreateAuthority(actor,context);
   const session=accountSessionPredicate(actor);
   const identity = `EXISTS(SELECT 1 FROM accounts upload_actor JOIN tuition_groups upload_group ON upload_group.id=upload_actor.group_id AND upload_group.active=1
     WHERE upload_actor.id=? AND upload_actor.group_id=? AND upload_actor.role=? AND upload_actor.disabled_at IS NULL

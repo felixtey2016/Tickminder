@@ -25,6 +25,13 @@ const resourceTables=['resource_catalog','resource_assignments','resource_report
 const lifecycleTables=['student_offboarding','classroom_retirements'] as const;
 const quizSharingTables=['quiz_share_settings','quiz_share_recipients'] as const;
 const noStore = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" };
+// Trigger-only releases need their own snapshot version: an old backup must
+// restore its original teacher-only guard, while v37 restores migration 0061.
+// Fingerprints cover SQLite's normalized CREATE SQL, not a migration filename.
+const materialGuardFingerprints = {
+  teacherOnly: "a749bb2084b0f97ea7d5e2f15f1dfb485d56821d78682405f8b679e064bcb1b8",
+  adminCreate: "54c8910e6531ffc9e99143c9aebd2c6e194155c74c06033cb132383ebe772e89",
+};
 
 async function authorized(request: Request): Promise<boolean> {
   const configured = env.BACKUP_EXPORT_TOKEN;
@@ -209,6 +216,16 @@ export async function GET(request: Request) {
     if(contactCount&&contactCount!==contactColumns.length)throw new Error('Incomplete student contact schema');
     const hasStudentContact=contactCount===contactColumns.length;
     if(hasStudentContact&&!hasQuizSharing)throw new Error('Student contact foundation missing');
+    let hasAdminMaterialCreation=false;
+    if(hasFolders){
+      const guard=await db.prepare("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='material_active_class_insert'").first<{sql:string}>();
+      if(!guard?.sql)throw new Error('Missing material creation guard');
+      const normalized=guard.sql.trim().replace(/\s+/g,' ').replace(/;$/,'');
+      const fingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(normalized))),byte=>byte.toString(16).padStart(2,'0')).join('');
+      hasAdminMaterialCreation=fingerprint===materialGuardFingerprints.adminCreate;
+      if(!hasAdminMaterialCreation&&fingerprint!==materialGuardFingerprints.teacherOnly)throw new Error('Unrecognized material creation guard');
+      if(hasAdminMaterialCreation&&!hasStudentContact)throw new Error('Administrator material creation foundation missing');
+    }
     const attendanceWindowColumns=['first_submission_at','first_submission_by','explicit_locked_at','explicit_locked_by','explicit_lock_reason'];
     const attendanceWindowCount=attendanceWindowColumns.filter(name=>tables.class_sessions?.columns.includes(name)).length;
     if(attendanceWindowCount&&attendanceWindowCount!==attendanceWindowColumns.length)throw new Error('Incomplete attendance edit window schema');
@@ -217,7 +234,7 @@ export async function GET(request: Request) {
     if(hasResources&&!hasAttendanceWindow)throw Error("Resource library requires attendance foundation");
     const contents=await db.batch<Record<string,unknown>>(names.map(name=>db.prepare(`SELECT * FROM "${name}"`)));
     names.forEach((name,index)=>{tables[name].rows=contents[index].results;});
-    return Response.json({ format: hasStudentContact ? "timelyo-d1-v36" : hasQuizSharing ? "timelyo-d1-v35" : hasLifecycle ? "timelyo-d1-v34" : hasResources ? "timelyo-d1-v33" : hasAttendanceWindow ? "timelyo-d1-v32" : hasParentNotifications ? "timelyo-d1-v31" : hasParentFinancialAccess ? "timelyo-d1-v30" : hasParents ? "timelyo-d1-v29" : hasPrepayments ? "timelyo-d1-v28" : hasClassPayroll ? "timelyo-d1-v27" : hasFinanceRound2 ? "timelyo-d1-v26" : hasInvoiceFinance ? "timelyo-d1-v25" : hasQuizUpgrade ? "timelyo-d1-v24" : hasRecordingsAndContacts ? "timelyo-d1-v23" : hasInvoices ? "timelyo-d1-v22" : hasAdminPermissions ? "timelyo-d1-v21" : hasBilling ? "timelyo-d1-v20" : hasAcademicCatalogues && tables.quiz_practice_attempts.columns.includes("discarded_at") ? "timelyo-d1-v19" : hasAcademicCatalogues ? "timelyo-d1-v18" : hasFormalPractice ? "timelyo-d1-v17" : hasPractice ? "timelyo-d1-v16" : hasQuizzes ? "timelyo-d1-v15" : hasClassSessions&&tables.class_sessions.columns.includes("teaching_status") ? "timelyo-d1-v14" : hasClassSessions ? "timelyo-d1-v13" : hasReview ? "timelyo-d1-v12" : hasVersions ? "timelyo-d1-v11" : hasFolders ? "timelyo-d1-v10" : hasGroups ? "timelyo-d1-v9" : hasInbox ? "timelyo-d1-v8" : hasNotifications ? "timelyo-d1-v7" : tables.accounts.columns.includes("pending_expires_at") ? "timelyo-d1-v6" : tables.reschedule_requests.columns.includes("requested_role") ? "timelyo-d1-v5" : hasTerms ? "timelyo-d1-v4" : hasIdentities ? "timelyo-d1-v3" : hasClassrooms ? "timelyo-d1-v2" : "timelyo-d1-v1", tables,...external.names.length?{externalSchema}:{} }, { headers: noStore });
+    return Response.json({ format: hasAdminMaterialCreation ? "timelyo-d1-v37" : hasStudentContact ? "timelyo-d1-v36" : hasQuizSharing ? "timelyo-d1-v35" : hasLifecycle ? "timelyo-d1-v34" : hasResources ? "timelyo-d1-v33" : hasAttendanceWindow ? "timelyo-d1-v32" : hasParentNotifications ? "timelyo-d1-v31" : hasParentFinancialAccess ? "timelyo-d1-v30" : hasParents ? "timelyo-d1-v29" : hasPrepayments ? "timelyo-d1-v28" : hasClassPayroll ? "timelyo-d1-v27" : hasFinanceRound2 ? "timelyo-d1-v26" : hasInvoiceFinance ? "timelyo-d1-v25" : hasQuizUpgrade ? "timelyo-d1-v24" : hasRecordingsAndContacts ? "timelyo-d1-v23" : hasInvoices ? "timelyo-d1-v22" : hasAdminPermissions ? "timelyo-d1-v21" : hasBilling ? "timelyo-d1-v20" : hasAcademicCatalogues && tables.quiz_practice_attempts.columns.includes("discarded_at") ? "timelyo-d1-v19" : hasAcademicCatalogues ? "timelyo-d1-v18" : hasFormalPractice ? "timelyo-d1-v17" : hasPractice ? "timelyo-d1-v16" : hasQuizzes ? "timelyo-d1-v15" : hasClassSessions&&tables.class_sessions.columns.includes("teaching_status") ? "timelyo-d1-v14" : hasClassSessions ? "timelyo-d1-v13" : hasReview ? "timelyo-d1-v12" : hasVersions ? "timelyo-d1-v11" : hasFolders ? "timelyo-d1-v10" : hasGroups ? "timelyo-d1-v9" : hasInbox ? "timelyo-d1-v8" : hasNotifications ? "timelyo-d1-v7" : tables.accounts.columns.includes("pending_expires_at") ? "timelyo-d1-v6" : tables.reschedule_requests.columns.includes("requested_role") ? "timelyo-d1-v5" : hasTerms ? "timelyo-d1-v4" : hasIdentities ? "timelyo-d1-v3" : hasClassrooms ? "timelyo-d1-v2" : "timelyo-d1-v1", tables,...external.names.length?{externalSchema}:{} }, { headers: noStore });
   } catch {
     return Response.json({ error: "Backup export unavailable" }, { status: 503, headers: noStore });
   }

@@ -1,3 +1,6 @@
+import {requireMaterialCreateAuthority,MaterialImportError} from "@/lib/material-import-access";
+import {operationId,operationHash} from "@/lib/learning-operations";
+import {authorityGuard} from "@/lib/admin-authority";
 import {reportUnexpectedError} from '@/lib/diagnostics-server';
 import {groupReader,groupStatement,requireGroup} from "@/lib/group-data";
 import { NextResponse } from "next/server";
@@ -45,18 +48,19 @@ async function uploadedFile(actor:Account,fileId: string, kind: string, contextI
 export async function POST(request: Request) {
   if (new URL(request.url).origin !== request.headers.get("origin")) return response(new ActionError("Origin mismatch", 403));
   const actor = await currentAccount();
-  if (!actor || !["teacher", "student"].includes(actor.role)) return response(new ActionError("没有操作权限", 403));
+  if (!actor || !["teacher", "student", "admin"].includes(actor.role)) return response(new ActionError("没有操作权限", 403));
   const groupId=requireGroup(actor.groupId); const {first,rows}=groupReader(groupId);
   let data: Record<string, unknown>;
   try { data = await request.json() as Record<string, unknown>; }
   catch { return response(new ActionError("请求格式无效")); }
   const action = str(data.action);
+  if(actor.role==="admin"&&(action!=="saveMaterial"||str(data.id)))return response(new ActionError("管理员当前只能新增教学资料",403));
   const now = new Date().toISOString();
   try {
     if (await first("SELECT 1 AS mustChange FROM local_credentials WHERE account_id = ? AND must_change_password = 1", actor.id)) throw new ActionError("请先修改初始密码", 403);
     const db = learningDb();
     if (action === "saveMaterial") {
-      if (actor.role !== "teacher") throw new ActionError("只有老师可以管理教学资料", 403);
+      if (!["teacher","admin"].includes(actor.role)) throw new ActionError("只有老师或获授权管理员可以新增教学资料", 403);
       const title = str(data.title), description = str(data.description), subject = str(data.subject), id = str(data.id);
       let fileId = str(data.fileId); const resourceId=str(data.resourceId);
       if (id) return NextResponse.json(await editPublishedContent(actor,"material",data));
@@ -71,7 +75,8 @@ export async function POST(request: Request) {
       const students = classroom ? await activeClassroomMemberNames(classroomId,groupId) : recipients(data.students);
       if (!students.length) throw new ActionError("班级尚无学生", 409);
       if (!title || title.length > 120 || description.length > 2000 || !subject || subject.length > 100) throw new ActionError("请填写资料标题、科目和有效说明");
-      for (const student of students) if (!await teacherMayAssign(actor, student, subject)) throw new ActionError("只能分配给目前由你负责的学生科目", 403);
+      if(actor.role==="admin")await requireMaterialCreateAuthority(actor,{classroomId,folderId:str(data.folderId),subject});
+      for (const student of actor.role==="teacher"?students:[]) if (!await teacherMayAssign(actor, student, subject)) throw new ActionError("只能分配给目前由你负责的学生科目", 403);
       if (id) {
         if (fileId && fileId !== existing!.fileId) throw new ActionError("资料文件不能直接替换，请新增资料");
         await db.batch([
@@ -83,6 +88,18 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, id });
       }
       const folderId = await validateContentFolder(groupId,classroomId,str(data.folderId));
+      const importOperation=data.importOperationId===undefined?"":operationId(data.importOperationId);
+      if(importOperation&&(resourceId||!fileId))throw new ActionError("批量导入只能使用本次上传的 PDF");
+      const importId=importOperation?'import-'+await operationHash([groupId,actor.id,importOperation]):null;
+      async function replayImport(){
+       if(!importId)return null;
+       const guard=await requireMaterialCreateAuthority(actor!,{classroomId,folderId,subject});
+       const previous=await db.prepare('SELECT m.id,m.owner_id AS ownerId,m.file_id AS fileId,m.classroom_id AS classroomId,m.folder_id AS folderId,m.title,m.description,(SELECT min(subject) FROM material_recipients WHERE group_id=m.group_id AND material_id=m.id) AS subject FROM teaching_materials m WHERE m.group_id=? AND m.id=? AND '+guard.sql).bind(groupId,importId,...guard.values).first<{id:string;ownerId:string;fileId:string;classroomId:string;folderId:string|null;title:string;description:string|null;subject:string|null}>();
+       if(!previous)return null;
+       if(previous.ownerId!==actor!.id||previous.fileId!==fileId||previous.classroomId!==classroomId||previous.folderId!==folderId||previous.title!==title||(previous.description||"")!==description||previous.subject!==subject)throw new ActionError("导入记录已改变或操作标识已用于其他资料，请刷新后核对",409);
+       return {ok:true,id:previous.id,replayed:true};
+      }
+      const replayed=await replayImport();if(replayed)return NextResponse.json(replayed);
       if(resourceId && fileId)throw new ActionError("请选择一种 PDF 来源");
       const source=resourceId?await readResourceFile(actor,resourceId):null;
       if(source)fileId=source.fileId;
@@ -90,15 +107,17 @@ export async function POST(request: Request) {
         await uploadedFile(actor,fileId,"material",classroomId);
         if(await first("SELECT 1 AS used FROM teaching_materials WHERE file_id=?",fileId))throw new ActionError("这份文件已用于另一份资料",409);
       }
-      const authority=pdfUploadAuthority(actor,"material",{classroomId,homeworkId:"",submissionId:""});
-      const sourceGuard=source?` AND (${source.scope.sql})`:"",sourceArgs=source?.scope.args||[];
-      const newId = crypto.randomUUID();
+      const authority=await requireMaterialCreateAuthority(actor,{classroomId,folderId,subject});
+      const sourceGuard=source?` AND (${source.scope.sql})`:" AND EXISTS(SELECT 1 FROM pdf_files material_upload WHERE material_upload.id=? AND material_upload.group_id=? AND material_upload.owner_id=? AND material_upload.kind=\'material\' AND material_upload.context_id=? AND material_upload.status=\'staged\' AND material_upload.created_at>=? AND NOT EXISTS(SELECT 1 FROM teaching_materials already_used WHERE already_used.group_id=material_upload.group_id AND already_used.file_id=material_upload.id))",sourceArgs=source?source.scope.args:[fileId,groupId,actor.id,classroomId,new Date(Date.now()-STAGED_FILE_TTL_MS).toISOString()];
+      const newId = importId||crypto.randomUUID(),execution=crypto.randomUUID();
+      const claim='EXISTS(SELECT 1 FROM teaching_materials created WHERE created.id=? AND created.group_id=? AND created.edit_token=?)',claimArgs=[newId,groupId,execution];
       const saved=await db.batch([
-        db.prepare(`INSERT INTO teaching_materials(group_id,id,owner_id,title,description,file_id,created_at,classroom_id,folder_id) SELECT ?,?,?,?,?,?,?,?,? WHERE (${authority.sql})${sourceGuard}`).bind(groupId,newId,actor.id,title,description||null,fileId,now,classroomId,folderId,...authority.values,...sourceArgs),
-        ...students.map(student=>db.prepare("INSERT INTO material_recipients(group_id,id,material_id,student_name,subject) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM teaching_materials WHERE id=? AND group_id=?)").bind(groupId,crypto.randomUUID(),newId,student,subject,newId,groupId)),
-        ...(!source?[db.prepare("UPDATE pdf_files SET status='attached' WHERE id=? AND owner_id=? AND group_id=? AND status='staged' AND EXISTS(SELECT 1 FROM teaching_materials WHERE id=? AND group_id=?)").bind(fileId,actor.id,groupId,newId,groupId)]:[]),
+        authorityGuard({sql:authority.sql,args:authority.values},'material_import_authority_changed'),
+        db.prepare(`INSERT ${importId?'OR IGNORE ':''}INTO teaching_materials(group_id,id,owner_id,title,description,file_id,created_at,classroom_id,folder_id,edit_token) SELECT ?,?,?,?,?,?,?,?,?,? WHERE (${authority.sql})${sourceGuard}`).bind(groupId,newId,actor.id,title,description||null,fileId,now,classroomId,folderId,execution,...authority.values,...sourceArgs),
+        ...students.map(student=>db.prepare("INSERT INTO material_recipients(group_id,id,material_id,student_name,subject) SELECT ?,?,?,?,? WHERE "+claim).bind(groupId,crypto.randomUUID(),newId,student,subject,...claimArgs)),
+        ...(!source?[db.prepare("UPDATE pdf_files SET status='attached' WHERE id=? AND owner_id=? AND group_id=? AND status='staged' AND "+claim).bind(fileId,actor.id,groupId,...claimArgs)]:[]),
       ]);
-      if(!saved[0].meta.changes)throw new ActionError("资源或班级权限已改变，请刷新后重试",409);
+      if(!saved[1].meta.changes){const replayed=await replayImport();if(replayed)return NextResponse.json(replayed);throw new ActionError("资源或班级权限已改变，请刷新后重试",409);}
       await change(groupId,"saveMaterial", actor.id, newId, { title, subject, students });
       return NextResponse.json({ ok: true, id: newId });
     }
@@ -247,6 +266,8 @@ export async function POST(request: Request) {
     }
     throw new ActionError("未知操作", 400);
   } catch (error) {
+    if(error instanceof MaterialImportError)return response(new ActionError(error.message,error.status));
+    if(/material_import_authority_changed/.test(String(error)))return response(new ActionError("账号、班级或文件夹权限已改变，请刷新后重试",403));
     if(error instanceof ResourceError)return response(new ActionError(error.message,error.status));
     if(error instanceof LearningEditError)return response(new ActionError(error.message,error.status));
     if(/score maximum conflict/.test(String(error)))return response(new ActionError("功课满分已改变，请刷新后再评分",409));
