@@ -25,10 +25,12 @@ export function learningNoticeStatement(event:{groupId:string;kind:"material"|"h
     WHERE h.id=? AND h.group_id=? ${event.student?"AND a.student_name=?":""} AND ${event.guard}`)
     .bind(event.eventId,event.kind,event.type,event.at,event.recordId,event.groupId,...(event.student?[event.student]:[]),...event.guardArgs);
 }
-export async function learningInbox(account:Account) {
+export async function learningInbox(account:Account,countsOnly=false) {
   if(account.role!=="student" || !account.studentName)return {items:[],unreadCount:0};
+  const scope=`FROM learning_notifications n JOIN accounts a ON a.id=n.account_id WHERE n.account_id=? AND n.group_id=? AND ${learningNoticeAccess}`;
+  if(countsOnly){const result=await rows<{total:number}>(`SELECT count(*) AS total ${scope} AND n.read_at IS NULL`,account.id,account.groupId);return{items:[],unreadCount:Number(result[0]?.total||0)};}
   const messages=await rows<{id:string;kind:string;contentKind:string;recordId:string;title:string;subject:string;createdAt:string;readAt:string|null;unreadTotal:number}>(`SELECT n.id,n.kind,n.content_kind AS contentKind,n.record_id AS recordId,n.title,n.subject,n.created_at AS createdAt,n.read_at AS readAt,sum(n.read_at IS NULL) OVER() AS unreadTotal
-    FROM learning_notifications n JOIN accounts a ON a.id=n.account_id WHERE n.account_id=? AND n.group_id=? AND ${learningNoticeAccess}
+    ${scope}
     ORDER BY (n.read_at IS NULL) DESC,n.created_at DESC,n.id DESC LIMIT 100`,account.id,account.groupId);
   return {unreadCount:Number(messages[0]?.unreadTotal || 0),items:messages.map(n=>({id:"learning:"+n.id,kind:n.kind,contentKind:n.contentKind,recordId:n.recordId,title:n.title,subject:n.subject,dueAt:n.createdAt,readAt:n.readAt}))};
 }

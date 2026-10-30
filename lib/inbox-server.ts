@@ -27,13 +27,15 @@ const snapshot = (value: string | null) => {
 };
 const date = (value: unknown, fallback: string) => typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : fallback;
 
-export async function inboxState(account: Account) {
+export async function inboxState(account: Account,countsOnly=false) {
   const permission=adminPermissionPredicate(account,"lessons.view");
+  const scope=`FROM site_notifications n JOIN audit e ON e.id=n.event_id JOIN lessons l ON l.id=n.lesson_id JOIN accounts a ON a.id=n.account_id
+    WHERE n.account_id=? AND n.group_id=? AND e.group_id=n.group_id AND l.group_id=n.group_id AND ${inboxAccess} AND ${permission.sql}`;
+  if(countsOnly){const [messages,learning,quiz]=await Promise.all([rows<{total:number}>(`SELECT count(*) AS total ${scope} AND n.read_at IS NULL`,account.id,account.groupId,...permission.args),learningInbox(account,true),quizAssignmentInbox(account,true)]);return{items:[],unreadCount:Number(messages[0]?.total||0)+learning.unreadCount+quiz.unreadCount,unreadQuizCount:quiz.unreadCount};}
   const messages = await rows<{ id: string; lessonId:string; kind: string; createdAt: string; readAt: string | null; subject: string; teacherName: string; plannedStart: string; plannedEnd: string; beforeJson: string | null; afterJson: string | null; unreadTotal: number }>(`SELECT n.id,l.id AS lessonId,n.kind,n.created_at AS createdAt,n.read_at AS readAt,
     l.subject,l.teacher_name AS teacherName,l.planned_start AS plannedStart,l.planned_end AS plannedEnd,
     e.before_json AS beforeJson,e.after_json AS afterJson,sum(n.read_at IS NULL) OVER () AS unreadTotal
-    FROM site_notifications n JOIN audit e ON e.id=n.event_id JOIN lessons l ON l.id=n.lesson_id JOIN accounts a ON a.id=n.account_id
-    WHERE n.account_id=? AND n.group_id=? AND e.group_id=n.group_id AND l.group_id=n.group_id AND ${inboxAccess} AND ${permission.sql}
+    ${scope}
     ORDER BY (n.read_at IS NULL) DESC,n.created_at DESC,n.id DESC LIMIT 100`, account.id,account.groupId,...permission.args);
   const [learning,quiz]=await Promise.all([learningInbox(account),quizAssignmentInbox(account)]);
   return { unreadCount: Number(messages[0]?.unreadTotal || 0)+learning.unreadCount+quiz.unreadCount, unreadQuizCount:quiz.unreadCount, items: [...quiz.items,...learning.items,...messages.map(message => {

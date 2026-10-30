@@ -48,7 +48,7 @@ export async function runParentNotificationTick(nowMs=Date.now()){
  try{
   await generateParentNotifications(nowMs);
   const result=await dispatchParentNotificationPush(nowMs);
-  await db.batch([db.prepare('DELETE FROM parent_notifications WHERE created_at<?').bind(new Date(nowMs-90*86400000).toISOString()),db.prepare('UPDATE parent_notification_runtime SET last_dispatch_at=?,lease_until=NULL,lease_token=NULL WHERE id=1 AND lease_token=?').bind(new Date().toISOString(),token)]);
+  await db.prepare('UPDATE parent_notification_runtime SET last_dispatch_at=?,lease_until=NULL,lease_token=NULL WHERE id=1 AND lease_token=?').bind(new Date().toISOString(),token).run();
   return{skipped:false,...result};
  }finally{await db.prepare('UPDATE parent_notification_runtime SET lease_until=NULL,lease_token=NULL WHERE id=1 AND lease_token=?').bind(token).run();}
 }

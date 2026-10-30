@@ -1,5 +1,6 @@
 import handler from 'vinext/server/fetch-handler';
 import {runParentNotificationTick} from './lib/parent-delivery';
+import {maintainNotificationHistory,NOTIFICATION_MAINTENANCE_CRON} from './lib/notification-maintenance';
 // A minute clock keeps parent reminders independent of page visits. Successful
 // source mutations also request a background pass without delaying the form.
 const sources=new Set(['/api/action','/api/class-sessions','/api/invoices','/api/invoice-finance','/api/invoice-attendance-corrections','/api/parents','/api/manage','/api/groups']);
@@ -11,5 +12,7 @@ export default {
   if(request.method==='POST'&&response.ok&&sources.has(new URL(request.url).pathname))ctx.waitUntil(runParentNotificationTick().catch(()=>{console.error('Parent notification background pass failed');}));
   return response;
  },
- async scheduled(event:ScheduledController,_bindings:unknown,ctx:ExecutionContext){ctx.waitUntil(runParentNotificationTick(event.scheduledTime));},
+ async scheduled(event:ScheduledController,_bindings:unknown,ctx:ExecutionContext){
+  ctx.waitUntil(event.cron===NOTIFICATION_MAINTENANCE_CRON?maintainNotificationHistory(event.scheduledTime):runParentNotificationTick(event.scheduledTime));
+ },
 } satisfies ExportedHandler;

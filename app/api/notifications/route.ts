@@ -6,17 +6,23 @@ import { NotificationError, notificationState, saveSubscription, removeSubscript
 import {quizAssignmentNoticeAccess} from "@/lib/quiz-assignment-notices";
 import {env} from 'cloudflare:workers';
 import {ParentsError} from '@/lib/parents';
-import {parentNotificationState,markParentNotificationRead} from '@/lib/parent-notifications';
+import {parentNotificationState,parentNotificationCount,generateParentNotifications,markParentNotificationRead} from '@/lib/parent-notifications';
 const headers={"Cache-Control":"private, no-store","Vary":"Cookie, x-tickminder-group","X-Content-Type-Options":"nosniff"};
 export async function GET(request?:Request) {
   const account=await currentBusinessAccount();
   if(!account) return Response.json({error:"登录已过期，请重新登录"},{status:401,headers});
+  const params=request?new URL(request.url).searchParams:new URLSearchParams(),summary=params.get('view')==='summary';
   if(account.role==='parent'){
-    try{const state=await parentNotificationState(account,request?new URL(request.url).searchParams:new URLSearchParams()),health=await learningDb().prepare('SELECT last_dispatch_at AS lastDispatchAt FROM parent_notification_runtime WHERE id=1').first<{lastDispatchAt:string|null}>();await requireParentPushAuthority(account);return Response.json({...state,accountId:account.id,groupId:account.groupId,unreadQuizCount:0,configured:pushConfigured(),publicKey:pushConfigured()?env.VAPID_PUBLIC_KEY:null,schedulerReady:Boolean(health?.lastDispatchAt&&Date.now()-Date.parse(health.lastDispatchAt)<5*60000),lastDispatchAt:health?.lastDispatchAt||null},{headers});}
+    try{
+      const health=await learningDb().prepare('SELECT last_dispatch_at AS lastDispatchAt FROM parent_notification_runtime WHERE id=1').first<{lastDispatchAt:string|null}>();
+      if(summary&&(!health?.lastDispatchAt||Date.now()-Date.parse(health.lastDispatchAt)>=90_000))await generateParentNotifications(Date.now(),account.id);
+      const state=summary?{...await parentNotificationCount(account),items:[],summary:true}:await parentNotificationState(account,params);
+      await requireParentPushAuthority(account);return Response.json({...state,accountId:account.id,groupId:account.groupId,unreadQuizCount:0,configured:pushConfigured(),publicKey:pushConfigured()?env.VAPID_PUBLIC_KEY:null,schedulerReady:Boolean(health?.lastDispatchAt&&Date.now()-Date.parse(health.lastDispatchAt)<5*60000),lastDispatchAt:health?.lastDispatchAt||null},{headers});
+    }
     catch(error){return Response.json({error:error instanceof ParentsError||error instanceof NotificationError?error.message:'家长通知暂时无法载入，请重试'},{status:error instanceof ParentsError||error instanceof NotificationError?error.status:503,headers});}
   }
   if(!isLegacyBusinessRole(account.role)) return Response.json({error:"没有权限执行此操作"},{status:403,headers});
-  try {return Response.json(await notificationState(account),{headers});}
+  try {return Response.json(await notificationState(account,summary),{headers});}
   catch {return Response.json({error:"通知中心暂时无法载入，请稍后重试"},{status:503,headers});}
 }
 export async function POST(request:Request) {

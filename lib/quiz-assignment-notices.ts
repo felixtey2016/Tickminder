@@ -49,12 +49,14 @@ export function quizAssignmentNoticeStatements(event:QuizNoticeEvent) {
   WHERE qa.id=? AND qa.group_id=? AND qa.withdrawn_at IS NULL AND ${access} ${event.studentName?'AND a.student_name=?':''} AND (${event.guard})`)
   .bind(event.eventId,event.attemptId||null,event.kind,event.at,event.assignmentId,event.groupId,...(pending?[event.attemptId]:[]),...(event.studentName?[event.studentName]:[]),...event.guardArgs)];
 }
-export async function quizAssignmentInbox(account:Account) {
+export async function quizAssignmentInbox(account:Account,countsOnly=false) {
  if(!account.groupId||!['student','teacher','admin'].includes(account.role))return {items:[],unreadCount:0};
  const permission=adminPermissionPredicate(account,'quizAssignments.view');
+ const scope=`FROM quiz_assignment_notifications n JOIN accounts a ON a.id=n.account_id JOIN quiz_practice_assignments qa ON qa.id=n.assignment_id
+  WHERE n.account_id=? AND n.group_id=? AND ${quizAssignmentNoticeAccess} AND (${permission.sql})`;
+ if(countsOnly){const result=await rows<{total:number}>(`SELECT count(*) AS total ${scope} AND n.read_at IS NULL`,account.id,account.groupId,...permission.args);return{items:[],unreadCount:Number(result[0]?.total||0)};}
  const messages=await rows<{id:string;kind:string;assignmentId:string;attemptId:string|null;title:string;subject:string;createdAt:string;readAt:string|null;unreadTotal:number}>(`SELECT n.id,n.kind,n.assignment_id AS assignmentId,n.attempt_id AS attemptId,n.title,n.subject,n.created_at AS createdAt,n.read_at AS readAt,sum(n.read_at IS NULL) OVER() AS unreadTotal
-  FROM quiz_assignment_notifications n JOIN accounts a ON a.id=n.account_id JOIN quiz_practice_assignments qa ON qa.id=n.assignment_id
-  WHERE n.account_id=? AND n.group_id=? AND ${quizAssignmentNoticeAccess} AND (${permission.sql})
+  ${scope}
   ORDER BY (n.read_at IS NULL) DESC,n.created_at DESC,n.id DESC LIMIT 100`,account.id,account.groupId,...permission.args);
  return {unreadCount:Number(messages[0]?.unreadTotal||0),items:messages.map(n=>({id:'quiz:'+n.id,kind:'quiz_'+n.kind,contentKind:'quiz' as const,recordId:n.assignmentId,...n.attemptId?{attemptId:n.attemptId}:{},title:n.title,subject:n.subject,dueAt:n.createdAt,readAt:n.readAt}))};
 }

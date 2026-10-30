@@ -29,9 +29,5 @@ export async function dispatchLearningNotifications(nowMs=Date.now()) {
     }
   };
   for(let i=0;i<jobs.length;i+=8)await Promise.all(jobs.slice(i,i+8).map(deliver));
-  await db.batch([
-    db.prepare("DELETE FROM learning_notifications WHERE created_at<? OR NOT EXISTS(SELECT 1 FROM accounts WHERE id=learning_notifications.account_id)").bind(new Date(nowMs-90*86400_000).toISOString()),
-    db.prepare("DELETE FROM learning_notification_deliveries WHERE NOT EXISTS(SELECT 1 FROM push_subscriptions WHERE id=learning_notification_deliveries.subscription_id)"),
-  ]);
   return {sent,expired,failed,configured:true};
 }
