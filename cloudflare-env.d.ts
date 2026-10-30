@@ -2,6 +2,9 @@ declare namespace Cloudflare {
   interface Env {
     DB?: D1Database;
     BUCKET?: R2Bucket;
+    DIAGNOSTICS?: R2Bucket;
+    DIAGNOSTICS_FEED_URL?: string;
+    CF_VERSION_METADATA?: {id:string;tag?:string;timestamp?:string};
     GOOGLE_CLIENT_ID?: string;
     ADMIN_EMAIL?: string;
     SHEET_SYNC_URL?: string;

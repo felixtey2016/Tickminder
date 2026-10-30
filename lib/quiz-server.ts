@@ -1,3 +1,4 @@
+import {reportUnexpectedError} from './diagnostics-server';
 import {requireAdminPermission,hasAdminPermission,adminPermissionStatements,adminPermissionPredicate,adminPermissionFailure} from '@/lib/admin-permission-access';
 import {currentBusinessAccount,type Account} from '@/lib/auth';
 import {learningDb} from '@/lib/learning-server';
@@ -22,7 +23,7 @@ export async function quizActor(allowStudent=false){
  const permitted=await learningDb().prepare(`SELECT 1 FROM tuition_groups g WHERE g.id=? AND g.active=1 AND (?<>'teacher' OR EXISTS(SELECT 1 FROM teachers t WHERE t.group_id=g.id AND t.name=? AND t.active=1)) AND (?<>'student' OR EXISTS(SELECT 1 FROM students s WHERE s.group_id=g.id AND s.name=? AND s.active=1))`).bind(a.groupId,a.role,a.teacherName,a.role,a.studentName).first();
  if(!permitted)throw new QuizError('quiz.forbidden',403);return a;
 }
-export function quizFailure(error:unknown){const denied=adminPermissionFailure(error);if(denied)return quizResponse({error:'quiz.forbidden'},denied.status);if(/admin_authority_changed|admin_chief_changed/.test(String(error)))return quizResponse({error:'quiz.forbidden'},403);if(error instanceof QuizError)return quizResponse({error:error.code},error.status);if(/UNIQUE constraint|quiz group mismatch|quiz key group mismatch|quiz image grant mismatch|quiz_sharing_changed/.test(String(error)))return quizResponse({error:'quiz.conflict'},409);console.error('Quiz request failed',error instanceof Error?error.name:'unknown');return quizResponse({error:'quiz.unavailable'},503);}
+export function quizFailure(error:unknown){const denied=adminPermissionFailure(error);if(denied)return quizResponse({error:'quiz.forbidden'},denied.status);if(/admin_authority_changed|admin_chief_changed/.test(String(error)))return quizResponse({error:'quiz.forbidden'},403);if(error instanceof QuizError)return quizResponse({error:error.code},error.status);if(/UNIQUE constraint|quiz group mismatch|quiz key group mismatch|quiz image grant mismatch|quiz_sharing_changed/.test(String(error)))return quizResponse({error:'quiz.conflict'},409);reportUnexpectedError(error,{operation:'api-quiz'});return quizResponse({error:'quiz.unavailable'},503);}
 export async function quizRequestBytes(request:Request,maximum:number,error='quiz.tooLarge'){
  const declared=Number(request.headers.get('content-length')||0);if(!Number.isFinite(declared)||declared>maximum)throw new QuizError(error,413);
  const reader=request.body?.getReader();if(!reader)return new Uint8Array();const chunks:Uint8Array[]=[];let size=0;

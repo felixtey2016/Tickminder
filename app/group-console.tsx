@@ -9,6 +9,7 @@ import { t } from "@/lib/i18n";
 import { readApiJson,showActionToast } from "@/lib/action-feedback";
 import { AcademicCatalogueAdmin } from './academic-catalogue-admin';
 import './settings-compact.css';
+import {SystemDiagnostics} from './system-diagnostics';
 
 type Group={id:string;name:string;joinCode:string;active:boolean|number;admins?:number;teachers?:number;students?:number;classrooms?:number;chiefAdminId?:string|null;adminOptions?:{id:string;name:string}[]};
 async function api(data?:Record<string,unknown>) {
@@ -92,7 +93,7 @@ export function GroupConsole({isOwner,currentGroupId}:{isOwner:boolean;currentGr
       <details className="group-invitation settings-disclosure"><summary><span>{t("新用户邀请链接")}</span><ChevronDown size={18} aria-hidden="true"/></summary><div className="group-invitation-content"><label>{t("新用户邀请链接")}<input readOnly value={origin?`${origin}/?group=${group.joinCode}`:""}/></label><p className="field-hint">{t("新用户通过此链接使用 Google 注册后，归入此集团并等待管理员分配角色。已有账号所属集团不变。")}</p><div className="settings-actions"><Button variant="outline" disabled={busy} onClick={()=>void copy(group)}><Copy size={16}/>{t("复制注册链接")}</Button></div></div></details>
       {isOwner&&<details className="group-entry-management settings-disclosure"><summary><span>{t("更多操作")}</span><ChevronDown size={18} aria-hidden="true"/></summary><div className="group-management-content"><div className="button-row settings-actions"><Button variant="outline" disabled={busy} onClick={()=>{setEditing(group.id);setName(group.name);setCreateOpen(true);focusGroupControl(nameInput.current);}}>{t("修改名称")}</Button><Button variant="outline" disabled={busy} onClick={()=>void toggle(group)}>{t(group.active?"停用集团":"启用集团")}</Button></div></div></details>}
     </section>;})}</div>
-    {isOwner&&<AcademicCatalogueAdmin/>}
+    {isOwner&&<SystemDiagnostics groups={groups} currentGroupId={currentGroupId}/>}{isOwner&&<AcademicCatalogueAdmin/>}
     <Dialog open={Boolean(chiefConfirmation)} onOpenChange={open=>{if(!open&&!busy)setChiefConfirmation(null);}}><DialogContent className="lesson-dialog group-chief-confirmation" showCloseButton={!busy}><DialogHeader><DialogTitle>{t(chiefConfirmation?.group.chiefAdminId?'admin.chiefConfirmTransfer':'admin.chiefConfirmAssign')}</DialogTitle><DialogDescription>{t('admin.chiefConfirmDescription')}</DialogDescription></DialogHeader>
       {chiefConfirmation&&<><dl className="group-chief-review"><div><dt>{t('集团名称')}</dt><dd>{chiefConfirmation.group.name}</dd></div><div><dt>{t('admin.chiefCurrent')}</dt><dd>{chiefName(chiefConfirmation.group)}</dd></div><div><dt>{t('admin.chiefNext')}</dt><dd>{chiefConfirmation.group.adminOptions?.find(admin=>admin.id===chiefConfirmation.chiefAdminId)?.name}</dd></div></dl><p className="group-chief-notice">{t(chiefConfirmation.group.chiefAdminId?'admin.chiefTransferNotice':'admin.chiefAssignNotice')}</p><div className="settings-actions"><Button variant="outline" disabled={busy} onClick={()=>setChiefConfirmation(null)}>{t('取消')}</Button><Button disabled={busy} onClick={()=>void setChief()}>{t('admin.chiefSave')}</Button></div></>}
     </DialogContent></Dialog>

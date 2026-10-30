@@ -1,3 +1,4 @@
+import {reportUnexpectedError} from './diagnostics-server';
 import {learningDb} from './learning-server';
 import {generateParentNotifications,parentNoticeAuthorizationSql,parentNoticeSourceSql,parentNoticePayload} from './parent-notifications';
 import {sendPush,pushConfigured,removeSubscription,NotificationError,type NotificationSubscription} from './notifications-server';
@@ -39,6 +40,7 @@ export async function dispatchParentNotificationPush(nowMs=Date.now()){
   }
  }
  for(let i=0;i<jobs.length;i+=8)await Promise.all(jobs.slice(i,i+8).map(deliver));
+ if(failed>0)reportUnexpectedError(new Error('Push delivery failed'),{operation:'parent-reminders',source:'background',code:'background_failure'});
  return{configured:true,sent,expired,failed};
 }
 export async function runParentNotificationTick(nowMs=Date.now()){

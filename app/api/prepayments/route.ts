@@ -1,9 +1,10 @@
+import {reportUnexpectedError} from '@/lib/diagnostics-server';
 import {NextResponse} from 'next/server';
 import {currentBusinessAccount} from '@/lib/auth';
 import {PrepaymentError} from '@/lib/prepayments';
 import {prepaymentStudents,prepaymentRequests,prepaymentLedger,prepaymentOverview,prepaymentRequestDetail,prepaymentReceiptDetail,prepaymentAllocationPreview,prepaymentPayments,prepaymentAllocations,prepaymentPreview,savePrepayment} from '@/lib/prepayments-server';
 const json=(value:unknown,status=200)=>NextResponse.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie, x-tickminder-group'}});
-function failure(error:unknown){if(error instanceof PrepaymentError)return json({error:error.message},error.status);return json({error:'预收资料暂时无法处理，请刷新重试'},503);}
+function failure(error:unknown){if(error instanceof PrepaymentError)return json({error:error.message},error.status);reportUnexpectedError(error,{operation:'api-prepayments'});return json({error:'预收资料暂时无法处理，请刷新重试'},503);}
 export async function GET(request:Request){const actor=await currentBusinessAccount();if(!actor)return json({error:'请先登录'},401);try{const p=new URL(request.url).searchParams,view=p.get('view')||'students',sid=p.get('studentId')||'',month=p.get('month')||'',page=Number(p.get('page')||1);switch(view){
  case 'students':return json(await prepaymentStudents(actor,p.get('q')||'',page));
  case 'requests':return json(await prepaymentRequests(actor,month,p.get('q')||'',page,sid));

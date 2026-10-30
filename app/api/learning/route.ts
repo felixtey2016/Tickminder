@@ -1,3 +1,4 @@
+import {reportUnexpectedError} from '@/lib/diagnostics-server';
 import {groupReader,groupStatement,requireGroup} from "@/lib/group-data";
 import { NextResponse } from "next/server";
 import { currentBusinessAccount as currentAccount } from "@/lib/auth";
@@ -249,6 +250,7 @@ export async function POST(request: Request) {
     if(error instanceof ResourceError)return response(new ActionError(error.message,error.status));
     if(error instanceof LearningEditError)return response(new ActionError(error.message,error.status));
     if(/score maximum conflict/.test(String(error)))return response(new ActionError("功课满分已改变，请刷新后再评分",409));
+    if(!(error instanceof ActionError)&&!(error instanceof FolderError))reportUnexpectedError(error,{operation:'api-learning'});
     return response(error instanceof ActionError ? error : error instanceof FolderError ? new ActionError(error.message,error.status) : new ActionError("服务器未能确认结果，请刷新列表检查后再重试", 503));
   }
 }

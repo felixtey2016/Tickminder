@@ -1,3 +1,4 @@
+import {reportUnexpectedError} from '@/lib/diagnostics-server';
 import {isInvoiceLocked,invoiceLockedMessage} from '@/lib/invoice-locks';
 import {appendAudit,auditJson} from '@/lib/audit-log';
 import {readAcademicCatalogue} from "@/lib/academic-catalogue-server";
@@ -457,6 +458,7 @@ export async function POST(request: Request) {
     if(/UNIQUE constraint/.test(String(error))&&classSessionActions.includes(action))return bad("操作正在处理或已完成，请重新载入检查",409);
     const message = error instanceof Error ? error.message : "";
     if (/^(Lesson time must be|Enter a Malaysia date and time|Invalid date and time|Invalid recurring lesson time|Recurring range is too long|End date precedes first lesson|请输入有效的网课链接|网课链接不能超过|网课链接必须是完整的)/.test(message)) return bad(message);
+    reportUnexpectedError(error,{operation:'api-action'});
     return bad("服务器未能确认结果，请刷新列表检查是否已保存，再决定是否重试", 503);
   }
 }
