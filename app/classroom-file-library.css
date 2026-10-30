@@ -1,0 +1,33 @@
+.classroom-file-library{display:block;min-width:0;border:1px solid var(--border,#e1dce9);border-radius:14px;background:#fff;overflow:visible}
+.classroom-file-library>.folder-browser.panel{padding:16px 18px 8px;border:0;border-radius:14px 14px 0 0;box-shadow:none;margin:0;gap:10px}
+.classroom-file-library .folder-toolbar{gap:12px;align-items:center}
+.classroom-file-library .folder-toolbar h3{font-size:18px;margin:0}
+.classroom-file-library .folder-breadcrumb{margin:8px 0;gap:3px;overflow-wrap:anywhere}
+.classroom-file-library .folder-breadcrumb button{padding:5px 3px;min-height:36px}
+.class-files-toolbar{display:flex;gap:10px;align-items:center;margin:12px 0}
+.class-files-search{display:flex;align-items:center;gap:8px;flex:1;min-width:0;border:1px solid #dcd5e7;border-radius:9px;padding:0 12px;color:#776c87}
+.class-files-search:focus-within{outline:2px solid #b8a3ef;outline-offset:1px}
+.class-files-search>input{border:0!important;outline:0!important;box-shadow:none!important;min-width:0;width:100%;min-height:42px;padding:8px 0!important;font:inherit;font-size:14px;background:transparent;color:#29213b}
+.class-files-sort{min-width:150px}
+.class-files-sort>select{width:100%;min-height:44px;border:1px solid #dcd5e7;border-radius:9px;padding:8px 10px;background:white;font:inherit;font-size:14px}
+.classroom-file-library .folder-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin:8px 0}
+.classroom-file-library .folder-entry{display:flex;align-items:center;min-width:0;background:#faf9fd;border:1px solid #e8e3f1;border-radius:9px}
+.classroom-file-library .folder-open{flex:1;min-width:0;min-height:50px;padding:10px;gap:9px;border:0}
+.classroom-file-library .folder-options{position:relative;flex:none;border:0;padding:0 4px;align-self:center}
+.classroom-file-library .folder-options>summary{display:grid;place-items:center;min-width:40px;min-height:44px;list-style:none;padding:0}
+.classroom-file-library .folder-options>summary::-webkit-details-marker{display:none}
+.classroom-file-library .folder-options>div{position:absolute;right:0;top:100%;z-index:20;display:grid;min-width:160px;padding:8px;background:#fff;border:1px solid #e1dce9;border-radius:10px;box-shadow:0 8px 24px #30204a20}
+.classroom-file-library .folder-open>svg:first-child{color:#9471d1;flex-shrink:0}
+.classroom-file-library .folder-open>span{font-size:14px;min-width:0;overflow-wrap:anywhere}
+.classroom-file-library .folder-organize{margin-top:8px;padding:0;border:0}
+.classroom-file-library .folder-organize-heading{font-size:13px;min-height:36px;color:#756980}
+.classroom-file-library>.folder-learning-content{padding:0 18px 16px;min-width:0}
+.classroom-file-library>.folder-learning-content>.learning-teacher,.classroom-file-library>.folder-learning-content>.student-learning{gap:0;min-width:0}
+.classroom-file-library>.folder-learning-content .teaching-content-panel,.classroom-file-library>.folder-learning-content>.learning-admin,.classroom-file-library>.folder-learning-content>.student-learning>.panel{padding:12px 0 0;border:0;border-radius:0;box-shadow:none;margin:0;background:transparent;min-width:0}
+.classroom-file-library .learning-compose-toolbar{margin-bottom:12px}
+.classroom-file-library .learning-compose-toolbar h2{font-size:15px}
+.classroom-file-library .resource-folder-list{margin-top:16px}
+.classroom-file-library .learning-filter{display:none}
+.classroom-file-folder-overlay[data-slot=dialog-overlay]{z-index:96}
+.classroom-file-folder-dialog[data-slot=dialog-content]{z-index:97}
+@media(max-width:650px){.classroom-file-library>.folder-browser.panel{padding:14px 12px 6px}.classroom-file-library>.folder-learning-content{padding:0 12px 12px}.class-files-toolbar{flex-wrap:wrap;gap:8px}.class-files-search{flex-basis:100%}.class-files-search>input{font-size:16px}.class-files-sort{margin-left:auto;min-width:142px}.class-files-sort>select{font-size:14px}.classroom-file-library .folder-grid{grid-template-columns:minmax(0,1fr);gap:5px}.classroom-file-library .folder-breadcrumb button{min-height:44px}.classroom-file-library .folder-open{min-height:48px}.classroom-file-library .folder-toolbar{align-items:flex-start}}
