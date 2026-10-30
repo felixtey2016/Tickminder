@@ -5,7 +5,7 @@ import {Button} from '@/components/ui/button';
 import {FloatingBackButton} from '@/components/floating-back-button';
 import {MobileBottomNavigation} from '@/components/mobile-bottom-navigation';
 import {LegalLinks} from '@/components/legal-links';
-import {usePageHistoryState} from '@/lib/page-history';
+import {navigationAllowed,usePageHistoryState} from '@/lib/page-history';
 import {t,type Language} from '@/lib/i18n';
 import {BRAND_NAME} from '@/lib/brand';
 import {PNav} from '@/lib/parent-nav-i18n';
@@ -133,7 +133,7 @@ function ParentShellContent({account,language,changeLanguage,logout,refreshIdent
 
   return <div ref={shellRef} className="app-shell parent-shell">
     <header ref={headerRef} className="topbar">
-      <div className="brand"><span className="brand-logo small"><img src="/tickminder-logo.svg" width="40" height="40" alt={BRAND_NAME}/></span><div><strong>{BRAND_NAME}</strong><span>{account.groupName||PNav('portal')} · GMT+8</span></div></div>
+      <button type="button" className="brand brand-home" data-testid="brand-home" aria-label={`${BRAND_NAME} · ${PNav('home')}`} onClick={()=>{if(view==='home'||navigationAllowed())choose('home');}}><span className="brand-logo small"><img src="/tickminder-logo.svg" width="40" height="40" alt={BRAND_NAME}/></span><div><strong>{BRAND_NAME}</strong><span>{account.groupName||PNav('portal')} · GMT+8</span></div></button>
       <div className="top-actions">
         <div className="language-switch" role="group" aria-label={t('语言')}><button type="button" aria-pressed={language==='zh'} onClick={()=>changeLanguage('zh')}>中文</button><span aria-hidden="true">|</span><button type="button" aria-pressed={language==='en'} onClick={()=>changeLanguage('en')}>EN</button></div>
         <Button ref={menuButtonRef} type="button" variant="outline" className="menu-toggle parent-menu-toggle" onClick={()=>menuOpen?setMenuOpen(false):openMenu()} aria-label={PNav(menuOpen?'closeMenu':'openMenu')} aria-expanded={drawerOpen} aria-controls="parent-workspace-menu"><Menu size={20} aria-hidden="true"/><MenuBadge includeUnread header/></Button>
