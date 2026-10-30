@@ -1,3 +1,4 @@
+import { setDiagnosticActor } from "@/lib/diagnostics-context";
 import { env } from "cloudflare:workers";
 import { cookies } from "next/headers";
 import { and, eq, gt } from "drizzle-orm";
@@ -88,6 +89,7 @@ export async function currentIdentity() {
     .leftJoin(googleIdentities, eq(googleIdentities.accountId, accounts.id))
     .where(and(eq(sessions.tokenHash, sessionHash), gt(sessions.expiresAt, new Date().toISOString()))).get();
   if (!row || row.account.disabledAt || pendingExpired(row.account)) return null;
+  setDiagnosticActor(row.account);
   return { account: bindAccountSession(row.account, sessionHash),
     local: row.username ? { username: row.username, mustChangePassword: Boolean(row.mustChangePassword) } : null,
     google: row.googleSubject ? { subject: row.googleSubject, email: row.googleEmail! } : null };
@@ -103,7 +105,8 @@ export async function currentBusinessAccount(): Promise<Account | null> {
   if (!identity || identity.local?.mustChangePassword || (!identity.local && identity.google)) return null;
   const group = await selectedGroup(identity.account);
   if (!group) return null;
-  return transferAccountSession(identity.account, {...identity.account,groupId:group.id});
+  const account=transferAccountSession(identity.account, {...identity.account,groupId:group.id});
+  setDiagnosticActor(account);return account;
 }
 
 export async function createSession(accountId: string) {

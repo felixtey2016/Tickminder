@@ -1,3 +1,4 @@
+import {reportUnexpectedError} from '@/lib/diagnostics-server';
 import {NextResponse} from 'next/server';
 import {currentBusinessAccount} from '@/lib/auth';
 import {ParentsError} from '@/lib/parents';
@@ -7,7 +8,7 @@ import {parentLearningView} from '@/lib/parent-learning';
 import {parentHome} from '@/lib/parent-home-server';
 import {parentCourseView} from '@/lib/parent-course-server';
 const json=(value:unknown,status=200)=>NextResponse.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie, x-tickminder-group','X-Content-Type-Options':'nosniff'}});
-function failure(error:unknown){return error instanceof ParentsError?json({error:error.message},error.status):json({error:'家长资料暂时无法处理，请刷新后重试'},503);}
+function failure(error:unknown){if(!(error instanceof ParentsError))reportUnexpectedError(error,{operation:'api-parents'});return error instanceof ParentsError?json({error:error.message},error.status):json({error:'家长资料暂时无法处理，请刷新后重试'},503);}
 export async function GET(request:Request){
  const actor=await currentBusinessAccount();if(!actor)return json({error:'请先登录'},401);
  try{const params=new URL(request.url).searchParams,view=params.get('view')||'children';

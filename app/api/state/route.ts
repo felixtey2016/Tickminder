@@ -1,3 +1,4 @@
+import {reportUnexpectedError} from '@/lib/diagnostics-server';
 import { isLegacyBusinessRole } from '@/lib/legacy-business-access';
 import {classSessionState} from "@/lib/class-sessions";
 import {groupRows,operationalStudentVisible} from "@/lib/group-data";
@@ -108,6 +109,7 @@ export async function GET(request: Request) {
     if(error instanceof AuditHistoryError)return json({error:error.message},error.status);
     if(error instanceof CourseQueryError)return json({error:error.message},error.status);
     const failure=adminPermissionFailure(error);if(failure)return json({error:failure.error},failure.status);
+    reportUnexpectedError(error,{operation:'api-state'});
     return json({error: "资料暂时无法载入，请稍后刷新"}, 503);
   }
 }

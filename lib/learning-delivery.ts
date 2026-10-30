@@ -1,3 +1,4 @@
+import {reportUnexpectedError} from './diagnostics-server';
 import {learningDb,rows,first} from "./learning-server";
 import {learningNoticeAccess} from "./learning-notices";
 import {sendPush,pushConfigured,removeSubscription} from "./notifications-server";
@@ -29,5 +30,6 @@ export async function dispatchLearningNotifications(nowMs=Date.now()) {
     }
   };
   for(let i=0;i<jobs.length;i+=8)await Promise.all(jobs.slice(i,i+8).map(deliver));
+ if(failed>0)reportUnexpectedError(new Error('Push delivery failed'),{operation:'homework-reminders',source:'background',code:'background_failure'});
   return {sent,expired,failed,configured:true};
 }

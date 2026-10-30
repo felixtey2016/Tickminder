@@ -31,17 +31,34 @@
     {
       "binding": "BUCKET",
       "bucket_name": "tickminder-recovery-files"
+    },
+    {
+      "binding": "DIAGNOSTICS",
+      "bucket_name": "tickminder-diagnostics"
     }
   ],
   "vars": {
     "PDF_MAX_BYTES": "10485760",
     "PDF_TOTAL_STORAGE_LIMIT_BYTES": "1073741824",
-    "ADMIN_PERMISSIONS_MODE": "enforced"
+    "ADMIN_PERMISSIONS_MODE": "enforced",
+    "DIAGNOSTICS_FEED_URL": "https://tickminder-lesson-reminder-clock.felixtey2016.workers.dev/diagnostics/feed"
   },
   "triggers": {
     "crons": [
       "* * * * *",
       "0 19 * * *"
     ]
+  },
+  "version_metadata": {
+    "binding": "CF_VERSION_METADATA"
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "head_sampling_rate": 1
+    }
   }
 }

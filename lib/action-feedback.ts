@@ -1,6 +1,7 @@
 "use client";
 
 import { t } from "@/lib/i18n";
+import {observeInvalidApiResponse} from "./diagnostics-client";
 
 export type ActionToast = { kind: "success" | "error"; message: string; id: number };
 export const ACTION_TOAST_EVENT = "timelyo:action-toast";
@@ -36,9 +37,10 @@ export function alertActionFailure(error: unknown, fallback?: string) {
 
 export async function readApiJson<T>(response: Response): Promise<T> {
   if (!response.headers.get("content-type")?.includes("application/json")) {
+    observeInvalidApiResponse(response);
     const reason = response.status === 413 ? t("请求内容过大") : response.status === 401 ? t("登录已过期，请重新登录") : t("服务器未返回有效响应，请稍后重试");
     throw new Error(reason);
   }
   try { return await response.json() as T; }
-  catch { throw new Error(t("服务器未返回有效响应，请稍后重试")); }
+  catch (error) { observeInvalidApiResponse(response,error); throw new Error(t("服务器未返回有效响应，请稍后重试")); }
 }

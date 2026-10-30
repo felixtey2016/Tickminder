@@ -15,6 +15,7 @@ import "./round-one-layout.css";
 import "./workspace-startup.css";
 import "./form-action-bar.css";
 import { ActionToastHost } from "@/components/action-toast";
+import {DiagnosticsReporter} from "@/components/diagnostics-reporter";
 
 export const metadata: Metadata = {
   title: `${BRAND_NAME} · Learning & Collaboration`,
@@ -35,7 +36,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body className="antialiased">{children}<ActionToastHost/></body>
+      <body className="antialiased">{children}<ActionToastHost/><DiagnosticsReporter/></body>
     </html>
   );
 }

@@ -1,3 +1,4 @@
+import {reportUnexpectedError} from './diagnostics-server';
 import { env } from "cloudflare:workers";
 import { buildPushPayload } from "@block65/webcrypto-web-push";
 import { learningDb, rows, first } from "@/lib/learning-server";
@@ -180,5 +181,6 @@ export async function dispatchReminders(nowMs=Date.now()) {
   // serialize the whole course list; the claim lasts beyond this request.
   for(let i=0;i<jobs.length;i+=8) await Promise.all(jobs.slice(i,i+8).map(deliver));
   await db.prepare("INSERT INTO notification_runtime (id,last_dispatch_at) VALUES (1,?) ON CONFLICT(id) DO UPDATE SET last_dispatch_at=excluded.last_dispatch_at").bind(now).run();
+ if(failed>0)reportUnexpectedError(new Error('Push delivery failed'),{operation:'lesson-reminders',source:'background',code:'background_failure'});
   return {sent,expired,failed,at:now};
 }
