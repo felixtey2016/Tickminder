@@ -1,0 +1,56 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {createHash} from 'node:crypto';
+import {createFixtureLoader} from './fixture-loader.mjs';
+const load=createFixtureLoader({}),render=(await load('lib/invoice-render.ts')).module,receipts=(await load('lib/receipt-render.ts')).module,pure=(await load('lib/invoice.ts')).module;
+const baseline=JSON.parse(fs.readFileSync(new URL('./fixtures/invoice-original-hashes.json',import.meta.url),'utf8'));
+let checks=0;const check=fn=>{fn();checks++;},hash=value=>createHash('sha256').update(value).digest('hex');
+const receiptFor=d=>({id:'r1',number:'RCP-2026-0018',invoiceId:d.id,invoiceNumber:d.number,student:d.student,institution:d.institution,currency:'MYR',amountCents:10000,paidAt:'2026-10-02T00:00:00Z',method:'bank_transfer',reference:'FICTIONAL-REF',createdAt:'2026-10-02T00:00:00Z',serviceMonth:d.month,invoiceTotalCents:d.totalCents,balanceAfterCents:d.totalCents-10000});
+for(const entry of baseline.cases){
+ const d={...render.sampleInvoiceDocument({...baseline.settings,template:entry.template}),status:'issued',number:'INV-2026-0018',issuedAt:'2026-10-01T00:00:00Z'},receipt=receiptFor(d),opts={lang:entry.lang,lessons:true,nonce:'example-nonce'};
+ for(const layout of [undefined,'original']){
+  check(()=>assert.equal(hash(render.renderInvoiceHtml(d,{...opts,layout})),entry.invoice,'issued original invoice stays byte-for-byte compatible'));
+  check(()=>assert.equal(hash(receipts.renderReceiptHtml(receipt,{...opts,layout})),entry.receipt,'issued original receipt stays byte-for-byte compatible'));
+ }
+ check(()=>assert.equal(hash(render.renderInvoiceHtml({...d,extension:{...d.extension,printVersion:2}},{...opts,layout:'original'})),entry.invoice));
+ check(()=>assert.equal(hash(receipts.renderReceiptHtml({...receipt,printVersion:2},{...opts,layout:'original'})),entry.receipt));
+}
+const s={...baseline.settings,institutionName:'Example Learning Centre',legalName:'Example Education Enterprise',registrationNumber:'SAMPLE-REG-001',taxId:'SAMPLE-TIN-001',sstRegistrationNumber:'SAMPLE-SST-001',invoiceNote:'',paymentNote:''};
+const sample=render.sampleInvoiceDocument(s),seed=sample.sourceLines[0];
+const source=(id,subject,mode,quantity,rate,amount,seconds,extra={})=>({...seed,id,subject,subjectKey:subject,mode,quantity,unitAmountCents:rate,amountCents:amount,durationSeconds:seconds,billableSeconds:mode==='hour'?quantity*3600:seconds,rateVersionId:null,lessonId:id,teacherName:'SECRET-TEACHER',warnings:[],...extra});
+const sources=[source('h','Hourly tuition','hour',1.5,6000,9000,4200),source('f','Eighty minute tuition','hour',4/3,4500,6000,4200),source('m','Monthly tuition','month',1,15000,15000,0,{lessonId:null}),source('p','Partial monthly tuition','month',15/31,31000,15000,0,{lessonId:null}),source('a','Chargeable absence','lesson',1,5000,5000,0,{attendanceStatus:'student_absent'}),source('o','Agreed tuition','hour',1,6000,7500,3600)];
+const d={...sample,id:'PRIVATE-INVOICE-ID',studentId:'PRIVATE-STUDENT-ID',student:{...sample.student,id:'PRIVATE-STUDENT-ID'},month:'2026-10',status:'issued',number:'SAMPLE-INV-202610-0018',issuedAt:'2026-10-01T00:00:00Z',billTo:{name:'Mei Ling Tan',address:'16 Sample Lane\nKuala Lumpur',email:'parent@example.invalid',phone:'0120000001',taxId:'SAMPLE-PAYER-TIN',registrationNumber:'SAMPLE-PAYER-REG'},sourceHash:'PRIVATE-HASH',sourceLines:sources,lines:pure.invoicePrintLines(sources),additions:[{id:'c',kind:'charge',label:'Workbook',amountCents:2500,reason:'PRIVATE-REASON'},{id:'discount',kind:'discount',label:'Sibling discount',amountCents:2000,reason:'PRIVATE-DISCOUNT-REASON'},{id:'zero',kind:'charge',label:'ZERO-ADDITION',amountCents:0,reason:''}],subtotalCents:65000,discountCents:2000,totalCents:63000,notes:'Thank you for your payment.',extension:{...sample.extension,printVersion:2,eInvoice:{validated:true,qr:'FAKE-QR'}}};
+const before=JSON.stringify(d),out=render.renderInvoiceHtml(d,{lang:'en'}),compact=render.renderInvoiceHtml(d,{lang:'en',layout:'compact'});
+check(()=>assert.equal(out,compact,'new marker selects compact layout'));
+for(const value of ['Example Education Enterprise','SAMPLE-REG-001','SAMPLE-TIN-001','SAMPLE-SST-001','Mei Ling Tan','SAMPLE-PAYER-TIN','SAMPLE-PAYER-REG','Student: Alicia Tan','Thank you for your payment.'])check(()=>assert(out.includes(value),value+' remains a real document fact'));
+for(const value of ['PRIVATE-INVOICE-ID','PRIVATE-STUDENT-ID','PRIVATE-HASH','PRIVATE-REASON','PRIVATE-DISCOUNT-REASON','SECRET-TEACHER','Lesson attendance and billing are recorded separately','FAKE-QR','Tax Invoice','LHDN','ZERO-ADDITION','Lesson appendix'])check(()=>assert(!out.includes(value),value+' does not appear in concise invoice'));
+check(()=>assert(out.includes('1.5 h')&&out.includes('1 h 20 min')&&!out.includes('1.333333')));
+check(()=>assert(out.includes('1 mo')&&out.includes('15/31 mo')&&!out.includes('0 lessons')));
+check(()=>assert.match(out,/Chargeable absence<\/td><td class="number">1 lesson/));
+check(()=>assert.match(out,/Agreed tuition<small>Adjusted fee<\/small><\/td><td class="number">1 h<\/td><td class="number">—<\/td><td class="number amount">RM75.00/));
+check(()=>assert.equal((out.match(/Sibling discount/g)||[]).length,1,'discount shown once'));
+check(()=>assert(out.includes('<span>Invoice total</span><strong>RM630.00</strong>')));
+const finance={status:'partially_paid',originalTotalCents:63000,adjustedTotalCents:62000,paidCents:20000,remainingCents:42000,creditBalanceCents:0,cashPaidCents:15000,prepaymentCents:5000};
+const current=render.renderInvoiceHtml(d,{finance,lang:'en'});
+for(const part of ['PARTIALLY PAID','<span>Invoice total</span><strong>RM630.00</strong>','<span>Adjustments</span><strong>− RM10.00</strong>','<span>Adjusted total</span><strong>RM620.00</strong>','<span>Paid</span><strong>RM200.00</strong>','<span>Balance due</span><strong>RM420.00</strong>'])check(()=>assert(current.includes(part),part));
+check(()=>assert(!current.includes('Net cash received')&&!current.includes('Advance balance applied')));
+const voided=render.renderInvoiceHtml(d,{finance:{...finance,status:'void',adjustedTotalCents:0,remainingCents:0},lang:'en'});
+check(()=>assert(voided.includes('>VOID</span>')&&voided.includes('<span>Balance due</span><strong>RM0.00</strong>')));
+const cancelled={...seed,id:'cancelled',lessonId:'cancelled',subject:'CANCELLED-LESSON',lessonStatus:'cancelled',sessionStatus:'cancelled'};
+const annex=render.renderInvoiceHtml({...d,sourceLines:[...sources,cancelled]},{lessons:true,lang:'en'});
+check(()=>assert(annex.includes('Lesson appendix')&&annex.includes('class="paper annex"')&&annex.includes('page-break-before:always')));
+check(()=>assert(!annex.includes('CANCELLED-LESSON')));
+const unregistered=render.renderInvoiceHtml({...d,institution:{...s,legalName:'',registrationNumber:'',taxId:'',sstRegistrationNumber:''},billTo:undefined},{lang:'en'});
+check(()=>assert(!unregistered.includes('Registration no.:')&&!unregistered.includes('TIN:')&&!unregistered.includes('SST registration no.:')));
+const escaped=render.renderInvoiceHtml({...d,institution:{...s,institutionName:'<img src=x onerror=evil()>'},billTo:{name:'<script>evil()</script>',address:'A & B'},notes:'<b>Note</b>'},{lang:'en',nonce:'"nonce'});
+check(()=>assert(escaped.includes('&lt;img src=x onerror=evil()&gt;')&&escaped.includes('&lt;script&gt;evil()&lt;/script&gt;')&&escaped.includes('A &amp; B')&&!escaped.includes('<script>evil()')));
+check(()=>assert(escaped.includes('nonce="&quot;nonce"')));
+const redacted=render.renderInvoiceHtml({...d,sourceLines:[],lines:d.lines.map(line=>({...line,mode:null,unitAmountCents:null,quantity:undefined}))},{lang:'en'});
+check(()=>assert(!redacted.includes('>Unit price<')&&!redacted.includes('>Qty<')&&redacted.includes('RM630.00')));
+const receipt={...receiptFor(d),billTo:d.billTo,printVersion:2},receiptOut=receipts.renderReceiptHtml(receipt,{lang:'en'});
+for(const part of ['>RECEIPT<','Mei Ling Tan','SAMPLE-REG-001','<span>Amount received</span><strong>RM100.00</strong>','<span>Balance after payment</span><strong>RM530.00</strong>'])check(()=>assert(receiptOut.includes(part),part));
+check(()=>assert(!receiptOut.includes('PRIVATE-STUDENT-ID')&&!receiptOut.includes('single payment')&&!receiptOut.includes('FAKE-QR')));
+const reversed=receipts.renderReceiptHtml(receipt,{lang:'en',reversedAt:'2026-10-03T00:00:00Z'});
+check(()=>assert(reversed.includes('>REVERSED</span>')&&reversed.includes('<span>Reversed</span>')));
+check(()=>assert.equal(JSON.stringify(d),before,'all print layouts leave stored document unchanged'));
+console.log('Concise commercial invoice, quantities, money, privacy, receipt and 12 original snapshots: '+checks+' checks passed');

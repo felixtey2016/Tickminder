@@ -1,0 +1,8 @@
+.invoice-party-fields{margin:12px 0;border:1px solid #e2dcea;border-radius:9px;min-width:0}
+.invoice-party-fields>summary{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;min-height:44px;padding:10px 12px;cursor:pointer;font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.invoice-party-fields>summary>span{font-weight:400;color:#746a82;font-size:13px}
+.invoice-party-fields>.invoice-disclosure-content{padding:4px 12px 12px;display:grid;gap:12px}
+.invoice-party-reset{justify-self:start;min-height:44px;border:1px solid #dcd5e7;background:white;border-radius:7px;padding:8px 12px;color:#59447f;font:inherit;font-size:13px}
+.invoice-print-options{max-width:100%}
+.invoice-print-options>.invoice-actions{margin-top:8px}
+@media(max-width:600px){.invoice-party-fields>summary{font-size:13px}.invoice-print-options{flex-basis:100%}.invoice-print-options>.invoice-actions{display:grid;grid-template-columns:1fr}.invoice-party-fields input,.invoice-party-fields textarea{font-size:16px}}

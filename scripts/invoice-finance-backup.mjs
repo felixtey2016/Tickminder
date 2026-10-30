@@ -1,3 +1,4 @@
+import {validInvoiceIssuerIdentity,validInvoiceBillTo} from './invoice-identity-backup.mjs';
 export const INVOICE_FINANCE_TABLES=['invoice_finance_accounts','invoice_finance_operations','invoice_payments','invoice_receipt_sequences','invoice_receipts','invoice_finance_events','invoice_attendance_corrections'];
 export const INVOICE_FINANCE_REPLAY_TRIGGERS=['invoice_finance_account_insert','invoice_finance_event_guard','invoice_finance_event_apply','invoice_correction_open'];
 
@@ -78,6 +79,7 @@ export function checkRestoredInvoiceFinance(db){
   const invoice=db.prepare('SELECT * FROM invoices WHERE group_id=? AND id=?').get(receipt.group_id,receipt.invoice_id),original=json(invoice.document_json);
   const balances=receiptBalances.get(identity(receipt.group_id,receipt.payment_id));
   if(!doc||doc.id!==receipt.id||doc.number!==receipt.number||doc.invoiceId!==receipt.invoice_id||doc.invoiceNumber!==invoice.number||doc.currency!=='MYR'||doc.amountCents!==payment.amount_cents||doc.paidAt!==payment.paid_at||doc.method!==payment.method||doc.reference!==payment.reference||doc.serviceMonth!==invoice.month||JSON.stringify(doc.student)!==JSON.stringify(original.student)||JSON.stringify(doc.institution)!==JSON.stringify(original.institution)||!balances||doc.invoiceTotalCents!==balances.due||doc.balanceAfterCents!==balances.balance||doc.createdAt!==payment.created_at||receipt.created_at!==payment.created_at)fail();
+  if(!validInvoiceIssuerIdentity(doc.institution)||!validInvoiceBillTo(doc.billTo)||JSON.stringify(doc.billTo??null)!==JSON.stringify(original.billTo??null)||(doc.printVersion!==undefined&&doc.printVersion!==2)||(doc.printVersion===2)!==(original.extension?.printVersion===2))fail();
   if(!['standard','centered','brand'].includes(doc.institution.template)||!/^#[a-f0-9]{6}$/i.test(doc.institution.themeColor))fail();
   if(doc.institution.logoAssetId&&!db.prepare('SELECT 1 FROM invoice_brand_assets WHERE group_id=? AND id=?').get(receipt.group_id,doc.institution.logoAssetId))fail();
  }

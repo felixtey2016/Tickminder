@@ -11,14 +11,14 @@ import { inspectInvoiceLogo, INVOICE_LOGO_MAX_BYTES, InvoiceLogoError } from './
 
 export type InvoiceTemplate = 'standard' | 'centered' | 'brand';
 export type InvoiceInstitutionSnapshot = {
- institutionName:string;address:string;phone:string;email:string;template:InvoiceTemplate;themeColor:string;
+ institutionName:string;legalName?:string;registrationNumber?:string;taxId?:string;sstRegistrationNumber?:string;address:string;phone:string;email:string;template:InvoiceTemplate;themeColor:string;
  bankName:string;beneficiary:string;bankAccount:string;paymentNote:string;invoiceNote:string;
  invoicePrefix:string;logoAssetId:string|null;revision:number;dueDays:number;
 };
 export type InvoiceSettingsResponse = {settings:InvoiceInstitutionSnapshot;canManage:boolean;logoUploadAvailable:boolean};
 export class InvoiceSettingsError extends Error {constructor(message:string,readonly status=400){super(message);}}
 export function defaultInvoiceSettings(name:string):InvoiceInstitutionSnapshot{return{
- institutionName:name,address:'',phone:'',email:'',template:'standard',themeColor:'#6040bf',bankName:'',beneficiary:'',bankAccount:'',paymentNote:'',invoiceNote:'',invoicePrefix:'INV',logoAssetId:null,revision:0,dueDays:7,
+ institutionName:name,legalName:'',registrationNumber:'',taxId:'',sstRegistrationNumber:'',address:'',phone:'',email:'',template:'standard',themeColor:'#6040bf',bankName:'',beneficiary:'',bankAccount:'',paymentNote:'',invoiceNote:'',invoicePrefix:'INV',logoAssetId:null,revision:0,dueDays:7,
 };}
 function group(actor:Account){if(actor.role!=='admin'||!actor.groupId||!/^[a-z0-9-]{1,64}$/.test(actor.groupId))throw new InvoiceSettingsError('没有权限查看账单设置',403);return actor.groupId;}
 function reader(actor:Account){
@@ -29,6 +29,7 @@ function reader(actor:Account){
 }
 async function requireReader(actor:Account){const allowed=reader(actor);if(!await learningDb().prepare(`SELECT 1 WHERE ${allowed.sql}`).bind(...allowed.args).first())throw new InvoiceSettingsError('没有权限查看账单设置',403);}
 function text(value:unknown,max:number,label:string){if(typeof value!=='string')throw new InvoiceSettingsError(`请填写有效的${label}`);const result=value.trim();if(result.length>max||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(result))throw new InvoiceSettingsError(`${label}内容过长或含无效字符`);return result;}
+function identityText(value:unknown,max:number,label:string){const result=text(value,max,label);if(/[\r\n\t]/.test(result))throw new InvoiceSettingsError(label+'不可包含换行');return result;}
 export function parseInvoiceSettings(value:unknown,revision=0):InvoiceInstitutionSnapshot{
  if(!value||typeof value!=='object'||Array.isArray(value))throw new InvoiceSettingsError('账单设置格式无效');
  const v=value as Record<string,unknown>,institutionName=text(v.institutionName,160,'机构名称'),email=text(v.email,200,'邮箱'),invoicePrefix=text(v.invoicePrefix,12,'编号前缀');
@@ -38,7 +39,7 @@ export function parseInvoiceSettings(value:unknown,revision=0):InvoiceInstitutio
  if(!['standard','centered','brand'].includes(String(v.template))||typeof v.themeColor!=='string'||!/^#[0-9a-fA-F]{6}$/.test(v.themeColor))throw new InvoiceSettingsError('请选择有效模板及主题颜色');
  if(!Number.isSafeInteger(v.dueDays)||Number(v.dueDays)<0||Number(v.dueDays)>90)throw new InvoiceSettingsError('默认付款期限须为 0 至 90 天');
  const logoAssetId=v.logoAssetId===null||v.logoAssetId===''?null:text(v.logoAssetId,80,'Logo 编号');if(logoAssetId&&!/^[a-zA-Z0-9_-]{1,80}$/.test(logoAssetId))throw new InvoiceSettingsError('Logo 编号无效');
- return{institutionName,address:text(v.address,700,'地址'),phone:text(v.phone,80,'电话'),email,template:v.template as InvoiceTemplate,themeColor:v.themeColor.toLowerCase(),bankName:text(v.bankName,160,'银行名称'),beneficiary:text(v.beneficiary,160,'账户名称'),bankAccount:text(v.bankAccount,100,'银行账号'),paymentNote:text(v.paymentNote,1000,'付款说明'),invoiceNote:text(v.invoiceNote,1000,'账单备注'),invoicePrefix:invoicePrefix.toUpperCase(),logoAssetId,revision,dueDays:Number(v.dueDays)};
+ return{institutionName,legalName:v.legalName===undefined?'':identityText(v.legalName,160,'法定名称'),registrationNumber:v.registrationNumber===undefined?'':identityText(v.registrationNumber,80,'注册号码'),taxId:v.taxId===undefined?'':identityText(v.taxId,40,'税务号码'),sstRegistrationNumber:v.sstRegistrationNumber===undefined?'':identityText(v.sstRegistrationNumber,80,'SST 注册号码'),address:text(v.address,700,'地址'),phone:text(v.phone,80,'电话'),email,template:v.template as InvoiceTemplate,themeColor:v.themeColor.toLowerCase(),bankName:text(v.bankName,160,'银行名称'),beneficiary:text(v.beneficiary,160,'账户名称'),bankAccount:text(v.bankAccount,100,'银行账号'),paymentNote:text(v.paymentNote,1000,'付款说明'),invoiceNote:text(v.invoiceNote,1000,'账单备注'),invoicePrefix:invoicePrefix.toUpperCase(),logoAssetId,revision,dueDays:Number(v.dueDays)};
 }
 export async function invoiceSettingsSnapshot(actor:Account,_options?:{skipViewerCheck?:boolean}):Promise<InvoiceInstitutionSnapshot>{
  // Even internal invoice callers get live account, session, tenant and invoice grants checked in the read itself.

@@ -3,14 +3,15 @@ import type {InvoiceInstitutionSnapshot} from './invoice-settings';
 import type {InvoiceFinanceSummary} from './invoice-finance';
 
 export type InvoiceAddition = {id:string;label:string;kind:'charge'|'discount';amountCents:number;reason:string};
-export type InvoicePrintLine = {id:string;subject:string;description:string;lessonCount:number;durationSeconds:number;mode:string|null;unitAmountCents:number|null;amountCents:number};
+export type InvoicePrintLine = {id:string;subject:string;description:string;lessonCount:number;durationSeconds:number;mode:string|null;unitAmountCents:number|null;amountCents:number;quantity?:number;rateOverride?:boolean};
+export type InvoiceBillTo={name:string;address:string;email?:string;phone?:string;taxId?:string;registrationNumber?:string};
 export type InvoiceStudent = {id:string;name:string;syllabus:string|null;grade:string|null};
 export type InvoiceDocument = {
  id:string;groupId:string;studentId:string;student:InvoiceStudent;month:string;status:'draft'|'issued';revision:number;
  number:string|null;issuedAt:string|null;createdAt:string;updatedAt:string;dueDate:string;notes:string;currency:'MYR';
- institution:InvoiceInstitutionSnapshot;sourceHash:string;sourceLines:BillingLine[];lines:InvoicePrintLine[];additions:InvoiceAddition[];
+ billTo?:InvoiceBillTo;institution:InvoiceInstitutionSnapshot;sourceHash:string;sourceLines:BillingLine[];lines:InvoicePrintLine[];additions:InvoiceAddition[];
  subtotalCents:number;discountCents:number;totalCents:number;lessonCount:number;durationSeconds:number;
- extension:{schemaVersion:1;receiptIds:string[];eInvoice:Record<string,unknown>|null};
+ extension:{schemaVersion:1;receiptIds:string[];eInvoice:Record<string,unknown>|null;printVersion?:2};
 };
 export type InvoiceSummary = Pick<InvoiceDocument,'id'|'studentId'|'month'|'status'|'revision'|'number'|'issuedAt'|'createdAt'|'updatedAt'|'dueDate'|'currency'|'totalCents'|'lessonCount'|'durationSeconds'> & {student:string;finance?:InvoiceFinanceSummary};
 export type InvoiceReview = {blockers:string[];sourceChanged:boolean;pendingCount:number;completedUnbilledCount:number;replacementCount:number;upcomingCount:number};
@@ -19,6 +20,17 @@ export type InvoiceList = {items:InvoiceSummary[];total:number;page:number;pageS
 export class InvoiceError extends Error {constructor(message:string,readonly status=400){super(message);}}
 export const INVOICE_MAX_CENTS=100_000_000;
 export function invoiceLessonCancelled(line:BillingLine){return line.lessonStatus==='cancelled'||line.sessionStatus==='cancelled'||line.attendanceStatus==='cancelled';}
+
+export function invoiceBillTo(value:unknown):InvoiceBillTo|undefined{
+ if(value===undefined||value===null)return undefined;
+ if(typeof value!=='object'||Array.isArray(value))throw new InvoiceError('请填写有效账单收件人资料');
+ const input=value as Record<string,unknown>,fields:Record<string,string>={};
+ for(const [key,max] of [['name',160],['address',700],['email',200],['phone',80],['taxId',40],['registrationNumber',80]] as const){const raw=input[key];if(raw===undefined){fields[key]='';continue;}if(typeof raw!=='string'||raw.length>max||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(raw))throw new InvoiceError('账单收件人资料过长或含无效字符');if(key!=='address'&&/[\r\n\t]/.test(raw))throw new InvoiceError('账单收件人资料不可包含无效换行');fields[key]=raw.trim();}
+ if(!Object.values(fields).some(Boolean))return undefined;
+ if(!fields.name)throw new InvoiceError('请填写账单收件人姓名或名称');
+ if(fields.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.email))throw new InvoiceError('账单收件人邮箱格式无效');
+ return{name:fields.name,address:fields.address,...Object.fromEntries(['email','phone','taxId','registrationNumber'].filter(key=>fields[key]).map(key=>[key,fields[key]]))};
+}
 
 export function invoiceAdditions(value:unknown):InvoiceAddition[]{
  if(!Array.isArray(value)||value.length>50)throw new InvoiceError('附加收费及折扣最多可添加 50 项');
@@ -46,13 +58,15 @@ export function invoicePrintLines(lines:BillingLine[]):InvoicePrintLine[]{
  const result=new Map<string,InvoicePrintLine>();
  for(const line of lines){
   if(line.status==='pending'||invoiceLessonCancelled(line))continue;
-  const key=JSON.stringify([line.subjectKey,line.mode,line.unitAmountCents,line.rateVersionId]),row=result.get(key)||{id:key,subject:line.subject,description:'',lessonCount:0,durationSeconds:0,mode:line.mode,unitAmountCents:line.unitAmountCents,amountCents:0};
+  const key=JSON.stringify([line.subjectKey,line.mode,line.unitAmountCents,line.rateVersionId]),row=result.get(key)||{id:key,subject:line.subject,description:'',lessonCount:0,durationSeconds:0,mode:line.mode,unitAmountCents:line.unitAmountCents,amountCents:0,quantity:0};
   // Monthly fees include their lessons once; the monthly charge itself has no lesson ID.
   if(line.lessonId&&line.lessonStatus!=='cancelled'&&line.sessionStatus!=='cancelled'&&!['cancelled','absent','student_absent','teacher_absent','pending','scheduled'].includes(line.attendanceStatus)){
    row.lessonCount++;
    row.durationSeconds+=line.displayDurationSeconds??invoiceLessonDuration(line);
   }
-  row.amountCents+=line.amountCents??0;result.set(key,row);
+  const quantity=line.mode==='month'?(line.lessonId?0:line.quantity):line.mode==='hour'?line.billableSeconds/3600:line.mode==='lesson'?line.quantity:0;
+  if(!Number.isFinite(quantity)||quantity<0)throw new InvoiceError('账单计费数量无效');
+  row.quantity=(row.quantity||0)+quantity;row.amountCents+=line.amountCents??0;result.set(key,row);
  }
- return[...result.values()];
+ return[...result.values()].map(row=>({...row,rateOverride:row.unitAmountCents!==null&&Math.round((row.quantity||0)*row.unitAmountCents)!==row.amountCents}));
 }
