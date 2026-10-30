@@ -12,6 +12,7 @@ import { FileLinks, type Homework, type LearningState, type Material } from "./l
 import {HomeworkReview} from "./homework-review";
 import { ContentActions, SubmissionVersion } from "./learning-content-actions";
 import { LearningListDetail, homeworkSummary, latestSubmissions, learningLabel } from "./learning-list-detail";
+import {ClassroomMaterialBrowser} from "./classroom-material-browser";
 
 const dateFormatters = {
   zh: new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
@@ -23,6 +24,7 @@ const subjectOf = (item: Material | Homework) => "subject" in item && item.subje
 export function AdminLearning({ learning, view, inClassroom = false,onChanged,historyScope = "global" }: {
   historyScope?: string; learning: LearningState; view: "materials" | "homework"; inClassroom?: boolean;onChanged?:()=>Promise<unknown>|void;
 }) {
+  const MaterialList=inClassroom?ClassroomMaterialBrowser:LearningListDetail<Material>;
   const can=useAdminAction();
   const {classes,error:classError,load:loadClasses}=useTeachingClasses(!inClassroom&&can("folders.placeContent"));
   const [teacher, setTeacher] = useState("");
@@ -43,7 +45,7 @@ export function AdminLearning({ learning, view, inClassroom = false,onChanged,hi
       <label>{t("科目")}<select value={subject} onChange={event => setSubject(event.target.value)}><option value="">{t("全部科目")}</option>{subjects.map(name => <option key={name}>{name}</option>)}</select></label>
       <Button variant="outline" type="button" onClick={() => { setTeacher(""); setSubject(""); }}>{t("重置筛选")}</Button>
     </FilterPanel>}
-    {view === "materials" && <LearningListDetail historyKey={`admin:materials:${historyScope}`} items={materials} summary={item=>({context:[item.teacherName,subjectOf(item),!inClassroom&&item.classroomTitle].filter(Boolean).join(" · "),meta:`PDF · ${item.recipients?.length || 0} ${learningLabel("位学生","students")}`})} renderDetail={item => <article className="learning-card" key={item.id}>
+    {view === "materials" && <MaterialList historyKey={`admin:materials:${historyScope}`} items={materials} summary={item=>({context:[item.teacherName,subjectOf(item),!inClassroom&&item.classroomTitle].filter(Boolean).join(" · "),meta:`PDF · ${item.recipients?.length || 0} ${learningLabel("位学生","students")}`})} renderDetail={item => <article className="learning-card" key={item.id}>
         <div className="learning-record-content">{!inClassroom && !item.classroomId && <div className="legacy-label"><span>{t("待整理")}</span><LegacyOrganizer item={item} kind="material" classes={classes} onChanged={()=>onChanged?.()}/></div>}<header className="learning-record-head"><strong>{item.title}</strong><small>{item.teacherName} · {subjectOf(item)}{!inClassroom && item.classroomTitle ? ` · ${item.classroomTitle}` : ""}</small></header>
           {item.description && <p>{item.description}</p>}
           <details className="learning-detail-recipients"><summary>{t("分配给学生")} · {item.recipients?.length || 0}</summary><p>{item.recipients?.map(recipient => recipient.studentName).join("、")}</p></details>

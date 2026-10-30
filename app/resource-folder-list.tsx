@@ -1,6 +1,6 @@
 "use client";
 
-import {useEffect,useRef,useState} from "react";
+import {useContext,useEffect,useRef,useState} from "react";
 import {ExternalLink,FileText} from "lucide-react";
 import {Button} from "@/components/ui/button";
 import {alertActionFailure,readApiJson} from "@/lib/action-feedback";
@@ -9,15 +9,18 @@ import {getLanguage} from "@/lib/i18n";
 import {resourceApi,resourceLabel as label,resourceMessage} from "@/lib/resource-catalog-client";
 import type {ResourceEntry,ResourcePage} from "@/lib/resource-catalog";
 import {useAdminAction} from "./admin-permission-context";
+import {ClassroomFilesContext} from '@/lib/classroom-files-ui';
 import "./resource-folder-list.css";
 
 /** This surface always reads the current classroom assignment, including for staff. */
 export function ResourceFolderList({classroomId,folderId,contentRevision}:{classroomId:string;folderId:string;contentRevision:number}) {
   const can=useAdminAction(),allowed=can("resources.view")&&can("folders.view");
+  const shared=useContext(ClassroomFilesContext),queryText=shared?.query||'',[search,setSearch]=useState('');
   const [page,setPage]=useState(1),[refresh,setRefresh]=useState(0),[data,setData]=useState<ResourcePage|null>(null),[error,setError]=useState("");
   const [loading,setLoading]=useState(false),[opening,setOpening]=useState("");
   const request=useRef(0),denied=useRef(false),listRequest=useRef<AbortController|null>(null),fileRequest=useRef<AbortController|null>(null);
-  const query=allowed?new URLSearchParams({view:"assigned",classroomId,folderId,page:String(page)}).toString():null;
+  useEffect(()=>{const timer=window.setTimeout(()=>{setSearch(queryText.trim());setPage(1);},300);return()=>window.clearTimeout(timer);},[queryText]);
+  const query=allowed?new URLSearchParams({view:"assigned",classroomId,folderId,page:String(page),...(search?{q:search}:{})}).toString():null;
   function authChanged(status:unknown) {
     if(status!==401&&status!==403)return;
     denied.current=true;
@@ -70,6 +73,7 @@ export function ResourceFolderList({classroomId,folderId,contentRevision}:{class
     } finally {if(fileRequest.current===controller){fileRequest.current=null;setOpening("");}}
   }
   if(!allowed)return null;
+  if(!loading&&!error&&data&&!data.items.length)return null;
   return <section className="resource-folder-list" aria-label={label("已分配资源","Assigned resources")}>
     <div className="resource-folder-heading"><h3>{label("已分配资源","Assigned resources")}</h3>{data&&<span className="learning-record-count">{data.total}</span>}</div>
     {loading?<p role="status">{label("正在加载本层资源…","Loading assigned resources…")}</p>:error?<div className="notice teaching-notice-actions" role="alert"><span>{error}</span><Button type="button" variant="outline" onClick={()=>{denied.current=false;setRefresh(value=>value+1);}}>{label("重试","Retry")}</Button></div>:data?.items.length?<>

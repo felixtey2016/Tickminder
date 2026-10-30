@@ -3,7 +3,7 @@ import {usePageHistoryState} from '@/lib/page-history';
 
 import { useAdminAction } from "./admin-permission-context";
 import { useCallback,useEffect,useRef,useState,type ReactNode } from "react";
-import { ArrowLeft,Folder,FolderPlus,ChevronRight,MoreHorizontal } from "lucide-react";
+import { ArrowLeft,Folder,FolderPlus,ChevronRight,MoreHorizontal,Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog,DialogContent,DialogTitle,DialogDescription } from "@/components/ui/dialog";
 import { groupFetch } from "@/lib/group-client";
@@ -11,6 +11,8 @@ import { readApiJson,alertActionFailure,showActionToast } from "@/lib/action-fee
 import { t,registerTranslations } from "@/lib/i18n";
 import {resourceLabel} from "@/lib/resource-catalog-client";
 import {ResourceFolderList} from "./resource-folder-list";
+import {ClassroomFilesContext,type ClassroomFileSort} from '@/lib/classroom-files-ui';
+import './classroom-file-library.css';
 import type { LearningState,Material,Homework } from "./learning-portal";
 
 registerTranslations({"此文件夹包含资源分配，删除前需要资源分配及内容整理权限":"此文件夹包含资源分配，删除前需要资源分配及内容整理权限"},{"此文件夹包含资源分配，删除前需要资源分配及内容整理权限":"Deleting this folder also removes resource assignments. Resource assignment and content placement permissions are required."});
@@ -40,6 +42,8 @@ export function FolderWorkspace({classroom,role,learning,view,onChanged,children
   const [tree,setTree]=useState<Node[]>([]),[revision,setRevision]=useState(0),[ready,setReady]=useState(false),[error,setError]=useState("");
   const [current,setCurrent]=usePageHistoryState("folder.current:"+classroom.id,""),[editor,setEditor]=useState<Editor|null>(null),[name,setName]=useState(""),[target,setTarget]=useState(""),[preview,setPreview]=useState<Preview|null>(null),[working,setWorking]=useState(false),[editError,setEditError]=useState("");
   const latestLoad=useRef(0),[editorRevision,setEditorRevision]=useState(0);
+  const [fileQuery,setFileQuery]=useState(''),[fileSort,setFileSort]=useState<ClassroomFileSort>('recent');
+  useEffect(()=>{setFileQuery('');},[current,classroom.id,view]);
   const canManage=role!=="student" && !classroom.archived;
   const load=useCallback(async()=>{
     if(!canRead)return null;
@@ -56,7 +60,7 @@ export function FolderWorkspace({classroom,role,learning,view,onChanged,children
   const contentStamp=JSON.stringify([learning.materials.map(m=>[m.id,m.folderId]),learning.homework.map(h=>[h.id,h.folderId,h.scores]),learning.submissions.map(s=>s.id)]);
   useEffect(()=>{void load();},[load,contentStamp]);
   useEffect(()=>{const refresh=()=>{if(document.visibilityState==="visible") void load();};const timer=window.setInterval(refresh,20000);window.addEventListener("focus",refresh);return()=>{window.clearInterval(timer);window.removeEventListener("focus",refresh);};},[load]);
-  const folders=tree.filter(f=>(f.parentId||"")===current);
+  const folders=tree.filter(f=>(f.parentId||"")===current&&(!fileQuery||view!=="materials"||f.name.toLocaleLowerCase().includes(fileQuery.trim().toLocaleLowerCase()))).sort((a,b)=>view==='materials'?(a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:'base'})||a.id.localeCompare(b.id)):0);
   const materials=learning.materials.filter(m=>m.classroomId===classroom.id),homework=learning.homework.filter(h=>h.classroomId===classroom.id);
   const filtered={...learning,materials:materials.filter(m=>(m.folderId||"")===current),homework:homework.filter(h=>(h.folderId||"")===current)};
   const records=view==="materials"?filtered.materials:filtered.homework;
@@ -78,18 +82,19 @@ export function FolderWorkspace({classroom,role,learning,view,onChanged,children
   }
   if(!canRead)return <div className="folder-learning-content">{children({...learning,materials,homework},"",materials)}</div>;
   if(!ready) return <section className="panel folder-status" role={error?"alert":"status"}><p>{error||t("正在加载文件夹…")}</p>{error && <Button variant="outline" onClick={()=>void load()}>{t("重试")}</Button>}</section>;
-  return <div className="folder-workspace">
+  return <ClassroomFilesContext.Provider value={view==='materials'?{query:fileQuery,setQuery:setFileQuery,sort:fileSort,setSort:setFileSort,...(canManage&&can('folders.placeContent')?{moveFile:(id:string,title:string)=>void openEditor({action:'placeContent',id,name:title,kind:'material'})}:{})}:null}><div className={`folder-workspace${view==='materials'?' classroom-file-library':''}`}>
     <section className="panel folder-browser learning-content-surface">
-      <div className="folder-toolbar"><h3>{t("班级文件夹")}</h3><div className="folder-toolbar-actions learning-action-row">{current && <Button size="sm" variant="outline" onClick={()=>setCurrent(tree.find(f=>f.id===current)?.parentId||"")}><ArrowLeft size={16}/>{t("返回上层")}</Button>}{canManage && <Button adminGrant="folders.create" size="sm" onClick={()=>void openEditor({action:"create",id:""})}><FolderPlus size={16}/>{t("新建文件夹")}</Button>}</div></div>
+      <div className="folder-toolbar"><h3>{view==='materials'?resourceLabel('班级文件','Class files'):t("班级文件夹")}</h3><div className="folder-toolbar-actions learning-action-row">{current && <Button size="sm" variant="outline" onClick={()=>setCurrent(tree.find(f=>f.id===current)?.parentId||"")}><ArrowLeft size={16}/>{t("返回上层")}</Button>}{canManage && <Button adminGrant="folders.create" size="sm" onClick={()=>void openEditor({action:"create",id:""})}><FolderPlus size={16}/>{t("新建文件夹")}</Button>}</div></div>
       <nav className="folder-breadcrumb" aria-label={t("文件夹路径")}><button type="button" onClick={()=>setCurrent("")}>{t("班级根目录")}</button>{crumbs.map(n=><span key={n.id}><ChevronRight size={14}/><button type="button" aria-current={n.id===current?"location":undefined} onClick={()=>setCurrent(n.id)}>{n.name}</button></span>)}</nav>
+      {view==='materials'&&<div className="class-files-toolbar"><label className="class-files-search"><Search size={17} aria-hidden="true"/><span className="sr-only">{resourceLabel('搜索本层文件或文件夹','Search this folder')}</span><input type="search" value={fileQuery} maxLength={200} placeholder={resourceLabel('搜索本层文件或文件夹','Search files and folders here')} onChange={event=>setFileQuery(event.target.value)}/></label><label className="class-files-sort"><span className="sr-only">{resourceLabel('文件排序','Sort files')}</span><select aria-label={resourceLabel('文件排序','Sort files')} value={fileSort} onChange={event=>setFileSort(event.target.value as ClassroomFileSort)}><option value="recent">{resourceLabel('最近更新','Recently updated')}</option><option value="name">{resourceLabel('名称 A–Z','Name A–Z')}</option></select></label></div>}
       {error && <div className="notice teaching-notice-actions" role="alert"><span>{error}</span><Button size="sm" variant="outline" onClick={()=>void load()}>{t("刷新")}</Button></div>}
       {Boolean(classroom.archived) && <p className="muted">{t("班级已封存，文件夹仅供查看")}</p>}
       <div className="folder-grid">{folders.map(n=><div key={n.id} className="folder-entry"><button type="button" className="folder-open" onClick={()=>setCurrent(n.id)}><Folder size={22}/><span>{n.name}</span><ChevronRight size={16}/></button>{canManage && (can("folders.edit")||can("folders.delete")) && <details className="folder-options"><summary aria-label={`${t("文件夹选项")} · ${n.name}`}><MoreHorizontal size={20}/></summary><div>{(["rename","move","delete"] as const).map(action=><Button adminGrant={action==="delete"?"folders.delete":"folders.edit"} key={action} size="sm" variant="outline" onClick={()=>void openEditor({action,id:n.id,name:n.name})}>{t(action==="rename"?"重命名":action==="move"?"移动文件夹":"删除文件夹")}</Button>)}</div></details>}</div>)}</div>
-      {!folders.length && !records.length && <p className="muted folder-empty-hint">{t("此位置没有子文件夹")}</p>}
-      {canManage && can("folders.placeContent") && records.length>0 && <details className="folder-organize"><summary className="folder-organize-heading"><span>{t("整理本层内容")}</span><span className="learning-record-count">{records.length}</span></summary>{records.map(item=><div className="folder-content-row" key={item.id}><span>{item.title}</span><Button adminGrant="folders.placeContent" size="sm" variant="outline" onClick={()=>void openEditor({action:"placeContent",id:item.id,name:item.title,kind:view==="materials"?"material":"homework"})}>{t("移动到文件夹")}</Button></div>)}</details>}
+      {view!=='materials'&&!folders.length && !records.length && <p className="muted folder-empty-hint">{t("此位置没有子文件夹")}</p>}
+      {view!=='materials'&&canManage && can("folders.placeContent") && records.length>0 && <details className="folder-organize"><summary className="folder-organize-heading"><span>{t("整理本层内容")}</span><span className="learning-record-count">{records.length}</span></summary>{records.map(item=><div className="folder-content-row" key={item.id}><span>{item.title}</span><Button adminGrant="folders.placeContent" size="sm" variant="outline" onClick={()=>void openEditor({action:"placeContent",id:item.id,name:item.title,kind:"homework"})}>{t("移动到文件夹")}</Button></div>)}</details>}
     </section>
-    <div className="folder-learning-content">{view==="materials"&&can("resources.view")&&<ResourceFolderList key={classroom.id+":"+current} classroomId={classroom.id} folderId={current} contentRevision={revision}/>}{children(filtered,current,materials)}</div>
-    <Dialog open={Boolean(editor)} onOpenChange={open=>{if(!open && !working)setEditor(null);}}><DialogContent className="folder-dialog"><DialogTitle>{t(editor?.action==="delete"?"删除文件夹":editor?.action==="create"?"新建文件夹":editor?.action==="rename"?"重命名":editor?.action==="placeContent"?"移动到文件夹":"移动文件夹")}</DialogTitle><DialogDescription>{editor?.action==="delete"?resourceLabel("将永久删除此文件夹及其内容，并移除本层和子文件夹的资源分配；原资源及共用 PDF 保留。此操作无法恢复。","This permanently deletes the folder and its contents and removes resource assignments in this folder and its subfolders. Original resources and shared PDFs are retained. This cannot be undone."):editor?.name||t("按科目、章节或资料类型命名")}</DialogDescription>
+    <div className="folder-learning-content">{children(filtered,current,materials)}{view==="materials"&&can("resources.view")&&<ResourceFolderList key={classroom.id+":"+current} classroomId={classroom.id} folderId={current} contentRevision={revision}/>}</div>
+    <Dialog open={Boolean(editor)} onOpenChange={open=>{if(!open && !working)setEditor(null);}}><DialogContent className={`folder-dialog${view==='materials'?' classroom-file-folder-dialog':''}`} overlayClassName={view==='materials'?'classroom-file-folder-overlay':undefined}><DialogTitle>{t(editor?.action==="delete"?"删除文件夹":editor?.action==="create"?"新建文件夹":editor?.action==="rename"?"重命名":editor?.action==="placeContent"?"移动到文件夹":"移动文件夹")}</DialogTitle><DialogDescription>{editor?.action==="delete"?resourceLabel("将永久删除此文件夹及其内容，并移除本层和子文件夹的资源分配；原资源及共用 PDF 保留。此操作无法恢复。","This permanently deletes the folder and its contents and removes resource assignments in this folder and its subfolders. Original resources and shared PDFs are retained. This cannot be undone."):editor?.name||t("按科目、章节或资料类型命名")}</DialogDescription>
       <form className="learning-form" onSubmit={save}>
         {(editor?.action==="create" || editor?.action==="rename") && <label>{t("文件夹名称")}<input autoFocus required maxLength={80} value={name} onChange={e=>setName(e.target.value)}/></label>}
         {(editor?.action==="move" || editor?.action==="placeContent") && <label>{t("目标文件夹")}<select aria-label={t("目标文件夹")} value={target} onChange={e=>setTarget(e.target.value)}><option value="">{t("班级根目录")}</option>{tree.filter(f=>editor.action!=="move" || !descendant(tree,f.id,editor.id)).map(f=><option key={f.id} value={f.id}>{pathLabel(tree,f.id)}</option>)}</select></label>}
@@ -98,7 +103,7 @@ export function FolderWorkspace({classroom,role,learning,view,onChanged,children
         <div className="learning-card-actions"><Button type="button" variant="outline" disabled={working} onClick={()=>setEditor(null)}>{t("取消")}</Button><Button adminGrant={editor?.action==="delete"?"folders.delete":editor?.action==="create"?"folders.create":editor?.action==="placeContent"?"folders.placeContent":"folders.edit"} variant={editor?.action==="delete"?"destructive":"default"} disabled={working || (editor?.action==="delete" && !preview)}>{t(working?"处理中…":editor?.action==="delete"?"确认永久删除":"保存")}</Button></div>
       </form>
     </DialogContent></Dialog>
-  </div>;
+  </div></ClassroomFilesContext.Provider>;
 }
 
 export function useTeachingClasses(enabled=true) {

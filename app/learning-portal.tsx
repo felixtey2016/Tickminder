@@ -14,6 +14,7 @@ import {HomeworkReview} from "./homework-review";
 import { ContentActions, SubmissionVersion } from "./learning-content-actions";
 import {SharedFilePicker} from "./shared-file-picker";
 import { LearningListDetail, homeworkSummary, latestSubmissions, learningLabel } from "./learning-list-detail";
+import {ClassroomMaterialBrowser} from './classroom-material-browser';
 import { canNavigateBack, usePageHistoryState } from "@/lib/page-history";
 
 type TeachingOwner = { revision?:number;updatedAt?:string|null; ownerId?: string; teacherName?: string; classroomTitle?: string | null };
@@ -93,6 +94,7 @@ function TeacherFolderPage(props:TeacherLearningProps) {
   </div>;
 }
 function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,readOnly,legacyOnly,legacyClasses,onChanged,availableMaterials }: TeacherLearningProps) {
+  const MaterialList=classroom?ClassroomMaterialBrowser:LearningListDetail<Material>;
   const formId=useId();
   const composeHistoryKey = `teacher.compose:${view}:${classroom?.id || "legacy"}:${folderId || "root"}`;
   const [formOpen, setFormOpen, replaceFormOpen] = usePageHistoryState(composeHistoryKey, false);
@@ -144,6 +146,16 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
   const [error, setError] = useState("");
   const materialInputKey = useState(0);
   const homeworkInputKey = useState(0);
+  const [materialDragging,setMaterialDragging]=useState(false);
+  function chooseMaterialFile(files:FileList|null) {
+    const reject=(message:string)=>{setMaterialFile(null);setMaterialUploaded('');materialInputKey[1](value=>value+1);alertActionFailure(new Error(message));};
+    if(files&&files.length>1){reject(learningLabel('请每次选择一份 PDF','Choose one PDF at a time'));return;}
+    const next=files?.[0]||null;
+    if(next&&next.type!=='application/pdf'&&!next.name.toLowerCase().endsWith('.pdf')){reject(t('请选择 PDF 文件'));return;}
+    if(next&&next.size>pdfLimit(learning)){reject(`${t('PDF 超过单份大小限制')} · ${maxPdfLabel(learning)}`);return;}
+    setMaterialFile(next);setMaterialUploaded('');setError('');
+    if(next&&!materialTitle.trim())setMaterialTitle(next.name.replace(/\.pdf$/i,'').slice(0,120));
+  }
 
   async function saveMaterial(event: React.FormEvent) {
     event.preventDefault(); const form = event.currentTarget as HTMLFormElement; setWorking(true); setError("");
@@ -181,13 +193,13 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
         <label>{t("说明（可选）")}<textarea maxLength={2000} value={materialDescription} onChange={e => setMaterialDescription(e.target.value)}/></label>
         </fieldset><fieldset className="learning-form-section"><legend>{t("分配对象")}</legend><label>{t("科目")}<select required disabled={Boolean(classroom)} value={materialSubject} onChange={e => { setMaterialSubject(e.target.value); setMaterialStudents([]); }}><option value="">{t("请选择")}</option>{subjects.map(subject => <option key={subject}>{subject}</option>)}</select></label>
         {classroom ? <p className="muted">{t("发布给班级所有学生")} · {classroom.members.length}</p> : <StudentChecks eligible={learning.eligible} subject={materialSubject} selected={materialStudents} onChange={setMaterialStudents}/>}
-        </fieldset><fieldset className="learning-form-section"><legend>{t("PDF 文件")}</legend>{!materialId && <><label>{t("PDF 来源")}<select value={materialSource} onChange={e=>{setMaterialSource(e.target.value);setMaterialFile(null);setMaterialUploaded("");setMaterialResource("");materialInputKey[1](x=>x+1);}}><option value="upload">{t("上传 PDF")}</option><option value="resource">{t("使用集团共享 PDF")}</option></select></label>{materialSource==="resource"?<SharedFilePicker value={materialResource} onChange={setMaterialResource} disabled={disabled}/>:<label>{t("选择一份 PDF")} · {t("最多")} {maxPdfLabel(learning)}<input key={materialInputKey[0]} type="file" accept="application/pdf,.pdf" required={!materialUploaded} onChange={e => { setMaterialFile(e.target.files?.[0] || null); setMaterialUploaded(""); }}/></label>}</>}
+        </fieldset><fieldset className="learning-form-section"><legend>{t("PDF 文件")}</legend>{!materialId && <><label>{t("PDF 来源")}<select value={materialSource} onChange={e=>{setMaterialSource(e.target.value);setMaterialFile(null);setMaterialUploaded("");setMaterialResource("");materialInputKey[1](x=>x+1);}}><option value="upload">{t("上传 PDF")}</option><option value="resource">{t("使用集团共享 PDF")}</option></select></label>{materialSource==="resource"?<SharedFilePicker value={materialResource} onChange={setMaterialResource} disabled={disabled}/>:classroom?<div className={`learning-dropzone${materialDragging?' dragging':''}`} onDragOver={event=>{event.preventDefault();if(!disabled)setMaterialDragging(true);}} onDragLeave={()=>setMaterialDragging(false)} onDrop={event=>{event.preventDefault();setMaterialDragging(false);if(!disabled)chooseMaterialFile(event.dataTransfer.files);}}><label>{t("选择一份 PDF")} · {t("最多")} {maxPdfLabel(learning)}<input key={materialInputKey[0]} type="file" accept="application/pdf,.pdf" disabled={disabled} required={!materialFile&&!materialUploaded} onChange={e=>chooseMaterialFile(e.target.files)}/></label><p className="muted">{materialFile?`${t('已选择')}: ${materialFile.name}`:t('支持拖放 PDF 文件')}</p></div>:<label>{t("选择一份 PDF")} · {t("最多")} {maxPdfLabel(learning)}<input key={materialInputKey[0]} type="file" accept="application/pdf,.pdf" required={!materialUploaded} onChange={e => { setMaterialFile(e.target.files?.[0] || null); setMaterialUploaded(""); }}/></label>}</>}
         {materialUploaded && <p className="muted">{t("PDF 已上传，尚未发布。保存资料后才会分配给学生。")}</p>}
         </fieldset><div className="learning-action-row learning-form-actions"><Button disabled={disabled || !materialStudents.length || (!materialId && !(materialSource==="resource"?materialResource:materialFile||materialUploaded))}><UploadCloud size={17}/>{materialId ? t("保存修改") : t("发布资料")}</Button>
         {materialId && <Button type="button" variant="outline" onClick={() => { setMaterialId(""); setMaterialTitle(""); setMaterialDescription(""); setMaterialStudents(classroom?.members || []); setMaterialSubject(classroom?.subject || ""); }}>{t("取消编辑")}</Button>}</div>
       </form>
 
-      <div hidden={formOpen}><LearningListDetail historyKey={`teacher:materials:${classroom?.id || "legacy"}:${folderId || "root"}`} items={learning.materials} summary={material=>({context:[material.recipients?.[0]?.subject,!classroom&&material.classroomTitle].filter(Boolean).join(" · "),meta:`PDF · ${material.recipients?.length || 0} ${learningLabel("位学生","students")}`})} renderDetail={material => <article className="learning-card" key={material.id}><div className="learning-record-content"><header className="learning-record-head"><strong>{material.title}</strong><small>{material.recipients?.[0]?.subject}</small></header>{material.description && <p>{material.description}</p>}<details className="learning-detail-recipients"><summary>{t("分配给学生")} · {material.recipients?.length || 0}</summary><p>{material.recipients?.map(r=>r.studentName).join("、")}</p></details></div><div className="learning-action-row"><FileLinks fileId={material.fileId}/></div><div className="learning-card-actions">{!material.classroomId && legacyClasses && <LegacyOrganizer item={material} kind="material" classes={legacyClasses} onChanged={()=>onChanged?.()}/>}<ContentActions kind="material" id={material.id} editable={!readOnly} onChanged={onChanged} maxBytes={pdfLimit(learning)}/><Button size="sm" variant="outline" hidden={readOnly} disabled={disabled} onClick={() => { if (window.confirm(t("确定删除这份教学资料及所有版本？共用 PDF 会保留。"))) void mutate({ action: "deleteMaterial", id: material.id }); }}>{t("删除资料")}</Button></div></article>}/>{view === "materials" && !legacyOnly && !learning.materials.length && <PageState kind="empty" title="尚未发布教学资料"/>}</div>
+      <div hidden={formOpen}><MaterialList historyKey={`teacher:materials:${classroom?.id || "legacy"}:${folderId || "root"}`} items={learning.materials} summary={material=>({context:[material.recipients?.[0]?.subject,!classroom&&material.classroomTitle].filter(Boolean).join(" · "),meta:`PDF · ${material.recipients?.length || 0} ${learningLabel("位学生","students")}`})} renderDetail={material => <article className="learning-card" key={material.id}><div className="learning-record-content"><header className="learning-record-head"><strong>{material.title}</strong><small>{material.recipients?.[0]?.subject}</small></header>{material.description && <p>{material.description}</p>}<details className="learning-detail-recipients"><summary>{t("分配给学生")} · {material.recipients?.length || 0}</summary><p>{material.recipients?.map(r=>r.studentName).join("、")}</p></details></div><div className="learning-action-row"><FileLinks fileId={material.fileId}/></div><div className="learning-card-actions">{!material.classroomId && legacyClasses && <LegacyOrganizer item={material} kind="material" classes={legacyClasses} onChanged={()=>onChanged?.()}/>}<ContentActions kind="material" id={material.id} editable={!readOnly} onChanged={onChanged} maxBytes={pdfLimit(learning)}/><Button size="sm" variant="outline" hidden={readOnly} disabled={disabled} onClick={() => { if (window.confirm(t("确定删除这份教学资料及所有版本？共用 PDF 会保留。"))) void mutate({ action: "deleteMaterial", id: material.id }); }}>{t("删除资料")}</Button></div></article>}/>{view === "materials" && !legacyOnly && !learning.materials.length && <PageState kind="empty" title="尚未发布教学资料"/>}</div>
     </section>
     <section className={`panel teaching-content-panel${classroom ? " learning-content-surface" : ""}`} hidden={view !== "homework"}><header className="learning-compose-toolbar"><h2>{t(formOpen ? "新功课" : "功课")}{!formOpen && <span className="learning-record-count"> {learning.homework.length}</span>}</h2>{!readOnly && !legacyOnly && <Button type="button" variant={formOpen ? "outline" : "default"} disabled={disabled} onClick={()=>formOpen ? closeCreateForm() : openCreateForm()}>{formOpen ? learningLabel("返回列表", "Back to list") : t("新功课")}</Button>}</header>
       <form className="learning-form" hidden={Boolean(!formOpen || readOnly || legacyOnly)} onSubmit={publishHomework}><fieldset className="learning-form-section"><legend>{t("功课内容")}</legend>
@@ -263,7 +275,8 @@ export function StudentHomeworkCard({ item, submissions, mutate, busy, onPlan, m
   </article>;
 }
 
-export function StudentLearning({ learning, mutate, busy, onPlan, view, onCalendar, historyScope = "global" }: { historyScope?: string; learning: LearningState; mutate: LearningMutate; busy: boolean; onPlan: (item: Homework) => void; view: "homework" | "materials"; onCalendar?: () => void }) {
+export function StudentLearning({ learning, mutate, busy, onPlan, view, onCalendar, historyScope = "global", inClassroom = false }: { inClassroom?: boolean; historyScope?: string; learning: LearningState; mutate: LearningMutate; busy: boolean; onPlan: (item: Homework) => void; view: "homework" | "materials"; onCalendar?: () => void }) {
+  const MaterialList=inClassroom?ClassroomMaterialBrowser:LearningListDetail<Material>;
   const subjects = useMemo(() => [...new Set(learning.materials.map(m => m.subject).filter(Boolean))], [learning.materials]);
   const [filter, setFilter] = useState("");
   const [submittedId, setSubmittedId] = useState("");
@@ -282,7 +295,7 @@ export function StudentLearning({ learning, mutate, busy, onPlan, view, onCalend
     <section className="panel" hidden={view !== "materials"}>
       <h2 className="sr-only">{t("我的教学资料")}</h2>
       {learning.materials.length > 0 && <label className="learning-filter">{t("按科目查找")}<select value={filter} onChange={e => setFilter(e.target.value)}><option value="">{t("全部科目")}</option>{subjects.map(subject => <option key={subject}>{subject}</option>)}</select></label>}
-      <LearningListDetail historyKey={`student:materials:${historyScope}`} items={materials} summary={item=>({context:item.subject,meta:"PDF"})} renderDetail={item=><article className="learning-card"><div className="learning-record-content"><header className="learning-record-head"><strong>{item.title}</strong><small>{item.subject}</small></header>{item.description && <p>{item.description}</p>}</div><div className="learning-action-row"><FileLinks fileId={item.fileId}/><ContentActions kind="material" id={item.id}/></div></article>}
+      <MaterialList historyKey={`student:materials:${historyScope}`} items={materials} summary={item=>({context:item.subject,meta:"PDF"})} renderDetail={item=><article className="learning-card"><div className="learning-record-content"><header className="learning-record-head"><strong>{item.title}</strong><small>{item.subject}</small></header>{item.description && <p>{item.description}</p>}</div><div className="learning-action-row"><FileLinks fileId={item.fileId}/><ContentActions kind="material" id={item.id}/></div></article>}
         empty={<PageState kind="empty" title={filter ? "没有符合筛选条件的记录" : "暂无分配的教学资料"} action={filter ? "重置筛选" : onCalendar ? "打开学习日历" : undefined} onAction={filter ? ()=>setFilter("") : onCalendar}/>}/>
     </section>
   </div>;
