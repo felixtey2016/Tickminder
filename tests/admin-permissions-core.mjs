@@ -95,6 +95,10 @@ const snapshotTables=names=>JSON.stringify(names.map(name=>[name,sqlite.prepare(
 const oldTables=tableNames(),beforeMigration=snapshotTables(oldTables);
 migrate(preparationMigration);
 const afterMigration=snapshotTables(oldTables);
+assert.equal(afterMigration,beforeMigration,'0032 preserves every pre-existing business row');
+// Keep the historical 0032 preservation check above, then exercise current
+// authentication and routes against the schema those modules actually use.
+for(const name of migrations.filter(name=>name>preparationMigration))migrate(name);
 const snapshot=()=>snapshotTables(tableNames());
 const profileRow=id=>sqlite.prepare('SELECT * FROM admin_permission_profiles WHERE account_id=?').get(id);
 const auditCount=()=>sqlite.prepare('SELECT count(*) AS n FROM audit').get().n;

@@ -22,16 +22,27 @@ jobs:
       - name: TypeScript
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
         run: npx --no-install tsc --noEmit
-      - name: Tasks, permissions and existing classroom protections
+      - name: Classroom Task server protections
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-        run: |
-          node tests/classroom-tasks-server.mjs
-          node tests/admin-permissions-core.mjs
-          node tests/admin-permission-client.mjs
-          node tests/admin-permissions-learning.mjs
-          node tests/student-classrooms.mjs
-          node tests/i18n.mjs
-          node tests/google-drive-picker.mjs
+        run: node tests/classroom-tasks-server.mjs
+      - name: Administrator permission core
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: node tests/admin-permissions-core.mjs
+      - name: Administrator permission client
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: node tests/admin-permission-client.mjs
+      - name: Administrator learning permissions
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: node tests/admin-permissions-learning.mjs
+      - name: Existing student classrooms
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: node tests/student-classrooms.mjs
+      - name: Language coverage
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: node tests/i18n.mjs
+      - name: Existing Drive picker
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: node tests/google-drive-picker.mjs
       - name: Build existing production target
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
         run: npm run build:recovery
