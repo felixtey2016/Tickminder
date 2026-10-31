@@ -1,5 +1,24 @@
 # Google Drive PDF import
 
+## Public Google branding links
+
+The application's public description is available at
+`https://www.tickminder.com/about`, with the English privacy policy at
+`https://www.tickminder.com/privacy?lang=en` and terms at
+`https://www.tickminder.com/terms?lang=en`. These pages are accessible without a
+Tickminder account. The public description links to the same policy and terms
+URLs and explains the optional Drive import.
+
+For Google Auth Platform **Branding**, use the Tickminder app name, a monitored
+support email, those public URLs, and the authorized domain `tickminder.com`.
+Save the required fields and follow any branding or domain-verification checks
+Google presents. The OAuth **Audience** publishing status is managed separately:
+deploying Tickminder does not change Google's Testing status. External users
+outside a Testing project's test-user list cannot authorize Drive access.
+See [Google's branding requirements](https://support.google.com/cloud/answer/15549049?hl=en).
+
+## Classroom import
+
 Classroom → Teaching materials → **Import from Google Drive** copies selected
 PDFs into the current Tickminder class and folder. Teachers can use their own
 active classes. An ordinary administrator needs explicitly configured
