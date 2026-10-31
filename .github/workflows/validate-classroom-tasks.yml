@@ -1,0 +1,60 @@
+name: Validate classroom tasks
+on:
+  push:
+    branches: ["codex/classroom-tasks-validation-20261031"]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install project dependencies
+        id: dependencies
+        run: npm run install:ci
+      - name: TypeScript
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: npx --no-install tsc --noEmit
+      - name: Tasks, permissions and existing classroom protections
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: |
+          node tests/classroom-tasks-server.mjs
+          node tests/admin-permissions-core.mjs
+          node tests/admin-permission-client.mjs
+          node tests/admin-permissions-learning.mjs
+          node tests/student-classrooms.mjs
+          node tests/i18n.mjs
+          node tests/google-drive-picker.mjs
+      - name: Build existing production target
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: npm run build:recovery
+      - name: Install browser toolkit
+        id: browser_toolkit
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: npm install --no-save --package-lock=false playwright@1.56.1
+      - name: Install test browser
+        id: test_browser
+        if: ${{ !cancelled() && steps.browser_toolkit.outcome == 'success' }}
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Classroom Tasks interactions and mobile layouts
+        if: ${{ !cancelled() && steps.test_browser.outcome == 'success' }}
+        env:
+          TASK_SCREENSHOTS: /tmp/task-screenshots
+        run: node tests/classroom-tasks-ui.mjs
+      - name: Existing Drive import UI
+        if: ${{ !cancelled() && steps.test_browser.outcome == 'success' }}
+        run: node tests/google-drive-import-ui.mjs
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: classroom-task-screenshots
+          path: /tmp/task-screenshots
+          if-no-files-found: ignore
+          retention-days: 7
