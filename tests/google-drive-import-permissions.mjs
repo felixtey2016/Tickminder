@@ -21,7 +21,8 @@ const load=createFixtureLoader({runtimeUrl,environmentUrl:runtimeUrl,runtimeFile
 const config=(await load('app/api/google-drive/config/route.ts')).module,uploads=(await load('app/api/files/route.ts')).module,learningRoute=(await load('app/api/learning/route.ts')).module,learning=(await load('lib/learning-server.ts')).module,fileRoute=(await load('app/api/files/[id]/route.ts')).module,catalog=(await load('lib/admin-permissions.ts')).module,sessions=(await load('lib/account-session.ts')).module;
 const backupRoute=(await load('app/api/backup-export/route.ts')).module,root=path.resolve(import.meta.dirname,'..');
 let secure=fs.readFileSync(path.join(root,'scripts/secure-d1-backup.mjs'),'utf8').replaceAll('\r\n','\n').split('\ntry {\n')[0];
-secure=secure.replace("const projectRoot = resolve(import.meta.dirname, '..').toLowerCase();",'const projectRoot = '+JSON.stringify(root.toLowerCase())+';').replace("'./backup-order.mjs'",JSON.stringify(new URL('../scripts/backup-order.mjs',import.meta.url).href));
+// The data-URL fixture must retain the actual checkout casing on Linux.
+secure=secure.replace("const projectRoot = resolve(import.meta.dirname, '..').toLowerCase();",'const projectRoot = '+JSON.stringify(root)+';').replace("'./backup-order.mjs'",JSON.stringify(new URL('../scripts/backup-order.mjs',import.meta.url).href));
 const {restoreInMemory}=await import(dataUrl(secure.replace('return counts;',"return {counts,trigger:db.prepare(\"SELECT sql FROM sqlite_master WHERE type='trigger' AND name='material_active_class_insert'\").get().sql};")+'\nexport {restoreInMemory};'));
 const now=new Date().toISOString(),group='drive-import-a',foreign='drive-import-b',op=()=>crypto.randomUUID(),pdf=validTestPdf();
 for(const id of[group,foreign]){sqlite.prepare('INSERT INTO tuition_groups(id,name,join_code,created_at,updated_at) VALUES(?,?,?,?,?)').run(id,id,id,now,now);sqlite.prepare('INSERT INTO storage_quota(group_id,id,used_bytes) VALUES(?,1,0)').run(id);}
