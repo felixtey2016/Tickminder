@@ -83,11 +83,20 @@ Google selection and download must be checked with an authorized test user. See
 1. Open the import panel, then press **Choose Drive PDFs**. That user gesture
    starts Google's consent/Picker flow; ordinary Tickminder sign-in alone does
    not grant Drive access.
-2. Select up to **20 PDFs**. Review their names in the queue and remove unwanted
-   items. Selecting files does not upload or publish them.
+2. The Picker opens at the **My Drive root**. Open folders to browse their
+   contents, use the Picker's parent navigation to go back, or search for a PDF.
+   Folders are shown for browsing only and cannot be selected or imported as a
+   whole. Select up to **20 PDFs**, including multiple files in one selection.
+   Review their names in the queue and remove unwanted items. Selecting files
+   does not upload or publish them.
 3. Press **Import and publish**. Each PDF is downloaded, checked, uploaded to the
    existing private `BUCKET`, and published through the existing learning API.
    Published copies appear in the normal file library and its PDF preview.
+
+Folder browsing uses Google's native Picker with the existing `drive.file`
+scope. It does not add a background Drive listing or require a new database
+migration. Existing upload authority, file limits, import preview and retry
+deduplication continue to apply.
 
 For an account with a verified Google binding, the protected config response
 provides `loginHint` from that account's `google_identities.subject`. It never
