@@ -1,0 +1,36 @@
+name: Validate Drive folder browsing
+on:
+  push:
+    branches: ["codex/drive-folder-validation-20261031"]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install project dependencies
+        run: npm run install:ci
+      - name: TypeScript
+        run: npx --no-install tsc --noEmit
+      - name: Drive picker sessions
+        run: node tests/google-drive-picker.mjs
+      - name: Drive download protections
+        run: node tests/google-drive-client-download.mjs
+      - name: Drive import permissions and replay
+        run: node tests/google-drive-import-permissions.mjs
+      - name: Build existing production target
+        run: npm run build:recovery
+      - name: Install test-only browser toolkit
+        run: npm install --no-save --package-lock=false playwright@1.56.1
+      - name: Install test browser
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Drive preview and retry UI
+        run: node tests/google-drive-import-ui.mjs
