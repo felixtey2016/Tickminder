@@ -7,6 +7,7 @@ import { getLanguage, t, registerTranslations } from "@/lib/i18n";
 import { canAdminView } from "@/lib/admin-permission-client";
 import type { CourseTaskCounts } from "@/lib/course-query";
 import { Button } from "@/components/ui/button";
+import { Mascot } from "@/components/page-state";
 import { useAdminPermissionAccount } from "./admin-permission-context";
 import type { LearningState } from "./learning-portal";
 import { OnlineLessonLink } from "./online-lesson-link";
@@ -21,6 +22,7 @@ registerTranslations({}, {
   "待办与教学": "Tasks & teaching",
   "暂无学习计划": "No study plan scheduled",
   "已安排": "Scheduled",
+  "今天也一起进步一点点。": "Let's make a little progress today.",
 });
 
 type Role = "admin" | "teacher" | "student";
@@ -112,7 +114,10 @@ export function HomeDashboard({ role, name, taskCounts, learning, learningReady 
     return needsLearning && !learningReady ? { ...card, value: "—", detail: t(learningError ? "资料暂时无法载入，请稍后刷新" : "正在加载…") } : card;
   });
   return <section className="home-compact" aria-label={t("主页")}>
-    <header className="home-compact-intro"><h2>{t("你好")}{name ? (getLanguage() === "zh" ? "，" : ", ") + name : ""}</h2><time dateTime={today}>{new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur", month: "long", day: "numeric", weekday: "short" }).format(new Date(now))}</time></header>
+    <header className={`home-compact-intro${role === "student" ? " home-compact-intro-student" : ""}`}>
+      {role === "student" ? <div className="home-compact-welcome"><Mascot pose="hello" size={72}/><div><h2>{t("你好")}{name ? (getLanguage() === "zh" ? "，" : ", ") + name : ""}</h2><p>{t("今天也一起进步一点点。")}</p></div></div> : <h2>{t("你好")}{name ? (getLanguage() === "zh" ? "，" : ", ") + name : ""}</h2>}
+      <time dateTime={today}>{new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur", month: "long", day: "numeric", weekday: "short" }).format(new Date(now))}</time>
+    </header>
     {canAdminView(permissionAccount, "calendar") && <HomeToday role={role} now={now} today={today} taskCounts={taskCounts} onNavigate={onNavigate}/>}
     {overview.length > 0 && <section className="home-compact-tasks" aria-labelledby="home-tasks-heading"><h2 id="home-tasks-heading">{t(role === "student" ? "待办与学习" : "待办与教学")}</h2><div className="home-compact-task-list">{overview.map(card => <button type="button" className={"home-compact-task " + (card.isPlan ? "is-plan" : "")} key={card.label} onClick={() => onNavigate(card.destination)}><card.Icon size={20} aria-hidden="true"/><span className="home-compact-task-copy"><strong>{t(card.label)}</strong>{card.isPlan && <span className="home-compact-plan-name">{card.value}</span>}{card.detail && <small>{card.detail}</small>}</span>{!card.isPlan && <b>{card.value}</b>}<ChevronRight size={18} aria-hidden="true"/></button>)}</div></section>}
   </section>;

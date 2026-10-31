@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { BRAND_NAME } from "@/lib/brand";
 import "./globals.css";
 import "./ui-refresh.css";
+import "./mascot-experience.css";
 import "./course-navigation.css";
 import "./teaching-layout.css";
 import "./people-settings-layout.css";

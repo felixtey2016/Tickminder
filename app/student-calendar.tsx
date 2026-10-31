@@ -9,6 +9,7 @@ import { CalendarDays, Plus, ChevronLeft, ChevronRight, Clock3 } from "lucide-re
 import { getLanguage, t } from "@/lib/i18n";
 import { activeLessonsOnDay, malaysiaDay, monthDays, shiftMonth } from "@/lib/student-calendar";
 import { Button } from "@/components/ui/button";
+import { Mascot } from "@/components/page-state";
 import type { StudyBlock } from "./learning-portal";
 import { OnlineLessonLink } from "./online-lesson-link";
 import { LessonHistory } from "./lesson-history";
@@ -111,7 +112,7 @@ export function StudentCalendar({ lessons:sourceLessons, proposals, studyBlocks 
           {pending.has(lesson.id) && <a className="student-lesson-pending" href="#student-reschedule" onClick={event => { if (onPending) { event.preventDefault(); onPending(lesson.id); } }}>{t(role === "admin" ? "待确认改期" : pending.get(lesson.id)!.requestedRole === role ? (role === "teacher" ? "等待学生确认" : "等待老师确认") : "待你确认改期")} · {dateLabel(malaysiaDay(pending.get(lesson.id)!.proposedStart), { month: "short", day: "numeric" })} {time(pending.get(lesson.id)!.proposedStart)} →</a>}
         </article>)}
         {selectedStudy.map(block => <article className="student-day-lesson lesson-study" key={block.id}><div className="student-day-lesson-top"><strong>{block.title}</strong><span>{t("个人学习")}</span></div><p><Clock3 size={16} aria-hidden="true"/>{time(block.startsAt)}–{time(block.endsAt)}</p>{block.subject && <p>{block.subject}</p>}{block.note && <small>{block.note}</small>}<Button size="sm" variant="outline" onClick={() => onEditStudy?.(block)}>{t("编辑学习计划")}</Button></article>)}
-        {!loading && !selectedLessons.length && !selectedStudy.length && <div className="student-day-empty"><CalendarDays size={26} aria-hidden="true"/><p>{t(onAddStudy ? "当日暂无课程或学习安排。" : "当日暂无课程。")}</p></div>}
+        {!loading && !selectedLessons.length && !selectedStudy.length && <div className="student-day-empty">{role === "student" ? <Mascot pose="rest" size={88}/> : <CalendarDays size={26} aria-hidden="true"/>}<p>{t(onAddStudy ? "当日暂无课程或学习安排。" : "当日暂无课程。")}</p></div>}
       </aside>
     </div>
   </section>;

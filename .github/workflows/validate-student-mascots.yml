@@ -1,0 +1,56 @@
+name: Validate student mascots
+on:
+  push:
+    branches: ["codex/mascot-validation-20261031"]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install project dependencies
+        id: dependencies
+        run: npm run install:ci
+      - name: TypeScript
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: npx --no-install tsc --noEmit
+      - name: Existing calendar and quiz protections
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: |
+          node tests/student-calendar.mjs
+          node tests/quiz-completion-server.mjs
+          node tests/google-drive-picker.mjs
+      - name: Build existing production target
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: npm run build:recovery
+      - name: Install browser toolkit
+        id: browser_toolkit
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: npm install --no-save --package-lock=false playwright@1.56.1
+      - name: Install test browser
+        id: test_browser
+        if: ${{ !cancelled() && steps.browser_toolkit.outcome == 'success' }}
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Student mascot pages and interactions
+        if: ${{ !cancelled() && steps.test_browser.outcome == 'success' }}
+        env:
+          MASCOT_SCREENSHOTS: /tmp/mascot-screenshots
+        run: node tests/student-mascots-ui.mjs
+      - name: Existing Drive import UI
+        if: ${{ !cancelled() && steps.test_browser.outcome == 'success' }}
+        run: node tests/google-drive-import-ui.mjs
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: student-mascot-screenshots
+          path: /tmp/mascot-screenshots
+          if-no-files-found: ignore
+          retention-days: 7
