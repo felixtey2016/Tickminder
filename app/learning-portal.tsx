@@ -3,9 +3,9 @@ import {groupFetch} from "@/lib/group-client";
 
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Mascot, PageState } from "@/components/page-state";
+import { Mascot, MascotNote, PageState } from "@/components/page-state";
 import { Download, FileText, UploadCloud } from "lucide-react";
-import { getLanguage, t } from "@/lib/i18n";
+import { getLanguage, t, registerTranslations } from "@/lib/i18n";
 import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
 import { Button } from "@/components/ui/button";
 import { FolderWorkspace,LegacyOrganizer,useTeachingClasses,type FolderClass } from "./folder-workspace";
@@ -17,6 +17,11 @@ import { LearningListDetail, homeworkSummary, latestSubmissions, learningLabel }
 import {ClassroomMaterialBrowser} from './classroom-material-browser';
 import {GoogleDriveImport,type DrivePublishItem} from "./google-drive-import";
 import { canNavigateBack, usePageHistoryState } from "@/lib/page-history";
+
+registerTranslations({}, {
+  "今天想读些什么？": "What would you like to read today?",
+  "按科目查找资料，打开 PDF 开始学习。": "Find materials by subject and open a PDF to start learning.",
+});
 
 type TeachingOwner = { revision?:number;updatedAt?:string|null; ownerId?: string; teacherName?: string; uploaderName?:string; canEdit?:boolean; classroomTitle?: string | null };
 export type Material = TeachingOwner & { id: string; title: string; description: string | null; fileId: string; filename: string; subject?: string; classroomId?: string | null; folderId?: string | null; recipients?: Array<{ studentName: string; subject: string }> };
@@ -300,6 +305,7 @@ export function StudentLearning({ learning, mutate, busy, onPlan, view, onCalend
     </section>
     <section className="panel" hidden={view !== "materials"}>
       <h2 className="sr-only">{t("我的教学资料")}</h2>
+      {view === "materials" && !inClassroom && materials.length > 0 && <MascotNote pose="reading" size={64} title="今天想读些什么？" description="按科目查找资料，打开 PDF 开始学习。"/>}
       {learning.materials.length > 0 && <label className="learning-filter">{t("按科目查找")}<select value={filter} onChange={e => setFilter(e.target.value)}><option value="">{t("全部科目")}</option>{subjects.map(subject => <option key={subject}>{subject}</option>)}</select></label>}
       <MaterialList historyKey={`student:materials:${historyScope}`} items={materials} summary={item=>({context:item.subject,meta:"PDF"})} renderDetail={item=><article className="learning-card"><div className="learning-record-content"><header className="learning-record-head"><strong>{item.title}</strong><small>{item.subject}</small></header>{item.description && <p>{item.description}</p>}</div><div className="learning-action-row"><FileLinks fileId={item.fileId}/><ContentActions kind="material" id={item.id}/></div></article>}
         empty={<PageState kind="empty" title={filter ? "没有符合筛选条件的记录" : "暂无分配的教学资料"} action={filter ? "重置筛选" : onCalendar ? "打开学习日历" : undefined} onAction={filter ? ()=>setFilter("") : onCalendar}/>}/>

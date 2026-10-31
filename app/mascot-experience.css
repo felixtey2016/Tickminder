@@ -1,0 +1,19 @@
+/* Decorative companions keep learning controls and page status text in place. */
+.mascot-note{display:flex;align-items:center;gap:16px;min-width:0;padding:14px 18px;border:1px solid #e8dff8;border-radius:16px;background:linear-gradient(120deg,#faf7ff,#fffdf7);color:var(--ui-ink,#24223a)}
+.mascot-note>.mascot{flex:0 0 auto;max-width:112px;height:auto;align-self:center}
+.mascot-note-copy{display:grid;gap:4px;min-width:0}
+.mascot-note-title{margin:0;font-size:.95rem;font-weight:650;line-height:1.5;overflow-wrap:anywhere}
+.mascot-note-description{margin:0;color:var(--ui-secondary,#6c687e);font-size:.85rem;line-height:1.6;overflow-wrap:anywhere}
+.student-learning .panel>.mascot-note{margin:0 0 18px}
+.student-day-empty>.mascot{width:88px;height:88px;max-width:100%;margin:0 auto 8px}
+.mascot-quiz-start{margin:4px 0 14px}
+.mascot-quiz-empty.mascot{display:block;margin:0 auto 10px}
+.mascot-quiz-complete.mascot{flex-shrink:0;align-self:center}
+.mascot-quiz-review{margin:12px 0}
+.mascot-note.mascot-quiz-review>.mascot{width:48px}
+.notification-title-with-mascot{display:flex;align-items:center;gap:10px;min-width:0}
+.notification-title-with-mascot>.mascot{width:48px;height:48px}
+.notification-title-with-mascot h2{margin:0;overflow-wrap:anywhere}
+@media(max-width:650px){.mascot-note{gap:12px;padding:12px;border-radius:14px}.mascot-note>.mascot{width:64px;max-width:24vw}.mascot-note-title{font-size:.9rem}.mascot-note-description{font-size:.8rem}.notification-title-with-mascot{gap:6px}.notification-title-with-mascot>.mascot{width:40px;height:40px}.notification-list-heading{flex-wrap:wrap;gap:10px}}
+@media(max-width:380px){.mascot-quiz-complete.mascot{width:56px;height:56px}}
+@media(prefers-reduced-motion:reduce){.mascot{animation:none!important;transition:none!important}}
