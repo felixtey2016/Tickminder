@@ -42,4 +42,42 @@
 .classroom-task-empty{margin:4px 0}
 .classroom-task-pagination{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;min-width:0}
 .classroom-task-pagination p{margin:0;color:var(--muted-foreground,#6b6479);font-size:13px}
-@media(max-width:650px){.classroom-task-heading{flex-direction:column;gap:12px}.classroom-task-heading-actions{width:100%;flex-shrink:1}.classroom-task-heading-actions>button{flex:1;min-height:44px}.classroom-task-card,.classroom-task-form{padding:14px}.classroom-task-form-actions>button{flex:1;min-height:44px}.classroom-task-card-actions>button{min-height:44px}.classroom-task-progress li{gap:10px}.classroom-task-progress>summary{min-height:44px}}
+/* Compact shared task list; no extra status or due dates are inferred. */
+.app-shell .classroom-tasks{gap:14px}
+.app-shell .classroom-task-heading{align-items:center;gap:10px;flex-wrap:wrap}
+.app-shell .classroom-task-heading h2{font-size:16px}
+.app-shell .classroom-task-heading h2>svg{color:var(--ui-accent,#6543b5)}
+.app-shell .classroom-task-heading-actions{margin-left:auto}
+.app-shell .classroom-tasks button{min-height:44px;max-width:100%;height:auto;border-radius:6px;white-space:normal;overflow-wrap:anywhere}
+.app-shell .classroom-task-form{border-color:var(--ui-border,#ded4f1);border-radius:8px;background:var(--ui-surface-muted,#fcfaff)}
+.app-shell .classroom-task-list{gap:0}
+.app-shell .classroom-tasks .classroom-task-card{gap:6px;min-width:0;padding:16px 0;border:0;border-top:1px solid var(--ui-border,var(--border,#e1dce9));border-radius:0;background:transparent;box-shadow:none}
+.app-shell .classroom-task-card h3{font-size:15px}
+.app-shell .classroom-task-badge{border-radius:4px;background:var(--ui-accent-soft,#f0ebfb);color:var(--ui-accent,#60439e)}
+.app-shell .classroom-task-badge.is-complete{background:var(--ui-success-bg,#e9f5ed);color:var(--ui-success-text,#246b42)}
+.app-shell .classroom-task-badge.is-closed{background:var(--ui-surface-muted,#eeedf1);color:var(--ui-muted,#696372)}
+.app-shell .classroom-task-description{font-size:13px;line-height:1.65;color:var(--ui-muted,var(--muted-foreground,#6b6479))}
+.app-shell .classroom-task-completed{gap:4px 8px;color:var(--ui-success-text,#286a44);font-size:12px}
+.app-shell .classroom-task-progress{padding:0;border:0}
+.app-shell .classroom-task-progress>summary{min-height:44px;font-size:13px;color:var(--ui-accent,#5d409b)}
+.app-shell .classroom-task-progress>summary::after{content:"⌄";font-size:16px;line-height:1;flex:none;transition:transform .15s}
+.app-shell .classroom-task-progress[open]>summary::after{transform:rotate(180deg)}
+.app-shell .classroom-task-progress>summary strong{margin-left:auto;font-size:12px}
+.app-shell .classroom-task-progress>summary:focus-visible{outline:2px solid var(--ui-accent,#6543b5);outline-offset:2px;border-radius:4px}
+.app-shell .classroom-task-progress ul{margin:0 0 8px}
+.app-shell .classroom-task-progress li{border-color:var(--ui-border,#eeebf4)}
+.app-shell .classroom-task-progress time{color:var(--ui-muted,var(--muted-foreground,#6b6479))}
+.app-shell .classroom-task-card-actions{justify-content:flex-end}
+.app-shell .classroom-task-success,.app-shell .classroom-task-action-error,.app-shell .classroom-task-load-error,.app-shell .classroom-task-readonly{padding:10px 12px;border-color:var(--ui-border,#dfd5ef);border-radius:6px;font-size:13px}
+.app-shell .classroom-task-success{background:var(--ui-success-bg,#eff8f1);color:var(--ui-success-text,#245f3c)}
+.app-shell .classroom-task-action-error,.app-shell .classroom-task-load-error{background:var(--ui-danger-bg,#fff8f4);color:var(--ui-danger-text,#79412b)}
+.app-shell .classroom-task-readonly{background:var(--ui-surface-muted,#f6f3fb);color:var(--ui-muted,#665876)}
+.app-shell .classroom-task-pagination p{color:var(--ui-muted,var(--muted-foreground,#6b6479));font-size:12px}
+@media(max-width:650px){
+ .app-shell .classroom-task-form{padding:12px}
+ .app-shell .classroom-task-form-actions>button{flex:1;min-height:44px}
+ .app-shell .classroom-task-progress li{gap:10px}
+ .app-shell .classroom-task-card-heading{gap:8px}
+ .app-shell .classroom-task-card-actions{justify-content:flex-start}
+ .app-shell .classroom-task-heading-actions>button{padding-inline:10px;font-size:13px}
+}

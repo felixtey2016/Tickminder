@@ -90,8 +90,8 @@ export function LearningListDetail<T extends RecordItem>({ items, summary, rende
         </button>;
       })}
     </div>
-    <section id={detailId} ref={detailRef} tabIndex={-1} className={`learning-browser-detail${selected ? "" : " is-empty"}`} aria-label={selected?.title || learningLabel("内容详情", "Content details")}>
-      {selected ? <div className="learning-browser-detail-nav"><Button type="button" size="sm" variant="ghost" onClick={back}><ArrowLeft size={16}/>{learningLabel("返回列表", "Back to list")}</Button></div> : <p className="muted">{learningLabel("选择一项查看详情", "Select an item to view details")}</p>}
+    <section id={detailId} ref={detailRef} tabIndex={-1} hidden={!selected} className="learning-browser-detail" aria-label={selected?.title || learningLabel("内容详情", "Content details")}>
+      {selected && <div className="learning-browser-detail-nav"><Button type="button" size="sm" variant="ghost" onClick={back}><ArrowLeft size={16}/>{learningLabel("返回列表", "Back to list")}</Button></div>}
       {items.filter(item => visitedIds.includes(item.id) || item.id === selectedId).map(item => <div key={item.id} hidden={item.id !== selected?.id}>{renderDetail(item)}</div>)}
     </section>
   </div>;

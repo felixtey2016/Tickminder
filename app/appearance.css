@@ -80,6 +80,11 @@ body {background:var(--ui-bg);color:var(--ui-text);font-family:Inter,ui-sans-ser
 .app-shell .tab-list {background:transparent;border-radius:0;border-bottom:1px solid var(--ui-border);padding:0;gap:16px;}
 .app-shell .tab-list button {background:transparent;color:var(--ui-muted);border:0;border-bottom:3px solid transparent;border-radius:0;box-shadow:none;padding:10px 4px;}
 .app-shell .tab-list button[data-state="active"] {color:var(--ui-accent);border-bottom-color:var(--ui-accent);background:transparent;}
+.parent-compact .parents-workspace :is(.parents-muted,.parents-empty,.parents-page-count,.parents-row-meta){color:var(--ui-muted);}
+.parent-compact .parents-workspace .parents-main-filters>label{color:var(--ui-text);}
+.parent-compact .parents-workspace .parents-link-button{background:var(--ui-surface);color:var(--ui-accent);border-color:var(--ui-border);border-radius:6px;min-height:44px;}
+.parent-compact .parents-workspace .parent-compact-disclosure>summary h3{color:var(--ui-text);}
+.classrooms-wave2 .classroom-intro .eyebrow{color:var(--ui-muted)!important;}
 /* Older feature pages still share these primitives while their layouts are revised later. */
 .dark .app-shell :is(.date-tile,.calendar-toolbar,.student-calendar-toolbar,.student-calendar-weekdays,.student-calendar-day.is-outside,.study-plan-head,.home-next,.home-summary-list,.role-badge) {background:var(--ui-surface-muted);color:var(--ui-text);border-color:var(--ui-border);}
 .dark .app-shell :is(.calendar-cell,.student-calendar-day,.student-calendar-month,.student-day-panel,.home-overview-card,.home-action-card,.learning-card,.home-summary-row,.user-row,.plan-row,.summary-row,.activity-item,.upcoming-item) {background:var(--ui-surface);color:var(--ui-text);border-color:var(--ui-border);}

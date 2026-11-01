@@ -6,6 +6,7 @@ import {groupFetch} from '@/lib/group-client';
 import {alertActionFailure,readApiJson,actionFailureMessage} from '@/lib/action-feedback';
 import {t,registerTranslations} from '@/lib/i18n';
 import './course-query.css';
+import './course-wave2.css';
 import type {TeacherStudentPair} from '@/lib/teacher-student-options';
 registerTranslations({}, {'分页':'Pagination','条':'records','上一页':'Previous page','下一页':'Next page','缺席待处理':'Absences awaiting action','已记录出席':'Recorded attendance','未来已安排课时':'Scheduled future teaching time','堂已上课':'completed lessons','待记录出席':'Awaiting attendance'});
 
