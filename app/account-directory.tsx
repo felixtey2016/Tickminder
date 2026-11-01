@@ -11,6 +11,7 @@ import { showActionToast } from "@/lib/action-feedback";
 import { DeleteButton, type Mutate } from "./directory-tools";
 import { PR } from "@/lib/parents-i18n";
 import { PersonIdentityFields, createPersonIdentityDraft, personIdentityPayload, personIdentityReady } from "./person-identity-fields";
+import { ChevronDown, GraduationCap, ShieldCheck, UserRound, UsersRound, UserRoundPlus } from "lucide-react";
 import "./people-compact.css";
 
 const ParentChildrenManager = lazy(() => import("./parent-children-manager").then(module => ({default: module.ParentChildrenManager})));
@@ -19,6 +20,13 @@ const AdminPermissionEditor = lazy(() => import("./admin-permission-editor").the
 
 type User = { id: string; name: string; role: string; username?: string | null; email?: string; disabledAt?: string | null; teacherName?: string | null; studentName?: string | null; assignmentStatus?: string; pendingExpiresAt?: string | null; isOwner?: boolean; isGroupChief?: boolean; parentChildren?: string[]; contactPhone?: string | null; contactPhoneKind?: "student" | "parent" | null };
 type Actor = { id?: string; groupId?: string | null; isOwner?: boolean; isGroupChief?: boolean; canManageAdministrators?: boolean };
+const accountRoleGroups = [
+  { role: "pending", label: "待分配角色", Icon: UserRoundPlus },
+  { role: "student", label: "学生账号", Icon: GraduationCap },
+  { role: "teacher", label: "老师账号", Icon: UserRound },
+  { role: "parent", label: "parents.parentAccounts", Icon: UsersRound },
+  { role: "admin", label: "管理员账号", Icon: ShieldCheck },
+];
 
 export function AccountDirectory({ users, actor, teachers, students, mutate, busy, createForm, onAccountsChanged }: { users: User[]; actor: Actor; teachers: string[]; students: string[]; mutate: Mutate; busy: boolean; createForm: React.ReactNode | ((onCreated:(role:string)=>void)=>React.ReactNode); onAccountsChanged?: () => void }) {
   const can=useAdminAction();
@@ -59,17 +67,17 @@ export function AccountDirectory({ users, actor, teachers, students, mutate, bus
   return <section className="panel directory-panel account-directory people-compact">
     <div className="section-head directory-section-head"><h2>{t("账号管理")}</h2>{can("accounts.resetPassword")&&!can("accounts.create")&&<Button onClick={()=>setCreate(true)}>{t("重置密码")}</Button>}<Button adminGrant="accounts.create" onClick={() => setCreate(true)}>{t("新建登录账号")}</Button></div>
     <details className="people-help"><summary>{getLanguage()==='en'?'Account permissions':'账号权限说明'}</summary><p className="muted">{t(actor.isOwner ? "admin.accountScopeOwner" : actor.isGroupChief && canManageAdministrators ? "admin.accountScopeChief" : "admin.accountScopeAdministrator")}</p></details>
-    <div className="directory-filters"><label>{t("搜索账号")}<input value={search} onChange={e => setSearch(e.target.value)} placeholder={PR("searchAccounts")}/></label><label>{t("显示记录")}<select value={removed ? "removed" : "active"} onChange={e => setRemoved(e.target.value === "removed")}><option value="active">{t("启用中账号")}</option><option value="removed">{t("已停用账号")}</option></select></label></div>
+    <div className="directory-filters"><label>{t("搜索账号")}<input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder={PR("searchAccounts")}/></label><label>{t("显示记录")}<select value={removed ? "removed" : "active"} onChange={e => setRemoved(e.target.value === "removed")}><option value="active">{t("启用中账号")}</option><option value="removed">{t("已停用账号")}</option></select></label></div>
     <div className="directory-toolbar people-list-toolbar"><span className="muted">{getLanguage()==='en'?`${visible.length} accounts`:`${visible.length} 个账号`}</span>{(search||removed)&&<Button variant="outline" size="sm" onClick={() => { setSearch(""); setRemoved(false); }}>{t("重置筛选")}</Button>}{can("accounts.delete")&&<details className="people-batch"><summary>{getLanguage()==='en'?'Bulk actions':'批量操作'}</summary><BulkDeleteTool kind="account" records={visible.filter(canManage).map(u => ({ id: u.id, label: u.name + " · " + t(roleLabel(u)) }))} mutate={mutate} busy={busy}/></details>}</div>
-    {[["pending", "待分配角色"], ["student", "学生账号"], ["teacher", "老师账号"], ["parent", "parents.parentAccounts"], ["admin", "管理员账号"]].map(([r, label]) => <details className="directory-group" key={r} open={r === "pending" || r===createdRole || Boolean(search)}>
-      <summary>{t(label)} <span>{visible.filter(u => u.role === r).length}</span></summary>
+    {accountRoleGroups.map(({role:r,label,Icon}) => <details className="directory-group account-role-group" key={r} open={r === "pending" || r===createdRole || Boolean(search)}>
+      <summary><Icon size={18} aria-hidden="true"/><span className="account-role-label">{t(label)}</span><span className="account-role-count">{visible.filter(u => u.role === r).length}</span><ChevronDown className="account-role-chevron" size={18} aria-hidden="true"/></summary>
       {visible.filter(u => u.role === r).map(u => <article key={u.id} className="user-row directory-person-row" data-account-id={u.id}>
-        <div className="account-row-heading"><div className="directory-person-identity"><div className="people-name-line"><strong>{u.name}</strong><span className="account-authority-badge" data-authority={u.isOwner ? "owner" : u.isGroupChief ? "chief" : u.role}>{t(roleLabel(u))}</span></div>
-          {u.teacherName && <small>{t("关联老师")} · {u.teacherName}</small>}{u.studentName && <small>{t("关联学生")} · {u.studentName}</small>}
+        <div className="account-row-heading"><div className="directory-person-identity"><div className="people-name-line"><strong>{u.name}</strong>{(u.isOwner || u.isGroupChief) && <span className="account-authority-badge" data-authority={u.isOwner ? "owner" : "chief"}>{t(roleLabel(u))}</span>}</div>
+          {u.teacherName && u.teacherName !== u.name && <small>{t("关联老师")} · {u.teacherName}</small>}{u.studentName && u.studentName !== u.name && <small>{t("关联学生")} · {u.studentName}</small>}
           {u.role === "parent" && !!u.parentChildren?.length && <small>{PR("linkedChildren")} · {u.parentChildren.join("、")}</small>}
-          {(u.role==='pending'||u.disabledAt)&&<small className="people-attention">{u.disabledAt?t("已停用账号"):t("待分配角色")}{u.pendingExpiresAt&&<> · {Date.parse(u.pendingExpiresAt)<=Date.now()?t("已到期"):`${t("剩余天数")} ${Math.ceil((Date.parse(u.pendingExpiresAt)-Date.now())/86400000)}`}</>}</small>}
+          {(u.disabledAt||(u.role==='pending'&&u.pendingExpiresAt))&&<small className="people-attention">{u.disabledAt?t("已停用账号"):t("待分配角色")}{u.pendingExpiresAt&&<> · {Date.parse(u.pendingExpiresAt)<=Date.now()?t("已到期"):`${t("剩余天数")} ${Math.ceil((Date.parse(u.pendingExpiresAt)-Date.now())/86400000)}`}</>}</small>}
         </div>{showsChildrenAction(u)?<Button type="button" disabled={busy} size="sm" variant="outline" className="account-quick-action" aria-label={PR("manageChildren")+' · '+u.name} onClick={() => setParentTarget(u)}>{PR("manageChildren")}</Button>:canEdit(u)?<Button type="button" disabled={busy} size="sm" variant="outline" className="account-quick-action" aria-label={(u.role==='pending'?(getLanguage()==='en'?'Complete account profile':'完善账号资料'):t("编辑"))+' · '+u.name} onClick={() => edit(u)}>{u.role==='pending'?(getLanguage()==='en'?'Complete profile':'完善资料'):t("编辑")}</Button>:null}</div>
-        <details className="people-row-details"><summary aria-label={(getLanguage()==='en'?'More':'更多')+' · '+u.name}>{getLanguage()==='en'?'More':'更多'}</summary><div className="people-row-content"><div className="people-account-fields">
+        <details className="people-row-details"><summary aria-label={(getLanguage()==='en'?'Details & actions':'资料与操作')+' · '+u.name}>{getLanguage()==='en'?'Details & actions':'资料与操作'}</summary><div className="people-row-content"><div className="people-account-fields">
           <small>{u.username ? `${t("用户名")} · ${u.username}` : t("未设置密码登录")}</small><small>{u.email ? `Google · ${u.email}` : t("未连接 Google")}</small>
           {u.role === "student" && u.contactPhone && <small>{getLanguage() === "en" ? (u.contactPhoneKind === "parent" ? "Parent contact" : "Student contact") : (u.contactPhoneKind === "parent" ? "家长联系号码" : "学生联系号码")} · <a href={"tel:" + u.contactPhone}>{u.contactPhone}</a></small>}
           <small>{t(u.disabledAt ? "已停用账号" : u.assignmentStatus === "PENDING_ASSIGNMENT" ? "待分配" : "已启用")}{u.pendingExpiresAt ? ` · ${Date.parse(u.pendingExpiresAt) <= Date.now() ? t("已到期") : `${t("剩余天数")} ${Math.ceil((Date.parse(u.pendingExpiresAt) - Date.now()) / 86400000)}`}` : u.role === "pending" && u.assignmentStatus !== "ACTIVE" ? ` · ${t("不纳入自动清理")}` : ""}</small>

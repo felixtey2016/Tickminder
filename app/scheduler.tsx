@@ -48,6 +48,9 @@ import {GoogleLinkOnboarding} from './google-link-onboarding';
 import {StudentContactOnboarding} from './student-contact-onboarding';
 import {FormActionBar} from '@/components/form-action-bar';
 import {MobileBottomNavigation} from '@/components/mobile-bottom-navigation';
+import {ShellPreferences} from '@/components/shell-preferences';
+import {X} from 'lucide-react';
+import './shell-wave1.css';
 import {validQuizLinkId,quizLinkIdFromPath} from '@/lib/quiz-link';
 import type { LearningState } from "./learning-portal";
 const GroupConsole=lazy(()=>import("./group-console").then(m=>({default:m.GroupConsole})));
@@ -923,18 +926,19 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
 
     if(activeView==="calendar"&&!calendarReady&&state?.coreError)pageContent=<><PageState kind="error" title="页面加载失败" description={state.coreError} action="重试" onAction={()=>void reload()}/>{pageContent}</>;
     if(activeView === "materials" && role !== "pending") pageContent=<TeachingResources key={account.groupId} ready={learningReady} error={state?.scopeErrors?.learning} load={force=>ensureScope("learning",force)} setActiveScopes={setActiveScopes}>{pageContent}</TeachingResources>;
-    return <NotificationsProvider inboxOpen={activeView==="notifications"} groupId={account.groupId || ""} key={`${account.id}:${role}:${account.groupId}`} accountId={account.id || ""} language={language}><div className="app-shell">{statisticsDetail&&(role==="admin"||role==="teacher")&&<Suspense fallback={<PageState kind="loading" title="正在加载…"/>}><TeachingStatisticsDetails key={account.groupId+permissionSignature} target={statisticsDetail} role={role} lang={language} mutate={mutate} busy={busy} close={()=>setStatisticsDetail(null)} onOpenFinance={openAttendanceFinance}/></Suspense>}
+    return <NotificationsProvider inboxOpen={activeView==="notifications"} groupId={account.groupId || ""} key={`${account.id}:${role}:${account.groupId}`} accountId={account.id || ""} language={language}><div className="app-shell shell-wave1" data-home-view={activeView==='home'?'true':undefined}>{statisticsDetail&&(role==="admin"||role==="teacher")&&<Suspense fallback={<PageState kind="loading" title="正在加载…"/>}><TeachingStatisticsDetails key={account.groupId+permissionSignature} target={statisticsDetail} role={role} lang={language} mutate={mutate} busy={busy} close={()=>setStatisticsDetail(null)} onOpenFinance={openAttendanceFinance}/></Suspense>}
         <header className="topbar">
             <button type="button" className="brand brand-home" data-testid="brand-home" aria-label={`${BRAND_NAME} · ${t("主页")}`} onClick={()=>choose('home')}><BrandLogo small/><div><strong>{BRAND_NAME}</strong><span>{account.groupName || t("学习与协作平台")} · GMT+8</span></div></button>
             <div className="top-actions">
-                <LanguageSwitcher language={language} change={changeLanguage}/>
+                <ShellPreferences language={language} onLanguageChange={changeLanguage}/>
+                <Button type="button" variant="ghost" className="shell-notifications" aria-label={t("通知中心")} onClick={()=>choose("notifications")}><Bell size={20} aria-hidden="true"/><MenuBadge includeUnread header/></Button>
                 <Button ref={headerMenuRef} size="sm" variant="outline" className="menu-toggle" onClick={toggleMenu} aria-label={t(menuOpen ? "关闭功能菜单" : "打开功能菜单")} aria-expanded={menuOpen} aria-controls="workspace-menu" aria-describedby="menu-pending-count"><Menu size={20}/><span id="menu-pending-count"><MenuBadge count={taskCount} includeUnread header/></span></Button>
             </div>
         </header>
         {menuOpen && !desktop && <button type="button" className="menu-backdrop" onClick={closeMobileMenu} aria-label={t("关闭功能菜单")}/>}
         <div className={"app-body" + (menuOpen ? " menu-open" : "")}>
             {menuOpen && <aside ref={workspaceMenuRef} id="workspace-menu" className="workspace-menu" aria-label={t("功能菜单")} role={!desktop?'dialog':undefined} aria-modal={!desktop?true:undefined}>
-                <SignedInIdentity account={account}/>
+                <div className="shell-menu-heading"><button type="button" className="shell-account-link" onClick={()=>choose("myAccount")}><UserRound size={20} aria-hidden="true"/><span><strong>{account.name}</strong><small>{t("我的账号")}</small></span></button><Button type="button" variant="ghost" className="shell-menu-close" aria-label={t("关闭功能菜单")} onClick={closeMobileMenu}><X size={20} aria-hidden="true"/></Button></div>
                 <nav className="menu-links" aria-label={t("功能菜单")}>
                     {NAV_GROUPS[role].filter(group=>group.ids.some(id=>items.some(item=>item.id===id))).map(group => <div className="menu-group" key={group.ids.join('-')}>{group.label && <h2 className="menu-group-title">{t(group.label)}</h2>}{group.ids.map(id => items.find(item => item.id === id)!).filter(Boolean).map(item => <button key={item.id} type="button" data-testid={`menu-${item.id}`} className={"menu-link" + (activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? " active" : "")} aria-current={activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? "page" : undefined} onClick={() => choose(item.id)}><item.Icon size={19} aria-hidden="true"/><span>{t(item.label)}</span><MenuBadge count={item.id === "courses" ? courseBadgeCount(role,badgeCounts) : badgeCounts[item.id as keyof typeof badgeCounts] || 0} includeUnread={item.id==="notifications"} quizOnly={item.id==="quizzes"}/></button>)}</div>)}
                 </nav>
@@ -945,7 +949,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
                 </div>
                 <LegalLinks language={language} className="menu-legal"/>
             </aside>}
-            <main className="workspace workspace-compact" inert={menuOpen&&!desktop?true:undefined}><FloatingBackButton context={`${account.id}:${role}:${account.groupId}`} isHome={activeView===(account.isOwner?"groups":"home")} onHome={()=>choose(account.isOwner?"groups":"home")} title={t(title)} subtitle={account.groupName||undefined} actions={courseView&&(role==='admin'||role==='teacher')&&canView('schedule')?<Button className="workspace-arrange" data-testid="course-arrange" aria-label={t('安排课程')} onClick={()=>choose('schedule')}><CalendarPlus size={18} aria-hidden="true"/><span>{t('安排课程')}</span></Button>:undefined}/>
+            <main className="workspace workspace-compact" inert={menuOpen&&!desktop?true:undefined}><FloatingBackButton context={`${account.id}:${role}:${account.groupId}`} isHome={activeView==="home"||(Boolean(account.isOwner)&&activeView==="groups")} onHome={()=>choose("home")} title={t(title)} subtitle={account.groupName||undefined} actions={courseView&&(role==='admin'||role==='teacher')&&canView('schedule')?<Button className="workspace-arrange" data-testid="course-arrange" aria-label={t('安排课程')} onClick={()=>choose('schedule')}><CalendarPlus size={18} aria-hidden="true"/><span>{t('安排课程')}</span></Button>:undefined}/>
                 {showMonth && <div className="workspace-period"><label className="month-select"><span>{t("月份")}</span><input aria-label={t("统计月份")} type="month" value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)}/></label></div>}
                 {courseView && <CourseNavigation showArrange={false} role={role} activeView={activeView} onChoose={choose} badges={badgeCounts} canView={canView}/>}
                 {managementView && <ManagementNavigation area={managementView} activeView={activeView} onChoose={choose} canView={canView}/>}

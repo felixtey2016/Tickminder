@@ -4,6 +4,8 @@ import {BarChart3,Bell,BookOpen,CalendarDays,House,LibraryBig,LogOut,Menu,UserRo
 import {Button} from '@/components/ui/button';
 import {FloatingBackButton} from '@/components/floating-back-button';
 import {MobileBottomNavigation} from '@/components/mobile-bottom-navigation';
+import {ShellPreferences} from '@/components/shell-preferences';
+import './shell-wave1.css';
 import {LegalLinks} from '@/components/legal-links';
 import {navigationAllowed,usePageHistoryState} from '@/lib/page-history';
 import {t,type Language} from '@/lib/i18n';
@@ -131,18 +133,19 @@ function ParentShellContent({account,language,changeLanguage,logout,refreshIdent
   const drawerOpen=menuOpen&&!desktop;
   function openMenu(){menuTriggerRef.current=document.activeElement instanceof HTMLElement?document.activeElement:menuButtonRef.current;setMenuOpen(true);}
 
-  return <div ref={shellRef} className="app-shell parent-shell">
+  return <div ref={shellRef} className="app-shell parent-shell shell-wave1" data-home-view={view==='home'?'true':undefined}>
     <header ref={headerRef} className="topbar">
       <button type="button" className="brand brand-home" data-testid="brand-home" aria-label={`${BRAND_NAME} · ${PNav('home')}`} onClick={()=>{if(view==='home'||navigationAllowed())choose('home');}}><span className="brand-logo small"><img src="/tickminder-logo.svg" width="40" height="40" alt={BRAND_NAME}/></span><div><strong>{BRAND_NAME}</strong><span>{account.groupName||PNav('portal')} · GMT+8</span></div></button>
       <div className="top-actions">
-        <div className="language-switch" role="group" aria-label={t('语言')}><button type="button" aria-pressed={language==='zh'} onClick={()=>changeLanguage('zh')}>中文</button><span aria-hidden="true">|</span><button type="button" aria-pressed={language==='en'} onClick={()=>changeLanguage('en')}>EN</button></div>
+        <ShellPreferences language={language} onLanguageChange={changeLanguage}/>
+        <Button type="button" variant="ghost" className="shell-notifications" aria-label={PNav('notifications')} onClick={()=>choose('notifications')}><Bell size={20} aria-hidden="true"/><MenuBadge includeUnread header/></Button>
         <Button ref={menuButtonRef} type="button" variant="outline" className="menu-toggle parent-menu-toggle" onClick={()=>menuOpen?setMenuOpen(false):openMenu()} aria-label={PNav(menuOpen?'closeMenu':'openMenu')} aria-expanded={drawerOpen} aria-controls="parent-workspace-menu"><Menu size={20} aria-hidden="true"/><MenuBadge includeUnread header/></Button>
       </div>
     </header>
     {drawerOpen&&<button type="button" className="menu-backdrop parent-menu-backdrop" onClick={()=>setMenuOpen(false)} aria-label={PNav('closeMenu')} tabIndex={-1}/>}
     <div className="parent-shell-body">
       {(desktop||menuOpen)&&<aside ref={menuRef} id="parent-workspace-menu" className="workspace-menu parent-workspace-menu" aria-label={PNav('navigation')} role={drawerOpen?'dialog':undefined} aria-modal={drawerOpen?true:undefined}>
-        <div className="parent-menu-heading"><div className="signed-in-identity"><strong>{account.name}</strong><span>{PNav('parent')}</span></div><Button type="button" variant="ghost" className="parent-menu-close" aria-label={PNav('closeMenu')} onClick={()=>setMenuOpen(false)}><X size={20} aria-hidden="true"/></Button></div>
+        <div className="parent-menu-heading shell-menu-heading"><button type="button" className="shell-account-link" onClick={()=>choose('account')}><UserRound size={20} aria-hidden="true"/><span><strong>{account.name}</strong><small>{PNav('parent')} · {PNav('account')}</small></span></button><Button type="button" variant="ghost" className="parent-menu-close" aria-label={PNav('closeMenu')} onClick={()=>setMenuOpen(false)}><X size={20} aria-hidden="true"/></Button></div>
         <nav className="menu-links" aria-label={PNav('navigation')}>{menuItems.map(({view:target,Icon})=><button key={target} type="button" className={'menu-link'+(moduleFor(view)===target?' active':'')} aria-current={moduleFor(view)===target?'page':undefined} onClick={()=>choose(target)} data-testid={'parent-menu-'+target}><Icon size={19} aria-hidden="true"/><span>{PNav(target)}</span>{target==='notifications'&&<MenuBadge includeUnread/>}</button>)}</nav>
         <div className="menu-utilities"><button type="button" className="menu-link" onClick={logout}><LogOut size={19} aria-hidden="true"/><span>{PNav('logout')}</span></button><LegalLinks language={language} className="menu-legal"/></div>
       </aside>}

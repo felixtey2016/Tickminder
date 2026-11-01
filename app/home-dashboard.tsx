@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BookOpen, CalendarDays, ChevronRight, ClipboardCheck, Clock3, type LucideIcon } from "lucide-react";
+import { BookOpen, CalendarDays, ChevronRight, ClipboardCheck, Clock3, LibraryBig, NotebookPen, type LucideIcon } from "lucide-react";
 import { uniqueSessionLessons, sessionLessonTitle, type SessionLesson } from "@/lib/class-session-display";
 import { getLanguage, t, registerTranslations } from "@/lib/i18n";
 import { canAdminView } from "@/lib/admin-permission-client";
@@ -23,6 +23,11 @@ registerTranslations({}, {
   "暂无学习计划": "No study plan scheduled",
   "已安排": "Scheduled",
   "今天也一起进步一点点。": "Let's make a little progress today.",
+  "常用功能": "Quick access",
+  "打开功课": "Open homework",
+  "记录出勤": "Record attendance",
+  "处理出席": "Review attendance",
+  "查看计划": "View plan",
 });
 
 type Role = "admin" | "teacher" | "student";
@@ -48,8 +53,8 @@ function LessonPreview({ lesson, role, dated = false }: { lesson: Lesson; role: 
   const people = role === "student" ? lesson.teacherName : [sessionLessonTitle(lesson), role === "admin" ? lesson.teacherName : ""].filter(Boolean).join(" · ");
   return <article className="home-compact-lesson">
     <div className="home-compact-lesson-copy">
-      <div className="home-compact-lesson-top"><strong>{lesson.subject}</strong>{status && <span className={"home-compact-status " + (lesson.status === "completed" ? "is-complete" : "")}>{t(status)}</span>}</div>
       <p className="home-compact-time"><time dateTime={lesson.plannedStart}>{dated ? lessonTime(lesson.plannedStart) : clockTime(lesson.plannedStart)}</time>–<time dateTime={lesson.plannedEnd}>{clockTime(lesson.plannedEnd)}</time></p>
+      <div className="home-compact-lesson-top"><strong>{lesson.subject}</strong>{status && <span className={"home-compact-status " + (lesson.status === "completed" ? "is-complete" : "")}>{t(status)}</span>}</div>
       {people && <p className="home-compact-people">{people}</p>}
     </div>
     {lesson.status === "scheduled" && <OnlineLessonLink href={lesson.onlineLink}/>}
@@ -72,7 +77,7 @@ function HomeToday({ role, now, today, taskCounts, onNavigate }: { role: Role; n
   const lessons = role === "student" ? items : uniqueSessionLessons(items);
   const count = role === "student" ? query.data?.total : taskCounts?.todayLessons;
   return <section className="home-compact-agenda" aria-labelledby="home-today-heading" aria-busy={query.loading}>
-    <div className="home-compact-heading"><h2 id="home-today-heading"><CalendarDays size={20} aria-hidden="true"/>{t("今日安排")}{!query.loading && !query.error && count !== undefined && <span className="home-compact-count">{count}</span>}</h2><Button variant="outline" onClick={() => onNavigate("calendar")}>{getLanguage()==='zh'?'日历':'Calendar'}<ChevronRight size={16} aria-hidden="true"/></Button></div>
+    <div className="home-compact-heading"><h2 id="home-today-heading"><CalendarDays size={20} aria-hidden="true"/>{t("今日安排")}{!query.loading && !query.error && count !== undefined && <span className="home-compact-count">{count}</span>}</h2><Button className="home-calendar-link" variant="ghost" onClick={() => onNavigate("calendar")}>{getLanguage()==='zh'?'日历':'Calendar'}<ChevronRight size={16} aria-hidden="true"/></Button></div>
     {query.loading ? <p className="home-compact-empty" role="status">{t("正在加载…")}</p> : query.error ? <div className="home-compact-error" role="alert"><p>{query.error}</p><Button variant="outline" onClick={query.reload}>{t("重试")}</Button></div> : lessons.length ? <>
       <div className="home-compact-lesson-list">{lessons.slice(0, 3).map(lesson => <LessonPreview key={lesson.id} lesson={lesson} role={role}/>)}</div>
       {(lessons.length > 3 || (query.data?.pages || 0) > 1) && <Button className="home-compact-all" variant="outline" onClick={() => onNavigate("calendar")}>{t("查看全部课程")}<ChevronRight size={16} aria-hidden="true"/></Button>}
@@ -113,12 +118,13 @@ export function HomeDashboard({ role, name, taskCounts, learning, learningReady 
     const needsLearning = role === "student" || (role === "teacher" && card.destination === "homework");
     return needsLearning && !learningReady ? { ...card, value: "—", detail: t(learningError ? "资料暂时无法载入，请稍后刷新" : "正在加载…") } : card;
   });
-  return <section className="home-compact" aria-label={t("主页")}>
+  return <section className={"home-compact home-compact-"+role} aria-label={t("主页")}>
     <header className={`home-compact-intro${role === "student" ? " home-compact-intro-student" : ""}`}>
-      {role === "student" ? <div className="home-compact-welcome"><Mascot pose="hello" size={72}/><div><h2>{t("你好")}{name ? (getLanguage() === "zh" ? "，" : ", ") + name : ""}</h2><p>{t("今天也一起进步一点点。")}</p></div></div> : <h2>{t("你好")}{name ? (getLanguage() === "zh" ? "，" : ", ") + name : ""}</h2>}
+      {role === "student" ? <div className="home-compact-welcome"><Mascot pose="hello" size={56}/><div><h1>{t("你好")}{name ? (getLanguage() === "zh" ? "，" : ", ") + name : ""}</h1><p>{t("今天也一起进步一点点。")}</p></div></div> : <h1>{t("你好")}{name ? (getLanguage() === "zh" ? "，" : ", ") + name : ""}</h1>}
       <time dateTime={today}>{new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur", month: "long", day: "numeric", weekday: "short" }).format(new Date(now))}</time>
     </header>
     {canAdminView(permissionAccount, "calendar") && <HomeToday role={role} now={now} today={today} taskCounts={taskCounts} onNavigate={onNavigate}/>}
-    {overview.length > 0 && <section className="home-compact-tasks" aria-labelledby="home-tasks-heading"><h2 id="home-tasks-heading">{t(role === "student" ? "待办与学习" : "待办与教学")}</h2><div className="home-compact-task-list">{overview.map(card => <button type="button" className={"home-compact-task " + (card.isPlan ? "is-plan" : "")} key={card.label} onClick={() => onNavigate(card.destination)}><card.Icon size={20} aria-hidden="true"/><span className="home-compact-task-copy"><strong>{t(card.label)}</strong>{card.isPlan && <span className="home-compact-plan-name">{card.value}</span>}{card.detail && <small>{card.detail}</small>}</span>{!card.isPlan && <b>{card.value}</b>}<ChevronRight size={18} aria-hidden="true"/></button>)}</div></section>}
+    {overview.length > 0 && <section className="home-compact-tasks" aria-labelledby="home-tasks-heading"><h2 id="home-tasks-heading" className="home-compact-section-label">{t(role === "student" ? "待办与学习" : "待办与教学")}</h2><div className="home-compact-task-list">{overview.map(card => <button type="button" className={"home-compact-task " + (card.isPlan ? "is-plan" : "")} key={card.label} onClick={() => onNavigate(card.destination)}><card.Icon size={20} aria-hidden="true"/><span className="home-compact-task-copy"><strong>{t(card.label)}</strong>{card.isPlan && <span className="home-compact-plan-name">{card.value}</span>}{card.detail && <small>{card.detail}</small>}</span>{!card.isPlan && <b>{card.value}</b>}<span className="home-compact-task-action">{t(card.destination === "homework" ? "打开功课" : card.destination === "lessons" ? "记录出勤" : card.destination === "attention" ? "处理出席" : "查看计划")}<ChevronRight size={16} aria-hidden="true"/></span></button>)}</div></section>}
+    {role === "student" && <nav className="home-compact-shortcuts" aria-label={t("常用功能")}><Button variant="outline" onClick={()=>onNavigate("quizzes")}><NotebookPen size={19} aria-hidden="true"/>Quiz<ChevronRight size={16} aria-hidden="true"/></Button><Button variant="outline" onClick={()=>onNavigate("materials")}><LibraryBig size={19} aria-hidden="true"/>{t("教学资料")}<ChevronRight size={16} aria-hidden="true"/></Button></nav>}
   </section>;
 }
