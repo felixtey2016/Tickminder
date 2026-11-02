@@ -9,8 +9,8 @@ import { getLanguage } from "@/lib/i18n";
 import { useFilterPreference } from "@/lib/filter-preferences";
 import { BulkDeleteTool } from "./bulk-delete";
 import { TermManager, TermSelect, type Term } from "./term-manager";
-import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState } from "react";
-import { BookOpen, CalendarDays, ChevronDown, FileText, Megaphone, Plus, Settings2, Users, Film, Banknote, ClipboardCheck } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { BookOpen, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, FileText, Megaphone, Plus, Settings2, Users, Film, Banknote, ClipboardCheck } from "lucide-react";
 import {RecordingsWorkspace} from "./recordings-workspace";
 import {ClassroomSchedule} from "./classroom-schedule";
 import { Button } from "@/components/ui/button";
@@ -55,10 +55,21 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
   const [tab, setTab] = usePageHistoryState<ClassroomTab>("classroom.tab","announcements");
   const tabListId = useId();
   const tabListRef = useRef<HTMLDivElement>(null);
-  const mobileTabRef = useRef<HTMLSelectElement>(null);
+  const [tabScroll,setTabScroll]=useState({left:false,right:false});
+  const syncTabScroll=useCallback(()=>{
+    const list=tabListRef.current;
+    if(!list)return;
+    const next={left:list.scrollLeft>2,right:list.scrollLeft+list.clientWidth<list.scrollWidth-2};
+    setTabScroll(previous=>previous.left===next.left&&previous.right===next.right?previous:next);
+  },[]);
+  const scrollTabs=(direction:-1|1)=>{
+    const list=tabListRef.current;
+    if(!list)return;
+    list.scrollBy({left:direction*Math.max(120,list.clientWidth*.75),behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
+  };
   const directorySummaryRef = useRef<HTMLElement>(null);
   const focusClassroomContent = () => requestAnimationFrame(() => {
-    const target = window.matchMedia("(max-width: 760px)").matches ? mobileTabRef.current || directorySummaryRef.current : tabButtons.current.announcements || directorySummaryRef.current;
+    const target = tabButtons.current.announcements || Object.values(tabButtons.current).find(Boolean) || directorySummaryRef.current;
     if (!target) return;
     target.focus({ preventScroll: true });
     const bounds = target.getBoundingClientRect();
@@ -86,7 +97,27 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
     const listBounds = list.getBoundingClientRect(), buttonBounds = button.getBoundingClientRect();
     if (buttonBounds.left < listBounds.left) list.scrollBy({ left: buttonBounds.left - listBounds.left });
     else if (buttonBounds.right > listBounds.right) list.scrollBy({ left: buttonBounds.right - listBounds.right });
-  }, [tab, selected?.id, creating]);
+    syncTabScroll();
+  }, [tab, selected?.id, creating, syncTabScroll]);
+  useEffect(()=>{
+    const list=tabListRef.current;
+    if(!list)return;
+    const resize=()=>{
+      const active=tabButtons.current[tab];
+      if(active){
+        const bounds=list.getBoundingClientRect(),button=active.getBoundingClientRect();
+        if(button.left<bounds.left)list.scrollBy({left:button.left-bounds.left});
+        else if(button.right>bounds.right)list.scrollBy({left:button.right-bounds.right});
+      }
+      syncTabScroll();
+    };
+    const observer=new ResizeObserver(resize);
+    observer.observe(list);
+    Array.from(list.children).forEach(child=>observer.observe(child));
+    list.addEventListener('scroll',syncTabScroll,{passive:true});
+    resize();
+    return()=>{observer.disconnect();list.removeEventListener('scroll',syncTabScroll);};
+  },[selected?.id,creating,tab,syncTabScroll]);
   const [editingId, setEditingId] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -139,8 +170,7 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
   const tabLabel = (item: typeof classTabs[number]) => item.id === "tasks" ? (getLanguage() === "zh" ? "任务" : "Tasks") : item.id === "payroll" ? F2('classroomPay') : t(item.label);
   return <div className="classrooms-page round1-classrooms classrooms-wave2">
     <details className="panel classroom-picker" open={directoryOpen || !selected || creating} onToggle={event => { if (selected && !creating) setDirectoryOpen(event.currentTarget.open); }}>
-      <summary ref={directorySummaryRef} className="classroom-picker-summary" onClick={event => { if (!selected || creating) event.preventDefault(); }}><strong>{t("班级列表")}</strong><span className="learning-record-count">{visibleClasses.length}</span><ChevronDown size={17}/></summary>
-      {canManage && <div className="learning-section-head classroom-picker-tools"><Button adminGrant="classrooms.create" size="sm" onClick={startCreate}><Plus size={16}/>{t("新建班级")}</Button></div>}
+      <summary ref={directorySummaryRef} className="classroom-picker-summary" onClick={event => { if (!selected || creating) event.preventDefault(); }}><span className="classroom-picker-label"><strong><span className="classroom-label-full">{t("班级列表")}</span><span className="classroom-label-short">{getLanguage()==="zh"?"班级":"Classes"}</span></strong><span className="learning-record-count">{visibleClasses.length}</span><ChevronDown size={17}/></span>{canManage && <Button className="classroom-new-button" aria-label={t("新建班级")} adminGrant="classrooms.create" size="sm" onClick={event=>{event.preventDefault();event.stopPropagation();startCreate();}}><Plus size={16}/><span className="classroom-label-full">{t("新建班级")}</span><span className="classroom-label-short">{getLanguage()==="zh"?"新建":"Create"}</span></Button>}</summary>
       <div className="classroom-term-tools"><div className="directory-filters"><label>{t("学期")}<select value={filterTerm} onChange={e=>{setFilterTerm(e.target.value);setSelectedId("");}}><option value="current">{t("当前学期")}{currentTerm?` · ${currentTerm.name}`:""}</option><option value="all">{t("所有学期")}</option><option value="unassigned">{t("未指定学期")}</option>{terms.map(term=><option key={term.id} value={term.id}>{term.name}</option>)}</select></label></div>
       {role === "admin" && <TermManager terms={terms} mutate={mutate} busy={busy}/>}</div>
       <div className="directory-filters"><label>{t('课程体系')}<select value={filterSyllabus} onChange={event=>{setFilterSyllabus(event.target.value);setFilterGrade('');setFilterSubject('');setSelectedId('');}}><option value="">{t('全部课程体系')}</option>{catalogue?.syllabuses.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>{t('年级')}<select value={filterGrade} onChange={event=>{setFilterGrade(event.target.value);setSelectedId('');}}><option value="">{t('全部年级')}</option>{[...new Set(catalogue?.syllabuses.filter(item=>!filterSyllabus||item.id===filterSyllabus).flatMap(item=>item.grades)||[])].map(item=><option key={item}>{item}</option>)}</select></label><label>{t('科目')}<select value={filterSubject} onChange={event=>{setFilterSubject(event.target.value);setSelectedId('');}}><option value="">{t('全部科目')}</option>{[...new Map((catalogue?.syllabuses.filter(item=>!filterSyllabus||item.id===filterSyllabus).flatMap(item=>item.subjects)||[]).map(item=>[item.id,item])).values()].map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
@@ -167,24 +197,26 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
 
     {!creating && selected && <>
       <section className="panel classroom-intro"><div className="classroom-intro-copy"><p className="eyebrow">{selected.subject} · {selected.teacherName}</p><h2>{selected.title}</h2>{selected.description && <details className="round1-class-description"><summary>{getLanguage() === "zh" ? "班级说明" : "Class description"}</summary><p className="classroom-description">{selected.description}</p></details>}</div>{canManage && (can("classrooms.edit")||can("classrooms.archive")||can("classrooms.restore")||can("classrooms.delete")) && <details key={selected.id} ref={managementRef} className="classroom-management"><summary><Settings2 size={16}/><span>{t("班级管理")}</span><ChevronDown size={15}/></summary><div className="learning-card-actions classroom-management-actions" role="group" aria-label={t("班级管理")}><Button adminGrant="classrooms.edit" type="button" size="sm" variant="outline" onClick={() => startEdit(selected)} disabled={Boolean(selected.archived)}>{t("编辑班级")}</Button><Button adminGrant={selected.archived?"classrooms.restore":"classrooms.archive"} type="button" size="sm" variant="outline" disabled={busy} onClick={() => { if (window.confirm(t(selected.archived ? "确定重新开放这个班级？" : "确定封存这个班级？学生仍能查看已发布内容。"))) void mutate({ action: "archiveClassroom", id: selected.id, archived: !selected.archived }); }}>{t(selected.archived ? "恢复班级" : "封存班级")}</Button><DeleteButton kind="classroom" id={selected.id} busy={busy} mutate={async body => (await mutate(body)).ok} message="永久删除这个班级、全部排课与出勤，以及班级公告、资料、功课和课堂录影链接？学生账号、共用 PDF 和 Google Drive 影片保留，此操作无法恢复。"/></div></details>}</section>
-      <div className="classroom-section-navigation">
-      <label className="classroom-mobile-section"><span>{getLanguage() === "zh" ? "班级页面" : "Class page"}</span><select ref={mobileTabRef} aria-label={getLanguage() === "zh" ? "班级页面" : "Class page"} value={tab} onChange={event => setTab(event.target.value as ClassroomTab)} aria-controls={`${tabListId}-panel`}>{classTabs.map(item => <option key={item.id} value={item.id}>{tabLabel(item)}</option>)}</select></label>
+      <div className="classroom-section-navigation" data-scrollable={tabScroll.left||tabScroll.right}>
+      <button type="button" className="classroom-tabs-scroll classroom-tabs-scroll-left" aria-label={getLanguage()==="zh"?"向左滚动班级菜单":"Scroll class menu left"} aria-controls={`${tabListId}-tabs`} disabled={!tabScroll.left} onClick={()=>scrollTabs(-1)}><ChevronLeft size={20}/></button>
       <span id={`${tabListId}-current`} className="sr-only">{classTabs.find(item => item.id === tab) ? tabLabel(classTabs.find(item => item.id === tab)!) : t("班级内容")}</span>
-      <div ref={tabListRef} className="classroom-tabs" role="tablist" aria-label={t("班级内容")} onKeyDown={event => {
+      <div ref={tabListRef} id={`${tabListId}-tabs`} className="classroom-tabs" role="tablist" aria-label={t("班级内容")} onKeyDown={event => {
         if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
         event.preventDefault();
         const currentIndex = classTabs.findIndex(item => item.id === tab);
         const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? classTabs.length - 1 : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + classTabs.length) % classTabs.length;
-        const nextTab = classTabs[nextIndex].id;
+        const nextTab = classTabs[nextIndex]?.id;
+        if(!nextTab)return;
         setTab(nextTab); tabButtons.current[nextTab]?.focus({ preventScroll: true });
       }}>
         {classTabs.map(item => <button key={item.id} ref={node => { tabButtons.current[item.id] = node; }} id={`${tabListId}-${item.id}`} type="button" role="tab" aria-selected={tab === item.id} aria-controls={`${tabListId}-panel`} tabIndex={tab === item.id ? 0 : -1} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>{tabLabel(item)}</button>)}
       </div>
+      <button type="button" className="classroom-tabs-scroll classroom-tabs-scroll-right" aria-label={getLanguage()==="zh"?"向右滚动班级菜单":"Scroll class menu right"} aria-controls={`${tabListId}-tabs`} disabled={!tabScroll.right} onClick={()=>scrollTabs(1)}><ChevronRight size={20}/></button>
       </div>
       <div id={`${tabListId}-panel`} className="classroom-content-panel" role="tabpanel" aria-labelledby={`${tabListId}-current`} tabIndex={0}>
       {tab === "announcements" && can("announcements.view") && <section className="panel classroom-announcements-panel">
         <div className="round1-section-head"><h2>{t("班级公告")} <span className="learning-record-count">{selected.announcements.length}</span></h2>{canManage && !selected.archived && can("announcements.create") && <Button adminGrant="announcements.create" type="button" size="sm" onClick={() => { setAnnouncementId(""); setAnnouncementTitle(""); setAnnouncementBody(""); setPinned(false); setAnnouncementOpen(true); }}><Plus size={16}/>{t("发布公告")}</Button>}</div>
-        <div className="learning-list round1-announcement-list">{selected.announcements.map(item => <article key={item.id} className="learning-card classroom-announcement"><div className="round1-announcement-heading"><strong>{item.title}</strong>{item.pinned && <span className="classroom-pinned">{t("置顶")}</span>}</div><small>{item.authorName} · {dateLabel(item.createdAt)}</small><details className="round1-announcement-detail"><summary>{getLanguage() === "zh" ? "查看公告" : "Read announcement"}</summary><p>{item.body}</p>{canManage && !selected.archived && <div className="learning-card-actions"><Button adminGrant="announcements.edit" size="sm" variant="outline" onClick={() => { setAnnouncementId(item.id); setAnnouncementTitle(item.title); setAnnouncementBody(item.body); setPinned(Boolean(item.pinned)); setAnnouncementOpen(true); }}>{t("编辑")}</Button><Button adminGrant="announcements.delete" size="sm" variant="outline" disabled={busy} onClick={() => { if (window.confirm(t("确定删除这则公告？"))) void mutate({ action: "deleteAnnouncement", classroomId: selected.id, id: item.id }); }}>{t("删除公告")}</Button></div>}</details></article>)}{!selected.announcements.length && <p className="muted">{t("尚无公告")}</p>}</div>
+        <div className="classroom-announcement-columns" aria-hidden="true"><span>{getLanguage()==="zh"?"公告":"Announcement"}</span><span>{getLanguage()==="zh"?"发布人 / 时间":"Published by / date"}</span><span>{getLanguage()==="zh"?"操作":"Action"}</span></div><div className="learning-list round1-announcement-list">{selected.announcements.map(item => <article key={item.id} className="learning-card classroom-announcement"><details className="round1-announcement-detail"><summary className="classroom-announcement-row"><span className="round1-announcement-heading"><strong>{item.title}</strong>{Boolean(item.pinned) && <span className="classroom-pinned">{t("置顶")}</span>}</span><span className="classroom-announcement-meta">{item.authorName} · {dateLabel(item.createdAt)}</span><span className="classroom-announcement-action">{getLanguage() === "zh" ? "查看公告" : "Read announcement"}<ChevronDown size={15}/></span></summary><p>{item.body}</p>{canManage && !selected.archived && <div className="learning-card-actions"><Button adminGrant="announcements.edit" size="sm" variant="outline" onClick={() => { setAnnouncementId(item.id); setAnnouncementTitle(item.title); setAnnouncementBody(item.body); setPinned(Boolean(item.pinned)); setAnnouncementOpen(true); }}>{t("编辑")}</Button><Button adminGrant="announcements.delete" size="sm" variant="outline" disabled={busy} onClick={() => { if (window.confirm(t("确定删除这则公告？"))) void mutate({ action: "deleteAnnouncement", classroomId: selected.id, id: item.id }); }}>{t("删除公告")}</Button></div>}</details></article>)}{!selected.announcements.length && <p className="muted">{t("尚无公告")}</p>}</div>
         {announcementOpen && canManage && !selected.archived && can(announcementId ? "announcements.edit" : "announcements.create") && <Dialog open onOpenChange={open => { if (!busy) setAnnouncementOpen(open); }}><DialogContent className="content-edit-dialog round1-announcement-dialog" overlayClassName="content-edit-overlay" showCloseButton={!busy}><DialogTitle>{announcementId ? t("编辑") + " · " + t("班级公告") : t("发布公告")}</DialogTitle><DialogDescription>{selected.title}</DialogDescription><form className="learning-form" onSubmit={saveAnnouncement}><label>{t("公告标题")}<input autoFocus required maxLength={120} disabled={busy} value={announcementTitle} onChange={event => setAnnouncementTitle(event.target.value)}/></label><label>{t("公告内容")}<textarea required rows={6} maxLength={4000} disabled={busy} value={announcementBody} onChange={event => setAnnouncementBody(event.target.value)}/></label><label className="round1-announcement-pin"><input type="checkbox" disabled={busy} checked={pinned} onChange={event => setPinned(event.target.checked)}/>{t("置顶公告")}</label><div className="learning-card-actions"><Button type="button" variant="outline" disabled={busy} onClick={() => setAnnouncementOpen(false)}>{t("取消")}</Button><Button adminGrant={announcementId ? "announcements.edit" : "announcements.create"} disabled={busy}>{announcementId ? t("保存修改") : t("发布公告")}</Button></div></form></DialogContent></Dialog>}
       </section>}
       {tab === "schedule" && can("lessons.view") && <ClassroomSchedule key={selected.id} classroomId={selected.id} onCalendar={onCalendar} canAddRecording={canManage&&!selected.archived&&can("recordings.create")}/>}

@@ -102,8 +102,9 @@ export function StudentCalendar({ lessons:sourceLessons, proposals, studyBlocks 
       <aside className="student-day-panel" aria-live="polite" aria-busy={loading}>
         <div className="student-day-heading"><div><h3>{dateLabel(selectedDay, { month: "long", day: "numeric", weekday: "short" })}</h3><p>{loading?t("正在加载…"):selectedLessons.length} {!loading&&t("堂课")}{onAddStudy && <> · {selectedStudy.length} {t("项学习安排")}</>} · GMT+8</p></div>{onAddStudy && <Button size="sm" variant="outline" onClick={() => onAddStudy?.(selectedDay)}><Plus size={18} aria-hidden="true"/>{t("新增学习计划")}</Button>}</div>
         {selectedLessons.map(lesson => <article className={`student-day-lesson lesson-${lesson.status}`} key={lesson.id}>
-          <div className="student-day-lesson-top"><strong>{role === "student" ? lesson.subject : `${sessionLessonTitle(lesson)} · ${lesson.subject}`}</strong><span>{t(lesson.attendanceKind === "early_dismissal" ? "提前结束课程" : statusText[lesson.status] || lesson.status)}</span></div>
+          <div className="student-day-lesson-top"><strong>{lesson.subject}</strong><span>{t(lesson.attendanceKind === "early_dismissal" ? "提前结束课程" : statusText[lesson.status] || lesson.status)}</span></div>
           <p><Clock3 size={16} aria-hidden="true"/>{time(lesson.plannedStart)}–{time(lesson.plannedEnd)}</p>
+          {role!=="student"&&lesson.sessionType!=="group"&&sessionLessonTitle(lesson)&&<p className="student-day-lesson-identity">{sessionLessonTitle(lesson)}</p>}
           <p><span className="student-teacher-avatar" aria-hidden="true">{lesson.teacherName.charAt(0).toUpperCase()}</span>{lesson.teacherName}</p>
           <ClassSessionLabel lesson={lesson}/>{lesson.personalAttendance&&lesson.personalAttendance!=="pending"&&<small>{t("个人出席")} · {t(attendanceLabels[lesson.personalAttendance]||lesson.personalAttendance)}</small>}<OnlineLessonLink href={lesson.onlineLink}/>
           {onRequestReschedule && lesson.sessionType!=="group" && lesson.status === "scheduled" && !pending.has(lesson.id) && <Button size="sm" variant="outline" disabled={busy} onClick={() => onRequestReschedule?.(lesson.id)}>{t("申请改期")}</Button>}

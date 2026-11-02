@@ -15,6 +15,7 @@ import { ContentActions, SubmissionVersion } from "./learning-content-actions";
 import {SharedFilePicker} from "./shared-file-picker";
 import { LearningListDetail, homeworkSummary, latestSubmissions, learningLabel } from "./learning-list-detail";
 import {ClassroomMaterialBrowser} from './classroom-material-browser';
+import {ClassroomFileAction} from '@/lib/classroom-files-ui';
 import {GoogleDriveImport,type DrivePublishItem} from "./google-drive-import";
 import { canNavigateBack, usePageHistoryState } from "@/lib/page-history";
 
@@ -109,6 +110,7 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
   const composeHistoryKey = `teacher.compose:${view}:${classroom?.id || "legacy"}:${folderId || "root"}`;
   const [formOpen, setFormOpen, replaceFormOpen] = usePageHistoryState(composeHistoryKey, false);
   const previousFormOpen = useRef(false);
+  const materialActionRef=useRef<HTMLButtonElement>(null);
   function openCreateForm() {
     setFormOpen(true);
     window.history.replaceState({ ...window.history.state, timelyoLearningCompose: composeHistoryKey }, "");
@@ -123,14 +125,14 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
     const frame = requestAnimationFrame(() => {
       const section = document.getElementById(formId)?.closest(".learning-teacher");
       const selector = formOpen ? "form:not([hidden]) input" : ".learning-compose-toolbar button";
-      const target = Array.from(section?.querySelectorAll<HTMLElement>(selector) || []).find(node => node.getClientRects().length);
+      const target = !formOpen&&view==="materials" ? materialActionRef.current : Array.from(section?.querySelectorAll<HTMLElement>(selector) || []).find(node => node.getClientRects().length);
       if (!target) return;
       target.focus({ preventScroll: true });
       const bounds = target.getBoundingClientRect();
       if (bounds.top < 144 || bounds.bottom > window.innerHeight - 12) target.scrollIntoView({ block: "start" });
     });
     return () => cancelAnimationFrame(frame);
-  }, [formOpen, formId]);
+  }, [formOpen, formId, view]);
   const subjects = classroom ? [classroom.subject] : [...new Set(learning.eligible.map(p => p.subject))].sort();
   const [materialId, setMaterialId] = useState("");
   const [materialTitle, setMaterialTitle] = useState("");
@@ -197,7 +199,7 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
   const disabled = busy || working;
   return <div className="learning-teacher learning-single-view">
     {error && <p className="notice" role="alert">{error}</p>}
-    <section className={`panel teaching-content-panel${classroom ? " learning-content-surface" : ""}`} id={formId} data-material-form hidden={view !== "materials"}><header className="learning-compose-toolbar"><h2>{t(formOpen ? materialId ? "编辑教学资料" : "上传教学资料" : "教学资料")}{!formOpen && <span className="learning-record-count"> {learning.materials.length}</span>}</h2>{!readOnly && !legacyOnly && <Button type="button" variant={formOpen ? "outline" : "default"} disabled={disabled} onClick={()=>formOpen ? closeCreateForm() : openCreateForm()}>{formOpen ? learningLabel("返回列表", "Back to list") : t("上传教学资料")}</Button>}</header>
+    <section className={`panel teaching-content-panel${classroom ? " learning-content-surface" : ""}`} id={formId} data-material-form hidden={view !== "materials"}><header className="learning-compose-toolbar">{(!classroom||formOpen)&&<h2>{t(formOpen ? materialId ? "编辑教学资料" : "上传教学资料" : "教学资料")}{!formOpen && <span className="learning-record-count"> {learning.materials.length}</span>}</h2>}{!readOnly && !legacyOnly && <ClassroomFileAction placement="upload"><Button ref={materialActionRef} className="class-files-upload-action" aria-label={formOpen ? learningLabel("返回列表", "Back to list") : t("上传教学资料")} aria-expanded={formOpen} aria-controls={formId} type="button" variant={formOpen ? "outline" : "default"} disabled={disabled} onClick={()=>formOpen ? closeCreateForm() : openCreateForm()}>{formOpen ? learningLabel("返回列表", "Back to list") : classroom ? learningLabel("上传资料", "Upload files") : t("上传教学资料")}</Button></ClassroomFileAction>}</header>
       {classroom&&!readOnly&&!legacyOnly&&!formOpen&&<GoogleDriveImport key={classroom.id+":"+(folderId||"")} classroomId={classroom.id} folderId={folderId} contextKey={classroom.id+":"+(folderId||"")} maxBytes={pdfLimit(learning)} disabled={disabled} upload={(file,requestId,signal)=>uploadPdf(file,"material",undefined,pdfLimit(learning),classroom.id,undefined,{signal,requestId,quiet:true})} publish={(item,signal)=>publishDriveMaterial(item,classroom,folderId,signal)} onChanged={onChanged}/>}
       <form className="learning-form" hidden={Boolean(!formOpen || readOnly || (legacyOnly && !materialId))} onSubmit={saveMaterial}><fieldset className="learning-form-section"><legend>{t("资料内容")}</legend>
         <label>{t("资料标题")}<input required maxLength={120} value={materialTitle} onChange={e => setMaterialTitle(e.target.value)}/></label>
@@ -296,7 +298,7 @@ export function StudentLearning({ learning, mutate, busy, onPlan, view, onCalend
   useEffect(() => { const timer = window.setInterval(() => setClock(new Date().toISOString()), 30_000); return () => window.clearInterval(timer); }, []);
   const materials = learning.materials.filter(item => !filter || item.subject === filter);
   return <div className="student-learning">
-    <section className="panel learning-homework-panel" hidden={view !== "homework"}>
+    <section className={`${inClassroom ? "panel" : "learning-homework-workspace"} learning-homework-panel`} hidden={view !== "homework"}>
       <h2 className="sr-only">{t("我的功课")}</h2>
       <LearningListDetail historyKey={`student:homework:${historyScope}`} items={learning.homework} summary={item=>{
         const latest=latestSubmissions(learning.submissions.filter(s=>s.homeworkId===item.id))[0];

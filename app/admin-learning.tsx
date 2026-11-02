@@ -39,7 +39,7 @@ export function AdminLearning({ learning, view, inClassroom = false,onChanged,hi
   const visibleCount = view === "materials" ? materials.length : homework.length;
   const filtered = Boolean(teacher || subject);
 
-  return <section className={`panel learning-admin${inClassroom ? " learning-content-surface" : ""}`}>
+  return <section className={`${view === "homework" && !inClassroom ? "learning-homework-workspace" : "panel"} learning-admin${inClassroom ? " learning-content-surface" : ""}`}>
     {inClassroom&&classroom&&view==="materials"&&can("materials.create")&&can("classrooms.view")&&(!folderId||can("folders.placeContent"))&&!readOnly&&<GoogleDriveImport key={classroom.id+":"+(folderId||"")} classroomId={classroom.id} folderId={folderId} contextKey={classroom.id+":"+(folderId||"")} maxBytes={learning.limits?.pdfMaxBytes||10*1024*1024} upload={(file,requestId,signal)=>uploadPdf(file,"material",undefined,learning.limits?.pdfMaxBytes||10*1024*1024,classroom.id,undefined,{signal,requestId,quiet:true})} publish={(item,signal)=>publishDriveMaterial(item,classroom,folderId,signal)} onChanged={onChanged}/>}
     {!inClassroom && classError && records.some(item=>!item.classroomId) && <div className="notice teaching-notice-actions" role="alert"><span>{classError}</span><Button variant="outline" onClick={()=>void loadClasses()}>{t("重试")}</Button></div>}
     {!inClassroom && records.length > 0 && <FilterPanel active={filtered}>

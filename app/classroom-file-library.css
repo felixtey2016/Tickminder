@@ -45,8 +45,14 @@
 .classroom-file-library .folder-breadcrumb{display:flex;flex-wrap:wrap;gap:0;margin:4px 0}
 .classroom-file-library .folder-breadcrumb button{min-height:44px;color:var(--ui-accent);font-size:14px}
 .classroom-file-library .folder-breadcrumb button[aria-current=location]{color:var(--ui-text);font-weight:600}
-.classroom-file-library .folder-toolbar-actions{flex-wrap:wrap;gap:8px}
-.classroom-file-library .folder-toolbar-actions button{font-size:14px}
+.classroom-file-library .folder-toolbar-actions{flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.classroom-file-library .class-files-action-slot{display:contents}
+.classroom-file-library .folder-toolbar-actions button{min-height:44px;font-size:14px}
+.classroom-file-library .learning-compose-toolbar:empty,.classroom-file-library .google-drive-import:empty,.class-files-panels:empty{display:none}
+.classroom-file-library .class-files-panels{width:100%;min-width:0}
+.classroom-file-library .drive-import-panel{margin:4px 0 12px;background:var(--ui-surface-muted);border-color:var(--ui-border);color:var(--ui-text)}
+.classroom-file-library .drive-import-item{background:var(--ui-surface);border-color:var(--ui-border);color:var(--ui-text)}
+.classroom-file-library .drive-import-panel button{min-height:44px}
 .class-files-sort>select{background:var(--ui-surface);color:var(--ui-text);border-radius:6px}
 .class-files-search{border-radius:6px}
 .classroom-file-library .folder-options>div{background:var(--ui-surface);color:var(--ui-text);border-radius:8px}
@@ -58,6 +64,8 @@
  .classroom-file-library .folder-grid{gap:0}
  .classroom-file-library .folder-toolbar{flex-wrap:wrap;gap:8px}
  .classroom-file-library .folder-toolbar h3{font-size:16px}
+ .classroom-file-library .folder-toolbar > .folder-toolbar-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;align-items:stretch}
+ .classroom-file-library .folder-toolbar > .folder-toolbar-actions button{min-width:0;width:100%;max-width:100%;padding-inline:8px;white-space:normal}
  .class-files-toolbar{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin:8px 0}
  .class-files-sort{justify-self:end;min-width:0;max-width:100%}
 }

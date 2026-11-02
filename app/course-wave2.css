@@ -57,6 +57,7 @@
 .shell-wave1 .course-wave2 :is(.lesson-student_absent,.lesson-teacher_absent) .student-day-lesson-top span { background:var(--ui-warning-bg); color:var(--ui-warning-text); }
 .shell-wave1 .course-wave2 .student-day-lesson :is(p,small,.class-session-label) { color:var(--ui-muted); font-size:14px; line-height:1.5; }
 .shell-wave1 .course-wave2 .student-day-lesson>p:first-of-type { color:var(--ui-text); font-weight:600; }
+.shell-wave1 .course-wave2 .student-day-lesson-identity { overflow-wrap:anywhere; }
 .shell-wave1 .course-wave2 .student-teacher-avatar { color:var(--ui-accent); background:var(--ui-accent-soft); }
 .shell-wave1 .course-wave2 .student-lesson-pending { color:var(--ui-accent); background:var(--ui-accent-soft); font-size:14px; }
 .shell-wave1 .course-wave2 .student-day-empty { padding:28px 12px; color:var(--ui-muted); }
@@ -122,8 +123,7 @@
 @media(min-width:1000px) {
  .shell-wave1 .course-wave2 .student-calendar-layout { grid-template-columns:minmax(320px,1.1fr) minmax(280px,.9fr); }
  .shell-wave1 .course-wave2 .student-day-panel { position:sticky; top:148px; }
- .shell-wave1 .course-wave2 .schedule-time-fields { grid-template-columns:1.3fr 1fr 1fr; }
- .shell-wave1 .course-wave2 .schedule-time-fields>label:first-child { grid-column:auto; }
+
 }
 @media(max-width:650px) {
  .shell-wave1 .course-query-filterbar { gap:8px; }
