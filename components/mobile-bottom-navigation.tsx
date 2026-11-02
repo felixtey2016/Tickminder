@@ -5,7 +5,8 @@ import './mobile-bottom-navigation.css';
 
 export type MobileNavigationItem={value:string;label:string;Icon:LucideIcon;badge?:ReactNode};
 type Props={items:MobileNavigationItem[];active:string;onNavigate:(value:string)=>void;onMore:()=>void;moreLabel:string;ariaLabel?:string;hidden?:boolean};
-const EDITABLE='input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]),textarea,select,[contenteditable="true"]';
+// Selection panels hide navigation while open; restoring focus to their select must not keep it hidden.
+const EDITABLE='input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]),textarea,[contenteditable="true"]';
 // These are active work surfaces, rather than every form used for list filters.
 const EDITING='[data-mobile-nav-hide],.quiz-editor,.quiz-practice-player,.form-action-bar,form.learning-form,.classroom-form-panel,.account-security-section[open]';
 const WRITE_FORMS='form.invoice-settings-form,form.invoice-create-form,form.billing-form,form.billing-adjustment,form.payroll-rate-editor,form.group-create';

@@ -21,6 +21,7 @@ import "./content-tabs.css";
 import {AppearanceProvider} from "@/components/appearance-toggle";
 import { ActionToastHost } from "@/components/action-toast";
 import {DiagnosticsReporter} from "@/components/diagnostics-reporter";
+import {AppSelectHost} from "@/components/app-select-host";
 
 export const metadata: Metadata = {
   title: `${BRAND_NAME} · Learning & Collaboration`,
@@ -41,7 +42,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN" suppressHydrationWarning>
-      <body className="antialiased"><AppearanceProvider>{children}<ActionToastHost/><DiagnosticsReporter/></AppearanceProvider></body>
+      <body className="antialiased"><AppearanceProvider>{children}<ActionToastHost/><AppSelectHost/><DiagnosticsReporter/></AppearanceProvider></body>
     </html>
   );
 }
