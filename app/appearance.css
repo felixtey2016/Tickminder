@@ -25,7 +25,7 @@
 :root.dark {
   color-scheme: dark;
   --ui-bg: #17191f; --ui-surface: #20232b; --ui-surface-muted: #2a2e38;
-  --ui-text: #f3f3f6; --ui-muted: #bac1cc; --ui-border: #414653;
+  --ui-text: #dfe3eb; --ui-muted: #a8b1bf; --ui-border: #414653;
   --ui-accent: #c1aaff; --ui-accent-soft: #353044;
   --ui-primary: #c1aaff; --ui-primary-text: #211735;
   --ui-success-bg: #203d32; --ui-success-text: #9ad8b6;
@@ -85,6 +85,16 @@ body {background:var(--ui-bg);color:var(--ui-text);font-family:Inter,ui-sans-ser
 .parent-compact .parents-workspace .parents-link-button{background:var(--ui-surface);color:var(--ui-accent);border-color:var(--ui-border);border-radius:6px;min-height:44px;}
 .parent-compact .parents-workspace .parent-compact-disclosure>summary h3{color:var(--ui-text);}
 .classrooms-wave2 .classroom-intro .eyebrow{color:var(--ui-muted)!important;}
+/* Directory groups also appear outside the selected classroom view. */
+.app-shell .directory-group {background:var(--ui-surface);color:var(--ui-text);border-color:var(--ui-border);}
+.app-shell .directory-group > summary {background:var(--ui-surface-muted);color:var(--ui-text);}
+.app-shell .directory-group > summary > span {background:var(--ui-accent-soft);color:var(--ui-accent);}
+.app-shell .directory-group > summary:hover {background:var(--ui-accent-soft);}
+.app-shell .directory-group > summary:focus-visible {outline:2px solid var(--ui-accent);outline-offset:-3px;}
+.app-shell .classrooms-wave2 .classroom-chips button:hover {background:var(--ui-accent-soft);}
+.app-shell .classrooms-wave2 .classroom-chips button:focus-visible {outline:2px solid var(--ui-accent);outline-offset:-3px;}
+.app-shell .learning-record-count {background:var(--ui-accent-soft);color:var(--ui-accent);}
+.dark .app-shell .workspace .danger-action {color:var(--ui-danger-text)!important;border-color:var(--ui-danger-text)!important;}
 /* Older feature pages still share these primitives while their layouts are revised later. */
 .dark .app-shell :is(.date-tile,.calendar-toolbar,.student-calendar-toolbar,.student-calendar-weekdays,.student-calendar-day.is-outside,.study-plan-head,.home-next,.home-summary-list,.role-badge) {background:var(--ui-surface-muted);color:var(--ui-text);border-color:var(--ui-border);}
 .dark .app-shell :is(.calendar-cell,.student-calendar-day,.student-calendar-month,.student-day-panel,.home-overview-card,.home-action-card,.learning-card,.home-summary-row,.user-row,.plan-row,.summary-row,.activity-item,.upcoming-item) {background:var(--ui-surface);color:var(--ui-text);border-color:var(--ui-border);}

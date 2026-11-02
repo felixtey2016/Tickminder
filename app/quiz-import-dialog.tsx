@@ -4,6 +4,7 @@ import {BookOpen,ChevronDown,Download,Loader2,Upload} from 'lucide-react';
 import {Dialog,DialogContent,DialogDescription,DialogTitle} from '@/components/ui/dialog';
 import {alertActionFailure} from '@/lib/action-feedback';
 import {t,type Language} from '@/lib/i18n';
+import './quiz-editor-wave3.css';
 
 export default function QuizImportDialog({language,disabled=false,onImport,onClose}:{language:Language;disabled?:boolean;onImport:(file:File)=>Promise<boolean>;onClose:()=>void}){
  const input=useRef<HTMLInputElement>(null),dragDepth=useRef(0),inFlight=useRef(false);

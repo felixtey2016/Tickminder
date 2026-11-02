@@ -20,7 +20,7 @@ export default function QuizCopyLinkButton({quizId,disabled=false}:{quizId:strin
  }
  return <>
   <Button type="button" variant="outline" data-testid="quiz-copy-link" disabled={disabled||copying||!isQuizLinkId(quizId)} onClick={()=>void copyLink()}><Link2 size={17}/>{text('复制链接','Copy link')}</Button>
-  <Dialog open={Boolean(manualUrl)} onOpenChange={open=>{if(!open)setManualUrl('');}}><DialogContent className="quiz-confirm-dialog" data-testid="quiz-link-copy-dialog" onOpenAutoFocus={event=>{event.preventDefault();input.current?.focus();input.current?.select();}}>
+  <Dialog open={Boolean(manualUrl)} onOpenChange={open=>{if(!open)setManualUrl('');}}><DialogContent className="quiz-confirm-dialog quiz-library-dialog" data-testid="quiz-link-copy-dialog" onOpenAutoFocus={event=>{event.preventDefault();input.current?.focus();input.current?.select();}}>
    <DialogTitle>{text('复制 Quiz 链接','Copy quiz link')}</DialogTitle>
    <DialogDescription>{text('长按或选择下面的链接后复制。链接不会改变可见范围，接收者仍需登录并获授权。','Select or press and hold the link to copy it. Recipients must sign in and have access; the link does not change visibility.')}</DialogDescription>
    <label className="quiz-field"><span>{text('Quiz 链接','Quiz link')}</span><input ref={input} data-testid="quiz-copy-link-value" type="text" value={manualUrl} readOnly style={{fontSize:16}} onFocus={event=>event.currentTarget.select()} onClick={event=>event.currentTarget.select()}/></label>
