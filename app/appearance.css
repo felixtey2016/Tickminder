@@ -1,7 +1,9 @@
 /* R15 shared appearance: light is the default; an explicit choice persists. */
 :root {
   color-scheme: light;
-  --ui-bg: #f7f7fa; --ui-surface: #fff; --ui-surface-muted: #f1f2f6;
+  --ui-bg: #f4f3f7; --ui-surface: #fff; --ui-surface-muted: #f1eff5;
+  --ui-header-surface: #f0ecf8; --ui-nav-surface: #f1eef7; --ui-nav-active: #e5ddf7;
+  --ui-brand-ink: #493773; --ui-highlight-surface: #f6f3fc;
   --ui-text: #252334; --ui-muted: #626575; --ui-border: #dddfe7;
   --ui-accent: #6547c6; --ui-accent-soft: #eee9fb;
   --ui-primary: #6547c6; --ui-primary-text: #fff;
@@ -9,7 +11,7 @@
   --ui-warning-bg: #fff4dc; --ui-warning-text: #79520a;
   --ui-danger-bg: #fff0ef; --ui-danger-text: #ac303d;
   --ui-canvas: var(--ui-bg); --ui-ink: var(--ui-text); --ui-secondary: var(--ui-muted);
-  --ui-purple: var(--ui-accent); --ui-line: var(--ui-border); --ui-nav: var(--ui-surface);
+  --ui-purple: var(--ui-accent); --ui-line: var(--ui-border); --ui-nav: var(--ui-nav-surface);
   --timelyo-ink: var(--ui-text); --timelyo-purple: var(--ui-primary);
   --timelyo-purple-dark: var(--ui-accent); --timelyo-lilac: var(--ui-accent-soft); --timelyo-line: var(--ui-border);
   --background: var(--ui-surface); --foreground: var(--ui-text);
@@ -25,6 +27,8 @@
 :root.dark {
   color-scheme: dark;
   --ui-bg: #17191f; --ui-surface: #20232b; --ui-surface-muted: #2a2e38;
+  --ui-header-surface: #20232b; --ui-nav-surface: #20232b; --ui-nav-active: #353044;
+  --ui-brand-ink: #dfe3eb; --ui-highlight-surface: #20232b;
   --ui-text: #dfe3eb; --ui-muted: #a8b1bf; --ui-border: #414653;
   --ui-accent: #c1aaff; --ui-accent-soft: #353044;
   --ui-primary: #c1aaff; --ui-primary-text: #211735;
@@ -34,15 +38,23 @@
   --destructive: #c44054;
 }
 body {background:var(--ui-bg);color:var(--ui-text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,"Microsoft YaHei",sans-serif;line-height:1.5;}
+/* Brand color marks navigation and today's agenda; reading/financial surfaces stay neutral. */
+.app-shell.shell-wave1 .brand strong {color:var(--ui-brand-ink);}
+.app-shell.shell-wave1 .home-compact-heading {background:var(--ui-highlight-surface);}
+.app-shell.shell-wave1 .home-compact-intro-student {background:var(--ui-highlight-surface);}
+:root:not(.dark) .app-shell.shell-wave1 :is(.home-compact-agenda,.parent-home-today) {border-top:3px solid var(--ui-accent);}
+.app-shell.shell-wave1 .parent-home-today>.parents-head h2>svg {color:var(--ui-accent);}
 .auth-shell {background:var(--ui-bg);color:var(--ui-text);}
 .auth-card {background:var(--ui-surface);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:8px;box-shadow:none;}
 .auth-card h1 {color:var(--ui-text);font-size:26px;line-height:1.3;}
 .auth-card p:not(.eyebrow),.auth-card small {color:var(--ui-muted);}
 .auth-card :is(input:not([type=checkbox]):not([type=radio]),select,textarea) {color:var(--ui-text);background:var(--ui-surface);border-color:var(--ui-border);min-height:44px;border-radius:6px;font-size:16px;}
 .auth-card :is(input,select,textarea):focus-visible {outline:2px solid var(--ui-accent);outline-offset:2px;}
-.auth-card .language-switch {border-color:var(--ui-border);background:var(--ui-surface);}
-.auth-card .language-switch button {color:var(--ui-muted);background:transparent;}
-.auth-card .language-switch button[aria-pressed="true"] {color:var(--ui-accent);background:var(--ui-accent-soft);}
+:is(.auth-card,.auth-loading) .language-switch {border-color:var(--ui-border);background:var(--ui-surface);}
+:is(.auth-card,.auth-loading) .language-switch button {color:var(--ui-muted);background:transparent;}
+:is(.auth-card,.auth-loading) .language-switch button[aria-pressed="true"] {color:var(--ui-accent);background:var(--ui-accent-soft);}
+.auth-loading .language-separator {color:var(--ui-muted);}
+.page-skeleton span {background:var(--ui-surface-muted);}
 .auth-card .legal-links a {color:var(--ui-accent);}
 .auth-card .primary-full,.app-shell .primary-full {background:var(--ui-primary)!important;color:var(--ui-primary-text)!important;}
 .appearance-toggle {display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;width:44px;height:44px;padding:10px;border:1px solid var(--ui-border);border-radius:6px;background:var(--ui-surface);color:var(--ui-text);cursor:pointer;}
@@ -110,6 +122,7 @@ body {background:var(--ui-bg);color:var(--ui-text);font-family:Inter,ui-sans-ser
 }
 @media(prefers-reduced-motion:reduce) {*,*::before,*::after {scroll-behavior:auto!important;}}
 @media print {
+  :root,:root.dark {--ui-header-surface:#fff;--ui-nav-surface:#fff;--ui-nav-active:#eee9fb;--ui-brand-ink:#252334;--ui-highlight-surface:#fff;}
   :root.dark {color-scheme:light;--ui-bg:#fff;--ui-surface:#fff;--ui-surface-muted:#f1f2f6;--ui-text:#252334;--ui-muted:#626575;--ui-border:#dddfe7;--ui-accent:#6547c6;--ui-accent-soft:#eee9fb;--ui-primary:#6547c6;--ui-primary-text:#fff;}
   .appearance-toggle {display:none!important;}
 }

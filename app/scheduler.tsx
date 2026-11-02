@@ -1,4 +1,5 @@
 "use client";
+import {ServiceBrandIcon} from '@/components/service-brand-icon';
 import {MonthInput} from '@/components/month-input';
 import {SessionAttendanceBoard,SessionAttendanceDialog,SessionAttendanceLoaderDialog,TeachingHoursPanel} from "./session-attendance";
 import type {AttendanceSession} from "@/lib/attendance-types";
@@ -944,7 +945,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
                     {NAV_GROUPS[role].filter(group=>group.ids.some(id=>items.some(item=>item.id===id))).map(group => <div className="menu-group" key={group.ids.join('-')}>{group.label && <h2 className="menu-group-title">{t(group.label)}</h2>}{group.ids.map(id => items.find(item => item.id === id)!).filter(Boolean).map(item => <button key={item.id} type="button" data-testid={`menu-${item.id}`} className={"menu-link" + (activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? " active" : "")} aria-current={activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? "page" : undefined} onClick={() => choose(item.id)}><item.Icon size={19} aria-hidden="true"/><span>{t(item.label)}</span><MenuBadge count={item.id === "courses" ? courseBadgeCount(role,badgeCounts) : badgeCounts[item.id as keyof typeof badgeCounts] || 0} includeUnread={item.id==="notifications"} quizOnly={item.id==="quizzes"}/></button>)}</div>)}
                 </nav>
                 <div className="menu-utilities">
-                    {account.groupId==='next-genn-edu'&&<a className="menu-link" href="/whatsapp"><ShieldCheck size={19}/><span>连接 WhatsApp</span></a>}
+                    {account.groupId==='next-genn-edu'&&<a className="menu-link" href="/whatsapp"><ServiceBrandIcon service="whatsapp"/><span>连接 WhatsApp</span></a>}
                     <button type="button" className="menu-link" onClick={reload}><RefreshCw size={19}/><span>{t("刷新")}</span></button>
                     <button type="button" className="menu-link" onClick={logout}><LogOut size={19}/><span>{t("退出登录")}</span></button>
                 </div>

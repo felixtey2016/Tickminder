@@ -1,4 +1,5 @@
 "use client";
+import {ServiceBrandIcon} from '@/components/service-brand-icon';
 import {groupFetch} from "@/lib/group-client";
 
 import { useRef, useState } from "react";
@@ -63,7 +64,7 @@ export function SheetSyncPanel() {
 
   return <section className="panel sheet-sync-panel sheet-sync-compact">
 
-    <h2>{t("课时写入 Google Sheet")}</h2>
+    <h2 className="service-brand-heading"><ServiceBrandIcon service="google-sheets" size={22}/>{t("课时写入 Google Sheet")}</h2>
     <p className="muted">{getLanguage()==='zh'?'请先在表格 Lesson Records!B2 选择月份。':'First select the month in Lesson Records!B2 in your sheet.'}</p>
     <label className="sheet-sync-mode">{t("计入范围")}
       <select value={mode} disabled={busy} onChange={event => { setMode(event.target.value as SyncMode); setPreview(null); setDone(false); }}>
