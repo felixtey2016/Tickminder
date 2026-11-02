@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { BRAND_NAME } from "@/lib/brand";
 import { LEGAL_CONTACT, SERVICE_OPERATOR } from "@/lib/legal-content";
+import { BookOpen, CalendarDays, ChevronDown, FileText, NotebookPen, ShieldCheck, Users } from "lucide-react";
+import { AppearanceToggle } from "@/components/appearance-toggle";
+import { ServiceBrandIcon } from "@/components/service-brand-icon";
 import "./about.css";
 
 export const metadata: Metadata = {
@@ -11,6 +14,8 @@ export const metadata: Metadata = {
     languages: { en: "https://www.tickminder.com/about", "zh-CN": "https://www.tickminder.com/about?lang=zh" },
   },
 };
+
+const featureIcons = [CalendarDays, BookOpen, NotebookPen, FileText, Users, ShieldCheck];
 
 const content = {
   en: {
@@ -57,10 +62,10 @@ export default async function AboutPage({ searchParams }: { searchParams: Promis
     <div className="public-about-shell">
       <header className="public-about-header">
         <a className="public-about-brand" href="/" aria-label={`${BRAND_NAME} — ${text.open}`}><img src="/tickminder-logo.svg" width="44" height="44" alt=""/><strong>{BRAND_NAME}</strong></a>
-        <nav className="public-about-languages" aria-label={text.language}>
+        <div className="public-about-tools"><nav className="public-about-languages" aria-label={text.language}>
           <a href="/about" lang="en" aria-current={language === "en" ? "page" : undefined}>English</a>
           <a href="/about?lang=zh" lang="zh-CN" aria-current={language === "zh" ? "page" : undefined}>中文</a>
-        </nav>
+        </nav><AppearanceToggle language={language}/></div>
       </header>
       <section className="public-about-hero" aria-labelledby="about-title">
         <p className="public-about-kicker">{text.intro}</p>
@@ -70,14 +75,14 @@ export default async function AboutPage({ searchParams }: { searchParams: Promis
       </section>
       <section className="public-about-features" aria-labelledby="about-features">
         <div className="public-about-section-head"><h2 id="about-features">{text.features}</h2><p>{text.featuresIntro}</p></div>
-        <div className="public-about-grid">{text.cards.map(card => <article className="public-about-card" key={card.title}><h3>{card.title}</h3><p>{card.text}</p></article>)}</div>
+        <div className="public-about-grid">{text.cards.map((card, index) => { const Icon = featureIcons[index]; return <article className="public-about-feature" key={card.title}><Icon size={22} aria-hidden="true"/><div><h3>{card.title}</h3><p>{card.text}</p></div></article>; })}</div>
       </section>
-      <section className="public-about-drive" aria-labelledby="about-drive">
-        <p className="public-about-kicker">{text.optional}</p>
-        <h2 id="about-drive">{text.driveTitle}</h2>
-        <p>{text.driveText}</p><p>{text.driveAccount}</p>
+      <details className="public-about-drive">
+        <summary><ServiceBrandIcon service="google-drive" size={24}/><span><strong>{text.driveTitle}</strong><small>{text.optional}</small></span><ChevronDown size={18} aria-hidden="true"/></summary>
+        <div className="public-about-drive-body"><p>{text.driveText}</p><p>{text.driveAccount}</p>
         <a href={`/privacy?lang=${language}`}>{text.privacy}<span aria-hidden="true"> →</span></a>
-      </section>
+        </div>
+      </details>
       <footer className="public-about-footer">
         <div><strong>{BRAND_NAME}</strong><p>{text.operator}: {SERVICE_OPERATOR}</p><p>{text.contact}: <a href={`mailto:${LEGAL_CONTACT}`}>{LEGAL_CONTACT}</a></p></div>
         <nav aria-label={language === "zh" ? "法律文件" : "Legal documents"}><a href={`/privacy?lang=${language}`}>{text.privacy}</a><a href={`/terms?lang=${language}`}>{text.terms}</a></nav>

@@ -14,6 +14,7 @@ import { DeleteButton, DirectoryFilters, type Mutate } from "./directory-tools";
 import {useAcademicCatalogue} from '@/lib/use-academic-catalogue';
 import {StudentProfileFields,type StudentProfile} from '@/components/student-profile-fields';
 import {findCatalogueSubject,type AcademicCatalogue} from '@/lib/academic-catalogue';
+import './academic-roster-layout.css';
 
 
 type Profile={name:string;syllabusId?:string;grade?:string|null;age?:number|null};
@@ -48,7 +49,7 @@ export function SubjectAdmin({ students,studentProfiles=[], teachers, plans, mut
   const planPairs=relationPlans.map(plan=>({teacher:plan.teacherName,student:plan.student}));
   const visible = relationPlans.filter(p => (!teacher || p.teacherName === teacher) && (!student || p.student === student));
   const groups = [...new Set(visible.map(p => p.teacherName))].sort();
-  return <section className="panel subjects-panel directory-panel"><div className="section-head directory-section-head"><h2>{t("学生课程设置")}</h2><div className="directory-person-actions">{canFinance&&onPreview&&<Button variant="outline" onClick={onPreview}>{t('费用预览')}</Button>}<Button adminGrant="plans.create" onClick={() => setEditor({kind:'plan'})}>{t("新增学生课程")}</Button></div></div>
+  return <section className="panel subjects-panel directory-panel" aria-label={t("学生课程设置")}><div className="section-head directory-section-head subject-directory-toolbar"><div className="directory-person-actions">{canFinance&&onPreview&&<Button variant="outline" onClick={onPreview}>{t('费用预览')}</Button>}<Button adminGrant="plans.create" onClick={() => setEditor({kind:'plan'})}>{t("新增学生课程")}</Button></div></div>
 
     {error&&<p role="alert" className="directory-notice-actions"><span>{error}</span><Button variant="outline" onClick={()=>void reload()}>{t('重试')}</Button></p>}
     <FilterPanel active={Boolean(teacher || student || removed||syllabus||subjectId||grade)}><DirectoryFilters teachers={[...new Set(relationPlans.map(p => p.teacherName))].sort()} students={[...new Set(relationPlans.map(p => p.student))].sort()} pairs={planPairs} teacher={teacher} student={student} onTeacher={setTeacher} onStudent={setStudent}/><div className="directory-filters"><label>{t('课程体系')}<select value={syllabus} onChange={event=>{setSyllabus(event.target.value);setSubjectId('');setGrade('');}}><option value="">{t('全部课程体系')}</option>{catalogue?.syllabuses.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>{t('科目')}<select value={subjectId} onChange={event=>setSubjectId(event.target.value)}><option value="">{t('全部科目')}</option>{[...new Map((catalogue?.syllabuses.filter(item=>!syllabus||item.id===syllabus).flatMap(item=>item.subjects)||[]).map(item=>[item.id,item])).values()].map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>{t('年级')}<select value={grade} onChange={event=>setGrade(event.target.value)}><option value="">{t('全部年级')}</option>{[...new Set(catalogue?.syllabuses.filter(item=>!syllabus||item.id===syllabus).flatMap(item=>item.grades)||[])].map(item=><option key={item}>{item}</option>)}</select></label></div><div className="directory-filter-actions"><Button size="sm" variant="outline" onClick={() => { setTeacher(""); setStudent(""); setRemoved(false);setSyllabus('');setSubjectId('');setGrade(''); }}>{t("重置筛选")}</Button>

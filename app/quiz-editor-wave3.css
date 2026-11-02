@@ -46,13 +46,20 @@
 .quiz-editor-wave3 .quiz-question-head h3 {margin:0;font-size:18px;}
 .quiz-editor-wave3 .quiz-question-actions {display:flex;gap:6px;}
 .quiz-editor-wave3 .quiz-question-actions button {width:44px;height:44px;padding:10px;}
+.quiz-editor-wave3 .quiz-prompt-layout {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr));gap:16px;align-items:start;min-width:0;}
+.quiz-editor-wave3 .quiz-prompt-inputs {min-width:0;}
+.quiz-editor-wave3 .quiz-prompt-layout .quiz-prompt-preview {margin:0;min-width:0;min-height:160px;}
 .quiz-editor-wave3 .quiz-live-preview {padding:14px;border:1px solid var(--ui-border);border-radius:6px;background:var(--ui-surface-muted);color:var(--ui-text);margin-block:12px;}
 .quiz-editor-wave3 .quiz-live-preview h4 {color:var(--ui-muted);font-size:13px;margin:0 0 8px;}
 .quiz-editor-wave3 .quiz-english-preview {color:var(--ui-muted);border-color:var(--ui-border);}
-.quiz-editor-wave3 .quiz-options {display:grid;gap:12px;margin-block:20px;}
-.quiz-editor-wave3 .quiz-option-editor {padding:16px;border:1px solid var(--ui-border);border-radius:6px;background:var(--ui-surface);color:var(--ui-text);}
+.quiz-editor-wave3 .quiz-options {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr));gap:12px;margin-block:20px;}
+.quiz-editor-wave3 .quiz-options>button {grid-column:1/-1;justify-self:start;}
+.quiz-editor-wave3 .quiz-option-editor {min-width:0;overflow-wrap:anywhere;padding:16px;border:1px solid var(--ui-border);border-radius:6px;background:var(--ui-surface);color:var(--ui-text);}
 .quiz-editor-wave3 .quiz-option-editor:has(input[type=radio]:checked) {border-color:var(--ui-accent);}
 .quiz-editor-wave3 .quiz-option-editor-head {display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;}
+.quiz-editor-wave3 .quiz-option-editor-head .quiz-check {min-width:0;gap:6px;white-space:normal;line-height:1.4;}
+.quiz-editor-wave3 .quiz-option-editor-head .quiz-check svg {flex:none;color:var(--ui-accent);}
+.quiz-editor-wave3 .quiz-option-editor textarea {resize:vertical;}
 .quiz-editor-wave3 .quiz-option-editor-head h4 {margin:0;font-size:16px;}
 .quiz-editor-wave3 .quiz-answer-settings {border-color:var(--ui-border);padding-top:20px;}
 .quiz-editor-wave3 :is(.quiz-image-upload,.quiz-image-slot,.quiz-image-remove) {background:var(--ui-surface-muted);color:var(--ui-text);border-color:var(--ui-border);}
@@ -85,12 +92,15 @@
  .quiz-editor-wave3 :is(.quiz-panel,.quiz-share-panel,.quiz-question-card) {padding:16px 12px;}
  .quiz-editor-wave3 .quiz-fields {grid-template-columns:minmax(0,1fr);gap:0;}
  .quiz-editor-wave3 .quiz-question-layout {grid-template-columns:minmax(0,1fr);gap:16px;}
- .quiz-editor-wave3 .quiz-question-list {position:static;max-height:none;padding:12px;}
+ .quiz-editor-wave3 .quiz-question-list {position:static;display:grid;gap:8px;max-height:none;padding:12px;}
+ .quiz-editor-wave3 .quiz-question-list-head {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;margin:0;}
  .quiz-editor-wave3 .quiz-question-list nav {display:none;}
  .quiz-editor-wave3 .quiz-mobile-question-select {display:grid;gap:6px;font-size:14px;color:var(--ui-muted);}
  .quiz-editor-wave3 .quiz-mobile-question-select select {width:100%;}
- .quiz-editor-wave3 .quiz-add-question {grid-template-columns:minmax(0,1fr);gap:8px;margin-top:12px;}
- .quiz-editor-wave3 .quiz-add-question button {padding-inline:10px;}
+ .quiz-editor-wave3 .quiz-add-question {display:flex;flex-direction:row;flex-wrap:wrap;gap:8px;margin:0;padding:0;border:0;}
+ .quiz-editor-wave3 .quiz-add-question select {flex:1 1 7em;min-width:0;}
+ .quiz-editor-wave3 .quiz-add-question button {flex:1 1 6em;min-width:0;min-height:44px;padding-inline:8px;white-space:normal;overflow-wrap:anywhere;}
+ .quiz-editor-wave3 .quiz-prompt-layout,.quiz-editor-wave3 .quiz-options {grid-template-columns:minmax(0,1fr);}
  .quiz-editor-wave3 .quiz-question-head {gap:8px;}
  .quiz-editor-wave3 .quiz-option-editor {padding:12px;}
  .quiz-editor-wave3 .quiz-editor-footer {gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));}
