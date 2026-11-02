@@ -1,4 +1,5 @@
 "use client";
+import {MonthInput} from '@/components/month-input';
 import {lazy,Suspense,useCallback,useEffect,useRef,useState} from 'react';
 import {Button} from '@/components/ui/button';
 import {getLanguage} from '@/lib/i18n';
@@ -52,9 +53,9 @@ export default function ParentsWorkspace({onAuthorityLost,navigation,target,view
       {isCourse&&!showAll&&!children.data?.children.some(value=>value.studentId===courseSelection)&&<option value={courseSelection}>{displayChild?.student||PW('child')}</option>}
       {children.data?.children.map(value=><option value={value.studentId} key={value.studentId}>{value.student}</option>)}
      </select>}{displayChild&&view!=='finance'&&<small className="parents-muted">{[displayChild.syllabusName,displayChild.grade].filter(Boolean).join(' · ')}</small>}</label>
-     {!isCourse&&view!=='finance'&&<label>{PR('month')}<input type="month" aria-label={PR('month')} value={month} onChange={event=>changeMonth(event.target.value)}/></label>}
+     {!isCourse&&view!=='finance'&&<label>{PR('month')}<MonthInput type="month" aria-label={PR('month')} value={month} onChange={event=>changeMonth(event.target.value)}/></label>}
      {isCourse&&<div className="parents-course-view"><span className="parents-filter-label">{PW('courses')}</span><nav className="parents-course-tabs" aria-label={PW('courses')}>{(['calendar','lessons'] as const).map(tab=><Button type="button" key={tab} variant={view===tab?'default':'outline'} aria-current={view===tab?'page':undefined} onClick={()=>changeView(tab)}>{PC(tab==='lessons'?'list':'calendar')}</Button>)}</nav></div>}
-     {view==='lessons'&&<label>{PR('month')}<input type="month" aria-label={PR('month')} value={month} onChange={event=>changeMonth(event.target.value)}/></label>}
+     {view==='lessons'&&<label>{PR('month')}<MonthInput type="month" aria-label={PR('month')} value={month} onChange={event=>changeMonth(event.target.value)}/></label>}
      {view==='lessons'&&<label>{PW('status')}<select aria-label={PW('status')} value={status} onChange={event=>{setStatus(event.target.value as ParentCourseStatus);setPage(1);}}>{(['all','upcoming','completed','absent','cancelled'] as const).map(value=><option value={value} key={value}>{PW(value)}</option>)}</select></label>}
      <div className="parents-filter-refresh"><Button type="button" variant="outline" disabled={children.loading||content.loading} onClick={refresh}>{PR('refresh')}</Button></div>
     </div>

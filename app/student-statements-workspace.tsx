@@ -1,4 +1,5 @@
 "use client";
+import {MonthInput} from '@/components/month-input';
 import {useEffect,useState,type ReactNode} from 'react';
 import {Button} from '@/components/ui/button';
 import {alertActionFailure} from '@/lib/action-feedback';
@@ -51,7 +52,7 @@ export default function StudentStatementsWorkspace({scopeKey,onRecord,onInvoice,
  const data=result?.key===key?result.statement:null;
  const status=data?data.status==='review'?L('待核对','Needs review'):data.status==='in_progress'?L('本月暂计','Month in progress'):L('按已确认记录结算','Reconciled records'):'';
  const signed=(value:number)=>value<0?L('欠款 ','Owing ')+financeMoney(-value):value>0?L('结余 ','Credit ')+financeMoney(value):financeMoney(0);
- const monthControl=<label className="statement-month">{L('结算月份','Statement month')}<input type="month" value={month} min="2000-01" max={financeMonth()} onChange={event=>{if(/^20\d\d-(0[1-9]|1[0-2])$/.test(event.target.value)&&event.target.value<=financeMonth())setMonth(event.target.value);}}/></label>;
+ const monthControl=<label className="statement-month">{L('结算月份','Statement month')}<MonthInput type="month" value={month} min="2000-01" max={financeMonth()} onChange={event=>{if(/^20\d\d-(0[1-9]|1[0-2])$/.test(event.target.value)&&event.target.value<=financeMonth())setMonth(event.target.value);}}/></label>;
  return <div className="finance2-workspace student-statements-workspace" data-testid="student-statements-workspace">
   <section className="panel statement-selection">
    <div className="finance2-section-head"><h2>{L('学生账户','Student accounts')}</h2><Button type="button" variant="outline" disabled={!studentId||loading} onClick={()=>setVersion(n=>n+1)}>{L('刷新','Refresh')}</Button></div>

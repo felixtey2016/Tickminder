@@ -1,4 +1,5 @@
 "use client";
+import {MonthInput} from '@/components/month-input';
 
 import {useEffect,useRef,useState} from 'react';
 import {Button} from '@/components/ui/button';
@@ -133,7 +134,7 @@ export default function FinanceOverview({permissions,onInvoice,onPayroll,onPayro
  <div className="finance-overview-home" hidden={Boolean(query)}>
   <section className="panel finance-overview-controls">
    <div className="finance2-filters finance-overview-toolbar">
-    <label>{F2('month')}<input type="month" value={month} onChange={event=>{if(/^20\d\d-(0[1-9]|1[0-2])$/.test(event.target.value)){setMonth(event.target.value);setQuery(null);}}}/></label>
+    <label>{F2('month')}<MonthInput type="month" value={month} onChange={event=>{if(/^20\d\d-(0[1-9]|1[0-2])$/.test(event.target.value)){setMonth(event.target.value);setQuery(null);}}}/></label>
     <label>{F2('basis')}<select value={basis} onChange={event=>{setBasis(event.target.value as FinanceBasis);setQuery(null);}}>{(['cash','service','issued'] as const).map(value=><option key={value} value={value}>{F2(value)}</option>)}</select></label>
    </div>
    <div className="finance-overview-controls-actions">

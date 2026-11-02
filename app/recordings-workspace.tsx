@@ -1,4 +1,5 @@
 "use client";
+import {MonthInput} from '@/components/month-input';
 
 import {useCallback,useEffect,useId,useMemo,useRef,useState,type FormEvent} from 'react';
 import {CalendarDays,ExternalLink,Film,Plus,X} from 'lucide-react';
@@ -165,7 +166,7 @@ export function RecordingsWorkspace({classroomId,createRequest,onCreateRequestHa
       <details className="recordings-filter-disclosure"><summary>{recordingText('更多筛选','More filters')}{Object.entries(filters).some(([key,value])=>key!=='q'&&value)&&<span>{recordingText('已启用','Active')}</span>}</summary><div className="recordings-filters">
         {!classroomId&&<label>{t('recordings.classroom')}<select value={draftFilters.classroomId} onChange={event=>setDraftFilters(current=>({...current,classroomId:event.target.value}))}><option value="">{t('recordings.allClasses')}</option>{classes.map(item=><option value={item.id} key={item.id}>{item.title}</option>)}</select></label>}
         {!classroomId&&<label>{t('recordings.subject')}<select value={draftFilters.subject} onChange={event=>setDraftFilters(current=>({...current,subject:event.target.value}))}><option value="">{t('recordings.allSubjects')}</option>{subjects.map(subject=><option value={subject} key={subject}>{subject}</option>)}</select></label>}
-        <label>{t('recordings.month')}<input type="month" value={draftFilters.month} onChange={event=>setDraftFilters(current=>({...current,month:event.target.value}))}/></label>
+        <label>{t('recordings.month')}<MonthInput type="month" value={draftFilters.month} onChange={event=>setDraftFilters(current=>({...current,month:event.target.value}))}/></label>
         {manage&&<label>{t('recordings.status')}<select value={draftFilters.status} onChange={event=>setDraftFilters(current=>({...current,status:event.target.value}))}><option value="">{t('recordings.allStatuses')}</option><option value="published">{t('recordings.published')}</option><option value="draft">{t('recordings.draft')}</option></select></label>}
         <div className="recording-actions recordings-filter-actions"><Button type="submit" size="sm" variant="outline">{t('recordings.apply')}</Button><Button type="button" size="sm" variant="outline" onClick={()=>{const empty={q:'',classroomId:'',subject:'',month:'',status:''};setDraftFilters(empty);setFilters(empty);}}>{t('recordings.reset')}</Button></div>
       </div></details>

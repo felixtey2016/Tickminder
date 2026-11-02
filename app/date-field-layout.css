@@ -1,0 +1,20 @@
+/* Native month pickers do not wrap their localized year. Keep a readable mirror. */
+.native-month-input{position:relative;display:flex;align-items:center;gap:10px;box-sizing:border-box;min-width:0;width:100%;min-height:44px;padding:10px 12px;border:1px solid var(--ui-border,#dddfe7);border-radius:6px;background:var(--ui-surface,#fff);color:var(--ui-text,#252334);font-size:16px;font-weight:400;line-height:1.5;cursor:pointer;}
+.native-month-value{flex:1 1 auto;min-width:0;white-space:normal;overflow-wrap:normal;word-break:normal;}
+.native-month-input>svg{flex:0 0 20px;color:var(--ui-muted,#626575);}
+:is(.app-shell,dialog,[role=dialog]) .native-month-input>input.native-month-control,.native-month-input>input.native-month-control{position:absolute;inset:0;display:block;box-sizing:border-box;width:100%;min-width:0;max-width:none;min-height:100%;height:100%;margin:0;padding:0;opacity:0;cursor:pointer;}
+.native-month-input:focus-within{outline:2px solid var(--ui-accent,#6547c6);outline-offset:2px;}
+.native-month-input[data-disabled=true]{background:var(--ui-surface-muted,#f1f2f6);color:var(--ui-muted,#626575);cursor:not-allowed;}
+.native-month-input[data-disabled=true]>input.native-month-control{cursor:not-allowed;}
+.native-month-input[data-native-fallback=true]{padding:0;border:0;background:transparent;}
+.native-month-input[data-native-fallback=true]>.native-month-value,.native-month-input[data-native-fallback=true]>svg{display:none;}
+:is(.app-shell,dialog,[role=dialog]) .native-month-input[data-native-fallback=true]>input.native-month-control,.native-month-input[data-native-fallback=true]>input.native-month-control{position:static;opacity:1;min-height:44px;height:auto;padding:10px 12px;border:1px solid var(--ui-border,#dddfe7);border-radius:6px;background:var(--ui-surface,#fff);color:var(--ui-text,#252334);font:inherit;cursor:auto;}
+.native-month-input[data-native-fallback=true]:focus-within{outline:0;}
+.native-month-input[data-native-fallback=true]>input.native-month-control:focus-visible{outline:2px solid var(--ui-accent,#6547c6);outline-offset:2px;}
+
+/* Narrow filters must reflow before a month and adjacent selector are squeezed. */
+.app-shell.shell-wave1 :is(.finance2-filters,.billing-filters,.invoice-list-filters,.statement-filters,.recordings-filters,.timetable-filters,.teaching-stat-filters):has(.native-month-input){grid-template-columns:repeat(auto-fit,minmax(min(100%,15em),1fr));}
+.app-shell.shell-wave1 .teaching-stat-filters>label:has(.native-month-input){grid-template-columns:minmax(0,1fr);}
+.app-shell.shell-wave1 :is(.parents-course-filters,.parents-finance-filters):has(.native-month-input){grid-template-columns:repeat(auto-fit,minmax(min(100%,15em),1fr));}
+
+@media(forced-colors:active){.native-month-input{border-color:ButtonText}.native-month-input:focus-within{outline-color:Highlight}}

@@ -1,4 +1,5 @@
 "use client";
+import {MonthInput} from '@/components/month-input';
 import {SessionAttendanceBoard,SessionAttendanceDialog,SessionAttendanceLoaderDialog,TeachingHoursPanel} from "./session-attendance";
 import type {AttendanceSession} from "@/lib/attendance-types";
 import '@/lib/finance-round2-i18n';
@@ -950,7 +951,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
                 <LegalLinks language={language} className="menu-legal"/>
             </aside>}
             <main className={"workspace workspace-compact"+(courseView?" workspace-course-view":"")} inert={menuOpen&&!desktop?true:undefined}><FloatingBackButton context={`${account.id}:${role}:${account.groupId}`} isHome={activeView==="home"||(Boolean(account.isOwner)&&activeView==="groups")} onHome={()=>choose("home")} title={t(title)} subtitle={account.groupName||undefined} actions={courseView&&activeView!=='schedule'&&(role==='admin'||role==='teacher')&&canView('schedule')?<Button className="workspace-arrange" data-testid="course-arrange" aria-label={t('安排课程')} onClick={()=>choose('schedule')}><CalendarPlus size={18} aria-hidden="true"/><span className="workspace-arrange-full">{t('安排课程')}</span><span className="workspace-arrange-compact">{getLanguage()==='zh'?'安排':'Schedule'}</span></Button>:undefined}/>
-                {showMonth && <div className="workspace-period"><label className="month-select"><span>{t("月份")}</span><input aria-label={t("统计月份")} type="month" value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)}/></label></div>}
+                {showMonth && <div className="workspace-period"><label className="month-select"><span>{t("月份")}</span><MonthInput aria-label={t("统计月份")} type="month" value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)}/></label></div>}
                 {courseView && <CourseNavigation showArrange={false} role={role} activeView={activeView} onChoose={choose} badges={badgeCounts} canView={canView}/>}
                 {managementView && <ManagementNavigation area={managementView} activeView={activeView} onChoose={choose} canView={canView}/>}
                 {message && state && !state.error && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("关闭")}>×</button></div>}
