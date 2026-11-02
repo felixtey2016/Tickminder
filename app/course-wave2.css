@@ -108,7 +108,7 @@
 
 /* Forms retain all repeat, conflict, reset and billing safeguards. */
 .shell-wave1 .course-wave2 :is(.schedule-edit-form,.class-session-planner .learning-form) { gap:16px; }
-.shell-wave1 .course-wave2 .schedule-time-fields { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding-top:12px; border-top:1px solid var(--ui-border); }
+.shell-wave1 .course-wave2 .schedule-time-fields { container-type:inline-size; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding-top:12px; border-top:1px solid var(--ui-border); }
 .shell-wave1 .course-wave2 .schedule-time-fields>label:first-child { grid-column:1/-1; }
 .shell-wave1 .course-wave2 .schedule-date-note { margin:0; font-size:13px; }
 .shell-wave1 .course-wave2 .schedule-extra-options { border-color:var(--ui-border); border-radius:6px; background:var(--ui-surface); }
@@ -119,6 +119,10 @@
 .shell-wave1 .course-wave2 .class-session-planner .form-pair { gap:12px; }
 .shell-wave1 .course-wave2 .form-action-bar { background:var(--ui-surface); border-color:var(--ui-border); }
 .shell-wave1 .course-wave2 .form-action-summary { color:var(--ui-muted); }
+
+@container(max-width:11em) {
+ .shell-wave1 .course-wave2 .schedule-time-fields>label { grid-column:1/-1; }
+}
 
 @media(min-width:1000px) {
  .shell-wave1 .course-wave2 .student-calendar-layout { grid-template-columns:minmax(320px,1.1fr) minmax(280px,.9fr); }

@@ -39,9 +39,9 @@
 .learning-browser-detail .learning-file-actions > a { white-space: normal; }
 .learning-browser-detail .learning-file-actions > a, .homework-review-dialog .learning-file-actions > a { color: var(--ui-accent, var(--primary)); border-color: var(--ui-border, var(--border)); background: var(--ui-surface, var(--background)); }
 .learning-browser-detail .learning-file-actions > a:hover, .homework-review-dialog .learning-file-actions > a:hover { background: var(--ui-accent-soft, var(--muted)); }
-.learning-compose-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+.learning-compose-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
 .learning-compose-toolbar > h2 { margin: 0; font-size: 16px; }
-.learning-compose-toolbar > button { min-height: 40px; }
+.learning-compose-toolbar > button { min-height: 44px; height: auto; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .learning-compose-toolbar > button, .learning-teacher .learning-form input { scroll-margin-top: 144px; }
 .learning-list-tools { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 .learning-detail-recipients { margin-block: 12px; }
@@ -75,6 +75,7 @@
 .homework-review-dialog .review-feedback-item { background: var(--ui-surface-muted, var(--muted)); border-color: var(--ui-border, var(--border)); padding: 12px; border-radius: 8px; }
 .homework-review-dialog .review-feedback-item p { white-space: pre-wrap; }
 .homework-review-dialog h3 { font-size: 16px; margin-top: 0; }
+.homework-review-dialog:has(> [data-slot="dialog-close"]) > [data-slot="dialog-title"] { padding-right: 44px; overflow-wrap: anywhere; }
 .homework-review-dialog .learning-form { margin-top: 16px; }
 .homework-review-dialog .review-grants > p { font-size: 14px; color: var(--ui-muted, var(--muted-foreground)); }
 .homework-review-dialog details > summary { min-height: 40px; padding-block: 10px; cursor: pointer; }

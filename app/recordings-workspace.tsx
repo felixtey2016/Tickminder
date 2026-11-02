@@ -50,7 +50,11 @@ function RecordingEditor({request,onClose,onSaved}:{request:EditorRequest;onClos
   const pending=useRef<Operation>(null),recipientClass=useRef(''),loadedOptions=useRef(''),closed=useRef(false);
   const dirty=baseline!==null&&JSON.stringify(form)!==JSON.stringify(baseline);
   const close=useCallback(()=>{if(busy)return;if(dirty&&!window.confirm(t('recordings.discard')))return;closed.current=true;onClose();},[busy,dirty,onClose]);
-  useEffect(()=>{dialog.current?.showModal();return()=>dialog.current?.close();},[]);
+  useEffect(()=>{
+    const element=dialog.current,opener=document.activeElement;
+    element?.showModal();
+    return()=>{element?.close();if(opener instanceof HTMLElement&&opener.isConnected)opener.focus();};
+  },[]);
   useEffect(()=>{
     const before=(event:BeforeUnloadEvent)=>{if(dirty){event.preventDefault();event.returnValue='';}};
     const navigate=(event:Event)=>{if(busy||(dirty&&!window.confirm(t('recordings.discard'))))event.preventDefault();};

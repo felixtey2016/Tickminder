@@ -37,7 +37,7 @@
  .management-mobile>select{flex:1;width:100%;min-width:0;min-height:44px;border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:#fff;color:var(--foreground);font-size:15px}
  .settings-compact .group-entry{padding:16px}
  .account-settings-compact .account-settings{padding:16px}
- .account-settings-compact .account-summary-fields>div{grid-template-columns:minmax(65px,.6fr) minmax(0,1.4fr);gap:8px}
+ .account-settings-compact .account-summary-fields>div{grid-template-columns:minmax(0,1fr);gap:4px}
 }
 
 /* Round 1: one account summary followed by task-based settings rows. */

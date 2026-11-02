@@ -43,15 +43,22 @@
 .app-shell.shell-wave1 .parent-workspace-menu{top:var(--parent-header-height,72px);height:calc(100dvh - var(--parent-header-height,72px))}
 .app-shell.shell-wave1 .parent-menu-heading{padding-bottom:14px}
 .app-shell.shell-wave1 .workspace-backbar{background:var(--ui-bg,#f7f7fa)}
+.app-shell.shell-wave1 .topbar{height:auto;min-height:72px;padding-block:8px;flex-wrap:wrap}
+.app-shell.shell-wave1 .brand-home{flex-shrink:0;max-width:100%}
+.app-shell.shell-wave1 .top-actions{margin-left:auto;max-width:100%}
+.app-shell.shell-wave1 .shell-language{min-width:calc(2em + 20px)}
+.app-shell.shell-wave1 .app-body{min-height:calc(100dvh - var(--shell-header-height,72px))}
+.app-shell.shell-wave1 .workspace-menu{top:var(--shell-header-height,72px);height:calc(100dvh - var(--shell-header-height,72px))}
+.app-shell.shell-wave1 .workspace-backbar{top:var(--shell-header-height,72px)}
 @media(min-width:901px){.app-shell.shell-wave1.parent-shell .parent-menu-toggle{display:none}}
 @media(max-width:900px){
- .app-shell.shell-wave1 .topbar{height:64px;padding:0 16px;gap:8px}
+ .app-shell.shell-wave1 .topbar{height:auto;min-height:64px;padding:8px 16px;gap:8px}
  .app-shell.shell-wave1 .brand>div>span{display:none}
  .app-shell.shell-wave1 .app-body.menu-open{display:block;grid-template-columns:none}
  .app-shell.shell-wave1 .parent-shell-body{display:block}
- .app-shell.shell-wave1 .workspace-menu{position:fixed;z-index:92;top:64px;bottom:0;left:0;height:calc(100dvh - 64px);width:min(340px,calc(100vw - 24px));padding:16px 12px max(20px,env(safe-area-inset-bottom));overflow-y:auto}
+ .app-shell.shell-wave1 .workspace-menu{position:fixed;z-index:92;top:var(--shell-header-height,64px);bottom:0;left:0;height:calc(100dvh - var(--shell-header-height,64px));width:min(340px,calc(100vw - 24px));padding:16px 12px max(20px,env(safe-area-inset-bottom));overflow-y:auto}
  .app-shell.shell-wave1 .parent-workspace-menu{top:var(--parent-header-height,64px);height:calc(100dvh - var(--parent-header-height,64px))}
- .app-shell.shell-wave1 .menu-backdrop{inset:64px 0 0;background:#11132466}
+ .app-shell.shell-wave1 .menu-backdrop{inset:var(--shell-header-height,64px) 0 0;background:#11132466}
  .app-shell.shell-wave1 .shell-menu-close,.app-shell.shell-wave1 .parent-menu-close{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;min-width:44px;min-height:44px;padding:10px;color:var(--ui-text,#252334)}
  .app-shell.shell-wave1 .parent-menu-close:hover{background:var(--ui-surface-muted,#f1f1f6);color:var(--ui-text,#252334)}
  .app-shell.shell-wave1[data-mobile-bottom-nav-visible=true] .top-actions .menu-toggle{display:none}
@@ -59,7 +66,7 @@
  .app-shell.shell-wave1 :is(.workspace,.parent-shell-main){padding:20px 16px}
 }
 @media(max-width:380px){
- .app-shell.shell-wave1 .topbar{padding:0 10px;gap:4px}
+ .app-shell.shell-wave1 .topbar{padding:8px 10px;gap:4px}
  .app-shell.shell-wave1 .brand{gap:6px}
  .app-shell.shell-wave1 .brand strong{font-size:17px}
  .app-shell.shell-wave1 .brand-logo.small{width:30px;height:30px}

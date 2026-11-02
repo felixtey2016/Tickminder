@@ -40,3 +40,15 @@
 @media(min-width:1000px){.shell-wave1 .parent-calendar.course-wave2{grid-template-columns:minmax(320px,1.1fr) minmax(280px,.9fr)}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-day-details{position:sticky;top:148px}}
 @media(max-width:650px){.shell-wave1 .parent-calendar.course-wave2{gap:12px}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month{padding:10px;gap:10px}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-grid{gap:3px}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-day{min-height:50px;gap:3px;padding:5px 1px}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-day[aria-pressed=true]{padding:4px 0}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-count{font-size:11px;padding:2px}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-legend{font-size:12px;gap:6px 10px}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month-label{font-size:14px}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-day-details{padding:12px}}
 @media(max-width:380px){.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-toolbar{grid-template-columns:44px minmax(0,1fr) 44px}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-toolbar>button{grid-column:1/-1;justify-self:end}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month-label{overflow-wrap:normal;word-break:normal}}
+
+/* Keep dates intact when the user enlarges text; only the calendar grid scrolls. */
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-grid{grid-template-columns:repeat(7,minmax(1.75em,1fr));overflow-x:auto;max-width:100%;padding-bottom:4px}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-number{white-space:nowrap}
+@media(max-width:650px){
+ .parent-compact .parents-workspace .parents-course-view .parents-course-tabs button{flex:1 1 5em;max-width:none}
+ .shell-wave1 .parent-calendar.course-wave2 .parent-calendar-toolbar{grid-template-columns:44px minmax(0,1fr) 44px}
+ .shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month-picker{grid-column:1/-1;grid-row:1}
+ .shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month-controls>button:first-child{grid-column:1;grid-row:2}
+ .shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month-controls>button:last-child{grid-column:3;grid-row:2}
+ .shell-wave1 .parent-calendar.course-wave2 .parent-calendar-toolbar>button{grid-column:2;grid-row:2;justify-self:center}
+}

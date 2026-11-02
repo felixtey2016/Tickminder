@@ -6,9 +6,10 @@
 .quiz-player-wave3 :is([data-slot="dialog-description"],.quiz-note,.quiz-player-creator,.quiz-creator,.quiz-autosave,.quiz-assignment-meta dt,.quiz-result-summary time,.quiz-result-summary p),.quiz-practice-wave3 :is(.quiz-note,.quiz-card-date,.quiz-assignment-meta dt,.quiz-recipient-card p,.quiz-recipient-row small),.quiz-analysis-wave3 :is(.quiz-note,.quiz-analysis-help,.quiz-recipient-card p),.quiz-link-wave3 :is(p,.quiz-card-creator) {color:var(--ui-muted);}
 .quiz-player-wave3 .quiz-player-heading {align-items:flex-start;gap:12px;margin-bottom:12px;}
 .quiz-player-wave3 .quiz-player-heading h2 {font-size:20px;line-height:1.4;font-weight:650;}
+.quiz-player-wave3 .quiz-practice-title[data-slot="dialog-title"],.quiz-player-wave3 .quiz-practice-meta .quiz-creator {white-space:normal;overflow:visible;overflow-wrap:anywhere;}
 .quiz-player-wave3 .quiz-player-close {flex:0 0 44px;min-width:44px;min-height:44px;background:transparent;color:var(--ui-muted);}
 .quiz-player-wave3 .quiz-player-close:hover {background:var(--ui-surface-muted);color:var(--ui-text);}
-.quiz-player-wave3 .quiz-practice-meta {gap:8px 16px;margin-top:4px;}
+.quiz-player-wave3 .quiz-practice-meta {gap:8px 16px;margin-top:4px;flex-wrap:wrap;}
 .quiz-player-wave3 .quiz-player-top {font-size:14px;gap:8px 12px;}
 .quiz-player-wave3 .quiz-player-question {padding:18px 0;background:transparent;border:0;border-radius:0;}
 .quiz-player-wave3 .quiz-player-question h3 {font-size:20px;font-weight:550;line-height:1.6;}

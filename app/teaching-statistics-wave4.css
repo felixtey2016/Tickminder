@@ -50,6 +50,21 @@
 .teaching-stat-workload dt{color:var(--ui-muted);min-width:0}
 .teaching-stat-workload dd{margin:0;text-align:end;font-variant-numeric:tabular-nums;min-width:0}
 .teaching-stat-workload button{margin-top:12px}
+/* Reflow by available text space, including enlarged system/browser text. */
+.teaching-stat-card,.teaching-stat-scope,.teaching-stat-filters{container-type:inline-size}
+.teaching-stat-workload dl>div{flex-wrap:wrap}
+.teaching-stat-workload dt{flex:1 1 10em;overflow-wrap:anywhere}
+.teaching-stat-workload dd{flex:0 0 auto;max-width:100%;overflow-wrap:anywhere;margin-left:auto}
+@container(max-width:15em){
+ .teaching-stat-card>strong{grid-column:1/-1!important;grid-row:auto!important;overflow-wrap:normal}
+ .teaching-stat-card>button{grid-column:1/-1!important;grid-row:auto!important;justify-self:start!important;white-space:normal;text-align:left}
+ .teaching-stat-card>p{grid-column:1/-1!important;grid-row:auto!important}
+}
+@container(max-width:17em){
+ .teaching-stat-filters>label{grid-template-columns:minmax(0,1fr)!important;gap:4px!important}
+ .teaching-stat-scope .teaching-stat-cards{grid-template-columns:minmax(0,1fr)!important}
+ .teaching-stat-scope .teaching-stat-card+.teaching-stat-card{border-left:0;border-top:1px solid var(--ui-border)}
+}
 @media(max-width:900px){.teaching-stat-card>strong{font-size:23px}.teaching-stat-progress .teaching-stat-card>button{grid-column:1/-1;grid-row:auto;justify-self:start}}
 @media(max-width:640px){
  .teaching-statistics{gap:20px}

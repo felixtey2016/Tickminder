@@ -105,6 +105,9 @@
 .invoice-settings-wave4 .invoice-template-option small{color:var(--ui-muted)}
 .invoice-settings-wave4 .invoice-notice{background:var(--ui-warning-bg);border-color:var(--ui-border);color:var(--ui-warning-text)}
 .invoice-settings-wave4 .invoice-notice-error{background:var(--ui-danger-bg);color:var(--ui-danger-text)}
+@media(max-width:600px){
+ .finance-operations-wave4 .finance2-dialog.form-action-dialog .finance2-actions>button{flex-basis:8em}
+}
 @media(min-width:800px){
  .finance-operations-wave4 .prepayment-balance-row,.finance-operations-wave4 .prepayment-balance-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(100px,.5fr) minmax(220px,.8fr);gap:20px;align-items:center}
  .finance-operations-wave4 .prepayment-balance-row>.finance2-record-head{display:contents}

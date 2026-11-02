@@ -6,10 +6,12 @@
 .student-contact-form small{font-size:12px;font-weight:400;line-height:1.6;color:var(--ui-secondary,#60576f)}
 .student-contact-form fieldset{padding:0;border:0;margin:0;min-width:0}
 .student-contact-form legend{font-size:14px;font-weight:600;margin:0 0 8px;padding:0}
-.student-contact-kinds{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.student-contact-kinds{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,7em),1fr));gap:10px}
 .student-contact-kinds label{display:flex;flex-direction:row;align-items:center;gap:9px;min-height:46px;border:1px solid var(--border,#d9d6ea);border-radius:10px;padding:10px 12px;font-size:14px;cursor:pointer}
 .student-contact-kinds label.selected{border-color:#795bc5;background:#f3effc;color:#4b2b92}
 .student-contact-kinds input{width:17px;height:17px;margin:0;accent-color:#6240bd;flex:0 0 auto}
+.student-contact-kinds label{min-width:0}
+.student-contact-kinds label>span{min-width:0;overflow-wrap:anywhere}
 .student-contact-submit{min-height:46px;width:100%;white-space:normal;background:var(--timelyo-purple,#6240bd);color:#fff;border:1px solid var(--timelyo-purple,#6240bd);padding:10px 14px}
 .student-contact-onboarding h1{font-size:24px;margin:20px 0 10px}
 .student-contact-onboarding>p{font-size:14px;line-height:1.7;margin:0;color:var(--ui-secondary,#60576f)}

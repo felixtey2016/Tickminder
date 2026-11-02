@@ -131,4 +131,4 @@
  .finance2-overview .finance2-reminder>div{gap:4px;}
 }
 
-.finance2-overview .finance2-core-kpis .finance2-kpi .finance-overview-kpi-link{width:fit-content;white-space:nowrap;text-align:left;justify-content:flex-start;}
+.finance2-overview .finance2-core-kpis .finance2-kpi .finance-overview-kpi-link{width:fit-content;white-space:normal;text-align:left;justify-content:flex-start;}

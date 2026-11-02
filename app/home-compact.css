@@ -84,3 +84,13 @@
  .home-compact-task>b{font-size:20px}
 }
 @media(max-width:380px){.home-compact-task{gap:8px;padding:12px}.home-compact-task>svg{width:18px}.home-compact-task-action{max-width:35%;padding-left:6px}.home-compact .home-compact-shortcuts>button{padding:12px;gap:8px;white-space:nowrap}.home-compact-shortcuts>button>svg:last-child{display:none}}
+
+/* Keep the same actions readable when the user enlarges text. */
+.home-compact-heading,.home-compact-error{flex-wrap:wrap}
+.home-compact .home-compact-shortcuts>button{height:auto;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.home-compact-shortcuts{grid-template-columns:repeat(auto-fit,minmax(min(100%,7em),1fr))}
+@media(max-width:650px){
+ .home-compact-task{flex-wrap:wrap}
+ .home-compact-task-copy{flex:1 1 7em}
+ .home-compact-task-action{flex:0 1 auto;max-width:100%;margin-left:auto;overflow-wrap:anywhere}
+}
