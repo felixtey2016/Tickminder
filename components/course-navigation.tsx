@@ -1,5 +1,6 @@
 "use client";
 
+import {HorizontalMenu} from '@/components/horizontal-menu';
 import { useEffect, useRef } from "react";
 import { CalendarPlus } from "lucide-react";
 import { t } from "@/lib/i18n";
@@ -46,7 +47,7 @@ export function CourseNavigation({ role, activeView, onChoose, badges = {}, canV
   if (sections.length === 0) return null;
   return <div className="course-navigation" data-testid="course-navigation">
     <div className="course-navigation-main">
-      <nav className="course-navigation-row" aria-label={t("课程视图")} ref={row} data-testid="course-navigation-views">
+      <HorizontalMenu><nav className="course-navigation-row" aria-label={t("课程视图")} ref={row} data-testid="course-navigation-views">
         {sections.map(section => {
           const active = selected === section.id;
           // Alternative views show the same work; do not count it twice.
@@ -58,7 +59,7 @@ export function CourseNavigation({ role, activeView, onChoose, badges = {}, canV
             <span>{t(section.label)}</span><PendingCount count={count}/>
           </button>;
         })}
-      </nav>
+      </nav></HorizontalMenu>
       {canArrange && showArrange && <div className="course-navigation-actions">
         <button type="button" className="course-navigation-arrange" data-testid="course-arrange"
           data-active={activeView === "schedule"} aria-current={activeView === "schedule" ? "page" : undefined}

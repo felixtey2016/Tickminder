@@ -16,11 +16,11 @@ div.app-select-panel[role=dialog] .app-select-search input[type=search]{flex:1;b
 .app-select-panel .app-select-search input::placeholder{color:var(--ui-muted,#626575);opacity:1;}
 .app-select-panel .app-select-search:focus-within{outline:2px solid var(--ui-accent,#6547c6);outline-offset:1px;}
 .app-select-options{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scroll-padding-block:4px;-webkit-overflow-scrolling:touch;}
-.app-select-panel button.app-select-option{display:flex;align-items:center;justify-content:space-between;gap:12px;box-sizing:border-box;width:100%;min-height:48px;height:auto;margin:2px 0;padding:11px 12px;border:0;border-radius:9px;background:transparent;color:var(--ui-text,#252334);font:inherit;font-size:16px;font-weight:400;line-height:1.5;text-align:start;box-shadow:none;cursor:pointer;white-space:normal;}
-.app-select-panel.is-mobile button.app-select-option{min-height:52px;padding:12px 14px;}
+.app-select-item+.app-select-item{margin-top:8px;}
+.app-select-panel button.app-select-option{display:flex;align-items:center;justify-content:space-between;gap:12px;box-sizing:border-box;width:100%;min-height:48px;height:auto;margin:0;padding:11px 14px;border:1px solid var(--ui-border,#dddfe7);border-radius:12px;background:var(--ui-surface,#fff);color:var(--ui-text,#252334);font:inherit;font-size:16px;font-weight:400;line-height:1.5;text-align:start;box-shadow:none;cursor:pointer;white-space:normal;}
+.app-select-panel.is-mobile button.app-select-option{min-height:58px;padding:14px;}
 .app-select-option>span{min-width:0;overflow-wrap:anywhere;}.app-select-option>svg{flex:0 0 21px;}
-.app-select-panel button.app-select-option.is-selected{background:var(--ui-accent-soft,#eee9fb);color:var(--ui-accent,#6547c6);font-weight:600;}
-.app-select-panel button.app-select-option.is-all{border-bottom:1px solid var(--ui-border,#dddfe7);margin-bottom:9px;}
+.app-select-panel button.app-select-option.is-selected{border-color:color-mix(in srgb,var(--ui-accent,#6547c6) 45%,var(--ui-border,#dddfe7));background:var(--ui-accent-soft,#eee9fb);color:var(--ui-accent,#6547c6);font-weight:600;}
 .app-select-panel button.app-select-option:disabled{opacity:.5;cursor:not-allowed;}
 .app-select-panel button:focus{outline:0;}
 .app-select-panel.is-keyboard button:focus-visible{outline:2px solid var(--ui-accent,#6547c6);outline-offset:-3px;}
@@ -28,3 +28,26 @@ div.app-select-panel[role=dialog] .app-select-search input[type=search]{flex:1;b
 .app-select-panel .app-select-empty{padding:20px 10px;margin:0;text-align:center;color:var(--ui-muted,#626575);}
 @media(hover:hover){.app-select-panel button.app-select-option:not(:disabled):not(.is-selected):hover,.app-select-panel button.app-select-close:hover{background:var(--ui-surface-muted,#f1eff5);}}
 @media(forced-colors:active){.app-select-panel button.app-select-option.is-selected{outline:2px solid Highlight;outline-offset:-2px;}.app-select-panel button.app-select-option:disabled{color:GrayText;}}
+
+/* Keep the native form control; replace only its closed-field indicator.
+   These longhands intentionally outrank legacy field background/padding shorthands. */
+:root{--app-select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23736489' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");}
+.dark{--app-select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a8b1bf' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");}
+select:where(:not([multiple])):where(:not([size]),[size="0"],[size="1"]):not([data-native-select="true"],[data-native-select="true"] select,[aria-hidden="true"]){
+ -webkit-appearance:none;appearance:none;
+ padding-inline-end:52px!important;
+ background-image:var(--app-select-chevron)!important;
+ background-position:right 18px center!important;
+ background-size:20px 20px!important;
+ background-repeat:no-repeat!important;
+}
+/* The optional component already supplies a real SVG. Do not draw it twice. */
+[data-slot="native-select-wrapper"] select[data-slot="native-select"]{background-image:none!important;}
+[data-slot="native-select-icon"]{right:18px;width:20px;height:20px;opacity:1;color:var(--ui-muted,#626575);}
+/* Compact language controls retain enough space for Chinese and English labels. */
+.app-shell.shell-wave1 select.shell-language{width:84px;min-width:84px;padding-inline-start:9px;padding-inline-end:36px!important;background-position:right 12px center!important;background-size:16px 16px!important;}
+@media(max-width:380px){.app-shell.shell-wave1 select.shell-language{width:78px;min-width:78px;padding-inline-start:6px;}}
+@media(forced-colors:active){
+ select:where(:not([multiple])):where(:not([size]),[size="0"],[size="1"]):not([data-native-select="true"],[data-native-select="true"] select,[aria-hidden="true"]){-webkit-appearance:auto!important;appearance:auto!important;background-image:none!important;}
+ [data-slot="native-select-icon"]{display:none;}
+}

@@ -1,4 +1,5 @@
 "use client";
+import {HorizontalMenu} from '@/components/horizontal-menu';
 import {MonthInput} from '@/components/month-input';
 import {lazy,Suspense,useCallback,useEffect,useRef,useState} from 'react';
 import {Button} from '@/components/ui/button';
@@ -60,7 +61,7 @@ export default function ParentsWorkspace({onAuthorityLost,navigation,target,view
      <div className="parents-filter-refresh"><Button type="button" variant="outline" disabled={children.loading||content.loading} onClick={refresh}>{PR('refresh')}</Button></div>
     </div>
     {children.data&&children.data.pages>1&&<div className="parents-child-pages" aria-label={PW('childrenPage')}><span className="parents-muted">{PW('childrenPage')}</span><ParentPagination page={children.data.page} pages={children.data.pages} disabled={children.loading} onChange={value=>{setChildPage(value);setSelected('');if(isCourse&&!showAll)setCourseSelected('all');setPage(1);}}/></div>}
-    {(view==='materials'||view==='recordings')&&<nav className="parents-teaching-tabs" aria-label={PR('teaching')}>{(['materials','recordings'] as const).map(tab=><button type="button" key={tab} aria-current={view===tab?'page':undefined} onClick={()=>changeView(tab)}>{PR(tab)}</button>)}</nav>}
+    {(view==='materials'||view==='recordings')&&<HorizontalMenu><nav className="parents-teaching-tabs" aria-label={PR('teaching')}>{(['materials','recordings'] as const).map(tab=><button type="button" key={tab} aria-current={view===tab?'page':undefined} onClick={()=>changeView(tab)}>{PR(tab)}</button>)}</nav></HorizontalMenu>}
    </>}</ParentLoadState>
   </section>
   {ready&&<section className={view==='homework'?'learning-homework-workspace':'panel'} aria-busy={content.loading}>

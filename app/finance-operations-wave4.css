@@ -24,7 +24,7 @@
 .finance-operations-wave4 :is(h2,h3){color:var(--ui-text)}
 .finance-operations-wave4 h2{font-size:1.2rem;line-height:1.4}
 .finance-operations-wave4 .finance2-section-head{align-items:center;margin-bottom:16px;gap:12px}
-.finance-operations-wave4 .finance2-section-head:has(>.finance-operation-tabs){margin-bottom:20px}
+.finance-operations-wave4 .finance2-section-head:has(>.horizontal-menu>.finance-operation-tabs){margin-bottom:20px}
 .finance-operations-wave4 .finance-operation-tabs{width:100%;flex-wrap:nowrap;gap:16px;border-bottom:1px solid var(--ui-border);overflow-x:auto;scrollbar-width:thin}
 .finance-operations-wave4 .finance-operation-tabs>button{flex:0 0 auto;white-space:nowrap;background:transparent!important;color:var(--ui-muted)!important;border:0;border-bottom:3px solid transparent;border-bottom-color:transparent!important;border-radius:0!important;box-shadow:none;padding:10px 4px;min-height:46px}
 .finance-operations-wave4 .finance-operation-tabs>button[aria-current=page]{color:var(--ui-accent)!important;border-bottom-color:var(--ui-accent)!important;font-weight:700}
