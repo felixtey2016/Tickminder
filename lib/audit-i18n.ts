@@ -1,5 +1,7 @@
 import {t,registerTranslations} from './i18n';
 const entries:Record<string,[string,string]>={
+ 'action.classTask.create':['创建课堂任务','Create classroom task'],'action.classTask.complete':['完成课堂任务','Complete classroom task'],'action.classTask.archive':['封存课堂任务','Archive classroom task'],
+ allRecords:['全部记录','All records'],eventCode:['原始事件','Event code'],
  'action.studentDeparture.mark':['标记待退课','Mark student departure'],'action.studentDeparture.cancel':['取消待退课标记','Cancel student departure'],'action.studentDeparture.clean':['清理离班学生资料','Clean departed student data'],
  'field.lastLessonDate':['预计最后上课日期','Planned last lesson date'],'field.financialHistoryRetained':['财务历史已保留','Financial history retained'],'field.sourceFactsRetained':['计费与薪资依据已保留','Billing and payroll sources retained'],'value.marked':['待退课／待清理','Leaving / pending cleanup'],'value.cleaned':['已清理','Cleaned'],
  'action.googleLinkPromptSkipped':['跳过 Google 绑定引导','Skip Google linking guidance'],

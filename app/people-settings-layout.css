@@ -169,6 +169,7 @@
 .permission-module > summary > small { max-width: 100%; color: var(--muted-foreground); font-size: 12px; overflow-wrap: anywhere; }
 .permission-module-description { padding-bottom: 12px; color: var(--muted-foreground); font-size: 13px; line-height: 1.7; }
 .permission-action-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; min-width: 0; }
+.permission-action-grid { grid-template-columns: repeat(auto-fit,minmax(min(100%,9em),1fr)); }
 .permission-module-select-all { margin-bottom: 12px; }
 .admin-permission-dialog .permission-check { display: flex; align-items: flex-start; gap: 8px; min-width: 0; min-height: 44px; padding: 10px 8px; border: 1px solid var(--ui-border,#e4e2ea); border-radius: 6px; cursor: pointer; line-height: 1.6; font-size: 14px; font-weight: 400; }
 .admin-permission-dialog .permission-check input[type=checkbox] { flex: 0 0 20px; width: 20px; min-width: 20px; height: 20px; min-height: 20px; margin: 1px 0 0; padding: 0; accent-color: var(--ui-accent,#6547c6); }
@@ -190,4 +191,10 @@
  .permission-template-controls > :is(select,button) { flex: 1 1 100%; }
  .admin-permission-footer > button { flex: 1 1 140px; }
  .permission-stage-notice,.permission-notice,.permission-conflict { padding: 12px; }
+}
+/* A long account name or enlarged text must not consume the fixed editor body. */
+@media(max-width:700px),(max-height:650px) {
+ [data-slot=dialog-content].admin-permission-dialog { display:block;overflow-y:auto;overscroll-behavior:contain; }
+ .admin-permission-dialog>.admin-permission-body { display:flex;overflow:visible;min-height:auto;margin-block:16px;padding:0; }
+ .admin-permission-dialog>.admin-permission-footer { margin-top:16px; }
 }
