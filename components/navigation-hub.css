@@ -41,3 +41,9 @@
  .navigation-hub-item{padding:13px 10px;gap:8px}
  .navigation-hub-icon svg{width:20px;height:20px}
 }
+
+@media(min-width:1024px){
+ .app-shell.shell-wave1.four-entry-shell{--primary-rail-width:208px}
+ /* Reserve the rail while a dialog or busy state temporarily hides navigation. */
+ .app-shell.shell-wave1.four-entry-shell :is(.app-body,.app-body.menu-open,.parent-shell-body){box-sizing:border-box;padding-inline-start:var(--primary-rail-width)}
+}

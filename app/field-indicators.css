@@ -1,0 +1,43 @@
+/* Match date/time indicators to the app's select chevron without replacing
+   native date fields or their keyboard, validation and picker behaviour. */
+@supports selector(input::-webkit-calendar-picker-indicator) {
+  input:is([type="date"],[type="datetime-local"],[type="time"],[type="month"]):not(.native-month-control,.native-time-control,[hidden],[aria-hidden="true"]) {
+    position:relative;
+    -webkit-appearance:none;
+    appearance:none;
+    padding-inline-end:52px!important;
+    background-image:var(--app-select-chevron)!important;
+    background-position:right 16px center!important;
+    background-size:20px 20px!important;
+    background-repeat:no-repeat!important;
+  }
+  input:is([type="date"],[type="datetime-local"],[type="time"],[type="month"]):not(.native-month-control,.native-time-control,[hidden],[aria-hidden="true"])::-webkit-calendar-picker-indicator {
+    position:absolute;
+    inset-block:0;
+    inset-inline-end:0;
+    width:52px;
+    height:auto;
+    margin:0;
+    padding:0;
+    opacity:0;
+    cursor:pointer;
+  }
+  input:is([type="date"],[type="datetime-local"],[type="time"],[type="month"]):is(:disabled,[readonly])::-webkit-calendar-picker-indicator {
+    cursor:default;
+  }
+  @media(forced-colors:active) {
+    input:is([type="date"],[type="datetime-local"],[type="time"],[type="month"]):not(.native-month-control,.native-time-control,[hidden],[aria-hidden="true"]) {
+      -webkit-appearance:auto;
+      appearance:auto;
+      padding-inline-end:12px!important;
+      background-image:none!important;
+    }
+    input:is([type="date"],[type="datetime-local"],[type="time"],[type="month"]):not(.native-month-control,.native-time-control,[hidden],[aria-hidden="true"])::-webkit-calendar-picker-indicator {
+      position:static;
+      inset:auto;
+      width:20px;
+      height:20px;
+      opacity:1;
+    }
+  }
+}

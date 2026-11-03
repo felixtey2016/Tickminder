@@ -17,3 +17,13 @@
  .mobile-bottom-nav:not([hidden]){gap:2px;padding-inline:max(6px,env(safe-area-inset-left)) max(6px,env(safe-area-inset-right))}
  .mobile-bottom-nav>button{padding-inline:1px}
 }
+
+/* The same four destinations become a persistent rail on desktop. */
+@media(min-width:1024px){
+ .app-shell.four-entry-shell .mobile-bottom-nav-primary:not([hidden]){top:var(--shell-header-height,var(--parent-header-height,72px));right:auto;bottom:0;left:0;width:var(--primary-rail-width,208px);height:auto;grid-template-columns:minmax(0,1fr);align-content:start;gap:8px;padding:24px 12px max(20px,env(safe-area-inset-bottom));border-top:0;border-right:1px solid var(--ui-border,#e4e4ec);overflow-y:auto;overscroll-behavior:contain}
+ .app-shell.shell-wave1.four-entry-shell .mobile-bottom-nav-primary>button{flex-direction:row;justify-content:flex-start;gap:12px;min-height:52px;padding:12px 14px;text-align:left;font-size:14px;line-height:1.4}
+ .app-shell.four-entry-shell .mobile-bottom-nav-primary .mobile-nav-icon{width:24px;flex-shrink:0}
+ .app-shell.four-entry-shell .mobile-bottom-nav-primary>button>span:last-child{flex:1}
+ .app-shell.four-entry-shell .mobile-bottom-nav-primary>button:hover{background:var(--ui-surface-muted,#f1f1f6);color:var(--ui-text,#252334)}
+ .app-shell.four-entry-shell .mobile-bottom-nav-primary>button[aria-current=page]{background:var(--ui-nav-active,#e5ddf7);color:var(--ui-accent,#6547c6);box-shadow:inset 3px 0 0 var(--ui-accent,#6547c6)}
+}

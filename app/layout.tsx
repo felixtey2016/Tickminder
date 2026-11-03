@@ -18,6 +18,8 @@ import "./form-action-bar.css";
 import "./date-field-layout.css";
 import "./appearance.css";
 import "./content-tabs.css";
+import "./field-indicators.css";
+import "./auth-layout.css";
 import {AppearanceProvider} from "@/components/appearance-toggle";
 import { ActionToastHost } from "@/components/action-toast";
 import {DiagnosticsReporter} from "@/components/diagnostics-reporter";
