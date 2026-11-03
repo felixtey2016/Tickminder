@@ -112,3 +112,17 @@
  .account-settings-compact .account-summary-fields{padding-left:0}
  .account-settings-compact :is(.account-contact-panel,.account-whatsapp){padding-inline:16px}
 }
+
+/* Edit the local sign-in username inside the existing account details. */
+.account-settings-compact .account-username-value{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 12px;min-width:0}
+.account-username-current{min-width:0;overflow-wrap:anywhere;font-variant-ligatures:none}
+.account-settings-compact .account-username-form{display:grid;gap:12px;width:100%;max-width:540px;min-width:0;margin:0 0 16px;padding:16px;border:1px solid var(--ui-border,#e4e2ea);border-radius:8px;background:var(--ui-surface-muted,#f7f7fa)}
+.account-settings-compact .account-username-form>label{display:grid;gap:8px;min-width:0;font-size:14px;font-weight:600;color:var(--ui-text,#252334)}
+.account-settings-compact .account-username-form input{box-sizing:border-box;width:100%;min-width:0;min-height:46px;padding:10px 12px;border:1px solid var(--ui-border,#e4e2ea);border-radius:6px;background:var(--ui-surface,#fff);color:var(--ui-text,#252334);font:inherit;font-size:16px}
+.account-settings-compact .account-username-form input[aria-invalid=true]{border-color:var(--destructive,#b42318)}
+.account-settings-compact .account-username-form :is(.account-username-note,small){margin:0;font-size:13px;line-height:1.6;color:var(--ui-muted,#626575);overflow-wrap:anywhere}
+.account-settings-compact .account-username-error{margin:0;font-size:14px;line-height:1.5;color:var(--destructive,#b42318);overflow-wrap:anywhere}
+.account-settings-compact .account-username-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;margin:4px 0 0}
+.account-settings-compact .account-username-actions>button{height:auto;min-height:44px}
+.account-settings-compact .account-username-status{margin:0 0 16px;font-size:14px;line-height:1.6;color:var(--ui-text,#252334);overflow-wrap:anywhere}
+@media(max-width:380px){.account-settings-compact .account-username-form{padding:12px}.account-settings-compact .account-username-actions>button{flex:1;min-width:0}}
