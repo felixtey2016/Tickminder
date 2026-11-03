@@ -41,3 +41,5 @@
 }
 @media(max-width:360px){.parent-shell .brand strong{font-size:16px}}
 @media(prefers-reduced-motion:no-preference){.parent-workspace-menu{animation:parent-menu-enter .15s ease-out}@keyframes parent-menu-enter{from{opacity:.6;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}}
+.parent-primary-utilities{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.parent-primary-utilities .legal-links{margin:0;padding:0}
