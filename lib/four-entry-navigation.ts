@@ -9,7 +9,7 @@ const home=entry('home','首页','Home','home');
 const courses=entry('courses','课程','Courses','courses');
 const teaching=entry('teachingHub','教学','Teaching','teaching');
 const learning=entry('learningHub','学习','Learning','teaching');
-const mine=entry('myHub','我的','My account','mine');
+const mine=entry('myHub','账号','Account','mine');
 const primary:Record<NavigationRole,PrimaryEntry[]>={
  admin:[home,teaching,entry('financeHub','财务','Finance','finance'),entry('manageHub','管理','Manage','manage')],
  teacher:[home,courses,teaching,mine],

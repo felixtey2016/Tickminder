@@ -8,7 +8,7 @@ const labels:Record<string,[string,string]>={
   closeMenu:['关闭功能菜单','Close navigation'],
   home:['首页','Home'],
   learnHub:['学习','Learning'],
-  mineHub:['我的','Me'],
+  mineHub:['账号','Account'],
   fees:['费用','Fees'],
   primaryNavigation:['主要功能','Primary navigation'],
   courses:['课程','Courses'],
