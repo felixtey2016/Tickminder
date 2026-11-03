@@ -1,4 +1,23 @@
 .classroom-tasks{display:grid;gap:16px;min-width:0}
+.classroom-task-filters,.classroom-task-counts,.classroom-task-review-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.classroom-task-filters:empty{display:none}
+.classroom-task-counts{font-size:13px;color:var(--muted-foreground,#6b6479)}
+.classroom-task-badge[data-status=completed]{background:#e9f5ed;color:#246b42}
+.classroom-task-badge[data-status=needs_redo]{background:#fff2df;color:#875117}
+.classroom-task-badge[data-status=legacy_completed],.classroom-task-badge[data-status=closed]{background:#eeedf1;color:#696372}
+.classroom-task-progress li.classroom-task-student{display:grid;gap:10px;padding:14px 0}
+.classroom-task-student-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-width:0;flex-wrap:wrap}
+.classroom-task-student-head>strong{overflow-wrap:anywhere;min-width:0}
+.classroom-task-history{font-size:13px;min-width:0}
+.classroom-task-history>summary{cursor:pointer;color:var(--muted-foreground,#6b6479);padding:4px 0}
+.classroom-task-history ol{margin:8px 0 0;padding-left:20px;display:grid;gap:8px}
+.classroom-task-history li,.classroom-task-progress .classroom-task-history li{display:list-item;border:0;padding:0;overflow-wrap:anywhere}
+.classroom-task-history time{display:block;color:var(--muted-foreground,#6b6479);font-size:12px}
+.classroom-task-history p{margin:4px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.classroom-task-reason{margin:0;padding:8px 10px;border-left:3px solid #d4ab66;background:#fff9ef;color:#76521e;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
+.classroom-task-return-form,.classroom-task-return-form>label{display:grid;gap:10px;min-width:0}
+.classroom-task-return-form textarea{width:100%;min-width:0;resize:vertical}
+.classroom-task-card:focus-visible{outline:2px solid #7454b8;outline-offset:3px}
 .classroom-task-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;min-width:0}
 .classroom-task-heading>div:first-child{min-width:0}
 .classroom-task-heading h2{display:flex;align-items:center;gap:8px;margin:0;font-size:18px;line-height:1.5}

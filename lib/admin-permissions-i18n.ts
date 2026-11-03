@@ -232,7 +232,7 @@ const permissionCatalogueLabels: Record<string, [string, string]> = {
   "permissions.scope.folders": ["本集团班级资料夹及内容摆放；资料与功课本身仍沿用归属规则。", "Class folders and content placement in this group. Ownership rules still apply to the materials and homework themselves."],
   "permissions.scope.materials": ["查看教学资料；获新增权限后可在本集团班级上传及发布资料。编辑仍按现有归属规则处理。", "View teaching materials. The create permission allows uploads and publishing in this group's classes. Editing retains existing ownership rules."],
   "permissions.scope.recordings": ["管理本集团的课堂录影链接、发布状态及学生观看名单。", "Manage recording links, publication and student access within this organisation."],
-  "permissions.scope.tasks": ["查看班级任务与完成进度、布置任务及归档；学生只可完成自己的任务。", "View class tasks and progress, assign tasks and archive them. Students can complete only their own tasks."],
+  "permissions.scope.tasks": ["查看、布置及归档班级任务；审核权限可确认学生完成或要求重做。", "View, assign and archive class tasks. Review permission allows confirming completion or requesting another attempt."],
   "permissions.scope.homework": ["查看与删除现有规则允许管理的功课；老师的发布、反馈与评分职责保持原有归属。", "View and delete homework within the existing management scope. Publishing, feedback and scoring retain their current teacher ownership."],
   "permissions.scope.quizzes": ["Quiz 题库操作仍须满足现有题库、创建人及集团范围约束。", "Quiz bank actions remain subject to existing bank, creator and group scope rules."],
   "permissions.scope.quizAssignments": ["本集团 Quiz 安排与批改操作；仍须满足 Quiz 及学生的现有访问规则。", "Quiz assignment and grading actions in this group remain subject to existing Quiz and student access rules."],

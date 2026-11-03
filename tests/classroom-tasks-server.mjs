@@ -61,7 +61,7 @@ function member(room,name,gid=group){sqlite.prepare('INSERT INTO classroom_membe
 const room=classroom('tasks-class-a'),otherRoom=classroom('tasks-class-b','Teacher B'),foreignRoom=classroom('tasks-class-foreign','Teacher A',foreign,foreignTeacher.id),pageRoom=classroom('tasks-class-pagination');
 member(room,'Alpha');member(room,'Beta');member(otherRoom,'Outsider');member(foreignRoom,'Alpha',foreign);member(pageRoom,'Alpha');
 function grants(who,keys){sqlite.prepare("INSERT INTO admin_permission_profiles(group_id,account_id,revision,grants_json,origin,updated_at) VALUES(?,?,1,?,'new',?) ON CONFLICT(group_id,account_id) DO UPDATE SET grants_json=excluded.grants_json,revision=revision+1").run(who.groupId,who.id,JSON.stringify(catalog.normalizeAdminGrants(keys)),now);}
-grants(admin,['tasks.create','tasks.archive']);grants(reader,['tasks.view']);grants(legacy,catalog.LEGACY_ADMIN_GRANTS);grants(foreignAdmin,['tasks.create','tasks.archive']);
+grants(admin,['tasks.create','tasks.review','tasks.archive']);grants(reader,['tasks.view']);grants(legacy,catalog.LEGACY_ADMIN_GRANTS);grants(foreignAdmin,['tasks.create','tasks.archive']);
 const rows=(table,where='1',...args)=>sqlite.prepare('SELECT * FROM '+table+' WHERE '+where+' ORDER BY rowid').all(...args);
 const taskEvents=()=>rows('audit',"action LIKE 'classTask.%'");
 const eventCount=(action,id)=>taskEvents().filter(e=>(!action||e.action==='classTask.'+action)&&(!id||JSON.parse(e.after_json).taskId===id)).length;
@@ -78,7 +78,7 @@ async function post(who,data,options={}){
  return{status:response.status,data:await response.json(),headers:response.headers};
 }
 const create=(extra={})=>({action:'create',classroomId:room,title:'Recite the 7 times table',description:'Practise aloud, then press Complete.',operationId:op(),...extra});
-const complete=(id,extra={})=>({action:'complete',classroomId:room,id,operationId:op(),...extra});
+const complete=(id,extra={})=>({action:'submit',classroomId:room,id,expectedEventId:null,operationId:op(),...extra});
 const archive=(id,extra={})=>({action:'archive',classroomId:room,id,operationId:op(),...extra});
 
 // Preserve genuine pre-existing PDF homework, its recipients, and storage state.
@@ -128,25 +128,40 @@ check('view-only staff cannot create, archive or complete',()=>{assert.equal(lis
 for(const who of[owner,chief])expect(await get(who),200,'configured owner and group chief retain authorized Task read');
 list=expect(await get(student),200,'current student can read a classroom Task');
 check('student sees only personal status without classmates or staff progress',()=>{assert.equal(list.canComplete,true);assert.equal(list.canCreate,false);assert.equal(list.canArchive,false);for(const task of list.tasks){assert.equal(task.progress,undefined);assert(!task.completedAt);}assert(!JSON.stringify(list).includes('Beta'));assert(!JSON.stringify(list).includes(teacher.email));});
-const studentRequest=complete(id),finished=expect(await post(student,studentRequest),200,'student marks the no-file Task Complete');
-check('completion uses the authenticated roster identity',()=>{assert.equal(finished.id,id);const payload=JSON.parse(taskEvents().find(e=>e.action==='classTask.complete').after_json);assert.equal(payload.studentName,'Alpha');assert.equal(eventCount('complete',id),1);});
-expect(await post(student,studentRequest),200,'lost completion response is replayable');
-expect(await post(student,complete(id)),200,'second operation for an already completed Task stays idempotent');
-expect(await post(student2,complete(id)),200,'two accounts bound to the same student share one completion');
-check('completion identity is independent of account display names and operation IDs',()=>assert.equal(eventCount('complete',id),1));
-sqlite.prepare('UPDATE accounts SET name=? WHERE id=?').run('Different display name',student.id);student.name='Different display name';
-list=expect(await get(student),200,'display-name change preserves student completion');
-check('fresh reads reconstruct the stored student completion',()=>assert.equal(typeof list.tasks.find(t=>t.id===id).completedAt,'string'));
-let betaState=expect(await get(beta),200,'another student reads only own completion');
-check('one student completion never marks a classmate complete',()=>{assert(!betaState.tasks.find(t=>t.id===id).completedAt);assert(!JSON.stringify(betaState).includes('Alpha'));});
-const forged=await post(beta,complete(id,{studentName:'Alpha',accountId:student.id}));
-check('client identity fields cannot complete for another student',()=>{
- assert([200,400,403].includes(forged.status),JSON.stringify(forged.data));
- const completions=taskEvents().filter(e=>e.action==='classTask.complete').map(e=>({actor:e.actor_id,student:JSON.parse(e.after_json).studentName}));
- assert(!completions.some(e=>e.actor===beta.id&&e.student!=='Beta'));
-});
-list=expect(await get(teacher),200,'teacher reads per-student completion after refresh');
-check('teacher progress reflects each active class student once',()=>{const progress=list.tasks.find(t=>t.id===id).progress;assert.equal(progress.total,2);assert.equal(progress.completed,eventCount('complete',id));assert.equal(typeof progress.students.find(s=>s.studentName==='Alpha').completedAt,'string');});
+expect(await post(student,{action:'complete',classroomId:room,id,operationId:op()}),409,'old client cannot self-confirm a Task');
+const studentRequest=complete(id),finished=expect(await post(student,studentRequest),200,'student requests teacher confirmation');
+check('request is bound to authenticated student and remains uncompleted',()=>{assert.equal(finished.id,id);const event=taskEvents().find(e=>e.action==='classTask.submit');assert.equal(JSON.parse(event.after_json).studentName,'Alpha');assert.equal(eventCount('submit',id),1);});
+expect(await post(student,studentRequest),200,'lost request response is replayable');
+expect(await post(student,complete(id)),409,'new operation cannot duplicate a pending request');
+expect(await post(student2,complete(id)),409,'second account cannot duplicate the same student request');
+let state=expect(await get(student),200,'student reads awaiting review').tasks.find(t=>t.id===id).studentState;
+check('student submission is not teacher completion',()=>{assert.equal(state.status,'awaiting_review');assert.equal(state.completedAt,null);assert.equal(state.history.length,1);});
+const review=(action,version=state.stateVersion,extra={})=>({action,classroomId:room,id,studentName:'Alpha',expectedEventId:version,operationId:op(),...extra});
+expect(await post(student,review('approve')),403,'student cannot approve own Task');
+expect(await post(reader,review('approve')),403,'view-only admin cannot review');
+expect(await post(teacher,review('return',state.stateVersion,{reason:' '})),400,'review return requires reason');
+const firstVersion=state.stateVersion,returnRequest=review('return',firstVersion,{reason:'Practise seven times eight again.'});
+expect(await post(teacher,returnRequest),200,'teacher returns Task with reason');expect(await post(teacher,returnRequest),200,'return replay idempotent');
+expect(await post(teacher,review('approve',firstVersion)),409,'stale approval cannot overwrite return');
+state=expect(await get(student),200,'student reads returned Task').tasks.find(t=>t.id===id).studentState;
+check('student sees redo reason and original request history',()=>{assert.equal(state.status,'needs_redo');assert.match(state.reason,/seven times eight/);assert.equal(state.history.length,2);});
+expect(await post(student,complete(id,{expectedEventId:state.stateVersion})),200,'student requests review after redo');
+state=expect(await get(student),200,'student reads second request').tasks.find(t=>t.id===id).studentState;
+const approveRequest=review('approve');expect(await post(admin,approveRequest),200,'explicitly authorized admin confirms');expect(await post(admin,approveRequest),200,'approval replay idempotent');
+state=expect(await get(student),200,'student reads confirmed Task').tasks.find(t=>t.id===id).studentState;
+check('only reviewer approval completes and all four transitions remain',()=>{assert.equal(state.status,'completed');assert.equal(typeof state.completedAt,'string');assert.equal(state.history.length,4);assert.deepEqual(state.history.map(e=>e.action),['approve','submit','return','submit']);assert.equal(state.history[0].actorName,admin.name);});
+expect(await post(student,complete(id,{expectedEventId:state.stateVersion})),409,'confirmed Task cannot be resubmitted');
+let betaState=expect(await get(beta),200,'classmate reads own status');check('completion never leaks another student history',()=>{assert.equal(betaState.tasks.find(t=>t.id===id).studentState.status,'pending');assert(!JSON.stringify(betaState).includes('Alpha'));});
+expect(await post(beta,complete(id,{studentName:'Alpha'})),403,'client cannot request review for another student');
+list=expect(await get(teacher),200,'teacher reads confirmed student status');check('confirmed count excludes pending students',()=>{const p=list.tasks.find(t=>t.id===id).progress;assert.equal(p.completed,1);assert.equal(p.awaitingReview,0);assert.equal(p.total,2);});
+const legacyId=expect(await post(teacher,create({title:'Legacy self-completed Task'})),200,'create legacy fixture').id;
+sqlite.prepare('INSERT INTO audit(group_id,id,lesson_id,actor_id,action,after_json,at) VALUES(?,?,?,?,?,?,?)').run(group,'legacy-event','class-task:'+legacyId,student.id,'classTask.complete',JSON.stringify({schemaVersion:1,revision:1,groupId:group,classroomId:room,taskId:legacyId,studentName:'Alpha'}),now);
+const legacyState=expect(await get(student),200,'read legacy completion').tasks.find(t=>t.id===legacyId).studentState;check('legacy completion never becomes teacher approval',()=>assert.equal(legacyState.status,'legacy_completed'));
+const legacyProgress=expect(await get(teacher),200,'read legacy progress').tasks.find(t=>t.id===legacyId).progress;check('legacy has a separate count',()=>{assert.equal(legacyProgress.completed,0);assert.equal(legacyProgress.legacyCompleted,1);});
+const concurrentId=expect(await post(teacher,create({title:'Concurrent review Task'})),200,'create concurrent review fixture').id;expect(await post(student,complete(concurrentId)),200,'request concurrent review');
+let concurrentState=expect(await get(student),200,'read concurrent state').tasks.find(t=>t.id===concurrentId).studentState;
+const concurrent=await Promise.allSettled([service.mutateClassroomTask(teacher,{...review('approve',concurrentState.stateVersion),id:concurrentId}),service.mutateClassroomTask(teacher,{...review('return',concurrentState.stateVersion,{reason:'Retry'}),id:concurrentId})]);
+check('concurrent reviewer decisions append exactly one result',()=>{assert.equal(concurrent.filter(r=>r.status==='fulfilled').length,1);assert.equal(concurrent.filter(r=>r.status==='rejected'&&r.reason.status===409).length,1);assert.equal(eventCount(null,concurrentId),3);});
 denied(await post(teacher,complete(id)),'teacher cannot impersonate a student completion');
 denied(await post(student,archive(id)),'student cannot close a Task');
 denied(await post(reader,archive(id)),'view permission never permits closing a Task');
@@ -166,7 +181,7 @@ denied(await get(newStudent),'former class member cannot read old Tasks');
 
 async function readRace(label,who,revoke,restore){
  let fired=false;
- beforeStatement=sql=>{if(!sql.includes('GROUP BY a.lesson_id'))return false;fired=true;revoke();return true;};
+ beforeStatement=sql=>{if(!sql.includes('row_number() OVER'))return false;fired=true;revoke();return true;};
  try{denied(await get(who),label);check(label+' reached the guarded status projection',()=>assert(fired));}
  finally{beforeStatement=null;restore();}
 }
@@ -197,6 +212,14 @@ await race('student removed at completion boundary is rejected',beta,complete(ra
 await race('student plan revoked at completion boundary is rejected',beta,complete(raceId),()=>sqlite.prepare('UPDATE plans SET active=0 WHERE group_id=? AND student=?').run(group,'Beta'),()=>sqlite.prepare('UPDATE plans SET active=1 WHERE group_id=? AND student=?').run(group,'Beta'));
 await race('student disabled at completion boundary is rejected',beta,complete(raceId),()=>sqlite.prepare('UPDATE students SET active=0 WHERE group_id=? AND name=?').run(group,'Beta'),()=>sqlite.prepare('UPDATE students SET active=1 WHERE group_id=? AND name=?').run(group,'Beta'));
 
+expect(await post(beta,complete(raceId)),200,'prepare pending review for authority races');
+const reviewRaceVersion=expect(await get(beta),200,'read pending review version').tasks.find(t=>t.id===raceId).studentState.stateVersion;
+const reviewRace=()=>({action:'approve',classroomId:room,id:raceId,studentName:'Beta',expectedEventId:reviewRaceVersion,operationId:op()});
+grants(admin,['tasks.create','tasks.review','tasks.archive']);
+await race('review grant revoked at approval write boundary is rejected',admin,reviewRace(),()=>grants(admin,['tasks.view']),()=>grants(admin,['tasks.create','tasks.review','tasks.archive']));
+await race('student plan disconnected at approval write boundary is rejected',teacher,reviewRace(),()=>sqlite.prepare('UPDATE plans SET active=0 WHERE group_id=? AND student=?').run(group,'Beta'),()=>sqlite.prepare('UPDATE plans SET active=1 WHERE group_id=? AND student=?').run(group,'Beta'));
+await race('teacher reassigned at approval write boundary is rejected',teacher,reviewRace(),()=>sqlite.prepare("UPDATE classrooms SET teacher_name='Teacher B' WHERE id=?").run(room),()=>sqlite.prepare("UPDATE classrooms SET teacher_name='Teacher A' WHERE id=?").run(room));
+
 const closeRequest=archive(id);expect(await post(teacher,closeRequest),200,'teacher closes the Task while preserving its history');
 expect(await post(teacher,closeRequest),200,'lost archive response is replayable');
 denied(await post(beta,complete(id)),'closed Tasks reject further completion');
@@ -216,6 +239,15 @@ check('pagination covers all Tasks exactly once with a bounded page size',()=>{a
 expect(await get(teacher,pageRoom,{cursor:'not-a-valid-cursor'}),400,'malformed pagination cursor is rejected');
 expect(await get(teacher,room,{cursor:first.nextCursor}),400,'pagination cursor is bound to its classroom');
 
+const oldTask=expect(await get(student,pageRoom,{taskId:second.tasks[0].id}),200,'direct task lookup beyond first page');check('focused lookup returns exactly selected task',()=>{assert.equal(oldTask.tasks.length,1);assert.equal(oldTask.tasks[0].id,second.tasks[0].id);});
+const oldId=second.tasks[0].id;expect(await post(student,complete(oldId,{classroomId:pageRoom})),200,'request older Task');
+const oldState=expect(await get(student,pageRoom,{taskId:oldId}),200,'read older request').tasks[0].studentState;
+expect(await post(teacher,{action:'return',classroomId:pageRoom,id:oldId,studentName:'Alpha',expectedEventId:oldState.stateVersion,reason:'Older task needs another try.',operationId:op()}),200,'return older Task');
+const inbox=expect(await get(student,room,{view:'inbox'}),200,'student cross-class inbox'),redoInbox=expect(await get(student,room,{view:'inbox',status:'needs_redo'}),200,'server-filtered redo inbox');
+check('inbox bounds pages and filters older status before limit',()=>{assert.equal(inbox.items.length,20);assert(inbox.nextCursor);assert(redoInbox.items.some(item=>item.taskId===oldId));assert(redoInbox.items.every(item=>item.status==='needs_redo'));});
+expect(await get(student,room,{view:'inbox',status:'needs_redo',cursor:inbox.nextCursor}),400,'inbox cursor is status-bound');
+denied(await get(reader,room,{view:'inbox'}),'review inbox requires explicit review permission');
+const teacherInbox=expect(await get(teacher,room,{view:'inbox'}),200,'teacher cross-class review inbox');check('teacher inbox contains only pending reviews',()=>assert(teacherInbox.items.every(item=>item.status==='awaiting_review'&&item.awaitingReview>0)));
 check('Task writes leave existing PDF/homework/material/quota records byte-for-byte unchanged',()=>assert.equal(JSON.stringify(oldTables.map(table=>[table,rows(table)])),oldBusiness));
 check('Task feature performs no schema changes',()=>assert.equal(JSON.stringify(rows('sqlite_master',"name NOT LIKE 'sqlite_%'").map(({type,name,tbl_name,sql})=>({type,name,tbl_name,sql}))),schema));
 check('Task fixture has no broken foreign keys',()=>assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[]));

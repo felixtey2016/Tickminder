@@ -12,7 +12,7 @@ const currentModules = [
   { id: "attendance", actions: ["view", "edit", "review"] },
   { id: "reschedules", actions: ["view", "create", "respond"] },
   { id: "classrooms", actions: ["view", "create", "edit", "archive", "restore", "delete"] },
-  { id: "tasks", actions: ["view", "create", "archive"] },
+  { id: "tasks", actions: ["view", "create", "review", "archive"] },
   { id: "terms", actions: ["view", "create", "edit"] },
   { id: "announcements", actions: ["view", "create", "edit", "delete"] },
   { id: "folders", actions: ["view", "create", "edit", "delete", "placeContent"] },

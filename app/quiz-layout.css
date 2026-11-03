@@ -174,3 +174,7 @@
 @keyframes quiz-import-spin { to { transform: rotate(360deg); } }
 @media(max-width:480px) { .quiz-import-dialog[data-slot=dialog-content] { padding: 20px 16px; } .quiz-import-dropzone { min-height: 148px; } .quiz-import-downloads a { flex: 1 1 160px; } }
 @media(prefers-reduced-motion:reduce) { .quiz-import-spinner { animation: none; } }
+.quiz-history-scope { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.quiz-history-scope > button { min-height: 44px; white-space: normal; }
+.quiz-progress-summary, .quiz-resume-progress { font-weight: 600; line-height: 1.5; }
+.quiz-assignment-settings > [data-testid=quiz-copy-assignment-link] { margin-bottom: 16px; }

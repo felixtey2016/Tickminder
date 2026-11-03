@@ -232,7 +232,7 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
         setLinkedQuizId(undefined);
         // Only replace our strict internal route; never accept a return URL.
         if(quizLinkIdFromPath(window.location.pathname)){
-            const url=new URL(window.location.href);url.pathname='/';
+            const url=new URL(window.location.href);url.pathname='/';url.searchParams.delete('assignment');
             window.history.replaceState(window.history.state,'',url);
         }
     },[]);
@@ -729,6 +729,8 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
     const badgeCounts=role==="admin"&&!canAdminAction(account,"attendance.view")?{...rawBadgeCounts,attention:0,overview:0}:rawBadgeCounts;
     const taskCount=badgeCounts.lessons+badgeCounts.reschedule+badgeCounts.attention;
     const [selectedView, setSelectedView] = useState(initialQuizId?'quizzes':items[0].id);
+    const [classroomTaskTarget,setClassroomTaskTarget]=useState<{classroomId:string;taskId:string}|null>(null);
+    const clearClassroomTaskTarget=useCallback(()=>setClassroomTaskTarget(null),[]);
     const [openInvoiceList,setOpenInvoiceList]=useState(false);
     const [statisticsDetail,setStatisticsDetail]=useDialogState<TeachingStatisticsDetailTarget|null>("teaching-statistics-detail",null);
     const lastCourseView = useRef<string>(defaultCourseView(role) || "calendar");
@@ -874,14 +876,14 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
     else if (activeView === "home" && role === "pending") {
         pageContent = <section className="panel pending-home"><h2>{t(account.assignmentStatus === "ACTIVE" ? "账号已启用" : "等待分配")}</h2><p>{t("管理员分配身份后，课程、功课及班级会显示在这里。")}</p>{account.pendingExpiresAt && <p className="notice">{t("待分配期限")} · {new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-GB",{timeZone:"Asia/Kuala_Lumpur",dateStyle:"medium",timeStyle:"short"}).format(new Date(account.pendingExpiresAt))}<br/>{t("新注册账号在 7 天内未启用或绑定，会到期清理。请联系管理员。")}</p>}<Button variant="outline" onClick={()=>choose("myAccount")}>{t("我的账号")}</Button></section>;
     } else if (activeView === "home" && role !== "pending") {
-        pageContent = <HomeDashboard role={role} name={account.name} taskCounts={state?.taskCounts} lessons={lessons} learning={learning} learningReady={learningReady || role === "admin"} learningError={state?.scopeErrors?.learning} onNavigate={choose}/>;
+        pageContent = <HomeDashboard role={role} name={account.name} taskCounts={state?.taskCounts} lessons={lessons} learning={learning} learningReady={learningReady || role === "admin"} learningError={state?.scopeErrors?.learning} onNavigate={destination=>{if(destination==='quizHistory'){if(!canView('quizzes')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;window.history.replaceState({...window.history.state,timelyoQuizTab:'history'},'');choose('quizzes');}else choose(destination);}} onOpenTask={(classroomId,taskId)=>{if(!canView('classrooms')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;setClassroomTaskTarget({classroomId,taskId});choose('classrooms');}}/>;
     } else if (activeView === "notifications") {
         pageContent = <NotificationWorkspace key={`${account.groupId}:${role}`} role={role} language={language} learningMutate={learningMutate} courseMutate={mutate} onLesson={lesson=>setModal({type:'edit',lesson})} busy={busy}/>;
     } else if (activeView === "myAccount") {
         pageContent = <AccountSettings/>;
     } else if (activeView === "classrooms" && role !== "pending") {
         const classPlans = role === "teacher" ? (state?.plans || []).map(plan => ({ student: plan.student, subject: plan.subject,subjectId:plan.subjectId,syllabusId:plan.syllabusId,grade:plan.grade, teacherName: account.teacherName || "", active: true })) : ((canAdminAction(account,"plans.view")?state?.allPlans:state?.planOptions) || []).map(plan => ({ student: plan.student, subject: plan.subject,subjectId:plan.subjectId,syllabusId:plan.syllabusId,grade:plan.grade, teacherName: plan.teacherName, active: plan.active }));
-        pageContent = <ClassroomsPage role={role} classes={state?.classrooms || []} terms={state?.terms || state?.termOptions || []} learning={learning} learningReady={learningReady} learningError={state?.scopeErrors?.learning} loadLearning={force => ensureScope("learning", force)} teacherName={account.teacherName} teachers={role === "teacher" && account.teacherName ? [account.teacherName] : state?.teachers || []} plans={classPlans} mutate={classroomMutate} learningMutate={learningMutate} busy={busy} onCalendar={() => choose("calendar")}/>;
+        pageContent = <ClassroomsPage role={role} classes={state?.classrooms || []} terms={state?.terms || state?.termOptions || []} learning={learning} learningReady={learningReady} learningError={state?.scopeErrors?.learning} loadLearning={force => ensureScope("learning", force)} teacherName={account.teacherName} teachers={role === "teacher" && account.teacherName ? [account.teacherName] : state?.teachers || []} plans={classPlans} mutate={classroomMutate} learningMutate={learningMutate} busy={busy} onCalendar={() => choose("calendar")} taskTarget={classroomTaskTarget} onTaskTargetOpened={clearClassroomTaskTarget}/>;
     } else if (role === "admin") {
         if (activeView === "homework" || activeView === "materials") {
             pageContent = <AdminLearning key={activeView} learning={learning} view={activeView} onChanged={()=>ensureScope("learning",true)}/>;

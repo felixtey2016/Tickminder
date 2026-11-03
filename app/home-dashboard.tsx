@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { BookOpen, CalendarDays, ChevronRight, ClipboardCheck, Clock3, type LucideIcon } from "lucide-react";
 import { uniqueSessionLessons, sessionLessonTitle, type SessionLesson } from "@/lib/class-session-display";
 import { getLanguage, t, registerTranslations } from "@/lib/i18n";
-import { canAdminView } from "@/lib/admin-permission-client";
+import { canAdminAction, canAdminView } from "@/lib/admin-permission-client";
 import type { CourseTaskCounts } from "@/lib/course-query";
 import { Button } from "@/components/ui/button";
 import { Mascot } from "@/components/page-state";
@@ -12,6 +12,8 @@ import { useAdminPermissionAccount } from "./admin-permission-context";
 import type { LearningState } from "./learning-portal";
 import { OnlineLessonLink } from "./online-lesson-link";
 import { useCoursePage } from "./course-query-ui";
+import {TaskInbox} from './task-inbox';
+import {QuizHomeProgress} from './quiz-home-progress';
 import "./home-compact.css";
 
 registerTranslations({}, {
@@ -80,10 +82,11 @@ function HomeToday({ role, now, today, taskCounts, onNavigate }: { role: Role; n
   </section>;
 }
 
-export function HomeDashboard({ role, name, taskCounts, learning, learningReady = true, learningError, onNavigate }: {
+export function HomeDashboard({ role, name, taskCounts, learning, learningReady = true, learningError, onNavigate, onOpenTask }: {
   role: Role; name: string; lessons?: Lesson[]; taskCounts?: CourseTaskCounts;
   learning: LearningState; learningReady?: boolean; learningError?: string;
   onNavigate: (destination: string) => void;
+  onOpenTask?: (classroomId:string,taskId:string)=>void;
 }) {
   const permissionAccount = useAdminPermissionAccount();
   const [now, setNow] = useState(() => Date.now());
@@ -118,6 +121,8 @@ export function HomeDashboard({ role, name, taskCounts, learning, learningReady 
       {role === "student" ? <div className="home-compact-welcome"><Mascot pose="hello" size={72}/><div><h2>{t("你好")}{name ? (getLanguage() === "zh" ? "，" : ", ") + name : ""}</h2><p>{t("今天也一起进步一点点。")}</p></div></div> : <h2>{t("你好")}{name ? (getLanguage() === "zh" ? "，" : ", ") + name : ""}</h2>}
       <time dateTime={today}>{new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur", month: "long", day: "numeric", weekday: "short" }).format(new Date(now))}</time>
     </header>
+    {role==='student'&&<QuizHomeProgress onViewAll={()=>onNavigate('quizHistory')}/>}
+    {onOpenTask&&canAdminView(permissionAccount,'classrooms')&&canAdminAction(permissionAccount,'tasks.view')&&<TaskInbox role={role} onOpen={onOpenTask}/>}
     {canAdminView(permissionAccount, "calendar") && <HomeToday role={role} now={now} today={today} taskCounts={taskCounts} onNavigate={onNavigate}/>}
     {overview.length > 0 && <section className="home-compact-tasks" aria-labelledby="home-tasks-heading"><h2 id="home-tasks-heading">{t(role === "student" ? "待办与学习" : "待办与教学")}</h2><div className="home-compact-task-list">{overview.map(card => <button type="button" className={"home-compact-task " + (card.isPlan ? "is-plan" : "")} key={card.label} onClick={() => onNavigate(card.destination)}><card.Icon size={20} aria-hidden="true"/><span className="home-compact-task-copy"><strong>{t(card.label)}</strong>{card.isPlan && <span className="home-compact-plan-name">{card.value}</span>}{card.detail && <small>{card.detail}</small>}</span>{!card.isPlan && <b>{card.value}</b>}<ChevronRight size={18} aria-hidden="true"/></button>)}</div></section>}
   </section>;

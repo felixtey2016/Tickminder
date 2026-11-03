@@ -40,10 +40,11 @@ type Plan = { student: string; subject: string; subjectId?:string|null;syllabusI
 
 const dateLabel = (iso: string) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
-export function ClassroomsPage({ role, classes, terms, learning, learningReady = true, learningError, loadLearning, teacherName, teachers, plans, mutate, learningMutate, busy, onCalendar }: {
+export function ClassroomsPage({ role, classes, terms, learning, learningReady = true, learningError, loadLearning, teacherName, teachers, plans, mutate, learningMutate, busy, onCalendar, taskTarget, onTaskTargetOpened }: {
   role: Role; classes: Classroom[]; terms: Term[]; learning: LearningState; teacherName?: string | null;
   learningReady?: boolean; learningError?: string; loadLearning?: (force?: boolean) => Promise<void>;
   teachers: string[]; plans: Plan[]; mutate: ClassMutate; learningMutate: LearningMutate; busy: boolean; onCalendar: () => void;
+  taskTarget?:{classroomId:string;taskId:string}|null;onTaskTargetOpened?:()=>void;
 }) {
   const can=useAdminAction();
   const [selectedId, setSelectedId] = usePageHistoryState("classroom.selected","");
@@ -53,6 +54,7 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
   const [filterSyllabus,setFilterSyllabus]=useFilterPreference<string>('classes-syllabus',''),[filterGrade,setFilterGrade]=useFilterPreference<string>('classes-grade',''),[filterSubject,setFilterSubject]=useFilterPreference<string>('classes-subject','');
   const [creating, setCreating] = useState(false);
   const [tab, setTab] = usePageHistoryState<ClassroomTab>("classroom.tab","announcements");
+  const [focusedTask,setFocusedTask]=useState<{classroomId:string;taskId:string}|null>(null);
   const tabListId = useId();
   const tabListRef = useRef<HTMLDivElement>(null);
   const directorySummaryRef = useRef<HTMLElement>(null);
@@ -75,6 +77,14 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
   const classroomPairs=relationClasses.flatMap(item=>(item.members||[]).map(student=>({teacher:item.teacherName,student})));
   const visibleClasses = relationClasses.filter(item=>(!filterTeacher||item.teacherName===filterTeacher)&&(!filterStudent||item.members?.includes(filterStudent)));
   const selected = visibleClasses.find(item => item.id === selectedId) || (role === "admin" ? null : visibleClasses[0]) || null;
+  useEffect(()=>{
+    if(!taskTarget||!classes.some(item=>item.id===taskTarget.classroomId))return;
+    const frame=requestAnimationFrame(()=>{
+      setArchived(false);setFilterTerm('all');setFilterSyllabus('');setFilterGrade('');setFilterSubject('');setFilterTeacher('');setFilterStudent('');
+      setCreating(false);setDirectoryOpen(false);setSelectedId(taskTarget.classroomId);setTab('tasks');setFocusedTask(taskTarget);onTaskTargetOpened?.();
+    });
+    return()=>cancelAnimationFrame(frame);
+  },[taskTarget,classes,onTaskTargetOpened,setArchived,setFilterTerm,setFilterSyllabus,setFilterGrade,setFilterSubject,setFilterTeacher,setFilterStudent,setSelectedId,setTab]);
   useEffect(() => {
     if (!creating && selected?.id && (tab === "materials" || tab === "homework") && !learningReady && !learningError) void loadLearning?.();
   }, [creating, selected?.id, tab, learningReady, learningError, loadLearning]);
@@ -183,7 +193,7 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
       </section>}
       {tab === "schedule" && can("lessons.view") && <ClassroomSchedule key={selected.id} classroomId={selected.id} onCalendar={onCalendar} canAddRecording={canManage&&!selected.archived&&can("recordings.create")}/>}
       {tab === "recordings" && can("recordings.view") && <RecordingsWorkspace key={selected.id} classroomId={selected.id}/>}
-      {tab === "tasks" && can("tasks.view") && <Suspense fallback={<PageState kind="loading" title={getLanguage()==="zh"?"正在载入任务…":"Loading tasks…"}/>}><ClassroomTasks key={selected.id+":"+role} classroom={selected} role={role}/></Suspense>}
+      {tab === "tasks" && can("tasks.view") && <Suspense fallback={<PageState kind="loading" title={getLanguage()==="zh"?"正在载入任务…":"Loading tasks…"}/>}><ClassroomTasks key={selected.id+":"+role} classroom={selected} role={role} focusTaskId={focusedTask?.classroomId===selected.id?focusedTask.taskId:undefined}/></Suspense>}
       {tab === "payroll" && role === "admin" && can("payroll.view") && <Suspense fallback={<p role="status">{F2('loading')}</p>}><ClassroomPayrollSettings key={selected.id} classroomId={selected.id} canEdit={can("payroll.rates")}/></Suspense>}
       {tab === "members" && canManage && <section className="panel"><h2>{t("班级成员")} · {selected.members?.length || 0}</h2><ul className="round1-classroom-members">{selected.members?.map((name, index) => <li key={name}><span className="round1-member-number" aria-hidden="true">{index + 1}</span><span>{name}</span></li>)}</ul><p className="muted">{t("移出班级后，该学生不能再查看班级内容；已有提交记录会保留。")}</p></section>}
       {(tab === "materials"&&can("materials.view")) || (tab === "homework"&&can("homework.view")) ? !learningReady ? <PageState kind={learningError ? "error" : "loading"} title={learningError ? "页面加载失败" : "正在加载…"} description={learningError} action={learningError ? "重试" : undefined} onAction={() => { void loadLearning?.(true); }}/> : <FolderWorkspace key={selected.id} classroom={selected} role={role} learning={classLearning} view={tab} onChanged={()=>loadLearning?.(true)}>{(filtered,folderId,materials)=>role === "teacher" ? <TeacherLearning key={selected.id+":"+folderId+":"+tab} learning={filtered} mutate={learningMutate} busy={busy} view={tab} classroom={{id:selected.id,subject:selected.subject,members:selected.members||[]}} folderId={folderId} readOnly={Boolean(selected.archived)} availableMaterials={materials} onChanged={()=>loadLearning?.(true)}/> : role === "student" ? <StudentLearning inClassroom key={folderId+":"+tab} historyScope={`${selected.id}:${folderId}`} learning={filtered} mutate={learningMutate} busy={busy} onPlan={onCalendar} onCalendar={onCalendar} view={tab}/> : <AdminLearning key={folderId+":"+tab} historyScope={`${selected.id}:${folderId}`} learning={filtered} view={tab} inClassroom classroom={{id:selected.id,subject:selected.subject,members:selected.members||[]}} folderId={folderId} readOnly={Boolean(selected.archived)} onChanged={()=>loadLearning?.(true)}/>}</FolderWorkspace> : null}

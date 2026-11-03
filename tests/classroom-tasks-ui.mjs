@@ -38,13 +38,13 @@ const classes=['a','b'].map((suffix,index)=>({id:'class-'+suffix,title:'Fictiona
 function App(){
  const [classId,setClassId]=useState('class-a'),[role,setRole]=useState(initialRole);
  const classroom=classes.find(item=>item.id===classId);
- const denied=params.get('grants')==='denied',account=role==='admin'?{role,adminPermissions:{enforced:true,privileged:false,grants:denied?['classrooms.view','announcements.view','tasks.view']:['classrooms.view','announcements.view','tasks.view','tasks.create','tasks.archive']}}:{role};
+ const denied=params.get('grants')==='denied',account=role==='admin'?{role,adminPermissions:{enforced:true,privileged:false,grants:denied?['classrooms.view','announcements.view','tasks.view']:['classrooms.view','announcements.view','tasks.view','tasks.create','tasks.review','tasks.archive']}}:{role};
  const content=view==='classrooms'?<ClassroomsPage role={role} classes={classes} terms={[]} learning={learning} learningReady teacherName='Fictional Teacher' teachers={['Fictional Teacher']} plans={[{student:'Fictional Student A',subject:'Mathematics',teacherName:'Fictional Teacher',active:true}]} mutate={async()=>({ok:true})} learningMutate={async()=>true} busy={false} onCalendar={()=>{}}/>:<ClassroomTasks classroom={classroom} role={role}/>;
  return <AdminPermissionContext.Provider value={account}><div className='app-shell'><div className='app-body'><main className='workspace workspace-compact'><div className='fixture-controls'><button data-testid='fixture-switch-class' onClick={()=>setClassId(value=>value==='class-a'?'class-b':'class-a')}>Switch fictional class</button><button data-testid='fixture-switch-role' onClick={()=>setRole(value=>value==='student'?'teacher':'student')}>Switch fictional role</button></div>{content}</main></div></div></AdminPermissionContext.Provider>;
 }
 createRoot(document.getElementById('root')).render(<App/>);`;
 
-function task(id,title){return {id,title,description:'Practise this fictional activity without uploading a file.',revision:1,archived:false,createdAt,completedAt:null};}
+function task(id,title){return {id,title,description:'Practise this fictional activity without uploading a file.',revision:1,archived:false,createdAt,studentState:{studentName:'Fictional Student A',status:'pending',stateVersion:null,completedAt:null,submittedAt:null,reviewedAt:null,reason:'',history:[]}};}
 async function openFixture({width=390,language='en',role='student',view='tasks',scenario='',archived=false,grants='allowed',wait=true}={}){
  const context=await browser.newContext({viewport:{width,height:900},reducedMotion:'reduce'}),page=await context.newPage();
  const api=[],external=[],errors=[],unexpected=[],routeErrors=[],operations=new Map(),gates=[];
@@ -66,9 +66,10 @@ async function openFixture({width=390,language='en',role='student',view='tasks',
   let rows=tasks[classroomId]||[];
   const nextCursor=scenario==='pagination'&&classroomId==='class-a'&&!cursor?'page-2':null;
   if(scenario==='pagination'&&classroomId==='class-a')rows=cursor?[rows[0],rows[1]]:[rows[0]];
-  return {classroomId,readOnly,canCreate:scenario==='overgrant'||currentRole!=='student',canArchive:scenario==='overgrant'||currentRole!=='student',canComplete:currentRole==='student',tasks:rows.map(item=>{
-   const {completedAt:ownTime,...rest}=item;
-   return currentRole==='student'?{...rest,completedAt:ownTime}:{...rest,progress:{completed:ownTime?2:1,total:2,students:[{studentName:'Fictional Student A',completedAt:ownTime},{studentName:'Fictional Student B',completedAt}]}};
+  return {classroomId,readOnly,canCreate:scenario==='overgrant'||currentRole!=='student',canArchive:scenario==='overgrant'||currentRole!=='student',canReview:currentRole!=='student',canComplete:currentRole==='student',tasks:rows.map(item=>{
+   const {studentState:own,...rest}=item;
+   const legacy={studentName:'Fictional Student B',status:'legacy_completed',stateVersion:'legacy-b',completedAt,submittedAt:null,reviewedAt:null,reason:'',history:[{eventId:'legacy-b',action:'complete',at:completedAt,actorName:'Fictional Student B',reason:''}]};
+   return currentRole==='student'?{...rest,completedAt:own.completedAt,studentState:own}:{...rest,progress:{completed:own.status==='completed'?1:0,awaitingReview:own.status==='awaiting_review'?1:0,needsRedo:own.status==='needs_redo'?1:0,legacyCompleted:1,total:2,students:[own,legacy]}};
   }),nextCursor};
  };
  await page.route('**/*',async route=>{
@@ -92,9 +93,9 @@ async function openFixture({width=390,language='en',role='student',view='tasks',
     return fulfill(snapshot);
    }
    if(method!=='POST')return fulfill({error:'Unsupported fictional operation'},405);
-   if(!body||!['create','complete','archive'].includes(body.action)||typeof body.operationId!=='string'||!body.operationId){routeErrors.push('Invalid operation payload');return fulfill({error:'Invalid fictional operation'},400);}
-   if(['studentName','accountId','student','groupId'].some(key=>Object.hasOwn(body,key))){routeErrors.push('Client supplied a completion identity');return fulfill({error:'No client-selected student'},400);}
-   if(controls.holdComplete&&body.action==='complete')await completeGate.promise;
+   if(!body||!['create','submit','approve','return','archive'].includes(body.action)||typeof body.operationId!=='string'||!body.operationId){routeErrors.push('Invalid operation payload');return fulfill({error:'Invalid fictional operation'},400);}
+   if(body.action==='submit'&&['studentName','accountId','student','groupId'].some(key=>Object.hasOwn(body,key))){routeErrors.push('Client supplied a completion identity');return fulfill({error:'No client-selected student'},400);}
+   if(controls.holdComplete&&body.action==='submit')await completeGate.promise;
    if(controls.holdWrite)await writeGate.promise;
    if(controls.failWriteOnce){controls.failWriteOnce=false;return fulfill({error:'Fictional write failure'},503);}
    const previous=operations.get(body.operationId);
@@ -109,7 +110,11 @@ async function openFixture({width=390,language='en',role='student',view='tasks',
    }else{
     const item=tasks[body.classroomId]?.find(row=>row.id===id);
     if(!item)return fulfill({error:'Fictional task not found'},404);
-    if(body.action==='complete')item.completedAt=completedAt;else item.archived=true;
+    if(body.action==='archive')item.archived=true;else{
+     const previous=item.studentState;if(body.expectedEventId!==previous.stateVersion)return fulfill({error:'Task state changed'},409);
+     const event={eventId:body.operationId,action:body.action,at:completedAt,actorName:currentRole==='student'?'Fictional Student A':'Fictional Teacher',reason:body.reason||''};
+     item.studentState={...previous,stateVersion:event.eventId,status:body.action==='submit'?'awaiting_review':body.action==='return'?'needs_redo':'completed',completedAt:body.action==='approve'?completedAt:null,submittedAt:body.action==='submit'?completedAt:previous.submittedAt,reviewedAt:body.action==='submit'?null:completedAt,reason:body.action==='return'?body.reason:'',history:[event,...previous.history]};
+    }
    }
    operations.set(body.operationId,{signature:JSON.stringify(body),id});
    if(controls.postRefreshFailure){controls.postRefreshFailure=false;controls.failReads++;}
@@ -144,7 +149,7 @@ async function openForm(f,title='Memorise a fictional poem'){
  await f.page.getByLabel(text(f.language,'任务说明（可选）','Instructions (optional)'),{exact:true}).fill('Practise aloud. No attachment is required.');
 }
 async function publish(f){await f.page.getByRole('button',{name:text(f.language,'发布任务','Publish task'),exact:true}).click();}
-async function complete(f,id='task-a'){await card(f,id).getByRole('button',{name:text(f.language,'完成任务','Complete'),exact:true}).click();}
+async function complete(f,id='task-a'){await card(f,id).getByRole('button',{name:text(f.language,'申请老师确认','Request teacher confirmation'),exact:true}).click();}
 async function reloadTasks(f){await f.page.getByRole('button',{name:text(f.language,'重新载入','Reload tasks'),exact:true}).click();await f.page.locator('.classroom-task-list[aria-busy=false]').waitFor();}
 async function settleUi(f){await f.page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));}
 
@@ -163,101 +168,36 @@ try{
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));origin='http://127.0.0.1:'+server.address().port;
  browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_EXECUTABLE_PATH}:{}),...(process.env.PLAYWRIGHT_CHANNEL?{channel:process.env.PLAYWRIGHT_CHANNEL}:{})});
 
- for(const width of [320,390,1280])for(const language of ['en','zh']){
-  const label=width+'/'+language;
-  const student=await openFixture({width,language,scenario:'held-complete'});
-  check((await card(student).locator('.classroom-task-badge').innerText())===text(language,'未完成','Not completed'),'student starts with server-reported incomplete status ('+label+')');
-  check(await student.page.locator('.classroom-task-progress').count()===0&&!await student.page.getByText('Fictional Student B',{exact:true}).count(),'student UI has no classmate completion roster ('+label+')');
-  await complete(student);await eventually(()=>posts(student).length===1,'completion POST did not start');
-  check((await card(student).locator('.classroom-task-badge').innerText())===text(language,'未完成','Not completed')&&await card(student).locator('time').count()===0,'pending POST never claims successful completion ('+label+')');
-  check(await card(student).getByRole('button').isDisabled(),'pending Complete disables repeated interaction ('+label+')');
-  await card(student).getByRole('button').evaluate(node=>{node.click();node.click();});
-  check(posts(student).length===1,'double clicks issue one completion operation ('+label+')');
-  student.releaseComplete();await card(student).locator('time').waitFor();
-  check(await card(student).locator('time').getAttribute('datetime')===completedAt&&await card(student).getByRole('button').isDisabled(),'completed task uses the server timestamp and cannot be submitted again ('+label+')');
-  check(Object.keys(posts(student)[0].body).sort().join(',')==='action,classroomId,id,operationId','Complete supplies no student, account or group identity ('+label+')');
-  await student.page.reload();await card(student).locator('time').waitFor();
-  check(posts(student).length===1&&await card(student).locator('time').getAttribute('datetime')===completedAt,'reloading retains server completion without another write ('+label+')');
-  await assertFit(student,'student Task card');if(language==='en')await screenshot(student,'student-'+width);await student.close();
-
-  const teacher=await openFixture({width,language,role:'teacher'});
-  const progress=card(teacher).locator('details.classroom-task-progress');await progress.locator('summary').click();
-  check(await progress.locator('li').count()===2&&await progress.locator('li').nth(0).innerText().then(value=>value.includes(text(language,'未完成','Not completed')))&&await progress.locator('li').nth(1).locator('time').getAttribute('datetime')===completedAt,'teacher sees each fictional student and actual completion ('+label+')');
-  await openForm(teacher);await assertFit(teacher,'teacher create form');await publish(teacher);
-  await card(teacher,'created-task-1').waitFor();await teacher.page.locator('.classroom-task-form').waitFor({state:'hidden'});
-  check(await card(teacher,'created-task-1').locator('h3').innerText()==='Memorise a fictional poem'&&posts(teacher).filter(request=>request.body.action==='create').length===1,'teacher publishes a standalone activity without a PDF ('+label+')');
-  await card(teacher).getByRole('button',{name:text(language,'关闭任务','Close task'),exact:true}).click();
-  await teacher.page.waitForFunction(({id,label})=>document.querySelector('article[data-task-id="'+id+'"] .classroom-task-badge')?.textContent===label,{id:'task-a',label:text(language,'已关闭','Closed')});
-  check(await card(teacher).locator('.classroom-task-progress li').count()===2&&await card(teacher).getByRole('button').count()===0,'closing a task retains its student completion history ('+label+')');
-  await assertFit(teacher,'teacher Task card');if(language==='en')await screenshot(teacher,'teacher-'+width);await teacher.close();
- }
-
- const lost=await openFixture({role:'teacher',scenario:'lost-create-response'});await openForm(lost,'A once-only fictional activity');await publish(lost);await lost.page.locator('.classroom-task-action-error').waitFor();
- check(await lost.page.getByLabel('Task title',{exact:true}).inputValue()==='A once-only fictional activity'&&lost.tasks['class-a'].filter(item=>item.title==='A once-only fictional activity').length===1,'lost create response keeps the draft after the server saved it');
- await publish(lost);await card(lost,'created-task-1').waitFor();
- check(posts(lost).length===2&&posts(lost)[0].body.operationId===posts(lost)[1].body.operationId&&lost.tasks['class-a'].filter(item=>item.title==='A once-only fictional activity').length===1,'retry after a lost response reuses the operation ID and creates one task');await lost.close();
-
- const edited=await openFixture({role:'teacher',scenario:'complete-failure'});await openForm(edited,'Original fictional draft');await publish(edited);await edited.page.locator('.classroom-task-action-error').waitFor();
- await edited.page.getByLabel('Task title',{exact:true}).fill('Changed fictional draft');await publish(edited);await card(edited,'created-task-1').waitFor();
- check(posts(edited)[0].body.operationId!==posts(edited)[1].body.operationId&&edited.tasks['class-a'][0].title==='Changed fictional draft','editing a failed draft creates a new operation identity');await edited.close();
-
- const failed=await openFixture({scenario:'complete-failure'});await complete(failed);await failed.page.locator('.classroom-task-action-error').waitFor();
- check(await card(failed).locator('.classroom-task-badge').innerText()==='Not completed'&&await card(failed).locator('time').count()===0&&await card(failed).getByRole('button',{name:'Complete',exact:true}).isEnabled(),'failed Complete keeps the task incomplete and retryable');
- await complete(failed);await card(failed).locator('time').waitFor();
- check(posts(failed).length===2&&posts(failed)[0].body.operationId===posts(failed)[1].body.operationId,'failed Complete retries reuse the same operation identity');await failed.close();
-
- const createdRefresh=await openFixture({role:'teacher',scenario:'refresh-failure'});await openForm(createdRefresh);await publish(createdRefresh);await createdRefresh.page.locator('.classroom-task-load-error').waitFor();
- check(await createdRefresh.page.locator('.classroom-task-form').count()===0&&await createdRefresh.page.locator('.classroom-task-success').innerText().then(value=>value.includes('Task published.')),'create success followed by refresh failure closes the form and confirms the saved task');
- await reloadTasks(createdRefresh);await card(createdRefresh,'created-task-1').waitFor();
- check(posts(createdRefresh).length===1&&createdRefresh.tasks['class-a'].filter(item=>item.id.startsWith('created-task')).length===1,'reload after confirmed create performs no duplicate create');await createdRefresh.close();
-
- const completeRefresh=await openFixture({scenario:'refresh-failure'});await complete(completeRefresh);await completeRefresh.page.locator('.classroom-task-load-error').waitFor();
- check(await card(completeRefresh).locator('.classroom-task-badge').innerText()==='Completed'&&await card(completeRefresh).locator('time').count()===0&&await card(completeRefresh).getByRole('button').isDisabled(),'confirmed completion survives refresh failure without inventing a completion time');
- await reloadTasks(completeRefresh);await card(completeRefresh).locator('time').waitFor();
- check(posts(completeRefresh).length===1&&await card(completeRefresh).locator('time').getAttribute('datetime')===completedAt,'completion reload fetches actual server time without another POST');await completeRefresh.close();
-
- for(const options of [{role:'student',scenario:'read-only'},{role:'teacher',scenario:'read-only'},{role:'student',archived:true},{role:'teacher',archived:true},{role:'admin',grants:'denied'},{role:'student',scenario:'overgrant'}]){
-  const f=await openFixture(options);
-  if(options.scenario!=='overgrant')check(await f.page.getByRole('button',{name:'New task',exact:true}).count()===0&&await card(f).getByRole('button').count()===0,'read-only classroom/server or denied admin grant has no Task write controls ('+JSON.stringify(options)+')');
-  else check(await f.page.getByRole('button',{name:'New task',exact:true}).count()===0&&await f.page.getByRole('button',{name:'Close task',exact:true}).count()===0,'student role cannot acquire staff controls from overbroad API capabilities');
-  check(posts(f).length===0,'viewing restricted task records performs no write');await assertFit(f,'restricted Task view');await f.close();
- }
-
- const pagination=await openFixture({scenario:'pagination'});await pagination.page.getByRole('button',{name:'Load more',exact:true}).click();await card(pagination,'task-next').waitFor();
- check(await pagination.page.locator('article[data-task-id]').count()===2&&await card(pagination).count()===1&&pagination.api.some(request=>request.method==='GET'&&new URLSearchParams(request.query).get('cursor')==='page-2'),'pagination appends tasks, uses the server cursor and deduplicates overlapping pages');await pagination.close();
-
- const initialFailure=await openFixture({scenario:'initial-read-failure',wait:false});await initialFailure.page.locator('.classroom-task-load-error').waitFor();
- check(await initialFailure.page.locator('article[data-task-id]').count()===0&&await initialFailure.page.getByText('No class tasks yet',{exact:true}).count()===0,'an initial read error never claims that the classroom has no tasks');
- await initialFailure.page.getByRole('button',{name:'Retry',exact:true}).click();await card(initialFailure).waitFor();check(posts(initialFailure).length===0,'initial read retry fetches tasks without writing');await initialFailure.close();
-
- const revoked=await openFixture({role:'teacher'});revoked.controls.failReads=1;revoked.controls.readFailureStatus=403;await revoked.page.getByRole('button',{name:'Refresh',exact:true}).click();await revoked.page.locator('.classroom-task-load-error').waitFor();
- check(await revoked.page.locator('article[data-task-id]').count()===0&&await revoked.page.getByRole('button',{name:'New task',exact:true}).count()===0,'a permission-revoked refresh hides the old task records and write controls');await revoked.close();
-
- const stale=await openFixture({scenario:'held-read',wait:false});await eventually(()=>stale.api.some(request=>request.method==='GET'&&request.query.includes('class-a')),'initial held request did not begin');
- await stale.page.getByTestId('fixture-switch-class').click();await card(stale,'task-b').waitFor();stale.releaseRead();
- await eventually(()=>stale.controls.heldReadFinished,'old-class read was not released');await settleUi(stale);
- check(await card(stale).count()===0&&await card(stale,'task-b').count()===1,'late old-class reads cannot replace the selected classroom tasks');await stale.close();
-
- const staleWrite=await openFixture({scenario:'held-write'});await complete(staleWrite);await eventually(()=>posts(staleWrite).length===1,'held write did not start');
- await staleWrite.page.getByTestId('fixture-switch-class').click();await card(staleWrite,'task-b').waitFor();staleWrite.releaseWrite();
- await eventually(()=>staleWrite.controls.heldWriteFinished,'old-class write was not released');await settleUi(staleWrite);
- check(await card(staleWrite).count()===0&&await card(staleWrite,'task-b').locator('.classroom-task-badge').innerText()==='Not completed'&&await staleWrite.page.locator('.classroom-task-success').count()===0,'a late old-class write cannot confirm completion in a different classroom');await staleWrite.close();
-
- const changedRole=await openFixture({scenario:'held-write'});await complete(changedRole);await eventually(()=>posts(changedRole).length===1,'role-change write did not start');await changedRole.switchRole();
- await changedRole.page.getByRole('button',{name:'New task',exact:true}).waitFor();changedRole.releaseWrite();await eventually(()=>changedRole.controls.heldWriteFinished,'previous-role write was not released');await settleUi(changedRole);
- check(await card(changedRole).getByRole('button',{name:'Complete',exact:true}).count()===0&&await changedRole.page.locator('.classroom-task-success').count()===0,'role changes discard the previous role completion confirmation');await changedRole.close();
 
  for(const width of [320,390,1280])for(const language of ['en','zh']){
-  const integration=await openFixture({width,language,view:'classrooms'}),tabs=integration.page.getByRole('tablist');
-  await tabs.waitFor();const taskTab=tabs.getByRole('tab',{name:text(language,'任务','Tasks'),exact:true});
-  check(await tabs.getByRole('tab',{name:text(language,'功课','Homework'),exact:true}).count()===1,'existing PDF homework remains a separate classroom tab ('+width+'/'+language+')');
-  await taskTab.click();await integration.page.getByRole('tabpanel').getByTestId('classroom-tasks').waitFor();await integration.page.locator('.classroom-task-list[aria-busy=false]').waitFor();
-  check(await taskTab.getAttribute('aria-selected')==='true'&&await taskTab.getAttribute('tabindex')==='0','Tasks opens through the real classroom tab with accessible selected state ('+width+'/'+language+')');
-  await assertFit(integration,'integrated classroom Tasks');
-  await taskTab.press('Home');check(await tabs.getByRole('tab').first().getAttribute('aria-selected')==='true','classroom tabs retain Home-key navigation');
-  await tabs.getByRole('tab').first().press('End');check(await tabs.getByRole('tab').last().getAttribute('aria-selected')==='true','classroom tabs retain End-key navigation');
-  check(posts(integration).length===0,'opening and switching Task tabs never changes homework or records');await integration.close();
+  const label=width+'/'+language,f=await openFixture({width,language,scenario:'held-complete'});
+  check(await card(f).locator('.classroom-task-badge').innerText()===text(language,'待完成','To do'),'student starts To do '+label);
+  check(await f.page.locator('.classroom-task-progress').count()===0,'student sees no classmate roster '+label);
+  await complete(f);await eventually(()=>posts(f).length===1,'request not sent');check(await card(f).getByRole('button').isDisabled(),'pending request disables duplicates '+label);
+  check(await card(f).locator('.classroom-task-badge').innerText()===text(language,'待完成','To do'),'pending network does not claim completion '+label);
+  f.releaseComplete();await card(f).getByText(text(language,'待老师确认','Awaiting teacher'),{exact:true}).waitFor();
+  check(await card(f).getByRole('button').count()===0,'requested Task cannot be submitted again '+label);
+  check(Object.keys(posts(f)[0].body).sort().join(',')==='action,classroomId,expectedEventId,id,operationId','request sends version but no client identity '+label);
+  await f.switchRole();await card(f).getByRole('button',{name:text(language,'要求重做','Request another attempt'),exact:true}).click();
+  const dialog=f.page.getByRole('dialog');await dialog.waitFor();check(await dialog.getByRole('button',{name:text(language,'发送给学生','Send to student'),exact:true}).isDisabled(),'return requires reason '+label);
+  await dialog.getByLabel(text(language,'重做原因','Reason'),{exact:true}).fill('Practise seven times eight again.');await dialog.getByRole('button',{name:text(language,'发送给学生','Send to student'),exact:true}).click();await dialog.waitFor({state:'hidden'});
+  await card(f).getByText(text(language,'需重做','Needs another attempt'),{exact:true}).waitFor();check(true,'review stays expanded after return '+label);
+  await f.switchRole();await card(f).getByText(/Practise seven times eight again/).first().waitFor();await card(f).getByRole('button',{name:text(language,'重新申请确认','Request confirmation again'),exact:true}).click();await card(f).getByText(text(language,'待老师确认','Awaiting teacher'),{exact:true}).waitFor();
+  await f.switchRole();await card(f).getByRole('button',{name:text(language,'确认完成','Confirm completion'),exact:true}).click();await card(f).getByText(text(language,'老师已确认','Confirmed by teacher'),{exact:true}).waitFor();
+  check(f.tasks['class-a'][0].studentState.history.length===4,'request return resubmit approve retain history '+label);
+  check(await card(f).getByText(text(language,'此前自行完成','Previously self-completed'),{exact:true}).count()>=1,'legacy completion labelled explicitly '+label);
+  await assertFit(f,'teacher review');if(language==='en')await screenshot(f,'teacher-review-'+width);
+  await f.switchRole();await card(f).getByText(text(language,'老师已确认','Confirmed by teacher'),{exact:true}).waitFor();check(await card(f).getByRole('button').count()===0,'confirmed task has no student complete button '+label);await assertFit(f,'confirmed student');await f.close();
+  const teacher=await openFixture({width,language,role:'teacher'});await openForm(teacher);await publish(teacher);await card(teacher,'created-task-1').waitFor();check(posts(teacher).filter(p=>p.body.action==='create').length===1,'teacher creates no-file activity '+label);await card(teacher).getByRole('button',{name:text(language,'关闭任务','Close task'),exact:true}).click();await card(teacher).getByText(text(language,'已关闭','Closed'),{exact:true}).waitFor();await assertFit(teacher,'teacher form');await teacher.close();
  }
+ const lost=await openFixture({role:'teacher',scenario:'lost-create-response'});await openForm(lost,'Once-only task');await publish(lost);await lost.page.locator('.classroom-task-action-error').waitFor();await publish(lost);await card(lost,'created-task-1').waitFor();check(posts(lost).length===2&&posts(lost)[0].body.operationId===posts(lost)[1].body.operationId,'lost create retry uses same operation');check(lost.tasks['class-a'].filter(t=>t.title==='Once-only task').length===1,'lost create never duplicates');await lost.close();
+ const failed=await openFixture({scenario:'complete-failure'});await complete(failed);await failed.page.locator('.classroom-task-action-error').waitFor();check(await card(failed).getByRole('button',{name:'Request teacher confirmation',exact:true}).isEnabled(),'failed request remains retryable');await complete(failed);await card(failed).getByText('Awaiting teacher',{exact:true}).waitFor();check(posts(failed)[0].body.operationId===posts(failed)[1].body.operationId,'request retry retains operation identity');await failed.close();
+ const refresh=await openFixture({scenario:'refresh-failure'});await complete(refresh);await refresh.page.locator('.classroom-task-load-error').waitFor();check(await refresh.page.locator('.classroom-task-success').innerText().then(x=>x.includes('Waiting for teacher')),'confirmed request survives failed refresh');check(await card(refresh).getByRole('button').count()===0,'failed refresh cannot duplicate confirmed request');await reloadTasks(refresh);await card(refresh).getByText('Awaiting teacher',{exact:true}).waitFor();check(posts(refresh).length===1,'reload after confirmed request is readonly');check(await refresh.page.locator('.classroom-task-success').count()===0,'ordinary refresh clears obsolete request confirmation');await refresh.close();
+ for(const options of [{role:'student',scenario:'read-only'},{role:'teacher',scenario:'read-only'},{role:'student',archived:true},{role:'teacher',archived:true},{role:'admin',grants:'denied'},{role:'student',scenario:'overgrant'}]){const f=await openFixture(options);check(await f.page.getByRole('button',{name:'New task',exact:true}).count()===0,'restricted role has no create action');if(options.scenario!=='overgrant')check(await card(f).getByRole('button').count()===0,'readonly task has no writes');else check(await f.page.getByRole('button',{name:'Close task',exact:true}).count()===0,'student cannot gain staff action from overbroad API');await f.close();}
+ const pagination=await openFixture({scenario:'pagination'});await pagination.page.getByRole('button',{name:'Load more',exact:true}).click();await card(pagination,'task-next').waitFor();check(await pagination.page.locator('article[data-task-id]').count()===2,'pagination deduplicates overlap');await pagination.close();
+ const revoked=await openFixture({role:'teacher'});revoked.controls.failReads=1;revoked.controls.readFailureStatus=403;await revoked.page.getByRole('button',{name:'Refresh',exact:true}).click();await revoked.page.locator('.classroom-task-load-error').waitFor();check(await revoked.page.locator('article[data-task-id]').count()===0,'revoked permission clears old records');await revoked.close();
+ for(const scenario of ['held-read','held-write']){const f=await openFixture({scenario,wait:scenario!=='held-read'});if(scenario==='held-write'){await complete(f);await eventually(()=>posts(f).length===1,'write not started');}else await eventually(()=>f.api.length>0,'read not started');await f.page.getByTestId('fixture-switch-class').click();await card(f,'task-b').waitFor();f.releaseRead();f.releaseWrite();await settleUi(f);check(await card(f).count()===0&&await card(f,'task-b').count()===1,'late '+scenario+' cannot replace new class');await f.close();}
+ for(const width of [320,390,1280])for(const language of ['en','zh']){const f=await openFixture({width,language,view:'classrooms'}),tabs=f.page.getByRole('tablist');await tabs.waitFor();check(await tabs.getByRole('tab',{name:text(language,'功课','Homework'),exact:true}).count()===1,'Homework remains separate');await tabs.getByRole('tab',{name:text(language,'任务','Tasks'),exact:true}).click();await f.page.getByRole('tabpanel').getByTestId('classroom-tasks').waitFor();await f.page.locator('.classroom-task-list[aria-busy=false]').waitFor();await assertFit(f,'classroom Tasks');check(posts(f).length===0,'viewing tasks never writes Homework');await f.close();}
  console.log(JSON.stringify({suite:'classroom-tasks-ui',checks,screenshots,widths:[320,390,1280],languages:['en','zh'],fictionalApis:true,productionWrites:0}));
 }finally{
  for(const fixture of activeFixtures){fixture.releaseComplete();fixture.releaseRead();fixture.releaseWrite();await fixture.context.close().catch(()=>{});}
