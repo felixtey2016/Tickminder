@@ -1,4 +1,7 @@
 "use client";
+import {useDisplayPreferences} from '@/lib/use-display-preferences';
+import {startOfDisplayWeek} from '@/lib/display-preferences';
+import {displayFormatter} from '@/lib/display-preferences';
 import type {SessionLesson} from "@/lib/class-session-display";
 import {uniqueSessionLessons,sessionLessonTitle} from "@/lib/class-session-display";
 import { useFilterPreference } from "@/lib/filter-preferences";
@@ -21,7 +24,7 @@ type CalendarLesson = SessionLesson & {
 };
 type View = "day" | "week" | "month";
 const dayFormatter = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit" });
-const timeFormatter = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
+const timeFormatter = displayFormatter("en-GB",{ timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
 const malaysiaDay = (iso: string) => dayFormatter.format(new Date(iso));
 const malaysiaTime = (iso: string) => timeFormatter.format(new Date(iso));
 const shift = (day: string, by: number) => new Date(Date.parse(`${day}T00:00:00Z`) + by * 86400000).toISOString().slice(0, 10);
@@ -37,6 +40,7 @@ export function LessonCalendar({ lessons:sourceLessons, teachers, onSelect, prop
     onSelect: (id: string) => void;
     proposals?: Array<{lessonId: string; status: string; proposedStart: string; proposedEnd: string; requestedRole?: string}>;
 }) {
+    const preferences=useDisplayPreferences();
     const lessons=uniqueSessionLessons(sourceLessons);
     const [localAnchor, setLocalAnchor] = useState(() => malaysiaDay(new Date().toISOString()));
     const anchor=date||localAnchor;
@@ -48,14 +52,14 @@ export function LessonCalendar({ lessons:sourceLessons, teachers, onSelect, prop
         if (view === "day")
             return [anchor];
         if (view === "week")
-            return Array.from({ length: 7 }, (_, i) => shift(monday(anchor), i));
+            return Array.from({ length: 7 }, (_, i) => shift(startOfDisplayWeek(anchor,preferences.weekStart), i));
         const first = `${anchor.slice(0, 7)}-01`;
-        const start = monday(first);
+        const start = startOfDisplayWeek(first,preferences.weekStart);
         const last = new Date(Date.UTC(Number(anchor.slice(0, 4)), Number(anchor.slice(5, 7)), 0)).getUTCDate();
         const count = Math.ceil((Math.round((Date.parse(first + "T00:00:00Z") - Date.parse(start + "T00:00:00Z")) / 86400000) + last) / 7) * 7;
         return Array.from({ length: count }, (_, i) => shift(start, i));
-    }, [anchor, view]);
-    useEffect(()=>{if(days.length)onRangeChange?.({from:days[0],to:shift(days[days.length-1],1)});},[anchor,view,onRangeChange]);
+    }, [anchor, view,preferences.weekStart]);
+    useEffect(()=>{if(days.length)onRangeChange?.({from:days[0],to:shift(days[days.length-1],1)});},[days,onRangeChange]);
     function move(direction: number) {
         if (view === "day")
             setAnchor(shift(anchor, direction));

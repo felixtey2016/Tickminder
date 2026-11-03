@@ -37,5 +37,92 @@
  .management-mobile>select{flex:1;width:100%;min-width:0;min-height:44px;border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:#fff;color:var(--foreground);font-size:15px}
  .settings-compact .group-entry{padding:16px}
  .account-settings-compact .account-settings{padding:16px}
- .account-settings-compact .account-summary-fields>div{grid-template-columns:minmax(65px,.6fr) minmax(0,1.4fr);gap:8px}
+ .account-settings-compact .account-summary-fields>div{grid-template-columns:minmax(0,1fr);gap:4px}
 }
+
+/* Round 1: one account summary followed by task-based settings rows. */
+.account-settings-compact{align-items:start;max-width:1100px}
+.account-settings-compact :is(.account-settings,.account-contact-panel,.account-whatsapp){background:var(--ui-surface,#fff);border-color:var(--ui-border,#e4e2ea);box-shadow:none;border-radius:8px}
+.account-settings-compact :is(.account-settings,.account-contact-panel)>h2{display:flex;align-items:center;gap:10px;font-size:18px;line-height:1.5;margin:0 0 20px;color:var(--ui-text,#252334)}
+.account-settings-compact h2>svg{color:var(--ui-accent,#6547c6);flex:none}
+.account-settings-compact .account-profile-heading{display:flex;align-items:center;gap:14px;padding-bottom:20px;min-width:0}
+.account-profile-heading>div{min-width:0;display:grid;gap:6px}
+.account-profile-icon{display:grid;place-items:center;flex:none;width:44px;height:44px;border-radius:8px;background:var(--ui-accent-soft,#f0ebfc);color:var(--ui-accent,#6547c6)}
+.account-settings-compact .account-summary-name{font-size:18px;line-height:1.5;color:var(--ui-text,#252334)}
+.account-settings-compact .account-login-methods{display:flex;flex-wrap:wrap;gap:4px 8px;font-size:14px;line-height:1.5;color:var(--ui-muted,#626575)}
+.account-method-list{display:flex;flex-wrap:wrap;gap:4px 8px;color:var(--ui-text,#252334)}
+.account-method-list>span+span::before{content:'·';color:var(--ui-muted,#626575);margin-right:8px}
+.account-settings-compact :is(.account-details,.account-security-section){max-width:none;border-top:1px solid var(--ui-border,#e4e2ea);padding-top:0;margin-top:0}
+.account-settings-compact .account-details{padding-bottom:0}
+.account-settings-compact .settings-disclosure>summary{min-height:56px;gap:12px;font-size:15px;color:var(--ui-text,#252334);padding-block:10px}
+.account-settings-compact .settings-disclosure>summary>svg:first-child{flex:none;color:var(--ui-accent,#6547c6)}
+.account-settings-compact .settings-disclosure[open]>summary{margin-bottom:12px}
+.account-settings-compact .account-summary-fields{padding:0 0 16px 30px;font-size:14px;gap:10px}
+.account-settings-compact .account-summary-fields dt{color:var(--ui-muted,#626575)}
+.account-settings-compact .account-summary-fields dd{color:var(--ui-text,#252334)}
+.account-settings-compact .account-password-form{gap:16px;margin-bottom:16px;max-width:540px}
+.account-settings-compact .account-password-form label{font-size:14px;font-weight:500;gap:8px}
+.account-settings-compact .account-security-section input{border-color:var(--ui-border,#e4e2ea);background:var(--ui-surface,#fff);color:var(--ui-text,#252334)}
+.account-settings-compact .account-security-section>.muted{font-size:14px;color:var(--ui-muted,#626575);margin:0 0 14px}
+.account-settings-compact .student-contact-form :is(label,legend){color:var(--ui-text,#252334)}
+.account-settings-compact .student-contact-form .student-contact-kinds label{border-radius:6px;background:var(--ui-surface,#fff);border-color:var(--ui-border,#e4e2ea);color:var(--ui-text,#252334)}
+.account-settings-compact .student-contact-form .student-contact-kinds label.selected{background:var(--ui-accent-soft,#f0ebfc);border-color:var(--ui-accent,#6547c6);color:var(--ui-accent,#6547c6)}
+.account-settings-compact .student-contact-form .student-contact-phone>small{color:var(--ui-muted,#626575);font-size:14px}
+.account-settings-compact .account-whatsapp{padding-block:8px}
+.account-settings-compact .account-whatsapp>summary{min-height:48px}
+.management-switcher .management-navigation{background:var(--ui-surface,#fff);border-color:var(--ui-border,#e4e2ea)}
+.management-switcher .management-navigation>button{color:var(--ui-muted,#626575)}
+.management-switcher .management-navigation>button[aria-current=page]{color:var(--ui-accent,#6547c6);border-color:transparent;background:var(--ui-accent-soft,#f0ebfc)}
+.settings-compact :is(.group-entry,.catalogue-addition,.group-create){background:var(--ui-surface,#fff);border-color:var(--ui-border,#e4e2ea);box-shadow:none;border-radius:8px}
+.settings-compact :is(.settings-disclosure>summary,.group-heading h2){color:var(--ui-text,#252334)}
+.settings-compact :is(.group-invitation,.group-chief-settings,.group-entry-management){border-color:var(--ui-border,#e4e2ea)}
+.settings-compact :is(.group-invitation,.group-chief-settings,.group-entry-management)>summary{min-height:52px;margin-bottom:0}
+.settings-compact :is(.group-invitation,.group-chief-settings,.group-entry-management)[open]>summary{margin-bottom:12px}
+.management-mobile>select{background:var(--ui-surface,#fff);color:var(--ui-text,#252334);border-color:var(--ui-border,#e4e2ea)}
+.account-setup .account-setup-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
+.account-setup-heading .language-switch{position:static;margin:0;float:none}
+.account-setup h1{font-size:24px;line-height:1.35;margin:0 0 12px;text-align:left}
+.account-setup .account-setup-intro{font-size:14px;line-height:1.6;margin:0 0 16px;color:var(--ui-muted,#626575);text-align:left}
+.account-setup .account-setup-identity{margin:0 0 20px;padding:10px 12px;border:1px solid var(--ui-border,#e4e2ea);border-radius:6px;background:var(--ui-surface-muted,#f7f7fa);color:var(--ui-text,#252334);font-size:14px;overflow-wrap:anywhere;text-align:left}
+.account-setup form{gap:16px}
+.account-setup form label{font-size:14px;text-align:left}
+.account-setup form small{font-size:14px;color:var(--ui-muted,#626575)}
+.account-setup-existing{border-top:1px solid var(--ui-border,#e4e2ea);margin-top:24px;padding-top:16px;text-align:left}
+.account-setup-existing>p{font-size:14px;line-height:1.6;margin:0 0 12px;color:var(--ui-muted,#626575)}
+.account-setup-existing>button{min-height:44px}
+.sheet-sync-compact :is(.sheet-sync-mode,.sheet-sync-skipped summary){color:var(--ui-text)}
+.sheet-sync-compact .sheet-sync-mode{max-width:100%;min-width:0}
+.sheet-sync-compact .sheet-sync-mode select{background:var(--ui-surface);color:var(--ui-text);border-color:var(--ui-border);max-width:100%;font-size:16px}
+.sheet-sync-compact .sheet-sync-preview{min-width:0;border-color:var(--ui-border)}
+.sheet-sync-compact .sheet-sync-preview h3{font-size:18px;overflow-wrap:anywhere}
+.sheet-sync-compact .sheet-sync-preview h3 small{color:var(--ui-muted)}
+.sheet-sync-compact .sheet-sync-table :is(th,td){border-color:var(--ui-border);overflow-wrap:anywhere;max-width:24em}
+.sheet-sync-compact .sheet-sync-table th{background:var(--ui-surface-muted);color:var(--ui-text)}
+.sheet-sync-compact .sheet-sync-table-wrap{min-width:0;border:1px solid var(--ui-border);border-radius:6px}
+.sheet-sync-compact .sheet-sync-table-wrap:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
+.sheet-sync-compact .sheet-sync-skipped{min-width:0;overflow-wrap:anywhere}
+.sheet-sync-compact .sheet-sync-skipped summary{min-height:44px;padding-block:10px}
+@media(min-width:1100px){
+ .account-settings-compact:has(.account-contact-panel){grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}
+ .account-settings-compact .account-whatsapp{grid-column:1/-1}
+}
+@media(max-width:700px){
+ .account-settings-compact{gap:12px}
+ .account-settings-compact .account-profile-heading{gap:12px;padding-bottom:16px}
+ .account-settings-compact .account-summary-fields{padding-left:0}
+ .account-settings-compact :is(.account-contact-panel,.account-whatsapp){padding-inline:16px}
+}
+
+/* Edit the local sign-in username inside the existing account details. */
+.account-settings-compact .account-username-value{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 12px;min-width:0}
+.account-username-current{min-width:0;overflow-wrap:anywhere;font-variant-ligatures:none}
+.account-settings-compact .account-username-form{display:grid;gap:12px;width:100%;max-width:540px;min-width:0;margin:0 0 16px;padding:16px;border:1px solid var(--ui-border,#e4e2ea);border-radius:8px;background:var(--ui-surface-muted,#f7f7fa)}
+.account-settings-compact .account-username-form>label{display:grid;gap:8px;min-width:0;font-size:14px;font-weight:600;color:var(--ui-text,#252334)}
+.account-settings-compact .account-username-form input{box-sizing:border-box;width:100%;min-width:0;min-height:46px;padding:10px 12px;border:1px solid var(--ui-border,#e4e2ea);border-radius:6px;background:var(--ui-surface,#fff);color:var(--ui-text,#252334);font:inherit;font-size:16px}
+.account-settings-compact .account-username-form input[aria-invalid=true]{border-color:var(--destructive,#b42318)}
+.account-settings-compact .account-username-form :is(.account-username-note,small){margin:0;font-size:13px;line-height:1.6;color:var(--ui-muted,#626575);overflow-wrap:anywhere}
+.account-settings-compact .account-username-error{margin:0;font-size:14px;line-height:1.5;color:var(--destructive,#b42318);overflow-wrap:anywhere}
+.account-settings-compact .account-username-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;margin:4px 0 0}
+.account-settings-compact .account-username-actions>button{height:auto;min-height:44px}
+.account-settings-compact .account-username-status{margin:0 0 16px;font-size:14px;line-height:1.6;color:var(--ui-text,#252334);overflow-wrap:anywhere}
+@media(max-width:380px){.account-settings-compact .account-username-form{padding:12px}.account-settings-compact .account-username-actions>button{flex:1;min-width:0}}

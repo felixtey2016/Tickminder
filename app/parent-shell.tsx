@@ -1,15 +1,20 @@
 "use client";
+import {useDisplayPreferences} from '@/lib/use-display-preferences';
 import {lazy,Suspense,useEffect,useRef,useState} from 'react';
-import {BarChart3,Bell,BookOpen,CalendarDays,House,LibraryBig,LogOut,Menu,UserRound,WalletCards,X,type LucideIcon} from 'lucide-react';
+import {BarChart3,Bell,BookOpen,CalendarDays,House,LibraryBig,ListChecks,LogOut,NotebookPen,UserRound,Video,WalletCards} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {FloatingBackButton} from '@/components/floating-back-button';
 import {MobileBottomNavigation} from '@/components/mobile-bottom-navigation';
+import {NavigationHub} from '@/components/navigation-hub';
+import {ShellPreferences} from '@/components/shell-preferences';
+import './shell-wave1.css';
 import {LegalLinks} from '@/components/legal-links';
 import {navigationAllowed,usePageHistoryState} from '@/lib/page-history';
 import {t,type Language} from '@/lib/i18n';
 import {BRAND_NAME} from '@/lib/brand';
 import {PNav} from '@/lib/parent-nav-i18n';
 import type {ParentWorkspaceView} from '@/lib/parent-navigation';
+import {isParentShellView,parentPrimaryFor,type ParentShellView} from '@/lib/parent-shell-navigation';
 import type {ParentWorkspaceTarget} from '@/lib/parent-workspace-ui';
 import './parent-shell.css';
 import './parent-compact.css';
@@ -25,32 +30,19 @@ const QuizWorkspace=lazy(()=>import('./quiz-workspace'));
 
 type ParentIdentity={id?:string;name:string;groupId?:string|null;groupName?:string|null};
 type ParentShellProps={account:ParentIdentity;language:Language;changeLanguage:(value:Language)=>void;logout:()=>void;refreshIdentity:()=>Promise<void>;initialQuizId?:string;onLinkedQuizExit?:()=>void};
-type ParentShellView=ParentWorkspaceView|'home'|'account'|'notifications'|'quizzes';
-const menuItems:Array<{view:ParentShellView;Icon:LucideIcon}>=[
-  {view:'home',Icon:House},
-  {view:'calendar',Icon:CalendarDays},
-  {view:'homework',Icon:BookOpen},
-  {view:'materials',Icon:LibraryBig},
-  {view:'quizzes',Icon:BookOpen},
-  {view:'learning',Icon:BarChart3},
-  {view:'finance',Icon:WalletCards},
-  {view:'notifications',Icon:Bell},
-  {view:'account',Icon:UserRound},
-];
-const shellViews=new Set<string>([...menuItems.map(item=>item.view),'lessons','attendance','recordings']);
-function moduleFor(view:ParentShellView){return view==='calendar'||view==='lessons'||view==='attendance'?'calendar':view==='recordings'?'materials':view;}
 
 export default function ParentShell(props:ParentShellProps){
+ useDisplayPreferences();
   return <NotificationsProvider key={props.account.id+':'+props.account.groupId} accountId={props.account.id||''} groupId={props.account.groupId||''} language={props.language} audience="parent"><ParentShellContent {...props}/></NotificationsProvider>;
 }
 
 function ParentShellContent({account,language,changeLanguage,logout,refreshIdentity,initialQuizId,onLinkedQuizExit}:ParentShellProps){
-  const shellRef=useRef<HTMLDivElement>(null),headerRef=useRef<HTMLElement>(null),menuRef=useRef<HTMLElement>(null),menuButtonRef=useRef<HTMLButtonElement>(null),menuTriggerRef=useRef<HTMLElement|null>(null);
+  const shellRef=useRef<HTMLDivElement>(null),headerRef=useRef<HTMLElement>(null);
   const [storedView,setView,replaceView]=usePageHistoryState<ParentShellView>('parent.shell.view',initialQuizId?'quizzes':'home');
-  const view=shellViews.has(storedView)?storedView:'home';
+  const view=isParentShellView(storedView)?storedView:'home';
   const [navigation,setNavigation]=useState<ParentNoticeNavigation|null>(null),[pendingNotice,setPendingNotice]=useState('');
   const [target,setTarget]=useState<ParentWorkspaceTarget|null>(null);
-  const [desktop,setDesktop]=useState(false),[menuOpen,setMenuOpen]=useState(false);
+  const activePrimary=parentPrimaryFor(view);
 
   useEffect(()=>{
     const update=()=>{if(headerRef.current)shellRef.current?.style.setProperty('--parent-header-height',Math.ceil(headerRef.current.getBoundingClientRect().height)+'px');};
@@ -62,36 +54,11 @@ function ParentShellContent({account,language,changeLanguage,logout,refreshIdent
   },[]);
 
   useEffect(()=>{
-    const query=window.matchMedia('(min-width: 901px)'),update=()=>{setDesktop(query.matches);if(query.matches)setMenuOpen(false);};
-    update();query.addEventListener('change',update);
-    const close=()=>setMenuOpen(false);window.addEventListener('popstate',close);
-    return()=>{query.removeEventListener('change',update);window.removeEventListener('popstate',close);};
-  },[]);
-
-  useEffect(()=>{
-    if(!menuOpen||desktop)return;
-    const previousOverflow=document.body.style.overflow;
-    document.body.style.overflow='hidden';
-    const focusable=()=>Array.from(menuRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href]')||[]);
-    (menuRef.current?.querySelector<HTMLElement>('[aria-current="page"]')||focusable()[0])?.focus();
-    const keydown=(event:KeyboardEvent)=>{
-      if(event.key==='Escape'){event.preventDefault();setMenuOpen(false);}
-      if(event.key!=='Tab')return;
-      const elements=focusable(),first=elements[0],last=elements.at(-1);
-      if(!first||!last)return;
-      if(event.shiftKey&&(document.activeElement===first||!menuRef.current?.contains(document.activeElement))){event.preventDefault();last.focus();}
-      else if(!event.shiftKey&&(document.activeElement===last||!menuRef.current?.contains(document.activeElement))){event.preventDefault();first.focus();}
-    };
-    document.addEventListener('keydown',keydown);
-    const returnFocus=menuTriggerRef.current;
-    return()=>{document.body.style.overflow=previousOverflow;document.removeEventListener('keydown',keydown);let attempts=2;const restore=()=>{if(!shellRef.current?.isConnected||window.matchMedia('(min-width: 901px)').matches||menuRef.current?.getAttribute('aria-modal')==='true')return;if(returnFocus?.isConnected&&returnFocus.getClientRects().length&&!returnFocus.closest('[hidden]'))returnFocus.focus();else if(attempts-->0)requestAnimationFrame(restore);else menuButtonRef.current?.focus();};requestAnimationFrame(restore);};
-  },[menuOpen,desktop]);
-
-  useEffect(()=>{
     const open=(event?:Event)=>{
+      if(!navigationAllowed())return;
       const requested=(event as CustomEvent<{id?:string}>|undefined)?.detail?.id;
       setPendingNotice(typeof requested==='string'&&/^parent:[A-Za-z0-9_-]{1,100}$/.test(requested)?requested:'');
-      setMenuOpen(false);setView('notifications');
+      setView('notifications');
     };
     window.addEventListener('tickminder:open-notifications',open);
     const params=new URLSearchParams(window.location.search);
@@ -107,7 +74,7 @@ function ParentShellContent({account,language,changeLanguage,logout,refreshIdent
 
   useEffect(()=>{
     if(!initialQuizId)return;
-    setNavigation(null);setTarget(null);setPendingNotice('');setMenuOpen(false);replaceView('quizzes');
+    setNavigation(null);setTarget(null);setPendingNotice('');replaceView('quizzes');
   },[initialQuizId,replaceView]);
   const linkedViewOpened=useRef(false);
   useEffect(()=>{
@@ -117,42 +84,61 @@ function ParentShellContent({account,language,changeLanguage,logout,refreshIdent
   },[initialQuizId,view,onLinkedQuizExit]);
 
   function choose(next:ParentShellView){
+    if(next!==view&&!navigationAllowed())return;
     if(initialQuizId&&next!=='quizzes')onLinkedQuizExit?.();
-    if(moduleFor(next)!==moduleFor(view))setNavigation(null);
-    setTarget(null);
-    setPendingNotice('');setView(next);setMenuOpen(false);
+    setNavigation(null);setTarget(null);setPendingNotice('');setView(next);
     if(next!==view)window.scrollTo(0,0);
   }
   function openWorkspace(next:Omit<ParentWorkspaceTarget,'targetId'>){
+    if(!navigationAllowed())return;
     if(initialQuizId)onLinkedQuizExit?.();
-    setNavigation(null);setPendingNotice('');setTarget({...next,targetId:crypto.randomUUID()});setView(next.view);setMenuOpen(false);window.scrollTo(0,0);
+    setNavigation(null);setPendingNotice('');setTarget({...next,targetId:crypto.randomUUID()});setView(next.view);window.scrollTo(0,0);
   }
-  const workspaceView:ParentWorkspaceView=view==='home'||view==='account'||view==='notifications'||view==='quizzes'?'calendar':view;
-  const drawerOpen=menuOpen&&!desktop;
-  function openMenu(){menuTriggerRef.current=document.activeElement instanceof HTMLElement?document.activeElement:menuButtonRef.current;setMenuOpen(true);}
+  function openNotice(next:ParentNoticeNavigation){
+    if(!navigationAllowed())return;
+    setTarget(null);setNavigation(next);setView(next.kind==='invoice'?'finance':'lessons');window.scrollTo(0,0);
+  }
+  const workspaceView:ParentWorkspaceView=['home','account','notifications','quizzes','learnHub','mineHub'].includes(view)?'calendar':view as ParentWorkspaceView;
+  const title=view==='finance'?PNav('fees'):PNav(view);
+  const learningSections=[
+    {id:'courses',title:PNav('courses'),layout:'list' as const,items:[
+      {id:'calendar',label:PNav('calendar'),Icon:CalendarDays},
+      {id:'lessons',label:PNav('lessons'),Icon:ListChecks},
+    ]},
+    {id:'content',title:PNav('learningContent'),layout:'grid' as const,items:[
+      {id:'homework',label:PNav('homework'),Icon:BookOpen},
+      {id:'quizzes',label:PNav('quizzes'),Icon:NotebookPen},
+      {id:'materials',label:PNav('materials'),Icon:LibraryBig},
+      {id:'recordings',label:PNav('recordings'),Icon:Video},
+    ]},
+    {id:'records',title:PNav('records'),layout:'list' as const,items:[
+      {id:'attendance',label:PNav('attendance'),Icon:ListChecks},
+      {id:'learning',label:PNav('learning'),Icon:BarChart3},
+    ]},
+  ];
+  const personalSections=[{id:'account',title:PNav('accountAndMessages'),layout:'list' as const,items:[
+    {id:'account',label:PNav('account'),description:account.name,Icon:UserRound},
+    {id:'notifications',label:PNav('notifications'),Icon:Bell,badge:<MenuBadge includeUnread/>},
+  ]}];
 
-  return <div ref={shellRef} className="app-shell parent-shell">
+  return <div ref={shellRef} className="app-shell parent-shell shell-wave1 four-entry-shell" data-home-view={view==='home'?'true':undefined}>
     <header ref={headerRef} className="topbar">
-      <button type="button" className="brand brand-home" data-testid="brand-home" aria-label={`${BRAND_NAME} · ${PNav('home')}`} onClick={()=>{if(view==='home'||navigationAllowed())choose('home');}}><span className="brand-logo small"><img src="/tickminder-logo.svg" width="40" height="40" alt={BRAND_NAME}/></span><div><strong>{BRAND_NAME}</strong><span>{account.groupName||PNav('portal')} · GMT+8</span></div></button>
+      <button type="button" className="brand brand-home" data-testid="brand-home" aria-label={`${BRAND_NAME} · ${PNav('home')}`} onClick={()=>choose('home')}><span className="brand-logo small"><img src="/tickminder-logo.svg" width="40" height="40" alt={BRAND_NAME}/></span><div><strong>{BRAND_NAME}</strong><span>{account.groupName||PNav('portal')} · GMT+8</span></div></button>
       <div className="top-actions">
-        <div className="language-switch" role="group" aria-label={t('语言')}><button type="button" aria-pressed={language==='zh'} onClick={()=>changeLanguage('zh')}>中文</button><span aria-hidden="true">|</span><button type="button" aria-pressed={language==='en'} onClick={()=>changeLanguage('en')}>EN</button></div>
-        <Button ref={menuButtonRef} type="button" variant="outline" className="menu-toggle parent-menu-toggle" onClick={()=>menuOpen?setMenuOpen(false):openMenu()} aria-label={PNav(menuOpen?'closeMenu':'openMenu')} aria-expanded={drawerOpen} aria-controls="parent-workspace-menu"><Menu size={20} aria-hidden="true"/><MenuBadge includeUnread header/></Button>
+        <ShellPreferences language={language} onLanguageChange={changeLanguage}/>
+        <Button type="button" variant="ghost" className="shell-notifications" aria-label={PNav('notifications')} onClick={()=>choose('notifications')}><Bell size={20} aria-hidden="true"/><MenuBadge includeUnread header/></Button>
       </div>
     </header>
-    {drawerOpen&&<button type="button" className="menu-backdrop parent-menu-backdrop" onClick={()=>setMenuOpen(false)} aria-label={PNav('closeMenu')} tabIndex={-1}/>}
     <div className="parent-shell-body">
-      {(desktop||menuOpen)&&<aside ref={menuRef} id="parent-workspace-menu" className="workspace-menu parent-workspace-menu" aria-label={PNav('navigation')} role={drawerOpen?'dialog':undefined} aria-modal={drawerOpen?true:undefined}>
-        <div className="parent-menu-heading"><div className="signed-in-identity"><strong>{account.name}</strong><span>{PNav('parent')}</span></div><Button type="button" variant="ghost" className="parent-menu-close" aria-label={PNav('closeMenu')} onClick={()=>setMenuOpen(false)}><X size={20} aria-hidden="true"/></Button></div>
-        <nav className="menu-links" aria-label={PNav('navigation')}>{menuItems.map(({view:target,Icon})=><button key={target} type="button" className={'menu-link'+(moduleFor(view)===target?' active':'')} aria-current={moduleFor(view)===target?'page':undefined} onClick={()=>choose(target)} data-testid={'parent-menu-'+target}><Icon size={19} aria-hidden="true"/><span>{PNav(target)}</span>{target==='notifications'&&<MenuBadge includeUnread/>}</button>)}</nav>
-        <div className="menu-utilities"><button type="button" className="menu-link" onClick={logout}><LogOut size={19} aria-hidden="true"/><span>{PNav('logout')}</span></button><LegalLinks language={language} className="menu-legal"/></div>
-      </aside>}
-      <main className="parent-shell-main parent-compact" inert={drawerOpen?true:undefined}>
-        <FloatingBackButton context={account.id+':parent:'+account.groupId} isHome={view==='home'} onHome={()=>choose('home')} title={PNav(moduleFor(view))}/>
+      <main className="parent-shell-main parent-compact">
+        <FloatingBackButton context={account.id+':parent:'+account.groupId} isHome={view==='home'} onHome={()=>choose('home')} title={title} subtitle={account.groupName||undefined}/>
         <Suspense fallback={<p role="status">{t('正在加载…')}</p>}>
-          {view==='home'?<ParentHome name={account.name} onOpen={openWorkspace} onNotifications={()=>choose('notifications')} onAuthorityLost={()=>void refreshIdentity()}/>:view==='account'?<AccountSettings/>:view==='notifications'?<ParentNotificationsPane onOpen={next=>{setTarget(null);setNavigation(next);setView(next.kind==='invoice'?'finance':'lessons');}} pendingNotice={pendingNotice} onPendingHandled={()=>setPendingNotice('')} onAuthorityLost={()=>void refreshIdentity()}/>:view==='quizzes'?<QuizWorkspace key={account.id+':'+account.groupId} view="quizBank" language={language} role="parent" initialQuizId={initialQuizId} onLinkedQuizExit={onLinkedQuizExit}/>:<ParentsWorkspace key={account.id+':'+account.groupId} view={workspaceView} onViewChange={next=>setView(next)} navigation={navigation} target={target} onAuthorityLost={()=>void refreshIdentity()}/>}
+          {view==='learnHub'?<NavigationHub sections={learningSections} onChoose={id=>{if(isParentShellView(id))choose(id);}}/>:
+          view==='mineHub'?<NavigationHub sections={personalSections} onChoose={id=>{if(isParentShellView(id))choose(id);}}><div className="navigation-hub-actions" data-testid="hub-utility-actions"><Button type="button" variant="outline" data-testid="hub-signout" onClick={()=>{if(navigationAllowed())logout();}}><LogOut size={18} aria-hidden="true"/><span>{PNav('logout')}</span></Button></div><LegalLinks language={language} className="navigation-hub-legal"/></NavigationHub>:
+          view==='home'?<ParentHome name={account.name} onOpen={openWorkspace} onNotifications={()=>choose('notifications')} onAuthorityLost={()=>void refreshIdentity()}/>:view==='account'?<AccountSettings/>:view==='notifications'?<ParentNotificationsPane onOpen={openNotice} pendingNotice={pendingNotice} onPendingHandled={()=>setPendingNotice('')} onAuthorityLost={()=>void refreshIdentity()}/>:view==='quizzes'?<QuizWorkspace key={account.id+':'+account.groupId} view="quizBank" language={language} role="parent" initialQuizId={initialQuizId} onLinkedQuizExit={onLinkedQuizExit}/>:<ParentsWorkspace key={account.id+':'+account.groupId} view={workspaceView} onViewChange={next=>{if(next===view||navigationAllowed())setView(next);}} navigation={navigation} target={target} onAuthorityLost={()=>void refreshIdentity()}/>}
         </Suspense>
       </main>
     </div>
-    <MobileBottomNavigation items={[{value:'home',label:PNav('home'),Icon:House},{value:'calendar',label:language==='zh'?'课程':'Courses',Icon:CalendarDays},{value:'finance',label:PNav('finance'),Icon:WalletCards}]} active={['home','calendar','finance'].includes(moduleFor(view))?moduleFor(view):'more'} onNavigate={value=>choose(value as ParentShellView)} onMore={openMenu} moreLabel={language==='zh'?'更多':'More'} ariaLabel={language==='zh'?'常用功能':'Quick navigation'} hidden={drawerOpen}/>
+    <MobileBottomNavigation primary items={[{value:'home',label:PNav('home'),Icon:House},{value:'learnHub',label:PNav('learnHub'),Icon:BookOpen},{value:'finance',label:PNav('fees'),Icon:WalletCards},{value:'mineHub',label:PNav('mineHub'),Icon:UserRound,badge:<MenuBadge includeUnread/>}]} active={activePrimary} onNavigate={value=>{if(isParentShellView(value))choose(value);}} ariaLabel={PNav('primaryNavigation')}/>
   </div>;
 }

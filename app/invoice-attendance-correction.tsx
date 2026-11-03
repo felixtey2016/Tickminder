@@ -1,4 +1,5 @@
 "use client";
+import {displayFormatter} from '@/lib/display-preferences';
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {Button} from '@/components/ui/button';
 import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogDescription} from '@/components/ui/dialog';
@@ -26,7 +27,7 @@ type Row={id:string;subject:string;plannedStart:string;plannedEnd:string;updated
 type Page={items:Row[];page:number;pages:number;total:number};
 const local=(value:string|null)=>value?new Date(Date.parse(value)+8*3600_000).toISOString().slice(0,16):'';
 const instant=(value:string)=>new Date(value+':00+08:00').toISOString();
-const stamp=(value:string)=>new Intl.DateTimeFormat(getLanguage()==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value));
+const stamp=(value:string)=>displayFormatter(getLanguage()==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value));
 export default function InvoiceAttendanceCorrection({invoiceId,financeRevision,onChanged}:{invoiceId:string;financeRevision:number;onChanged:()=>void}){
  const [open,setOpen]=useState(false),[data,setData]=useState<Page|null>(null),[page,setPage]=useState(1),[loading,setLoading]=useState(false),[row,setRow]=useState<Row|null>(null),[status,setStatus]=useState('present'),[teaching,setTeaching]=useState('taught'),[teachingStart,setTeachingStart]=useState(''),[teachingEnd,setTeachingEnd]=useState(''),[ack,setAck]=useState(false),[arrived,setArrived]=useState(''),[left,setLeft]=useState(''),[chargeable,setChargeable]=useState(true),[kind,setKind]=useState('unchanged'),[amount,setAmount]=useState(''),[reason,setReason]=useState(''),[busy,setBusy]=useState(false);
  const pending=useRef<{signature:string;id:string}|null>(null);

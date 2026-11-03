@@ -15,8 +15,15 @@ import "./recordings-layout.css";
 import "./round-one-layout.css";
 import "./workspace-startup.css";
 import "./form-action-bar.css";
+import "./date-field-layout.css";
+import "./appearance.css";
+import "./content-tabs.css";
+import "./field-indicators.css";
+import "./auth-layout.css";
+import {AppearanceProvider} from "@/components/appearance-toggle";
 import { ActionToastHost } from "@/components/action-toast";
 import {DiagnosticsReporter} from "@/components/diagnostics-reporter";
+import {AppSelectHost} from "@/components/app-select-host";
 
 export const metadata: Metadata = {
   title: `${BRAND_NAME} · Learning & Collaboration`,
@@ -36,8 +43,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
-      <body className="antialiased">{children}<ActionToastHost/><DiagnosticsReporter/></body>
+    <html lang="zh-CN" suppressHydrationWarning>
+      <body className="antialiased"><AppearanceProvider>{children}<ActionToastHost/><AppSelectHost/><DiagnosticsReporter/></AppearanceProvider></body>
     </html>
   );
 }

@@ -1,4 +1,5 @@
 "use client";
+import {PasswordInput} from '@/components/password-input';
 
 import { useEffect, useRef, useState } from "react";
 import { groupFetch } from "@/lib/group-client";
@@ -58,7 +59,7 @@ export function GoogleAccountLink({ clientId, language, onLinked, onBusyChange }
     return () => { active = false; script?.removeEventListener("load", setup); script?.removeEventListener("error", failed); };
   }, [clientId, language]);
   return <div className="account-connect">
-    <label>{t("当前密码")}<input type="password" autoComplete="current-password" maxLength={128} value={password} onChange={event => setPassword(event.target.value)} disabled={busy}/></label>
+    <label>{t("当前密码")}<PasswordInput type="password" autoComplete="current-password" maxLength={128} value={password} onChange={event => setPassword(event.target.value)} disabled={busy}/></label>
     {clientId ? <div ref={button} className={busy ? "google-link-busy settings-actions" : "settings-actions"} aria-busy={busy}/> : <p>{t("Google 登录尚未配置")}</p>}
     {loadFailed && <p role="status">{language === "zh" ? "Google 暂时无法载入，可稍后在「我的账号」连接。" : "Google could not load. You can link it later in My account."}</p>}
     {busy && <p role="status">{t("正在连接…")}</p>}

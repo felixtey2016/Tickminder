@@ -1,3 +1,4 @@
-.workspace-startup{min-height:100svh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;padding:24px;text-align:center;background:#f7f7fc;color:#252140}
+.workspace-startup{min-height:100svh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;padding:24px;text-align:center;background:var(--ui-bg,#f4f3f7);color:var(--ui-text,#252334)}
 .workspace-startup h1{margin:0;font-size:24px;font-weight:700}.workspace-startup p{margin:0;font-size:16px}.workspace-startup img{border-radius:14px}
-.workspace-startup button{min-height:44px;border:1px solid #5434d9;border-radius:10px;padding:10px 20px;background:#5434d9;color:#fff;font:inherit;cursor:pointer}
+.workspace-startup button{min-height:44px;border:1px solid var(--ui-primary,#6547c6);border-radius:6px;padding:10px 20px;background:var(--ui-primary,#6547c6);color:var(--ui-primary-text,#fff);font:inherit;cursor:pointer}
+.workspace-startup button:focus-visible{outline:2px solid var(--ui-accent,#6547c6);outline-offset:3px}

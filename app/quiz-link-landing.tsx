@@ -9,6 +9,7 @@ import type {QuizContent} from '@/lib/quiz';
 import type {PracticeAssignment,PracticeAttemptSummary,PracticeState} from '@/lib/quiz-practice-types';
 import {quizAssignmentFromSearch,validQuizLinkId} from '@/lib/quiz-link';
 import QuizPracticePanel,{QuizPracticeStart,type PracticeSource} from './quiz-practice-panel';
+import './quiz-player-wave3.css';
 
 type Preview={id:string;creator:string;content:QuizContent};
 export default function QuizLinkLanding({quizId,role,language,reload=0,onClose,onOpen}:{quizId:string;role:'student'|'teacher'|'admin'|'parent';language:Language;reload?:number;onClose:()=>void;onOpen:(attemptId:string)=>void}){
@@ -47,8 +48,8 @@ export default function QuizLinkLanding({quizId,role,language,reload=0,onClose,o
  const source:PracticeSource|null=assignment?{id:assignment.quizId,title:assignment.title,subject:assignment.subject,bank:true,assignmentId:assignment.id,assignment,immediate:assignment.immediate}:preview?{id:preview.id,title:preview.content.title,subject:preview.content.subject,bank}:null;
  if(records&&assignment&&staff)return <QuizPracticePanel mode="assigned" role={role} language={language} reload={reload} initialAssignmentId={assignment.id} onAssignmentBack={()=>setRecords(false)} onOpen={onOpen} onStart={()=>{}}/>;
  const resume=attempt?.status==='in_progress'&&attempt.canAnswer?attempt:null;
- return <section className="quiz-workspace quiz-panel quiz-link-landing" data-testid="quiz-link-landing" aria-busy={loading}>
-  <div className="quiz-workspace-head"><Button variant="outline" onClick={onClose}><ArrowLeft size={17}/>{label('返回 Quiz','Back to Quiz')}</Button><h2>Quiz</h2></div>
+ return <section className="quiz-workspace quiz-link-landing quiz-link-wave3" data-testid="quiz-link-landing" aria-busy={loading}>
+  <div className="quiz-link-back"><Button variant="ghost" onClick={onClose}><ArrowLeft size={17}/>{label('返回 Quiz','Back to Quiz')}</Button></div>
   {loading&&<p role="status">{t('quiz.loading')}</p>}
   {failure&&<div className="quiz-empty"><p role="alert" data-error-popup-ignore>{failure==='login'?label('登录已过期，请重新登录。','Your session expired. Please sign in again.'):failure==='access'?label('这份测验或作业已不可用，或未布置给当前账号。','This quiz or assignment is unavailable or is not assigned to this account.'):label('暂时无法打开，请重试。','Unable to open this quiz. Please retry.')}</p><Button variant="outline" onClick={()=>failure==='login'?window.location.reload():setRetry(value=>value+1)}>{failure==='login'?label('重新登录','Sign in again'):t('quiz.retry')}</Button></div>}
   {!loading&&!failure&&source&&<article className="quiz-library-item">

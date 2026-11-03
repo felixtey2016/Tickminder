@@ -1,5 +1,6 @@
 'use client';
 
+import {HorizontalMenu} from '@/components/horizontal-menu';
 import { useEffect, useRef } from 'react';
 import { t } from '@/lib/i18n';
 import '@/app/settings-compact.css';
@@ -17,8 +18,8 @@ export function ManagementNavigation({ area, activeView, onChoose, canView=()=>t
  const tabs=managementTabs(area).filter(item=>canView(item.view));
  return <div className="management-switcher">
   <label className="management-mobile"><span>{t(managementTitle(area))}</span><select aria-label={t(managementTitle(area))} aria-controls="management-view-content" value={activeView} onChange={event=>onChoose(event.target.value)}>{tabs.map(item=><option key={item.view} value={item.view}>{t(item.label)}</option>)}</select></label>
-  <nav ref={row} className="management-navigation" aria-label={t(managementTitle(area))} data-testid="management-navigation" data-management-area={area}>
+  <HorizontalMenu><nav ref={row} className="management-navigation" aria-label={t(managementTitle(area))} data-testid="management-navigation" data-management-area={area}>
    {tabs.map(item => <button key={item.view} type="button" ref={item.view === activeView ? selected : undefined} data-testid={'management-view-' + item.view} aria-current={item.view === activeView ? 'page' : undefined} aria-controls="management-view-content" onClick={() => onChoose(item.view)}>{t(item.label)}</button>)}
-  </nav>
+  </nav></HorizontalMenu>
  </div>;
 }

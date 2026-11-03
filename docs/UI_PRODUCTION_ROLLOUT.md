@@ -1,0 +1,13 @@
+# Promote the reviewed test UI to production
+
+This release promotes the complete reviewed interface from `e608fb3` onto the production baseline `f4a9ee3`. It includes the four primary navigation entries, desktop left navigation, mobile bottom navigation, light/dark themes, responsive layouts, custom selection/month/time controls, password visibility, revised login pages, service logos and parent roster. Existing production business data and integrations remain in their production environment; no test accounts, courses or files are copied.
+
+Production Quiz assignment/resume and Task review workflows remain intact. Financial API and calculation implementations are unchanged. Existing account settings from the reviewed test UI require additive migrations 0063 (notification choices) and 0064 (session display metadata). Existing sessions retain their identity; neither passwords nor existing course/financial rows are rewritten.
+
+All merge conflicts were reviewed individually. Existing production Quiz/Task behavior and regression coverage were preserved. The Drizzle question-position field retains its production declaration order. Backup v39 includes notification preferences and preserves historical formats. See `TEST_PARITY_BACKUP_RELEASE.md` for the compatibility contract.
+
+Validation includes the production build and TypeScript, actual local Worker tests using fictional databases, parent navigation/permissions (308), existing settings (64), Quiz/Task workflows (42), mobile Quiz layout (12), and classroom task components (405). Financial regression suites and username/notification/settings APIs were also checked. The existing `payroll-protection` fixture fails the same assertion on both the original production source and this candidate; its runtime and test were not changed as part of this UI promotion.
+
+The production rollout uses a Cloudflare D1 Time Travel recovery bookmark and the previously active immutable Worker version. A full production database export to this computer was not performed. Only the two isolated additive migrations are applied; historical migrations are not replayed. The live file and diagnostics buckets, Google configuration, WhatsApp/Sheets/push secrets, notification schedules and independent reminder clock are preserved.
+
+Private build, merge decisions, isolated QA, schema and deployment evidence are retained outside Git under `work/ui-production-migration`. The existing Hermes guide is updated in place after the active production version and assets are verified. This document is a change description; the delivery receipt records the exact released version and publication result.

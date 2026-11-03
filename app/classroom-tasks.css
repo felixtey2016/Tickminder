@@ -2,9 +2,9 @@
 .classroom-task-filters,.classroom-task-counts,.classroom-task-review-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .classroom-task-filters:empty{display:none}
 .classroom-task-counts{font-size:13px;color:var(--muted-foreground,#6b6479)}
-.classroom-task-badge[data-status=completed]{background:#e9f5ed;color:#246b42}
-.classroom-task-badge[data-status=needs_redo]{background:#fff2df;color:#875117}
-.classroom-task-badge[data-status=legacy_completed],.classroom-task-badge[data-status=closed]{background:#eeedf1;color:#696372}
+.classroom-task-badge[data-status=completed]{background:var(--ui-success-bg);color:var(--ui-success-text)}
+.classroom-task-badge[data-status=needs_redo]{background:var(--ui-warning-bg);color:var(--ui-warning-text)}
+.classroom-task-badge[data-status=legacy_completed],.classroom-task-badge[data-status=closed]{background:var(--ui-surface-muted);color:var(--ui-muted)}
 .classroom-task-progress li.classroom-task-student{display:grid;gap:10px;padding:14px 0}
 .classroom-task-student-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-width:0;flex-wrap:wrap}
 .classroom-task-student-head>strong{overflow-wrap:anywhere;min-width:0}
@@ -14,50 +14,50 @@
 .classroom-task-history li,.classroom-task-progress .classroom-task-history li{display:list-item;border:0;padding:0;overflow-wrap:anywhere}
 .classroom-task-history time{display:block;color:var(--muted-foreground,#6b6479);font-size:12px}
 .classroom-task-history p{margin:4px 0;white-space:pre-wrap;overflow-wrap:anywhere}
-.classroom-task-reason{margin:0;padding:8px 10px;border-left:3px solid #d4ab66;background:#fff9ef;color:#76521e;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
+.classroom-task-reason{margin:0;padding:8px 10px;border-left:3px solid var(--ui-warning-text);background:var(--ui-warning-bg);color:var(--ui-warning-text);font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
 .classroom-task-return-form,.classroom-task-return-form>label{display:grid;gap:10px;min-width:0}
 .classroom-task-return-form textarea{width:100%;min-width:0;resize:vertical}
-.classroom-task-card:focus-visible{outline:2px solid #7454b8;outline-offset:3px}
+.classroom-task-card:focus-visible{outline:2px solid var(--ui-accent);outline-offset:3px}
 .classroom-task-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;min-width:0}
 .classroom-task-heading>div:first-child{min-width:0}
 .classroom-task-heading h2{display:flex;align-items:center;gap:8px;margin:0;font-size:18px;line-height:1.5}
-.classroom-task-heading h2>svg{flex-shrink:0;color:#6543b5}
+.classroom-task-heading h2>svg{flex-shrink:0;color:var(--ui-accent)}
 .classroom-task-heading p{margin:5px 0 0;color:var(--muted-foreground,#6b6479);font-size:14px;line-height:1.6;overflow-wrap:anywhere}
 .classroom-task-heading-actions,.classroom-task-card-actions,.classroom-task-form-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .classroom-task-heading-actions{flex-shrink:0}
-.classroom-task-form{display:grid;gap:14px;padding:16px;border:1px solid #ded4f1;border-radius:12px;background:#fcfaff}
+.classroom-task-form{display:grid;gap:14px;padding:16px;border:1px solid var(--ui-border);border-radius:12px;background:var(--ui-surface-muted)}
 .classroom-task-form>label{display:grid;gap:7px;min-width:0;font-size:14px;font-weight:600}
 .classroom-task-form input,.classroom-task-form textarea{box-sizing:border-box;width:100%;min-width:0;font:inherit;font-weight:400}
 .classroom-task-form textarea{resize:vertical;min-height:96px}
 .classroom-task-form-actions{justify-content:flex-end}
 .classroom-task-list{display:grid;gap:12px;min-width:0}
-.classroom-task-card{display:grid;gap:12px;min-width:0;padding:16px;border:1px solid var(--border,#e1dce9);border-radius:12px;background:#fff}
-.classroom-task-card.is-closed{background:#faf9fc}
-.classroom-task-card-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0}
+.classroom-task-card{display:grid;gap:12px;min-width:0;padding:16px;border:1px solid var(--border,#e1dce9);border-radius:12px;background:var(--ui-surface)}
+.classroom-task-card.is-closed{background:var(--ui-surface-muted)}
+.classroom-task-card-heading{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0}
 .classroom-task-card h3{min-width:0;margin:0;font-size:16px;line-height:1.5;overflow-wrap:anywhere}
-.classroom-task-badge{flex-shrink:0;padding:3px 8px;border-radius:6px;background:#f0ebfb;color:#60439e;font-size:12px;line-height:1.5;white-space:nowrap}
-.classroom-task-badge.is-complete{background:#e9f5ed;color:#246b42}
-.classroom-task-badge.is-closed{background:#eeedf1;color:#696372}
+.classroom-task-badge{flex-shrink:0;padding:3px 8px;border-radius:6px;background:var(--ui-accent-soft);color:var(--ui-accent);font-size:12px;line-height:1.5;white-space:nowrap}
+.classroom-task-badge.is-complete{background:var(--ui-success-bg);color:var(--ui-success-text)}
+.classroom-task-badge.is-closed{background:var(--ui-surface-muted);color:var(--ui-muted)}
 .classroom-task-description{margin:0;font-size:14px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
-.classroom-task-completed{display:flex;align-items:center;flex-wrap:wrap;gap:6px 9px;margin:0;color:#286a44;font-size:13px;line-height:1.6}
+.classroom-task-completed{display:flex;align-items:center;flex-wrap:wrap;gap:6px 9px;margin:0;color:var(--ui-success-text);font-size:13px;line-height:1.6}
 .classroom-task-completed>svg{flex-shrink:0}
 .classroom-task-progress{min-width:0;border-top:1px solid var(--border,#e1dce9);padding-top:10px}
-.classroom-task-progress>summary{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;min-height:40px;cursor:pointer;font-size:14px;color:#5d409b}
+.classroom-task-progress>summary{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;min-height:40px;cursor:pointer;font-size:14px;color:var(--ui-accent)}
 .classroom-task-progress>summary strong{font-size:13px;font-weight:600}
 .classroom-task-progress ul{display:grid;gap:0;margin:6px 0 0;padding:0;list-style:none}
-.classroom-task-progress li{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0;padding:9px 0;border-top:1px solid #eeebf4;font-size:13px;line-height:1.6}
+.classroom-task-progress li{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0;padding:9px 0;border-top:1px solid var(--ui-border);font-size:13px;line-height:1.6}
 .classroom-task-progress li>span{min-width:0;overflow-wrap:anywhere}
 .classroom-task-progress li>span:last-child{display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:4px 6px;text-align:right}
 .classroom-task-progress time{display:block;width:100%;color:var(--muted-foreground,#6b6479);font-size:12px}
 .classroom-task-card-actions:empty{display:none}
-.classroom-task-success,.classroom-task-action-error,.classroom-task-load-error,.classroom-task-readonly{padding:12px 14px;border:1px solid #dfd5ef;border-radius:10px;font-size:14px;line-height:1.65;overflow-wrap:anywhere}
-.classroom-task-success{display:flex;align-items:flex-start;gap:8px;background:#eff8f1;border-color:#cce3d1;color:#245f3c}
+.classroom-task-success,.classroom-task-action-error,.classroom-task-load-error,.classroom-task-readonly{padding:12px 14px;border:1px solid var(--ui-border);border-radius:10px;font-size:14px;line-height:1.65;overflow-wrap:anywhere}
+.classroom-task-success{display:flex;align-items:flex-start;gap:8px;background:var(--ui-success-bg);border-color:var(--ui-success-text);color:var(--ui-success-text)}
 .classroom-task-success>svg{flex-shrink:0;margin-top:3px}
 .classroom-task-success p,.classroom-task-action-error p,.classroom-task-load-error p{margin:0}
-.classroom-task-action-error,.classroom-task-load-error{display:grid;gap:8px;background:#fff8f4;color:#79412b}
+.classroom-task-action-error,.classroom-task-load-error{display:grid;gap:8px;background:var(--ui-warning-bg);color:var(--ui-warning-text)}
 .classroom-task-action-error small{font-size:12px}
 .classroom-task-load-error>button{justify-self:start}
-.classroom-task-readonly{margin:0;background:#f6f3fb;color:#665876}
+.classroom-task-readonly{margin:0;background:var(--ui-surface-muted);color:var(--ui-muted)}
 .classroom-task-empty{margin:4px 0}
 .classroom-task-pagination{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;min-width:0}
 .classroom-task-pagination p{margin:0;color:var(--muted-foreground,#6b6479);font-size:13px}

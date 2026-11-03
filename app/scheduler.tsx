@@ -1,4 +1,10 @@
 "use client";
+import {useDisplayPreferences} from '@/lib/use-display-preferences';
+import {displayFormatter} from '@/lib/display-preferences';
+import {PasswordInput} from '@/components/password-input';
+import {TimeInput} from '@/components/time-input';
+import {ServiceBrandIcon} from '@/components/service-brand-icon';
+import {MonthInput} from '@/components/month-input';
 import {SessionAttendanceBoard,SessionAttendanceDialog,SessionAttendanceLoaderDialog,TeachingHoursPanel} from "./session-attendance";
 import type {AttendanceSession} from "@/lib/attendance-types";
 import '@/lib/finance-round2-i18n';
@@ -27,7 +33,7 @@ import { BarChart3, CalendarClock, ContactRound, LibraryBig, ListChecks, UserRou
 import { BRAND_NAME } from "@/lib/brand";
 import { LegalLinks } from "@/components/legal-links";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Bell, BookOpen, CalendarDays, CalendarPlus, ChevronDown, ClipboardCheck, Clock3, FileSpreadsheet, FileText, GraduationCap, History, LayoutDashboard, List, LogOut, Menu, RefreshCw, Settings, ShieldCheck, UserRoundPlus, Users, type LucideIcon } from "lucide-react";
+import { AlertCircle, Bell, BookOpen, CalendarDays, CalendarPlus, ChevronDown, ClipboardCheck, Clock3, FileSpreadsheet, FileText, GraduationCap, History, LayoutDashboard, List, LogOut, RefreshCw, Settings, ShieldCheck, UserRoundPlus, Users, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LessonCalendar } from "./week-calendar";
@@ -48,11 +54,16 @@ import {GoogleLinkOnboarding} from './google-link-onboarding';
 import {StudentContactOnboarding} from './student-contact-onboarding';
 import {FormActionBar} from '@/components/form-action-bar';
 import {MobileBottomNavigation} from '@/components/mobile-bottom-navigation';
+import {NavigationHub,type NavigationHubSection} from '@/components/navigation-hub';
+import {primaryEntries,primaryArea,isPrimaryHub,hubGroups} from '@/lib/four-entry-navigation';
+import {ShellPreferences} from '@/components/shell-preferences';
+import './shell-wave1.css';
 import {validQuizLinkId,quizLinkIdFromPath} from '@/lib/quiz-link';
 import type { LearningState } from "./learning-portal";
 const GroupConsole=lazy(()=>import("./group-console").then(m=>({default:m.GroupConsole})));
 const TeacherLearning = lazy(() => import("./learning-portal").then(module => ({default: module.TeacherLearning})));
 const AdminLearning = lazy(() => import("./admin-learning").then(module => ({default: module.AdminLearning})));
+const HomeworkTasksWorkspace=lazy(()=>import('./homework-tasks-workspace').then(module=>({default:module.HomeworkTasksWorkspace})));
 const QuizWorkspace=lazy(()=>import('./quiz-workspace'));
 const ParentShell=lazy(()=>import('./parent-shell'));
 const FinanceWorkspace=lazy(()=>import('./finance-workspace'));
@@ -214,7 +225,7 @@ const dayFormatters = {
     zh: new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Kuala_Lumpur", month: "short", day: "numeric", weekday: "short" }),
     en: new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", month: "short", day: "numeric", weekday: "short" }),
 };
-const timeFormatter = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
+const timeFormatter = displayFormatter("en-GB",{ timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
 const localFormatter = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 const day = (iso: string) => dayFormatters[getLanguage()].format(new Date(iso));
 const time = (iso: string) => timeFormatter.format(new Date(iso));
@@ -226,6 +237,7 @@ function actionSuccessText(action: string) {
 async function request(url: string, options?: RequestInit): Promise<any> { const r = await groupFetch(url, { ...options, cache: "no-store" }); const v = await readApiJson<{ error?: string; [key: string]: any }>(r); if (!r.ok)
     throw Object.assign(new Error(v.conflict ? conflictDescription(v.conflict as ConflictDetail) : t(r.status === 401 && url !== "/api/auth" ? "登录已过期，请重新登录" : v.error || "请求失败")), { status: r.status }); return v; }
 export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
+ useDisplayPreferences();
     const [linkedQuizId,setLinkedQuizId]=useState<string|undefined>(()=>validQuizLinkId(initialQuizId)?initialQuizId:undefined);
     useEffect(()=>{setLinkedQuizId(validQuizLinkId(initialQuizId)?initialQuizId:undefined);},[initialQuizId]);
     const exitLinkedQuiz=useCallback(()=>{
@@ -442,7 +454,7 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
                     setBusy(false);
                 } } });
             googleButton.current.innerHTML = "";
-            g.accounts.id.renderButton(googleButton.current, { theme: "outline", size: "large", width: 300, text: "signin_with", locale: language === "zh" ? "zh_CN" : "en" });
+            g.accounts.id.renderButton(googleButton.current, { theme: "outline", size: "large", width: Math.max(200, Math.min(300, googleButton.current.clientWidth)), text: "signin_with", locale: language === "zh" ? "zh_CN" : "en" });
         };
         if ((window as GoogleWindow).google) {
             setup();
@@ -600,8 +612,8 @@ function LoginForm({ googleButton, clientId, login, busy, message, language, cha
 }) {
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
-    return <main className="auth-shell"><div className="auth-layout"><section className="auth-story"><BrandLogo/><strong>{BRAND_NAME}</strong><h2>{t("学习与协作")}</h2><p>{t("集中管理课程日程、功课与教学资料。")}</p></section><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><div className="auth-mobile-brand"><BrandLogo small/><strong>{BRAND_NAME}</strong></div><p className="eyebrow">{language === "zh" ? `欢迎使用 ${BRAND_NAME}` : `Welcome to ${BRAND_NAME}`}</p><h1>{t("登录")}</h1>{invitedGroup&&<p className="notice">{t("注册加入")} · {invitedGroup}</p>}<p>{t("使用密码或 Google 账号登录")}</p>
-    <form onSubmit={e => { e.preventDefault(); login(username, password); }}><label>{t("邮箱或用户名")}<input required autoComplete="username" autoCapitalize="none" maxLength={254} value={username} onChange={e => setUsername(e.target.value)}/></label><label>{t("\u5BC6\u7801")}<input required type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("登录")}</Button></form>
+    return <main className="auth-shell auth-login-shell"><div className="auth-layout"><section className="auth-story"><div className="auth-story-brand"><BrandLogo/><strong>{BRAND_NAME}</strong></div><img className="auth-story-illustration" src="/mascots/reading.png" width={512} height={512} alt="" loading="lazy" decoding="async"/><h2>{t("学习与协作")}</h2><p>{t("集中管理课程日程、功课与教学资料。")}</p></section><div className="auth-card"><div className="auth-login-heading"><div className="auth-mobile-brand"><BrandLogo small/><strong>{BRAND_NAME}</strong></div><LanguageSwitcher language={language} change={changeLanguage}/></div><p className="eyebrow">{language === "zh" ? `欢迎使用 ${BRAND_NAME}` : `Welcome to ${BRAND_NAME}`}</p><h1>{t("登录")}</h1>{invitedGroup&&<p className="notice">{t("注册加入")} · {invitedGroup}</p>}<p>{t("使用密码或 Google 账号登录")}</p>
+    <form onSubmit={e => { e.preventDefault(); login(username, password); }}><label>{t("邮箱或用户名")}<input required autoComplete="username" autoCapitalize="none" maxLength={254} value={username} onChange={e => setUsername(e.target.value)}/></label><label>{t("\u5BC6\u7801")}<PasswordInput required type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("登录")}</Button></form>
     <p className="auth-divider">{t("\u6216\u4F7F\u7528 Google \u767B\u5F55")}</p>{clientId ? <div ref={googleButton} className="google-signin"/> : <div className="notice">{t("Google \u767B\u5F55\u5C1A\u672A\u914D\u7F6E\uFF1B\u53EF\u4EE5\u4F7F\u7528\u7BA1\u7406\u5458\u521B\u5EFA\u7684\u8D26\u53F7\u5BC6\u7801\u3002")}</div>}{busy && <small>{t("\u6B63\u5728\u9A8C\u8BC1\u8D26\u53F7\u2026")}</small>}{message && <div className="error" role="alert">{message}</div>}<span className="auth-foot">{t("忘记密码？请联系所属集团管理员重置。")}</span><p className="auth-legal-note">{t("登录前，请阅读服务条款与隐私政策。")}</p><LegalLinks language={language} className="auth-legal"/></div></div></main>;
 }
 function PasswordChange({ name, change, logout, busy, message, language, changeLanguage }: {
@@ -617,10 +629,10 @@ function PasswordChange({ name, change, logout, busy, message, language, changeL
     const [next, setNext] = useState("");
     const [confirm, setConfirm] = useState("");
     const [error, setError] = useState("");
-    return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("设置新密码")}</h1><p>{name}{t("，请更换管理员设置的临时密码，再进入网站。")}</p><form onSubmit={e => { e.preventDefault(); if (next !== confirm) {
+    return <main className="auth-shell"><div className="auth-card auth-onboarding-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("设置新密码")}</h1><p>{name}{t("，请更换管理员设置的临时密码，再进入网站。")}</p><form onSubmit={e => { e.preventDefault(); if (next !== confirm) {
         setError(alertActionFailure(new Error("两次输入的新密码不一致")));
         return;
-    } setError(""); change(current, next); }}><label>{t("当前临时密码")}<input required type="password" autoComplete="current-password" value={current} onChange={e => setCurrent(e.target.value)}/></label><label>{t("\u65B0\u5BC6\u7801\uFF08\u81F3\u5C11 8 \u4E2A\u5B57\u7B26\uFF09")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={next} onChange={e => setNext(e.target.value)}/></label><label>{t("\u786E\u8BA4\u65B0\u5BC6\u7801")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("更新密码")}</Button></form>{(error || message) && <div className="error" role="alert">{t(error || message)}</div>}<Button variant="outline" onClick={logout}>{t("\u9000\u51FA\u767B\u5F55")}</Button><LegalLinks language={language} className="auth-legal"/></div></main>;
+    } setError(""); change(current, next); }}><label>{t("当前临时密码")}<PasswordInput required type="password" autoComplete="current-password" value={current} onChange={e => setCurrent(e.target.value)}/></label><label>{t("\u65B0\u5BC6\u7801\uFF08\u81F3\u5C11 8 \u4E2A\u5B57\u7B26\uFF09")}<PasswordInput required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={next} onChange={e => setNext(e.target.value)}/></label><label>{t("\u786E\u8BA4\u65B0\u5BC6\u7801")}<PasswordInput required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={confirm} onChange={e => setConfirm(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("更新密码")}</Button></form>{(error || message) && <div className="error" role="alert">{t(error || message)}</div>}<Button type="button" className="auth-secondary-action" variant="outline" onClick={logout}>{t("\u9000\u51FA\u767B\u5F55")}</Button><LegalLinks language={language} className="auth-legal"/></div></main>;
 }
 function NameSetup({ initialName, save, logout, busy, message, language, changeLanguage }: {
     initialName: string;
@@ -632,7 +644,7 @@ function NameSetup({ initialName, save, logout, busy, message, language, changeL
     changeLanguage: (next: Language) => void;
 }) {
     const [name, setName] = useState(initialName);
-    return <main className="auth-shell"><div className="auth-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("请确认你的姓名")}</h1><p>{t("姓名将显示在账号菜单中。课程访问权限由管理员核实并分配。")}</p><form onSubmit={event => { event.preventDefault(); void save(name); }}><label>{t("显示姓名")}<input required autoComplete="name" maxLength={80} value={name} onChange={event => setName(event.target.value)}/></label><Button className="primary-full" disabled={busy || !name.trim()}>{t("保存并继续")}</Button></form>{message && <div className="error" role="alert">{message}</div>}<Button variant="outline" onClick={logout}>{t("退出登录")}</Button><LegalLinks language={language} className="auth-legal"/></div></main>;
+    return <main className="auth-shell"><div className="auth-card auth-onboarding-card"><LanguageSwitcher language={language} change={changeLanguage}/><BrandLogo/><h1>{t("请确认你的姓名")}</h1><p>{t("姓名将显示在账号菜单中。课程访问权限由管理员核实并分配。")}</p><form onSubmit={event => { event.preventDefault(); void save(name); }}><label>{t("显示姓名")}<input required autoComplete="name" maxLength={80} value={name} onChange={event => setName(event.target.value)}/></label><Button className="primary-full" disabled={busy || !name.trim()}>{t("保存并继续")}</Button></form>{message && <div className="error" role="alert">{message}</div>}<Button type="button" className="auth-secondary-action" variant="outline" onClick={logout}>{t("退出登录")}</Button><LegalLinks language={language} className="auth-legal"/></div></main>;
 }
 type NavigationRole = "admin" | "teacher" | "student" | "pending";
 type NavigationItem = { id: string; label: string; Icon: LucideIcon };
@@ -655,6 +667,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "subjects", label: "学生课程设置", Icon: BookOpen },
         { id: "teacherRoster", label: "老师名单", Icon: UserRound },
         { id: "studentRoster", label: "学生名单", Icon: UsersRound },
+        { id: "parentRoster", label: "parents.parentRoster", Icon: UsersRound },
         { id: "accounts", label: "账号管理", Icon: Users },
         { id: "sheet", label: "课时写入表格", Icon: FileSpreadsheet },
         { id: "activity", label: "操作日志", Icon: History },
@@ -687,13 +700,6 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
     ],
 };
 
-const NAV_GROUPS: Record<NavigationRole, Array<{ label: string; ids: string[] }>> = {
- admin: [{label:"",ids:["groups","home"]},{label:"课程管理",ids:["courses"]},{label:"教学",ids:["classrooms","homework","materials","quizzes","subjects"]},{label:"财务",ids:["billing"]},{label:"管理与设置",ids:["people","settings"]},{label:"",ids:["notifications"]}],
- teacher: [{label:"",ids:["home"]},{label:"课程管理",ids:["courses"]},{label:"教学",ids:["classrooms","students","homework","materials","quizzes"]},{label:"我的账号",ids:["notifications","myAccount"]}],
- student: [{label:"",ids:["home"]},{label:"学习",ids:["courses"]},{label:"班级与作业",ids:["classrooms","homework","materials","quizzes"]},{label:"我的账号",ids:["notifications","myAccount"]}],
- pending: [{label:"",ids:["home"]},{label:"我的账号",ids:["notifications","myAccount"]}],
-};
-
 function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope, setActiveScopes, lessons, message, setMessage, reload, logout, modal, setModal, mutate, learningMutate, classroomMutate, busy, selectedMonth, setSelectedMonth, language, changeLanguage,calendarDate,setCalendarDate,calendarRange,onCalendarRangeChange }: {
     initialQuizId?:string;onLinkedQuizExit?:()=>void;
     calendarDate:string;setCalendarDate:(date:string)=>void;calendarRange:CalendarRange;onCalendarRangeChange:(range:CalendarRange)=>void;
@@ -719,6 +725,10 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
 }) {
     const role = account.role as NavigationRole;
     const items = [...(account.isOwner?[{id:"groups",label:"平台总控制台",Icon:Building2}]:[]),...(role==="admin"?[{id:'billing',label:'财务',Icon:FileText}]:[]),...NAV_ITEMS[role],...(role!=="pending"?[{id:"courses",label:"course.nav.title",Icon:CalendarDays}]:[]),...(role==="admin"?[{id:"groupInfo",label:"集团信息",Icon:Building2},{id:"people",label:"人员与账号",Icon:UsersRound},{id:"settings",label:"设置",Icon:Settings}]:[]), { id: "notifications", label: "通知中心", Icon: Bell }].filter(item=>canAdminView(account,item.id));
+    const entryIcons={home:LayoutDashboard,courses:CalendarDays,teaching:BookOpen,finance:FileText,manage:Settings,mine:UserRound};
+    const entries=primaryEntries(role);
+    // Hubs only organize already-authorized leaves; they grant no extra data access.
+    const available=(view:string)=>items.some(item=>item.id===view)||isPrimaryHub(role,view);
     const permissionSignature=JSON.stringify(account.adminPermissions);
     const canView=(view:string)=>items.some(item=>item.id===view);
     const [badgeNow,setBadgeNow]=useState(()=>Date.now());
@@ -727,22 +737,18 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
     const calendarReady=state?.courseRange?.from===calendarRange.from&&state?.courseRange?.to===calendarRange.to;
     const calendarLessons=calendarReady?lessons:[];
     const badgeCounts=role==="admin"&&!canAdminAction(account,"attendance.view")?{...rawBadgeCounts,attention:0,overview:0}:rawBadgeCounts;
-    const taskCount=badgeCounts.lessons+badgeCounts.reschedule+badgeCounts.attention;
-    const [selectedView, setSelectedView] = useState(initialQuizId?'quizzes':items[0].id);
+    const [selectedView, setSelectedView] = useState(initialQuizId?'quizzes':'home');
+    const [openInvoiceList,setOpenInvoiceList]=useState(false);
     const [classroomTaskTarget,setClassroomTaskTarget]=useState<{classroomId:string;taskId:string}|null>(null);
     const clearClassroomTaskTarget=useCallback(()=>setClassroomTaskTarget(null),[]);
-    const [openInvoiceList,setOpenInvoiceList]=useState(false);
     const [statisticsDetail,setStatisticsDetail]=useDialogState<TeachingStatisticsDetailTarget|null>("teaching-statistics-detail",null);
     const lastCourseView = useRef<string>(defaultCourseView(role) || "calendar");
     const lastManagementViews = useRef({ people: defaultManagementView('people'), settings: defaultManagementView('settings') });
     const currentViewRef=useRef(selectedView);currentViewRef.current=selectedView;
-    const [menuOpen, setMenuOpen] = useState(false);
-    const [desktop, setDesktop] = useState(false);
-    const workspaceMenuRef=useRef<HTMLElement>(null),headerMenuRef=useRef<HTMLButtonElement>(null),menuTriggerRef=useRef<HTMLElement|null>(null);
     useEffect(() => {
-        const home = account.isOwner?"groups":NAV_ITEMS[role][0].id;
-        const normalizedView=(view:unknown):string=>typeof view==='string'?normalizeManagementView(role,normalizeCourseView(role,view)):home;
-        const valid = (view: unknown) => view === "notifications" || (typeof view === "string" && items.some(item => item.id === normalizedView(view)));
+        const home = "home";
+        const normalizedView=(view:unknown):string=>view==='financeHub'&&canView('billing')?'billing':typeof view==='string'?normalizeManagementView(role,normalizeCourseView(role,view)):home;
+        const valid = (view: unknown) => typeof view === "string" && available(normalizedView(view));
         const state = window.history.state || {};
         const url = new URL(window.location.href);
         if (initialQuizId) {
@@ -774,46 +780,21 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
             const sameContext=next.timelyoRole === role && next.timelyoGroup === account.groupId;
             const target=sameContext && valid(next.timelyoView) ? next.timelyoView : home;
             if(target!==currentViewRef.current&&!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true}))){window.history.pushState({...next,timelyoRole:role,timelyoGroup:account.groupId,timelyoView:currentViewRef.current,timelyoMenu:false},'');return;}
-            setMenuOpen(window.matchMedia("(min-width: 901px)").matches || Boolean(sameContext && next.timelyoMenu));
             if(initialQuizId&&target!=='quizzes')onLinkedQuizExit?.();
             setSelectedView(target);
         };
         window.addEventListener("popstate", onPopState);
         return () => window.removeEventListener("popstate", onPopState);
     }, [role, account.id,account.groupId,permissionSignature,initialQuizId,onLinkedQuizExit]);
-    useEffect(() => {
-        const query = window.matchMedia("(min-width: 901px)");
-        const sync = () => {
-            setDesktop(query.matches);
-            setMenuOpen(query.matches);
-        };
-        sync();
-        query.addEventListener("change", sync);
-        return () => query.removeEventListener("change", sync);
-    }, []);
-    useEffect(() => {
-        if (!menuOpen || desktop) return;
-        const previousOverflow=document.body.style.overflow;
-        document.body.style.overflow='hidden';
-        const focusable=()=>Array.from(workspaceMenuRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href]')||[]);
-        const frame=requestAnimationFrame(()=>{(workspaceMenuRef.current?.querySelector<HTMLElement>('[aria-current="page"]')||focusable()[0])?.focus();});
-        const closeOnKeydown = (event: KeyboardEvent) => {
-            if (event.key === "Escape") { event.preventDefault(); if (window.history.state?.timelyoMenu) window.history.back(); setMenuOpen(false); }
-            if(event.key!=='Tab')return;
-            const elements=focusable(),first=elements[0],last=elements.at(-1);if(!first||!last)return;
-            if(event.shiftKey&&(document.activeElement===first||!workspaceMenuRef.current?.contains(document.activeElement))){event.preventDefault();last.focus();}
-            else if(!event.shiftKey&&(document.activeElement===last||!workspaceMenuRef.current?.contains(document.activeElement))){event.preventDefault();first.focus();}
-        };
-        window.addEventListener("keydown", closeOnKeydown);
-        return () => {cancelAnimationFrame(frame);document.body.style.overflow=previousOverflow;window.removeEventListener("keydown", closeOnKeydown);requestAnimationFrame(()=>requestAnimationFrame(()=>{if(window.matchMedia('(min-width: 901px)').matches)return;const trigger=menuTriggerRef.current;const target=trigger?.isConnected&&trigger.getClientRects().length?trigger:headerMenuRef.current;if(target?.getClientRects().length)target.focus({preventScroll:true});}));};
-    }, [menuOpen, desktop]);
-    const activeView = initialQuizId&&selectedView==='quizzes'?'quizzes':items.some(item => item.id === selectedView) ? selectedView : items[0].id;
+    const activeView = initialQuizId&&selectedView==='quizzes'?'quizzes':available(selectedView) ? selectedView : 'home';
+    const activeHub=isPrimaryHub(role,activeView);
+    const primaryLabel=entries.find(entry=>entry.id===activeView)?.label[language];
     const courseView = isCourseView(role, activeView);
     const managementView = managementArea(role, activeView);
     if (courseView) lastCourseView.current = activeView;
     if (managementView) lastManagementViews.current[managementView] = activeView as typeof lastManagementViews.current.people;
-    const title = courseView ? "course.nav.title" : managementView ? managementTitle(managementView) : items.find(item => item.id === activeView)?.label || items[0].label;
-    const requiredScope: StateScope | null = activeView === "classrooms" ? "classrooms" : activeView === "accounts" ? "accounts" : ["homework", ...(role === "student" ? ["calendar"] : [])].includes(activeView) ? "learning" : null;
+    const title = primaryLabel || (activeView==='homework'?(language==='zh'?'功课与任务':'Homework & tasks'):courseView ? activeView === 'schedule' ? '安排课程' : "course.nav.title" : managementView ? managementTitle(managementView) : items.find(item => item.id === activeView)?.label || items[0].label);
+    const requiredScope: StateScope | null = activeView === "classrooms" ? "classrooms" : activeView === "accounts" || activeView === "parentRoster" ? "accounts" : activeView==='homework'&&canAdminAction(account,'homework.view')||role==='student'&&activeView==='calendar' ? "learning" : null;
     const scopeLoaded = !requiredScope || state?.loadedScopes?.includes(requiredScope) || (!state?.loadedScopes && Boolean(requiredScope === "learning" ? state?.learning : requiredScope === "classrooms" ? state?.classrooms : requiredScope === "accounts" ? state?.users : state?.users));
     const scopeError = requiredScope ? state?.scopeErrors?.[requiredScope] : undefined;
     useEffect(() => {
@@ -830,46 +811,36 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
     const learning = state?.learning || { materials: [], homework: [], submissions: [], studyBlocks: [], eligible: [] };
     const learningReady = Boolean(state?.learning && (!state.loadedScopes || state.loadedScopes.includes("learning")));
     const showMonth = (role === "student" && activeView === "list") || (role === "teacher" && ["lessons","attendance"].includes(activeView)) || (role === "admin" && activeView === "list");
-    const closeMobileMenu = () => {
-        if (desktop) return;
-        if (window.history.state?.timelyoMenu) window.history.back();
-        setMenuOpen(false);
-    };
-    const toggleMenu = () => {
-        if (!desktop && !menuOpen) {
-            menuTriggerRef.current=document.activeElement instanceof HTMLElement?document.activeElement:null;
-            window.history.pushState({ ...(window.history.state || {}), timelyoMenu: true }, "");
-            setMenuOpen(true);
-        } else if (!desktop && menuOpen) closeMobileMenu();
-        else setMenuOpen(open => !open);
-    };
     const choose = (requested: string) => {
         const area=role==='admin'&&(requested==='people'||requested==='settings')?requested:null;
         const managementTarget = area ? (canView(lastManagementViews.current[area])?lastManagementViews.current[area]:items.find(item=>managementArea(role,item.id)===area)?.id||"home") : requested;
         const courseTarget=canView(lastCourseView.current)?lastCourseView.current:items.find(item=>isCourseView(role,item.id))?.id;
-        const id = requested === "courses" ? courseTarget : normalizeManagementView(role,normalizeCourseView(role,managementTarget));
-        if (!id || !items.some(item => item.id === id)) return;
+        const id = requested === "financeHub"&&canView("billing") ? "billing" : requested === "courses" ? courseTarget : normalizeManagementView(role,normalizeCourseView(role,managementTarget));
+        if (!id || !available(id)) return;
         if(id!==activeView&&!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;
         if(initialQuizId&&id!=='quizzes')onLinkedQuizExit?.();
         if (id !== activeView) {
             const next = { ...(window.history.state || {}), timelyoRole: role, timelyoGroup: account.groupId, timelyoView: id, timelyoMenu: false };
-            if (!desktop && menuOpen && window.history.state?.timelyoMenu) window.history.replaceState(next, "");
-            else window.history.pushState(next, "");
+            window.history.pushState(next, "");
             setSelectedView(id);
-        } else if (!desktop && menuOpen) closeMobileMenu();
-        if (!desktop) setMenuOpen(false);
+        }
         window.scrollTo(0, 0);
     };
     const openAttendanceFinance=canAdminAction(account,"invoices.view")?()=>{const next={...(window.history.state||{})};delete next.timelyoOverlay;window.history.replaceState(next,"");setModal(null);setOpenInvoiceList(true);choose("billing");}:undefined;
-    const bottomShortcut=role==='admin'&&canView('billing')?{value:'billing',label:t('财务'),Icon:FileText}:canView('homework')?{value:'homework',label:language==='zh'?'功课':'Homework',Icon:BookOpen}:null;
-    const bottomItems=[
-        ...(canView('home')?[{value:'home',label:language==='zh'?'首页':'Home',Icon:LayoutDashboard}]:[]),
-        ...(canView('courses')?[{value:'courses',label:t('course.nav.title'),Icon:CalendarDays,badge:<MenuBadge count={courseBadgeCount(role,badgeCounts)}/>}]:[]),
-        ...(bottomShortcut?[bottomShortcut]:[]),
-    ];
-    const bottomActive=courseView?'courses':bottomItems.some(item=>item.value===activeView)?activeView:'more';
+    const bottomItems=entries.map(entry=>({value:entry.id,label:entry.label[language],Icon:entryIcons[entry.icon],badge:entry.id===(role==='admin'?'teachingHub':'courses')?<MenuBadge count={courseBadgeCount(role,badgeCounts)}/>:entry.id==='myHub'||entry.id==='manageHub'?<MenuBadge includeUnread/>:undefined}));
+    const bottomActive=primaryArea(role,activeView);
+    const sections:NavigationHubSection[]=hubGroups(role,activeView).map(group=>({id:group.id,title:group.title[language],layout:group.layout,items:group.ids.map(id=>items.find(item=>item.id===id)).filter((item):item is typeof items[number]=>Boolean(item)).map(item=>({id:item.id,label:item.id==='homework'?(language==='zh'?'功课与任务':'Homework & tasks'):t(item.label),Icon:item.Icon,badge:<MenuBadge count={item.id==='courses'?courseBadgeCount(role,badgeCounts):badgeCounts[item.id as keyof typeof badgeCounts]||0} includeUnread={item.id==='notifications'} quizOnly={item.id==='quizzes'}/>}))})).filter(section=>section.items.length>0);
     let pageContent: React.ReactNode = null;
-    if((activeView==="groups"&&account.isOwner)||(activeView==="groupInfo"&&role==="admin")){pageContent=<div className="settings-compact"><GroupConsole isOwner={activeView==="groups"&&Boolean(account.isOwner)} currentGroupId={account.groupId}/>{activeView==="groupInfo"&&canAdminAction(account,"terms.view")&&<div className="settings-tools"><TermManager terms={state?.terms||state?.termOptions||[]} mutate={classroomMutate} busy={busy}/></div>}</div>;}
+    if(activeHub){pageContent=<NavigationHub sections={sections} onChoose={choose}>
+        {(activeView==='manageHub'||activeView==='myHub')&&<><div className="navigation-hub-actions" data-testid="hub-utility-actions">
+            {account.groupId==='next-genn-edu'&&<a href="/whatsapp" data-testid="hub-whatsapp"><ServiceBrandIcon service="whatsapp"/><span>{language==='zh'?'连接 WhatsApp':'Connect WhatsApp'}</span></a>}
+            <Button type="button" variant="outline" data-testid="hub-refresh" onClick={()=>void reload()}><RefreshCw size={18} aria-hidden="true"/><span>{t('刷新')}</span></Button>
+            <Button type="button" variant="outline" data-testid="hub-signout" onClick={()=>void logout()}><LogOut size={18} aria-hidden="true"/><span>{t('退出登录')}</span></Button>
+        </div><LegalLinks language={language} className="navigation-hub-legal"/></>}
+        {activeView==='financeHub'&&<PageState kind="empty" title={language==='zh'?'暂无财务权限':'Finance access unavailable'} description={language==='zh'?'请联系集团管理员开通。':'Contact your group administrator for access.'}/>}
+        {activeView!=='financeHub'&&!sections.length&&<PageState kind="empty" title={language==='zh'?'暂无可用功能':'No available features'}/>}
+    </NavigationHub>;}
+    else if((activeView==="groups"&&account.isOwner)||(activeView==="groupInfo"&&role==="admin")){pageContent=<div className="settings-compact"><GroupConsole isOwner={activeView==="groups"&&Boolean(account.isOwner)} currentGroupId={account.groupId}/>{activeView==="groupInfo"&&canAdminAction(account,"terms.view")&&<div className="settings-tools"><TermManager terms={state?.terms||state?.termOptions||[]} mutate={classroomMutate} busy={busy}/></div>}</div>;}
     else if (activeView==='quizzes'&&(role==='teacher'||role==='admin'||role==='student')) {
         pageContent=<QuizWorkspace key={`${account.groupId}:${activeView}`} view={activeView} language={language} role={role} initialQuizId={initialQuizId} onLinkedQuizExit={onLinkedQuizExit}/>;
     }
@@ -901,8 +872,8 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
             pageContent = <SubjectAdmin studentProfiles={(canAdminAction(account,"students.view")?state?.allStudents:state?.studentOptions)||[]} students={state?.students || []} teachers={state?.teachers || []} plans={state?.allPlans || []} mutate={mutate} busy={busy} canFinance={Boolean(account.isOwner||account.isGroupChief)} onPreview={()=>choose('billing')}/>;
         } else if (activeView==='billing'&&role==='admin'&&canAdminView(account,'billing')) {
             pageContent=<FinanceWorkspace openInvoiceList={openInvoiceList} onInvoiceListOpened={()=>setOpenInvoiceList(false)} account={account} key={account.groupId} students={(state?.allStudents?.length?state.allStudents:state?.studentOptions||[]).map(student=>student.name)} onCourses={()=>choose('subjects')}/>;
-        } else if (["teacherRoster", "studentRoster", "accounts"].includes(activeView)) {
-            const view = activeView === "teacherRoster" ? "teachers" : activeView === "studentRoster" ? "students" : activeView as "binding" | "accounts";
+        } else if (["teacherRoster", "studentRoster", "parentRoster", "accounts"].includes(activeView)) {
+            const view = activeView === "teacherRoster" ? "teachers" : activeView === "studentRoster" ? "students" : activeView === "parentRoster" ? "parents" : activeView as "binding" | "accounts";
             pageContent = <RosterAdmin account={account} state={state} mutate={mutate} busy={busy} view={view} onOpenAccounts={()=>choose("accounts")} onAccountsChanged={()=>void ensureScope("accounts",true)}/>;
         } else if (activeView === "sheet") {
             pageContent = <SheetSyncPanel/>;
@@ -923,41 +894,31 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
         }
     }
 
+    if(activeView==='homework'&&role!=='pending')pageContent=<HomeworkTasksWorkspace key={`${account.id}:${account.groupId}`} role={role} canHomework={canAdminAction(account,'homework.view')} canTasks={canAdminAction(account,'tasks.view')&&canView('classrooms')} canReview={canAdminAction(account,'tasks.review')} onClasses={()=>choose('classrooms')} onOpenTask={(classroomId,taskId)=>{if(!canView('classrooms')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;setClassroomTaskTarget({classroomId,taskId});choose('classrooms');}}>{canAdminAction(account,'homework.view')?learningReady?pageContent:<PageState kind={scopeError?"error":"loading"} title={scopeError?"页面加载失败":"正在加载…"} description={scopeError} action={scopeError?"重试":undefined} onAction={()=>void ensureScope("learning",true)}/>:null}</HomeworkTasksWorkspace>;
+
     if(activeView==="calendar"&&!calendarReady&&state?.coreError)pageContent=<><PageState kind="error" title="页面加载失败" description={state.coreError} action="重试" onAction={()=>void reload()}/>{pageContent}</>;
     if(activeView === "materials" && role !== "pending") pageContent=<TeachingResources key={account.groupId} ready={learningReady} error={state?.scopeErrors?.learning} load={force=>ensureScope("learning",force)} setActiveScopes={setActiveScopes}>{pageContent}</TeachingResources>;
-    return <NotificationsProvider inboxOpen={activeView==="notifications"} groupId={account.groupId || ""} key={`${account.id}:${role}:${account.groupId}`} accountId={account.id || ""} language={language}><div className="app-shell">{statisticsDetail&&(role==="admin"||role==="teacher")&&<Suspense fallback={<PageState kind="loading" title="正在加载…"/>}><TeachingStatisticsDetails key={account.groupId+permissionSignature} target={statisticsDetail} role={role} lang={language} mutate={mutate} busy={busy} close={()=>setStatisticsDetail(null)} onOpenFinance={openAttendanceFinance}/></Suspense>}
+    return <NotificationsProvider inboxOpen={activeView==="notifications"} groupId={account.groupId || ""} key={`${account.id}:${role}:${account.groupId}`} accountId={account.id || ""} language={language}><div className="app-shell shell-wave1 four-entry-shell" data-home-view={activeView==='home'?'true':undefined}>{statisticsDetail&&(role==="admin"||role==="teacher")&&<Suspense fallback={<PageState kind="loading" title="正在加载…"/>}><TeachingStatisticsDetails key={account.groupId+permissionSignature} target={statisticsDetail} role={role} lang={language} mutate={mutate} busy={busy} close={()=>setStatisticsDetail(null)} onOpenFinance={openAttendanceFinance}/></Suspense>}
         <header className="topbar">
             <button type="button" className="brand brand-home" data-testid="brand-home" aria-label={`${BRAND_NAME} · ${t("主页")}`} onClick={()=>choose('home')}><BrandLogo small/><div><strong>{BRAND_NAME}</strong><span>{account.groupName || t("学习与协作平台")} · GMT+8</span></div></button>
             <div className="top-actions">
-                <LanguageSwitcher language={language} change={changeLanguage}/>
-                <Button ref={headerMenuRef} size="sm" variant="outline" className="menu-toggle" onClick={toggleMenu} aria-label={t(menuOpen ? "关闭功能菜单" : "打开功能菜单")} aria-expanded={menuOpen} aria-controls="workspace-menu" aria-describedby="menu-pending-count"><Menu size={20}/><span id="menu-pending-count"><MenuBadge count={taskCount} includeUnread header/></span></Button>
+                <ShellPreferences language={language} onLanguageChange={changeLanguage}/>
+                <Button type="button" variant="ghost" className="shell-notifications" aria-label={t("通知中心")} onClick={()=>choose("notifications")}><Bell size={20} aria-hidden="true"/><MenuBadge includeUnread header/></Button>
+
             </div>
         </header>
-        {menuOpen && !desktop && <button type="button" className="menu-backdrop" onClick={closeMobileMenu} aria-label={t("关闭功能菜单")}/>}
-        <div className={"app-body" + (menuOpen ? " menu-open" : "")}>
-            {menuOpen && <aside ref={workspaceMenuRef} id="workspace-menu" className="workspace-menu" aria-label={t("功能菜单")} role={!desktop?'dialog':undefined} aria-modal={!desktop?true:undefined}>
-                <SignedInIdentity account={account}/>
-                <nav className="menu-links" aria-label={t("功能菜单")}>
-                    {NAV_GROUPS[role].filter(group=>group.ids.some(id=>items.some(item=>item.id===id))).map(group => <div className="menu-group" key={group.ids.join('-')}>{group.label && <h2 className="menu-group-title">{t(group.label)}</h2>}{group.ids.map(id => items.find(item => item.id === id)!).filter(Boolean).map(item => <button key={item.id} type="button" data-testid={`menu-${item.id}`} className={"menu-link" + (activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? " active" : "")} aria-current={activeView === item.id || item.id === "courses" && courseView || item.id === managementView ? "page" : undefined} onClick={() => choose(item.id)}><item.Icon size={19} aria-hidden="true"/><span>{t(item.label)}</span><MenuBadge count={item.id === "courses" ? courseBadgeCount(role,badgeCounts) : badgeCounts[item.id as keyof typeof badgeCounts] || 0} includeUnread={item.id==="notifications"} quizOnly={item.id==="quizzes"}/></button>)}</div>)}
-                </nav>
-                <div className="menu-utilities">
-                    {account.groupId==='next-genn-edu'&&<a className="menu-link" href="/whatsapp"><ShieldCheck size={19}/><span>连接 WhatsApp</span></a>}
-                    <button type="button" className="menu-link" onClick={reload}><RefreshCw size={19}/><span>{t("刷新")}</span></button>
-                    <button type="button" className="menu-link" onClick={logout}><LogOut size={19}/><span>{t("退出登录")}</span></button>
-                </div>
-                <LegalLinks language={language} className="menu-legal"/>
-            </aside>}
-            <main className="workspace workspace-compact" inert={menuOpen&&!desktop?true:undefined}><FloatingBackButton context={`${account.id}:${role}:${account.groupId}`} isHome={activeView===(account.isOwner?"groups":"home")} onHome={()=>choose(account.isOwner?"groups":"home")} title={t(title)} subtitle={account.groupName||undefined} actions={courseView&&(role==='admin'||role==='teacher')&&canView('schedule')?<Button className="workspace-arrange" data-testid="course-arrange" aria-label={t('安排课程')} onClick={()=>choose('schedule')}><CalendarPlus size={18} aria-hidden="true"/><span>{t('安排课程')}</span></Button>:undefined}/>
-                {showMonth && <div className="workspace-period"><label className="month-select"><span>{t("月份")}</span><input aria-label={t("统计月份")} type="month" value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)}/></label></div>}
+        <div className="app-body">
+            <main className={"workspace workspace-compact"+(courseView?" workspace-course-view":"")}><FloatingBackButton context={`${account.id}:${role}:${account.groupId}`} isHome={activeView==="home"} onHome={()=>choose("home")} title={t(title)} subtitle={account.groupName||undefined} actions={courseView&&activeView!=='schedule'&&(role==='admin'||role==='teacher')&&canView('schedule')?<Button className="workspace-arrange" data-testid="course-arrange" aria-label={t('安排课程')} onClick={()=>choose('schedule')}><CalendarPlus size={18} aria-hidden="true"/><span className="workspace-arrange-full">{t('安排课程')}</span><span className="workspace-arrange-compact">{getLanguage()==='zh'?'安排':'Schedule'}</span></Button>:undefined}/>
+                {showMonth && <div className="workspace-period"><label className="month-select"><span>{t("月份")}</span><MonthInput aria-label={t("统计月份")} type="month" value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)}/></label></div>}
                 {courseView && <CourseNavigation showArrange={false} role={role} activeView={activeView} onChoose={choose} badges={badgeCounts} canView={canView}/>}
                 {managementView && <ManagementNavigation area={managementView} activeView={activeView} onChoose={choose} canView={canView}/>}
                 {message && state && !state.error && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("关闭")}>×</button></div>}
 
                 {role === "teacher" && state && !state.error && !(state.plans || []).length && <div className="notice">{t("暂无负责的学生科目。请联系管理员完成课程分配。")}</div>}
-                <FilterScope.Provider value={`${account.id || "anonymous"}:${account.groupId || "none"}`}>{role !== "pending" && activeView !== "quizzes" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "页面加载失败" : "正在加载…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : !scopeLoaded ? <PageState kind={scopeError ? "error" : "loading"} title={scopeError ? "页面加载失败" : "正在加载…"} description={scopeError} action={scopeError ? "重试" : undefined} onAction={() => { if (requiredScope) void ensureScope(requiredScope, true); }}/> : <Suspense fallback={<PageState kind="loading" title="正在加载…"/>}>{courseView ? <div id="course-view-content" data-testid="course-view-content" data-course-leaf={activeView}>{pageContent}</div> : managementView ? <div id="management-view-content" data-testid="management-view-content" data-management-leaf={activeView}>{pageContent}</div> : pageContent}</Suspense>}</FilterScope.Provider>
+                <FilterScope.Provider value={`${account.id || "anonymous"}:${account.groupId || "none"}`}>{role !== "pending" && activeView !== "quizzes" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "页面加载失败" : "正在加载…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : !scopeLoaded && activeView!=="homework" ? <PageState kind={scopeError ? "error" : "loading"} title={scopeError ? "页面加载失败" : "正在加载…"} description={scopeError} action={scopeError ? "重试" : undefined} onAction={() => { if (requiredScope) void ensureScope(requiredScope, true); }}/> : <Suspense fallback={<PageState kind="loading" title="正在加载…"/>}>{courseView ? <div id="course-view-content" data-testid="course-view-content" data-course-leaf={activeView}>{pageContent}</div> : managementView ? <div id="management-view-content" data-testid="management-view-content" data-management-leaf={activeView}>{pageContent}</div> : pageContent}</Suspense>}</FilterScope.Provider>
             </main>
         </div>
-        <MobileBottomNavigation items={bottomItems} active={bottomActive} onNavigate={choose} onMore={toggleMenu} moreLabel={language==='zh'?'更多':'More'} ariaLabel={language==='zh'?'常用入口':'Quick navigation'} hidden={menuOpen||role==='pending'||activeView==='schedule'||busy}/>
+        <MobileBottomNavigation primary items={bottomItems} active={bottomActive} onNavigate={choose} ariaLabel={language==='zh'?'主要功能':'Primary navigation'} hidden={busy}/>
         {modal && ["attendance","review"].includes(modal.type)&&modal.lesson.sessionId?<SessionAttendanceLoaderDialog onOpenFinance={openAttendanceFinance} key={modal.lesson.sessionId} sessionId={modal.lesson.sessionId} review={modal.type==="review"} role="admin" close={()=>setModal(null)} mutate={mutate} busy={busy}/>:modal&&<LessonDialog modal={modal} close={() => setModal(null)} mutate={mutate} busy={busy}/>}
     </div></NotificationsProvider>;
 }
@@ -991,11 +952,12 @@ function AdminDashboard({ state, lessons, open, view,mutate,busy,onOpenFinance }
     return <div className="dashboard">{can('attendance.view')&&<TeachingSummary summary={state?.teachingSummary}/>}<div className="metric-grid">{can('statistics.view')&&<><div className="metric"><span>{t('学生累计出席课时')}</span><strong>{formatDurationHours(summary.reduce((n,x)=>n+x.completed,0),getLanguage())}</strong><p>{month} · {t('已记录出席')}</p></div><div className="metric"><span>{t('未来已安排课时')}</span><strong>{formatDurationHours(summary.reduce((n,x)=>n+x.upcoming,0),getLanguage())}</strong><p>{t('所选月份')}</p></div></>}<div className="metric attention"><span>{t('待复核记录')}</span><strong>{state?.taskCounts?.pendingReview??'—'}</strong></div></div>{can('attendance.view')&&<PagedAttendanceBoard onOpenFinance={onOpenFinance} mode="review" role="admin" month={month} mutate={mutate} busy={busy} teachers={teachers}/ >}{can('lessons.view')&&<PagedLessonRows mode="upcoming" month={month} sessionType="" title="即将上课" renderLesson={l=><LessonCard key={l.id} lesson={l} admin open={open}/>}/ >}{can('statistics.view')&&<section className="panel"><h2>{t('学生科目统计')}</h2><p className="muted">{t('按实际开始日期归属月份')}</p><div className="summary-grid">{summary.map(row=><div className="summary-row" key={row.key}><strong>{row.key.replace('|',' · ')}</strong><span>{formatDurationHours(row.completed,getLanguage())} · {row.lessons} {t('堂已上课')}</span><span>{formatDurationHours(row.upcoming,getLanguage())} · {t('未来已安排')}</span><span>{row.pending} {t('待记录出席')} · {row.makeupNeeded} {t('待补')}</span></div>)}</div></section>}</div>;
 }
 
-function RosterAdmin({ account, state, mutate, busy, view,onAccountsChanged,onOpenAccounts }: {onOpenAccounts?:()=>void; onAccountsChanged?:()=>void; account: Account; state: State | null; mutate: (x: Record<string, unknown>) => Promise<boolean>; busy: boolean; view: "teachers" | "students" | "binding" | "accounts" }) {
+function RosterAdmin({ account, state, mutate, busy, view,onAccountsChanged,onOpenAccounts }: {onOpenAccounts?:()=>void; onAccountsChanged?:()=>void; account: Account; state: State | null; mutate: (x: Record<string, unknown>) => Promise<boolean>; busy: boolean; view: "teachers" | "students" | "parents" | "binding" | "accounts" }) {
     if (view === "teachers" || view === "students") return <PeopleDirectory kind={view === "teachers" ? "teacher" : "student"} people={view === "teachers" ? state?.allTeachers || [] : state?.allStudents || []} mutate={mutate} busy={busy} onCreateAccount={onOpenAccounts}/>;
-    return <AccountDirectory onAccountsChanged={onAccountsChanged} actor={account} users={state?.users || []} teachers={state?.teachers || []} students={state?.students || []} mutate={mutate} busy={busy} createForm={onCreated=><LocalAccountAdmin account={account} state={state} mutate={mutate} busy={busy} onCreated={onCreated}/>}/>;
+    return <AccountDirectory key={view} roleFilter={view==='parents'?'parent':undefined} onAccountsChanged={onAccountsChanged} actor={account} users={state?.users || []} teachers={state?.teachers || []} students={state?.students || []} mutate={mutate} busy={busy} createForm={onCreated=><LocalAccountAdmin initialRole={view==='parents'?'parent':undefined} account={account} state={state} mutate={mutate} busy={busy} onCreated={onCreated}/>}/>;
 }
-function LocalAccountAdmin({ account, state, mutate, busy,onCreated }: {
+function LocalAccountAdmin({ account, state, mutate, busy,onCreated,initialRole='student' }: {
+    initialRole?:'teacher'|'student'|'parent'|'admin';
     onCreated?:(role:string)=>void;
     account: Account;
     state: State | null;
@@ -1003,7 +965,7 @@ function LocalAccountAdmin({ account, state, mutate, busy,onCreated }: {
     busy: boolean;
 }) {
     const [username,setUsername]=useState(''),[password,setPassword]=useState('');
-    const [role,setRole]=useState<'teacher'|'student'|'parent'|'admin'>('student');
+    const [role,setRole]=useState<'teacher'|'student'|'parent'|'admin'>(initialRole);
     const [person,setPerson]=useState(()=>createPersonIdentityDraft());
     const [resetUserId,setResetUserId]=useState(''),[resetPassword,setResetPassword]=useState('');
     const can=useAdminAction(),canManageAdministrators=account.canManageAdministrators===true;
@@ -1013,14 +975,14 @@ function LocalAccountAdmin({ account, state, mutate, busy,onCreated }: {
     {can('accounts.create')&&<form className="account-provisioning-form" onSubmit={async e=>{e.preventDefault();if(!personIdentityReady(selectedRole,person))return;if(await mutate({action:'createLocalAccount',username,password,role:selectedRole,...personIdentityPayload(selectedRole,person)})){setUsername('');setPassword('');setPerson(createPersonIdentityDraft('',can(selectedRole==='teacher'?'teachers.create':'students.create')?'new':'existing'));onCreated?.(selectedRole);}}}>
       <label>{t('角色')}<select value={selectedRole} disabled={busy} onChange={e=>{const next=e.target.value as typeof role;setRole(next);setPerson(createPersonIdentityDraft('',can(next==='teacher'?'teachers.create':'students.create')?'new':'existing'));}}><option value="student">{t('学生')}</option><option value="teacher">{t('老师')}</option>{can('parents.manage')&&<option value="parent">{t('家长')}</option>}{canManageAdministrators&&<option value="admin">{t('admin.regularAdministrator')}</option>}</select></label>
       <PersonIdentityFields role={selectedRole} value={person} onChange={setPerson} teachers={state?.teachers||[]} students={state?.students||[]} canCreatePerson={can(selectedRole==='teacher'?'teachers.create':'students.create')} disabled={busy}/>
-      <div className="account-login-grid"><label>{t('用户名')}<input required minLength={3} maxLength={40} pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,39}" autoComplete="off" value={username} disabled={busy} onChange={e=>setUsername(e.target.value)}/></label><label>{t('临时密码（至少 8 个字符）')}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={password} disabled={busy} onChange={e=>setPassword(e.target.value)}/></label></div>
+      <div className="account-login-grid"><label>{t('用户名')}<input required minLength={3} maxLength={40} pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,39}" autoComplete="off" value={username} disabled={busy} onChange={e=>setUsername(e.target.value)}/></label><label>{t('临时密码（至少 8 个字符）')}<PasswordInput required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={password} disabled={busy} onChange={e=>setPassword(e.target.value)}/></label></div>
       <div className="directory-form-actions"><Button disabled={busy||!personIdentityReady(selectedRole,person)}>{t('创建账号')}</Button></div>
     </form>}
     {can("accounts.resetPassword")&&<details className="local-password-reset settings-disclosure"><summary><span>{t("\u91CD\u7F6E\u5FD8\u8BB0\u7684\u5BC6\u7801")}</span><ChevronDown size={18} aria-hidden="true"/></summary><p className="muted">{t("\u91CD\u7F6E\u540E\uFF0C\u8BE5\u8D26\u53F7\u73B0\u6709\u767B\u5F55\u4F1A\u9000\u51FA\uFF0C\u4E0B\u6B21\u767B\u5F55\u5FC5\u987B\u518D\u6B21\u4FEE\u6539\u5BC6\u7801\u3002")}</p>
     <form onSubmit={async (e) => { e.preventDefault(); if (!localUsers.some(user => user.id === resetUserId)) return; if (await mutate({ action: "resetLocalPassword", userId: resetUserId, password: resetPassword })) {
         setResetUserId("");
         setResetPassword("");
-    } }}><label>{t("\u9009\u62E9\u8D26\u53F7")}<select required value={resetUserId} onChange={e => setResetUserId(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{localUsers.map(u => <option value={u.id} key={u.id}>{u.username} · {u.name}{u.role === "admin" ? ` · ${t(u.isGroupChief ? "admin.groupChief" : "admin.regularAdministrator")}` : ""}</option>)}</select></label><label>{t("新的临时密码")}<input required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={resetPassword} onChange={e => setResetPassword(e.target.value)}/></label><div className="directory-form-actions"><Button variant="outline" disabled={busy || !localUsers.some(user => user.id === resetUserId)}>{t("\u91CD\u7F6E\u5BC6\u7801")}</Button></div></form></details>}
+    } }}><label>{t("\u9009\u62E9\u8D26\u53F7")}<select required value={resetUserId} onChange={e => setResetUserId(e.target.value)}><option value="">{t("\u8BF7\u9009\u62E9")}</option>{localUsers.map(u => <option value={u.id} key={u.id}>{u.username} · {u.name}{u.role === "admin" ? ` · ${t(u.isGroupChief ? "admin.groupChief" : "admin.regularAdministrator")}` : ""}</option>)}</select></label><label>{t("新的临时密码")}<PasswordInput required type="password" minLength={8} maxLength={128} autoComplete="new-password" value={resetPassword} onChange={e => setResetPassword(e.target.value)}/></label><div className="directory-form-actions"><Button variant="outline" disabled={busy || !localUsers.some(user => user.id === resetUserId)}>{t("\u91CD\u7F6E\u5BC6\u7801")}</Button></div></form></details>}
   </section>;
 }
 type Open = (x: {
@@ -1033,7 +995,7 @@ function LessonCard({ lesson: l, admin, open, mutate, busy = false }: {
     open: Open;
     mutate?: (x: Record<string, unknown>) => Promise<boolean>;
     busy?: boolean;
-}) { return <article className="lesson-card"><div className="date-tile"><strong>{day(l.plannedStart)}</strong><span>{time(l.plannedStart)}–{time(l.plannedEnd)}</span></div><div className="lesson-body"><div className="lesson-title"><strong>{l.student} · {l.subject}</strong><span className={`status status-${l.status}`}>{t(l.attendanceKind === "early_dismissal" ? "提前结束课程" : statusLabel[l.status] || l.status)}</span></div><p>{l.teacherName}{l.kind === "makeup" ? t(" \u00B7 \u8865\u8BFE") : l.kind === "extra" ? t(" \u00B7 \u52A0\u8BFE") : ""}</p><div className="lesson-actions">{l.status !== "cancelled" && (admin || !l.reviewedAt) && <Button adminGrant="attendance.edit" size="sm" onClick={() => open({ type: "attendance", lesson: l })}>{admin && l.status !== "scheduled" ? t("更正出席记录") : t("记录出席…")}</Button>}<LessonMore>{admin && l.status !== "cancelled" && <><Button adminGrant="lessons.edit" size="sm" variant="outline" onClick={() => open({ type: "edit", lesson: l })}>{t("调整时间")}</Button><Button adminGrant="lessons.cancel" size="sm" variant="outline" onClick={() => open({ type: "cancel", lesson: l })}>{t("取消课程")}</Button>{["completed", "student_absent", "teacher_absent"].includes(l.status) && <Button adminGrant="attendance.review" size="sm" variant="secondary" onClick={() => open({ type: "review", lesson: l })}>{l.reviewedAt ? t("再次复核") : t("复核记录")}</Button>}</>}{admin && mutate && l.sessionType!=="group" && <DeleteButton kind="lesson" id={l.id} mutate={mutate} busy={busy} message="永久删除这堂课程及改期申请？已记录课时也会移除，无法恢复。"/>}</LessonMore></div><details className="course-row-details"><summary>{t("详情与记录")}</summary><ClassSessionLabel lesson={l}/>{l.note&&<p className="lesson-note">{l.note}</p>}<LessonHistory lessonId={l.id}/></details></div></article>; }
+}) { return <article className="lesson-card course-lesson-row"><div className="date-tile"><strong>{day(l.plannedStart)}</strong><span>{time(l.plannedStart)}–{time(l.plannedEnd)}</span></div><div className="lesson-body"><div className="lesson-title"><strong>{l.student} · {l.subject}</strong><span className={`status status-${l.status}`}>{t(l.attendanceKind === "early_dismissal" ? "提前结束课程" : statusLabel[l.status] || l.status)}</span></div><p>{l.teacherName}{l.kind === "makeup" ? t(" \u00B7 \u8865\u8BFE") : l.kind === "extra" ? t(" \u00B7 \u52A0\u8BFE") : ""}</p><div className="lesson-actions">{l.status !== "cancelled" && (admin || !l.reviewedAt) && <Button adminGrant="attendance.edit" size="sm" onClick={() => open({ type: "attendance", lesson: l })}>{admin && l.status !== "scheduled" ? t("更正出席记录") : t("记录出席…")}</Button>}<LessonMore>{admin && l.status !== "cancelled" && <><Button adminGrant="lessons.edit" size="sm" variant="outline" onClick={() => open({ type: "edit", lesson: l })}>{t("调整时间")}</Button><Button adminGrant="lessons.cancel" size="sm" variant="outline" onClick={() => open({ type: "cancel", lesson: l })}>{t("取消课程")}</Button>{["completed", "student_absent", "teacher_absent"].includes(l.status) && <Button adminGrant="attendance.review" size="sm" variant="secondary" onClick={() => open({ type: "review", lesson: l })}>{l.reviewedAt ? t("再次复核") : t("复核记录")}</Button>}</>}{admin && mutate && l.sessionType!=="group" && <DeleteButton kind="lesson" id={l.id} mutate={mutate} busy={busy} message="永久删除这堂课程及改期申请？已记录课时也会移除，无法恢复。"/>}</LessonMore></div><details className="course-row-details"><summary>{t("详情与记录")}</summary><ClassSessionLabel lesson={l}/>{l.note&&<p className="lesson-note">{l.note}</p>}<LessonHistory lessonId={l.id}/></details></div></article>; }
 function TeacherHome({ lessons, plans, open }: {
     lessons: Lesson[];
     plans: Plan[];
@@ -1089,14 +1051,14 @@ function Schedule({ state, lessons, mutate, open, busy, view,calendarDate,onCale
         }else if(scheduleOptionsRef.current&&(until||kind!=='regular'))scheduleOptionsRef.current.open=true;
     }
     if(view==="list")return <div className="course-query-stack">{can("reschedules.view")&&<PagedReschedules requestsOnly role="admin" month={state?.month||""} mutate={mutate} busy={busy}/>}<div className="course-type-switch" role="group" aria-label={t("课程类型")}><Button variant={listType!=="group"?"default":"outline"} aria-pressed={listType!=="group"} onClick={()=>setListType("one_to_one")}>{t("一对一课程")}</Button><Button variant={listType==="group"?"default":"outline"} aria-pressed={listType==="group"} onClick={()=>setListType("group")}>{t("整班课次")}</Button></div>{listType==="group"?<PagedGroupSessions onOpenFinance={onOpenFinance} role="admin" month={state?.month||""} classrooms={state?.classroomOptions||state?.classrooms} mutate={mutate} busy={busy}/>:<PagedLessonRows title="课程列表" month={state?.month||""} teachers={state?.teachers} students={state?.students} renderTools={rows=><BulkDeleteTool kind="lesson" records={rows.map(l=>({id:l.id,label:l.student+" · "+l.subject+" · "+day(l.plannedStart)+" "+time(l.plannedStart)}))} mutate={mutate} busy={busy}/>} renderLesson={l=><LessonCard key={l.id} lesson={l} admin open={open} mutate={mutate} busy={busy}/>}/>}</div>;
-    return <div className="schedule-layout schedule-single-view">{view==="create"&&<div className="class-session-mode" role="group" aria-label={t("排课方式")}><Button variant={scheduleMode==="one_to_one"?"default":"outline"} onClick={()=>setScheduleMode("one_to_one")}>{t("一对一课程")}</Button><Button variant={scheduleMode==="group"?"default":"outline"} onClick={()=>setScheduleMode("group")}>{t("整班课程")}</Button></div>}{view==="create"&&scheduleMode==="group"&&<GroupSessionPlanner mutate={mutate} busy={busy}/>}<section className="panel create-panel" hidden={view !== "create"||scheduleMode!=="one_to_one"}><h2>{t("一对一课程")}</h2>
+    return <div className="schedule-layout schedule-single-view course-wave2">{view==="create"&&<div className="class-session-mode" role="group" aria-label={t("排课方式")}><Button variant={scheduleMode==="one_to_one"?"default":"outline"} onClick={()=>setScheduleMode("one_to_one")}>{t("一对一课程")}</Button><Button variant={scheduleMode==="group"?"default":"outline"} onClick={()=>setScheduleMode("group")}>{t("整班课程")}</Button></div>}{view==="create"&&scheduleMode==="group"&&<GroupSessionPlanner mutate={mutate} busy={busy}/>}<section className="panel create-panel" hidden={view !== "create"||scheduleMode!=="one_to_one"}><h2>{t("一对一课程")}</h2>
         <form className="schedule-edit-form form-action-surface" onSubmit={submit} onInvalidCapture={event=>{if(scheduleOptionsRef.current?.contains(event.target as Node))scheduleOptionsRef.current.open=true;}}>
-            <div className="schedule-person-filters"><DirectoryFilters teachers={[...new Set([...(state?.teachers||[]),...plans.map(plan=>plan.teacher)])].sort()} students={[...new Set([...(state?.students||[]),...plans.map(plan=>plan.student)])].sort()} pairs={schedulePairs} teacher={scheduleTeacher} student={student} onTeacher={value=>{setScheduleTeacher(value);setKey('');setReplacementFor('');setClassroomId('');}} onStudent={value=>{setStudent(value);setKey('');setReplacementFor('');setClassroomId('');}}/></div>
+            <div className="schedule-person-filters"><DirectoryFilters selectionMode="choose" teachers={[...new Set([...(state?.teachers||[]),...plans.map(plan=>plan.teacher)])].sort()} students={[...new Set([...(state?.students||[]),...plans.map(plan=>plan.student)])].sort()} pairs={schedulePairs} teacher={scheduleTeacher} student={student} onTeacher={value=>{setScheduleTeacher(value);setKey('');setReplacementFor('');setClassroomId('');}} onStudent={value=>{setStudent(value);setKey('');setReplacementFor('');setClassroomId('');}}/></div>
             {student && <label>{t("学生科目配对")}<select required value={key} onChange={e => { const plan=subjects.find(item=>item.key===e.target.value);setKey(e.target.value);if(plan)setScheduleTeacher(plan.teacher); setReplacementFor("");setClassroomId(""); }}><option value="">{t("请选择")}</option>{subjects.map(p => <option value={p.key} key={p.key}>{p.subject} · {p.teacher}</option>)}</select></label>}
             {(student&&!subjects.length||!plans.length)&&<p className="muted">{t('请先设置学生课程，再安排老师与学生的课程。')}</p>}
             {chosen && <p className="assigned-teacher">{t("负责老师")}：<strong>{chosen.teacher}</strong></p>}
             {chosen&&<div className="schedule-classroom-field"><div className="field-heading"><label htmlFor="lesson-classroom">{t("所属班级")}</label><Button type="button" variant="ghost" size="sm" aria-label={t("刷新班级名单")} disabled={classOptions===null&&!classError} onClick={()=>void loadClasses()}><RefreshCw size={16} aria-hidden="true"/>{t("刷新")}</Button></div><select id="lesson-classroom" required data-testid="lesson-classroom-select" value={selectedClassId} disabled={classOptions===null||busy} onChange={event=>setClassroomId(event.target.value)}>{eligibleClasses.length!==1&&<option value="">{t("请选择有效班级")}</option>}{eligibleClasses.map(item=><option key={item.id} value={item.id}>{item.title}</option>)}</select>{classOptions===null&&!classError?<p role="status" className="muted">{t("正在加载班级…")}</p>:classError?<p role="alert" className="notice">{classError} <Button type="button" variant="outline" onClick={()=>void loadClasses()}>{t("重试")}</Button></p>:<p className="muted">{t(!eligibleClasses.length?"此学生科目配对暂无有效班级，请刷新名单并检查班级成员。":eligibleClasses.length===1?"已自动选择对应班级。":"请选择本次课程的班级。")}</p>}</div>}
-            <div className="schedule-time-fields"><label>{t("上课日期")}<input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)}/></label><label>{t("开始时间")}<input required type="time" value={startTime} onChange={e => setStartTime(e.target.value)}/></label><label>{t("结束时间")}<input required type="time" value={endTime} onChange={e => setEndTime(e.target.value)}/></label></div>
+            <div className="schedule-time-fields"><label>{t("上课日期")}<input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)}/></label><label>{t("开始时间")}<TimeInput required type="time" value={startTime} onChange={e => setStartTime(e.target.value)}/></label><label>{t("结束时间")}<TimeInput required type="time" value={endTime} onChange={e => setEndTime(e.target.value)}/></label></div>
             <p className="muted schedule-date-note">{t("开始和结束时间使用同一天日期。")}</p>
             <ConflictPreview enabled={Boolean(chosen && selectedClassId && startDate && startTime && endTime && startTime < endTime)} value={{ action: "create", student, subject: chosen?.subject, teacherName: chosen?.teacher,classroomId:selectedClassId, start: `${startDate}T${startTime}`, end: `${startDate}T${endTime}`, until }}/>
             <details ref={scheduleOptionsRef} className="schedule-extra-options" data-testid="schedule-extra-options"><summary>{getLanguage()==='zh'?'重复与其他设置':'Repeat and other options'}{(until||kind!=='regular')&&<span>{getLanguage()==='zh'?'已设置':'Set'}</span>}</summary><div>

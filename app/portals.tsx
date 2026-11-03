@@ -21,6 +21,7 @@ import { OnlineLessonLink } from "./online-lesson-link";
 import { LessonHistory } from "./lesson-history";
 import { ReschedulePanel, RescheduleRequestDialog, type RescheduleProposal } from "./reschedule-panel";
 import { ConflictPreview } from "./conflict-preview";
+import "./academic-roster-layout.css";
 type Lesson = SessionLesson & {
     id: string;
     student: string;
@@ -43,7 +44,7 @@ const label = (iso: string) => local(iso).replace("T", " ");
 const statusText: Record<string, string> = { scheduled: "已安排", completed: "已上课", student_absent: "学生缺席", teacher_absent: "老师缺席" };
 function TeacherPlanLinkEditor({ plan, mutate, busy }: { plan: { key: string; student: string; subject: string; onlineLink?: string | null }; mutate: Mutate; busy: boolean }) {
     const [link, setLink] = useState(plan.onlineLink || "");
-    return <form className="teacher-plan-link" onSubmit={async event => { event.preventDefault(); await mutate({ action: "updateOnlineLink", key: plan.key, onlineLink: link }); }}><strong>{plan.student} · {plan.subject}</strong><OnlineLessonLink href={plan.onlineLink}/><label>{t("线上课堂链接（可选）")}<input type="url" inputMode="url" maxLength={2048} placeholder="https://meet.google.com/..." value={link} onChange={event => setLink(event.target.value)}/></label><Button size="sm" disabled={busy || link === (plan.onlineLink || "")}>{t("保存课堂链接")}</Button></form>;
+    return <form className="teacher-plan-link" aria-label={plan.student + " · " + plan.subject} onSubmit={async event => { event.preventDefault(); await mutate({ action: "updateOnlineLink", key: plan.key, onlineLink: link }); }}><div className="teacher-plan-link-heading"><strong>{plan.student} · {plan.subject}</strong><OnlineLessonLink href={plan.onlineLink}/></div><div className="teacher-plan-link-fields"><label>{t("线上课堂链接（可选）")}<input type="url" inputMode="url" maxLength={2048} placeholder="https://meet.google.com/..." value={link} onChange={event => setLink(event.target.value)}/></label><Button size="sm" disabled={busy || link === (plan.onlineLink || "")}>{t("保存课堂链接")}</Button></div></form>;
 }
 export function TeacherPortal({lessons,plans,proposals,mutate,busy,view,onReschedule,classSessions=[],classSessionRequests=[],attendanceSessions,month,calendarDate,onCalendarDateChange,onCalendarRangeChange,calendarLoading,pendingAttendance=0}:{pendingAttendance?:number;calendarLoading?:boolean;month:string;calendarDate?:string;onCalendarDateChange?:(date:string)=>void;onCalendarRangeChange?:(range:CalendarRange)=>void;lessons:Lesson[];plans:Array<{key:string;student:string;subject:string;onlineLink?:string|null}>;proposals:Proposal[];mutate:Mutate;busy:boolean;view:"calendar"|"lessons"|"attendance"|"students"|"reschedule";onReschedule?:()=>void;classSessions?:GroupSession[];classSessionRequests?:GroupSessionRequest[];attendanceSessions?:AttendanceSession[]}){
  const [selected,setSelected]=useState<AttendanceSession|null>(null),[request,setRequest]=useState<Lesson|null>(null);
@@ -53,7 +54,7 @@ export function TeacherPortal({lessons,plans,proposals,mutate,busy,view,onResche
  {view==="attendance"&&<PagedAttendanceBoard month={month} role="teacher" mutate={mutate} busy={busy} mode="records"/>}
  {view==="calendar"&&<StudentCalendar loading={calendarLoading} selectedDate={calendarDate} onDateChange={onCalendarDateChange} onRangeChange={onCalendarRangeChange} role="teacher" onPending={onReschedule} lessons={lessons} proposals={proposals} busy={busy} renderActions={id=>{const l=lessons.find(l=>l.id===id),session=attendanceSessions?.find(s=>s.id===l?.sessionId);return l&&session?<div className="portal-actions"><Button disabled={busy||!mayCheckIn(l.plannedStart,new Date().toISOString())} onClick={()=>setSelected(session)}>{t("登记课次考勤")}</Button>{l.status==="scheduled"&&<Button variant="outline" disabled={busy} onClick={()=>l.sessionType==="group"?onReschedule?.():setRequest(l)}>{t("申请改期")}</Button>}</div>:null;}}/>}
  {view==="reschedule"&&<PagedReschedules role="teacher" month={month} mutate={mutate} busy={busy}/>}
- {view==="students"&&<section className="panel" aria-label={t("负责的学生与科目")}>{plans.map(p=><TeacherPlanLinkEditor key={p.key+":"+p.onlineLink} plan={p} mutate={mutate} busy={busy}/>)}</section>}
+ {view==="students"&&<section className="panel teacher-plan-list" aria-label={t("负责的学生与科目")}>{plans.map(p=><TeacherPlanLinkEditor key={p.key+":"+p.onlineLink} plan={p} mutate={mutate} busy={busy}/>)}</section>}
  {selected&&<SessionAttendanceDialog session={selected} role="teacher" mutate={mutate} busy={busy} close={()=>setSelected(null)}/>}
  <RescheduleRequestDialog key={request?.id||"closed"} lesson={request} mutate={mutate} busy={busy} close={()=>setRequest(null)}/>
  </div>;

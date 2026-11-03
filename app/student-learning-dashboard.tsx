@@ -1,4 +1,5 @@
 "use client";
+import {TimeInput} from '@/components/time-input';
 
 import { useDialogState } from "@/lib/use-dialog-state";
 import { useState } from "react";
@@ -39,7 +40,7 @@ export function StudentLearningDashboard({ lessons, proposals, learning, mutate,
       {form.homeworkId && <p className="muted">{t("此计划已关联功课。安排学习时间不会提交功课，请在功课页面上传并提交 PDF。")}</p>}
       <label>{t("标题")}<input required maxLength={120} value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}/></label>
       <label>{t("日期")}<input required type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}/></label>
-      <div className="form-pair"><label>{t("开始时间")}<input required type="time" value={form.start} onChange={e => setForm({ ...form, start: e.target.value })}/></label><label>{t("结束时间")}<input required type="time" min={form.start} value={form.end} onChange={e => setForm({ ...form, end: e.target.value })}/></label></div>
+      <div className="form-pair"><label>{t("开始时间")}<TimeInput required type="time" value={form.start} onChange={e => setForm({ ...form, start: e.target.value })}/></label><label>{t("结束时间")}<TimeInput required type="time" min={form.start} value={form.end} onChange={e => setForm({ ...form, end: e.target.value })}/></label></div>
       <label>{t("科目（可选）")}<input maxLength={100} list="study-subjects" value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })}/><datalist id="study-subjects">{[...new Set([...lessons.map(l => l.subject), ...learning.homework.map(h => h.subject)])].map(subject => <option key={subject} value={subject}/>)}</datalist></label>
       <label>{t("备注（可选）")}<textarea maxLength={1000} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })}/></label>
       <div className="learning-file-actions"><Button disabled={busy || saving}>{t("保存学习计划")}</Button>{form.id && <Button type="button" variant="outline" disabled={busy || saving} onClick={async () => { if (window.confirm(t("确定删除此学习计划？关联的功课会保留。")) && await mutate({ action: "deleteStudyBlock", id: form.id })) setForm(null); }}>{t("删除此计划")}</Button>}</div>

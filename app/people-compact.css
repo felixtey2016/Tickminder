@@ -63,3 +63,60 @@
 .account-directory .account-quick-action{align-self:start;min-height:44px;min-width:76px;max-width:148px;white-space:normal;overflow-wrap:anywhere;padding:10px 12px;border-color:#c6b8e8;background:#f3eeff;color:#4d3193;font-size:13px;font-weight:600;line-height:1.5}
 .account-directory .account-quick-action:hover{background:#eae1fc;border-color:#a68bcf}
 @media(max-width:360px){.account-directory .account-row-heading{gap:8px}.account-directory .account-quick-action{max-width:128px;padding-inline:10px}}
+
+/* Keep role groups as a readable list instead of nesting cards within cards. */
+.people-compact .directory-filters{grid-template-columns:minmax(0,1fr) minmax(180px,.45fr);align-items:end}
+.people-compact .directory-filters label{font-size:14px;gap:8px}
+.people-compact .directory-filters :is(input,select){background:var(--ui-surface,#fff);border-color:var(--ui-border,#e4e2ea);color:var(--ui-text,#252334);min-height:44px;border-radius:6px}
+.people-compact .directory-person-row{border-color:var(--ui-border,#e4e2ea);color:var(--ui-text,#252334)}
+.people-compact .directory-person-identity small,.people-account-fields small,.people-compact .people-list-toolbar>.muted{font-size:14px;color:var(--ui-muted,#626575)}
+.people-name-line strong{font-size:16px;color:var(--ui-text,#252334)}
+.people-compact :is(.people-row-details>summary,.people-batch>summary,.account-quick-action){background:var(--ui-surface,#fff);border-color:var(--ui-border,#e4e2ea);color:var(--ui-accent,#6547c6);font-size:14px;border-radius:6px}
+.people-compact :is(.people-row-details>summary,.people-batch>summary,.account-quick-action):hover{background:var(--ui-accent-soft,#f0ebfc);border-color:var(--ui-accent,#6547c6)}
+.people-compact :is(.people-help>summary,.people-maintenance>summary){color:var(--ui-muted,#626575);font-size:14px}
+.people-compact .people-help{margin-block:0 8px}
+.people-compact .people-help>p{font-size:14px;color:var(--ui-muted,#626575)}
+.people-compact .people-row-content{padding:12px;border:1px solid var(--ui-border,#e4e2ea);border-radius:6px;background:var(--ui-surface-muted,#f7f7fa);margin-top:8px}
+.account-directory.people-compact .account-role-group{margin:0;padding:0;border:0;border-bottom:1px solid var(--ui-border,#e4e2ea);border-radius:0;background:transparent;box-shadow:none}
+.account-directory.people-compact .account-role-group:first-of-type{border-top:1px solid var(--ui-border,#e4e2ea)}
+.account-directory.people-compact .account-role-group>summary{display:flex;align-items:center;gap:10px;min-height:58px;padding:10px 4px;list-style:none;color:var(--ui-text,#252334);background:transparent;font-size:15px;font-weight:600;cursor:pointer}
+.account-role-group>summary::-webkit-details-marker{display:none}
+.account-directory .account-role-group>summary::before,.account-directory .account-role-group>summary::after{content:none}
+.account-directory .account-role-group>summary>svg{flex:none;color:var(--ui-muted,#626575)}
+.account-directory .account-role-group>summary>.account-role-label{padding:0;margin:0;min-width:0;background:transparent;color:inherit;border:0;font-size:15px;overflow-wrap:anywhere}
+.account-directory .account-role-group>summary>.account-role-count{display:inline-grid;place-items:center;min-width:24px;min-height:24px;padding:1px 7px;margin:0;font-size:13px;line-height:1.5;border:0;border-radius:5px;background:var(--ui-accent-soft,#f0ebfc);color:var(--ui-accent,#6547c6)}
+.account-directory .account-role-group>summary>.account-role-chevron{margin-left:auto;transition:transform .15s}
+.account-role-group[open]>summary>.account-role-chevron{transform:rotate(180deg)}
+.account-directory.people-compact .account-role-group>.directory-person-row{margin:0 0 0 28px;padding-block:16px;border-top:1px solid var(--ui-border,#e4e2ea);border-bottom:0}
+.people-compact .account-authority-badge{background:var(--ui-surface-muted,#f7f7fa);border-color:var(--ui-border,#e4e2ea);color:var(--ui-muted,#626575)}
+.people-compact .account-authority-badge[data-authority=owner]{background:var(--ui-primary,#6547c6);color:var(--ui-primary-text,#fff);border-color:transparent}
+.people-compact .account-authority-badge[data-authority=chief]{background:var(--ui-accent-soft,#f0ebfc);color:var(--ui-accent,#6547c6);border-color:transparent}
+.people-account-fields a{color:var(--ui-accent,#6547c6);text-decoration:underline;text-underline-offset:3px}
+.people-compact .directory-person-identity .people-attention{color:var(--ui-warning-text,#79520a)}
+/* Account dialogs are portaled outside .app-shell; carry the same theme here. */
+.parents-manager-dialog.people-manager-compact .parents-record{background:transparent;border:0;border-bottom:1px solid var(--ui-border);border-radius:0;padding:16px 0}
+.parents-manager-dialog.people-manager-compact :is(.parents-muted,.parents-empty,.parents-page-count,.parents-details dt,.people-context>span){color:var(--ui-muted)}
+.parents-manager-dialog.people-manager-compact :is(.parents-confirm,.parents-notice){background:var(--ui-surface-muted);color:var(--ui-text);border-color:var(--ui-border);border-radius:6px}
+.parents-manager-dialog.people-manager-compact .parents-badge{background:var(--ui-accent-soft);color:var(--ui-accent)}
+.parents-manager-dialog.people-manager-compact .parents-badge[data-status=active]{background:var(--ui-success-bg);color:var(--ui-success-text)}
+.parents-manager-dialog.people-manager-compact .parents-badge[data-status=inactive]{background:var(--ui-danger-bg);color:var(--ui-danger-text)}
+.parents-manager-dialog.people-manager-compact :is(.parents-confirm,.parents-section,.parents-actions){min-width:0}
+.parents-manager-dialog.people-manager-compact .parents-details{grid-template-columns:repeat(auto-fit,minmax(min(100%,15em),1fr));gap:12px 20px}
+.parents-manager-dialog.people-manager-compact .parents-check>span{min-width:0;overflow-wrap:anywhere}
+.parents-manager-dialog.people-manager-compact .parents-check input{padding:0}
+.parents-manager-dialog.people-manager-compact .people-help>summary{color:var(--ui-muted);font-size:14px}
+.parents-manager-dialog.people-manager-compact :is(button,summary):focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
+.parents-manager-dialog.people-manager-compact .parents-actions{gap:12px}
+.parents-manager-dialog.people-manager-compact .parents-actions>button{min-width:0;overflow-wrap:anywhere}
+@media(max-width:600px){
+ .parents-manager-dialog.people-manager-compact{padding:16px!important}
+ .parents-manager-dialog.people-manager-compact .parents-confirm{padding:12px}
+ .parents-manager-dialog.people-manager-compact .parents-details{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:700px){
+ .people-compact .directory-filters{grid-template-columns:minmax(0,1fr);gap:12px}
+ .account-directory.people-compact .account-role-group>.directory-person-row{margin-left:0}
+ .account-directory .account-row-heading{gap:10px}
+ .people-compact .people-name-line{gap:5px 8px}
+ .people-compact .directory-section-head>h2{font-size:18px}
+}

@@ -1,13 +1,14 @@
 import type { NavigationRole } from './course-navigation';
 
 export type ManagementArea = 'people' | 'settings';
-export type ManagementView = 'studentRoster' | 'teacherRoster' | 'accounts' | 'groupInfo' | 'myAccount' | 'sheet' | 'activity';
+export type ManagementView = 'studentRoster' | 'teacherRoster' | 'parentRoster' | 'accounts' | 'groupInfo' | 'myAccount' | 'sheet' | 'activity';
 type ManagementTab = { view: ManagementView; label: string };
 
 const TABS: Record<ManagementArea, readonly ManagementTab[]> = {
  people: [
   { view: 'studentRoster', label: '学生名单' },
   { view: 'teacherRoster', label: '老师名单' },
+  { view: 'parentRoster', label: 'parents.parentRoster' },
   { view: 'accounts', label: '账号管理' },
  ],
  settings: [

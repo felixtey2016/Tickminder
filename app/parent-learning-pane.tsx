@@ -8,6 +8,7 @@ import {PX} from '@/lib/parent30-i18n';
 import type {ParentQuizGrade,ParentQuizGradePage,ParentQuizGradeDetail,ParentHomeworkGrade,ParentHomeworkGradePage,ParentHomeworkGradeDetail,ParentPerformance,ParentPerformanceMetrics} from '@/lib/parent-learning-types';
 import {useParentResource,ParentLoadState,ParentPagination,parentDate,parentSafeUrl} from './parents-ui-shared';
 import './parent30.css';
+import './parent-learning-layout.css';
 type Props={studentId:string;month:string;version:number;onAuthorityLost:()=>void};
 const numeric=(value:number)=>new Intl.NumberFormat(getLanguage()==='zh'?'zh-CN':'en-GB',{maximumFractionDigits:2}).format(value);
 const score=(value:number|null,maximum:number|null)=>value===null?PX('notGraded'):numeric(value)+(maximum===null?'':' / '+numeric(maximum));

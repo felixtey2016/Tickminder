@@ -1,4 +1,5 @@
 "use client";
+import {HorizontalMenu} from '@/components/horizontal-menu';
 import {usePageHistoryState} from '@/lib/page-history';
 
 import {lazy,Suspense,useEffect,useState} from 'react';
@@ -36,9 +37,9 @@ export default function FinanceWorkspace({account,students,onCourses,openInvoice
  const viewLabel=(key:FinanceView)=>key==='accounts'?financeLabel('学生账户','Student accounts'):key==='prepayments'?P('title'):['overview','payroll','expenses'].includes(key)?F2(key):t('invoice.nav.'+key);
  const navigate=(next:FinanceView)=>{if(!changeAllowed())return;if(next==='invoices')setContext(null);if(next==='prepayments')setPrepaymentStudentId(undefined);if(next==='payroll'){setPayrollId(undefined);setPayrollMonth(undefined);}setView(next);};
  if(account.role!=='admin'||!allowed.length)return <p>{F2('forbidden')}</p>;
- return <div className="finance-workspace finance-compact"><label className="finance-mobile-navigation"><span>{financeLabel('财务页面','Finance page')}</span><select aria-label={financeLabel('财务页面','Finance page')} value={view} onChange={event=>navigate(event.target.value as FinanceView)}>{allowed.map(key=><option key={key} value={key}>{viewLabel(key)}</option>)}</select></label><nav className="finance-navigation" aria-label={t('invoice.nav.finance')}>
-  {allowed.map(key=><Button key={key} type="button" variant={view===key?'default':'outline'} aria-current={view===key?'page':undefined} onClick={()=>navigate(key)}>{viewLabel(key)}</Button>)}
- </nav><Suspense fallback={<p role="status">{t('invoice.loading')}</p>}>
+ return <div className="finance-workspace finance-compact finance-wave4"><label className="finance-mobile-navigation"><span>{financeLabel('财务页面','Finance page')}</span><select aria-label={financeLabel('财务页面','Finance page')} value={view} onChange={event=>navigate(event.target.value as FinanceView)}>{allowed.map(key=><option key={key} value={key}>{viewLabel(key)}</option>)}</select></label><HorizontalMenu><nav className="finance-navigation" aria-label={t('invoice.nav.finance')}>
+  {allowed.map(key=><Button key={key} type="button" variant="ghost" aria-current={view===key?'page':undefined} onClick={()=>navigate(key)}>{viewLabel(key)}</Button>)}
+ </nav></HorizontalMenu><Suspense fallback={<p role="status">{t('invoice.loading')}</p>}>
   {view==='overview'&&canOverview&&<FinanceOverview permissions={{payroll:canPayroll,expenses:canExpenses,export:canExport,invoices:canInvoices,prepayments:canPrepayments}} onInvoice={id=>{if(canInvoices&&changeAllowed()){setContext({invoiceId:id});setView('invoices');}}} onPayroll={id=>{if(canPayroll&&changeAllowed()){setPayrollMonth(undefined);setPayrollId(id);setView('payroll');}}} onPayrollMonth={month=>{if(canPayroll&&changeAllowed()){setPayrollId(undefined);setPayrollMonth(month);setView('payroll');}}}/>}
   {view==='tuition'&&canFees&&<BillingWorkspace students={students} onCourses={onCourses} canManageFees={canManage} onInvoice={canInvoices&&canAdminAction(account,'invoices.create')?openInvoice:undefined}/>}
   {view==='accounts'&&canAccounts&&<StudentStatementsWorkspace key={scopeKey} scopeKey={scopeKey} onInvoice={openInvoice} onTuition={()=>{if(changeAllowed())setView('tuition');}} onRecord={canAdminAction(account,'prepayments.record')?studentId=>{if(changeAllowed()){setPrepaymentStudentId(studentId);setView('prepayments');}}:undefined}/>}

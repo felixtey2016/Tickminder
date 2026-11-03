@@ -1,0 +1,69 @@
+/* Login has its own responsive frame; onboarding forms keep their existing flow. */
+.auth-shell.auth-login-shell {min-height:100dvh;padding:32px 24px;background:var(--ui-bg);color:var(--ui-text);}
+.auth-login-shell .auth-layout {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,440px);align-items:center;gap:40px;width:min(900px,100%);}
+.auth-login-shell .auth-story {display:flex;flex-direction:column;justify-content:center;align-self:stretch;min-width:0;padding:32px;border:1px solid var(--ui-border);border-radius:16px;background:var(--ui-highlight-surface);color:var(--ui-text);}
+.auth-login-shell .auth-story-brand {display:flex;align-items:center;gap:12px;}
+.auth-login-shell .auth-story-brand .brand-logo {flex:none;width:40px;height:40px;margin:0;background:transparent;}
+.auth-login-shell .auth-story-brand>strong {color:var(--ui-brand-ink);font-size:27px;font-weight:700;line-height:1.25;letter-spacing:-.025em;}
+.auth-login-shell .auth-story-illustration {display:block;align-self:center;width:260px;max-width:100%;height:auto;aspect-ratio:1;object-fit:contain;margin:24px auto 20px;}
+.auth-login-shell .auth-story h2 {margin:0 0 12px;color:var(--ui-text);font-size:32px;line-height:1.25;letter-spacing:-.025em;overflow-wrap:anywhere;}
+.auth-login-shell .auth-story p {margin:0;max-width:32ch;color:var(--ui-muted);font-size:16px;line-height:1.7;}
+.auth-login-shell .auth-card {min-width:0;width:100%;padding:28px 32px;border:1px solid var(--ui-border);border-radius:12px;background:var(--ui-surface);box-shadow:none;}
+.auth-login-heading {display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-bottom:24px;}
+.auth-login-heading .language-switch {flex:none;margin:0;}
+.auth-login-shell .auth-mobile-brand {display:none;min-width:0;color:var(--ui-brand-ink);font-size:22px;font-weight:700;line-height:1.3;}
+.auth-login-shell .auth-mobile-brand .brand-logo {width:36px;height:36px;}
+.auth-login-shell .auth-card>.eyebrow {display:none;}
+.auth-login-shell .auth-card h1 {margin:0 0 8px;font-size:28px;line-height:1.3;color:var(--ui-text);letter-spacing:-.02em;}
+.auth-login-shell .auth-card>p:not(.auth-divider):not(.auth-legal-note):not(.notice):not(.eyebrow) {margin:0;color:var(--ui-muted);font-size:15px;line-height:1.6;}
+.auth-login-shell .auth-card form {display:grid;gap:16px;margin-top:24px;}
+.auth-login-shell .auth-card form label {display:grid;gap:7px;min-width:0;margin:0;color:var(--ui-text);font-size:14px;line-height:1.5;}
+.auth-login-shell .auth-card form input {box-sizing:border-box;width:100%;min-width:0;min-height:46px;margin:0;padding:10px 12px;font-size:16px;}
+.auth-login-shell .auth-card form>.primary-full {margin-top:2px;min-height:46px;font-size:16px;}
+.auth-login-shell .auth-divider {margin:22px 0 12px;color:var(--ui-muted)!important;font-size:13px;line-height:1.5;}
+.auth-login-shell .auth-divider::before,.auth-login-shell .auth-divider::after {background:var(--ui-border);}
+.auth-login-shell .google-signin {width:100%;min-width:0;max-width:100%;margin-top:0;}
+.auth-login-shell .google-signin iframe {max-width:100%;}
+.auth-login-shell .auth-foot {margin-top:22px;color:var(--ui-muted);font-size:13px;line-height:1.6;}
+.auth-login-shell .auth-card .auth-legal-note {margin:14px 0 0;color:var(--ui-muted);font-size:12px;line-height:1.5;}
+.auth-login-shell .auth-legal {margin-top:4px;gap:8px;}
+.auth-login-shell .auth-legal a {min-height:36px;display:inline-flex;align-items:center;}
+.auth-login-shell .auth-card>.notice,.auth-login-shell .auth-card>.error {margin-top:14px;overflow-wrap:anywhere;}
+/* Equal action sizes, with separate styling for the primary and secondary choice. */
+.auth-card.auth-onboarding-card form>.primary-full,
+.auth-card.auth-onboarding-card>.auth-secondary-action,
+.auth-card.account-setup form>.primary-full,
+.auth-card.account-setup .account-setup-existing>button,
+.auth-card.student-contact-onboarding .student-contact-submit,
+.auth-card.student-contact-onboarding>.student-contact-logout,
+.auth-card.google-link-onboarding .google-link-onboarding-actions>button {display:flex;align-items:center;justify-content:center;width:100%;min-height:46px;height:auto;padding:11px 16px;font-size:14px;line-height:1.5;white-space:normal;}
+.auth-card.auth-onboarding-card>.auth-secondary-action,
+.auth-card.student-contact-onboarding>.student-contact-logout {margin-top:14px;}
+.auth-card.google-link-onboarding .google-link-onboarding-actions {display:grid;grid-template-columns:minmax(0,1fr);gap:14px;margin-top:18px;}
+.auth-card.google-link-onboarding .google-link-onboarding-actions>button {margin:0;}
+.auth-card.auth-onboarding-card>.auth-secondary-action,
+.auth-card.account-setup .account-setup-existing>button,
+.auth-card.student-contact-onboarding>.student-contact-logout {border:1px solid var(--ui-border);background:var(--ui-surface);color:var(--ui-text);}
+.auth-card.student-contact-onboarding .student-contact-submit {background:var(--ui-primary);color:var(--ui-primary-text);}
+@media(max-width:1000px) {
+ .auth-shell.auth-login-shell {padding:24px 20px;}
+ .auth-login-shell .auth-layout {display:block;width:min(460px,100%);}
+ .auth-login-shell .auth-story {display:none;}
+ .auth-login-shell .auth-mobile-brand {display:flex;align-items:center;gap:8px;}
+ .auth-login-heading {justify-content:space-between;}
+}
+@media(max-width:480px) {
+ .auth-shell.auth-login-shell {padding:20px 16px;align-items:start;}
+ .auth-login-shell .auth-card {padding:24px 20px;}
+ .auth-login-heading {gap:8px;margin-bottom:24px;}
+ .auth-login-shell .auth-mobile-brand {font-size:21px;}
+ .auth-login-shell .auth-mobile-brand .brand-logo {width:32px;height:32px;}
+ .auth-login-shell .auth-card h1 {font-size:26px;}
+}
+@media(max-width:350px) {
+ .auth-shell.auth-login-shell {padding:16px 12px;}
+ .auth-login-shell .auth-card {padding:20px 16px;}
+ .auth-login-shell .auth-mobile-brand {font-size:19px;gap:6px;}
+ .auth-login-shell .auth-mobile-brand .brand-logo {width:30px;height:30px;}
+ .auth-login-heading .language-switch button {min-width:40px;padding-inline:6px;}
+}

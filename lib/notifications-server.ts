@@ -1,3 +1,4 @@
+import {notificationPreferenceSql} from './notification-preferences';
 import {reportUnexpectedError} from './diagnostics-server';
 import { env } from "cloudflare:workers";
 import { buildPushPayload } from "@block65/webcrypto-web-push";
@@ -152,7 +153,7 @@ export async function dispatchReminders(nowMs=Date.now()) {
   await generateReminders(nowMs);
   await db.prepare(`INSERT OR IGNORE INTO notification_deliveries (id,item_id,subscription_id,next_attempt_at)
     SELECT lower(hex(randomblob(16))),n.id,s.id,? FROM notification_items n JOIN push_subscriptions s ON s.account_id=n.account_id
-    WHERE n.due_at>=? AND n.due_at<=? AND s.created_at<=n.due_at`).bind(now,cutoff,now).run();
+    WHERE n.due_at>=? AND n.due_at<=? AND s.created_at<=n.due_at AND ${notificationPreferenceSql('n.account_id','courses','n.due_at')}`).bind(now,cutoff,now).run();
   const jobs=await rows<{id:string}>(`SELECT id FROM notification_deliveries WHERE status IN ('pending','sending')
     AND next_attempt_at<=? AND (lock_until IS NULL OR lock_until<=?) AND attempts<3 LIMIT 32`,now,now);
   let sent=0,expired=0,failed=0;
@@ -163,16 +164,17 @@ export async function dispatchReminders(nowMs=Date.now()) {
     if(!locked) return;
     const item=await first<Subscription & {item_id:string;minutes:number;due_at:string}>(`SELECT s.*,n.id AS item_id,n.offset_minutes AS minutes,n.due_at FROM notification_items n
       JOIN push_subscriptions s ON s.id=? AND s.account_id=n.account_id JOIN lessons l ON l.id=n.lesson_id JOIN accounts a ON a.id=n.account_id
-      WHERE n.id=? AND n.planned_start=l.planned_start AND l.status='scheduled' AND ${participantSql}`,
+      WHERE n.id=? AND n.planned_start=l.planned_start AND l.status='scheduled' AND ${participantSql} AND ${notificationPreferenceSql('n.account_id','courses','n.due_at')}`,
       locked.subscription_id,locked.item_id);
     if(!item || Date.parse(item.due_at)<nowMs-GRACE_MS) { await db.prepare("UPDATE notification_deliveries SET status='expired',lock_until=NULL WHERE id=?").bind(job.id).run(); expired++;return; }
     try {
-      const response=await sendPush(item,reminderPayload(item.item_id,item.minutes,item.language),item.minutes === 30 ? 25*60 : item.minutes === 5 ? 5*60 : 10*60);
+      const response=await sendPush(item,reminderPayload(item.item_id,item.minutes,item.language),item.minutes === 30 ? 25*60 : item.minutes === 5 ? 5*60 : 10*60,async()=>Boolean(await db.prepare(`SELECT 1 FROM notification_items n JOIN lessons l ON l.id=n.lesson_id JOIN accounts a ON a.id=n.account_id JOIN push_subscriptions s ON s.account_id=n.account_id WHERE n.id=? AND s.id=? AND s.endpoint=? AND s.p256dh=? AND s.auth=? AND n.planned_start=l.planned_start AND l.status='scheduled' AND ${participantSql} AND ${notificationPreferenceSql('n.account_id','courses','n.due_at')}`).bind(item.item_id,item.id,item.endpoint,item.p256dh,item.auth).first()));
       if(response.ok) { await db.prepare("UPDATE notification_deliveries SET status='sent',sent_at=?,lock_until=NULL WHERE id=?").bind(now,job.id).run(); sent++; }
       else if([404,410].includes(response.status)) { await removeSubscription(item.id,item.account_id);expired++; }
       else if(response.status===429 || response.status>=500) throw new Error("Provider retry");
       else { await db.prepare("UPDATE notification_deliveries SET status='failed',lock_until=NULL WHERE id=?").bind(job.id).run(); failed++; }
-    } catch {
+     } catch(error) {
+      if(error instanceof NotificationError&&error.status===403){await db.prepare("UPDATE notification_deliveries SET status='expired',lock_until=NULL WHERE id=?").bind(job.id).run();expired++;return;}
       await db.prepare("UPDATE notification_deliveries SET status=?,next_attempt_at=?,lock_until=NULL WHERE id=?")
         .bind(locked.attempts>=3?"failed":"pending",new Date(nowMs+60_000).toISOString(),job.id).run();failed++;
     }

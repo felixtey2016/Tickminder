@@ -1,4 +1,5 @@
 'use client';
+import {displayFormatter} from '@/lib/display-preferences';
 import {lazy,Suspense,useEffect,useRef,useState} from 'react';
 import {ArrowLeft} from 'lucide-react';
 import {Button} from '@/components/ui/button';
@@ -35,7 +36,7 @@ export default function NotificationDestination({target,role,language,onBack,lea
   }catch(value){if(!controller.signal.aborted){const failure=value instanceof Error?value:new Error(label('内容不存在或没有查看权限','Content is unavailable or you do not have access.'));setError(announce?alertActionFailure(failure):t(failure.message));}}finally{if(!controller.signal.aborted)setLoading(false);}}
   void load();return()=>controller.abort();
  },[target.kind,target.kind==='quiz'?target.assignmentId:target.recordId,target.kind==='quiz'?target.attemptId:'',version]);
- const date=(value:string)=>new Intl.DateTimeFormat(language==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value));
+ const date=(value:string)=>displayFormatter(language==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value));
  const lesson=data?.lesson,bytes=data?.limits?.pdfMaxBytes||10485760;
  return <section className="notification-destination" data-testid="notification-destination">
   <div className="notification-destination-back"><Button type="button" variant="outline" onClick={onBack}><ArrowLeft size={17}/>{label('返回通知','Back to notifications')}</Button></div>

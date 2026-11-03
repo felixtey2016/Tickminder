@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       if (!loginAccount || loginAccount.disabledAt) return NextResponse.json({ error: "账号已停用，请联系管理员" }, { status: 403 });
       if (pendingExpired(loginAccount)) return NextResponse.json({ error: "待分配账号已到期，请联系管理员" }, { status: 403 });
       if (attempt) await db.delete(loginAttempts).where(eq(loginAttempts.username, username));
-      const session = await createSession(credential.accountId);
+      const session = await createSession(credential.accountId,request);
       const response = NextResponse.json({ ok: true, ...await authPayload(loginAccount, credential, loginIdentity?.googleEmail ? {email: loginIdentity.googleEmail} : null) }, {headers: {"Cache-Control": "no-store"}});
       response.cookies.set("tuition_session", session.token, { httpOnly: true, secure: true, sameSite: "lax", path: "/", expires: new Date(session.expiresAt) });
       return response;
@@ -88,7 +88,7 @@ export async function POST(request: Request) {
     // Resolve identity again after a concurrent link or first registration.
     const canonical = await db.select({account: accounts, username: localCredentials.username, mustChangePassword: localCredentials.mustChangePassword, email: googleIdentities.email}).from(googleIdentities).innerJoin(accounts, eq(accounts.id, googleIdentities.accountId)).leftJoin(localCredentials, eq(localCredentials.accountId, accounts.id)).where(eq(googleIdentities.subject, profile.id)).get();
     if (!canonical || canonical.account.disabledAt || pendingExpired(canonical.account)) return NextResponse.json({error:"账号暂时不可用，请联系管理员"},{status:403});
-    const session = await createSession(canonical.account.id);
+    const session = await createSession(canonical.account.id,request);
     const response = NextResponse.json({ ok: true, ...await authPayload(canonical.account, canonical.username ? {username: canonical.username, mustChangePassword: Boolean(canonical.mustChangePassword)} : null, {email: canonical.email}) }, {headers: {"Cache-Control": "no-store"}});
     response.cookies.set("tuition_session", session.token, { httpOnly: true, secure: true, sameSite: "lax", path: "/", expires: new Date(session.expiresAt) });
     return response;

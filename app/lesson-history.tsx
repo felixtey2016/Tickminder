@@ -1,4 +1,5 @@
 "use client";
+import {displayFormatter} from '@/lib/display-preferences';
 import {attendanceLabels} from "@/lib/attendance-types";
 import {groupFetch} from "@/lib/group-client";
 
@@ -15,7 +16,7 @@ type Entry = {
 };
 type AttendanceEntry={id:string;action:string;at:string;actor?:string|null;before:Record<string,unknown>;after:Record<string,unknown>};
 type History = {studentView?:boolean; attendanceEntries?:AttendanceEntry[]; currentStart: string; currentEnd: string; entries: Entry[];page:number;pages:number;total:number;attendancePage:number;attendancePages:number;attendanceTotal:number};
-const dateTime = (iso: string) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", {
+const dateTime = (iso: string) => displayFormatter(getLanguage() === "zh" ? "zh-CN" : "en-GB",{
   timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric",
   hour: "2-digit", minute: "2-digit", hour12: false,
 }).format(new Date(iso));

@@ -1,4 +1,5 @@
 "use client";
+import {MonthInput} from '@/components/month-input';
 
 import {useEffect,useRef,useState} from 'react';
 import {Button} from '@/components/ui/button';
@@ -126,14 +127,14 @@ export default function FinanceOverview({permissions,onInvoice,onPayroll,onPayro
  function reminderRows(items:typeof reminders){
   return <div className="finance2-reminder-list">{items.map(reminder=><article className="finance2-reminder" key={reminder.key}>
    <div><h3>{F2(reminderLabel[reminder.key]||reminder.key)}</h3><span className="finance2-reminder-count">{F2('taskCount').replace('{count}',String(reminder.count))}</span></div>
-   {reminderKind[reminder.key]&&<Button variant="outline" type="button" onClick={()=>changeKind(reminderKind[reminder.key])} aria-label={F2(reminderLabel[reminder.key]||reminder.key)+' · '+F2('details')}>{compactLabel('查看','View')}</Button>}
+   {reminderKind[reminder.key]&&<Button variant="outline" type="button" onClick={()=>changeKind(reminderKind[reminder.key])} aria-label={F2(reminderLabel[reminder.key]||reminder.key)+' · '+F2('details')}>{compactLabel('查看','View')}<span aria-hidden="true"> ›</span></Button>}
   </article>)}</div>;
  }
  return <div className="finance2-workspace finance2-overview" data-testid="finance-overview">
  <div className="finance-overview-home" hidden={Boolean(query)}>
   <section className="panel finance-overview-controls">
    <div className="finance2-filters finance-overview-toolbar">
-    <label>{F2('month')}<input type="month" value={month} onChange={event=>{if(/^20\d\d-(0[1-9]|1[0-2])$/.test(event.target.value)){setMonth(event.target.value);setQuery(null);}}}/></label>
+    <label>{F2('month')}<MonthInput type="month" value={month} onChange={event=>{if(/^20\d\d-(0[1-9]|1[0-2])$/.test(event.target.value)){setMonth(event.target.value);setQuery(null);}}}/></label>
     <label>{F2('basis')}<select value={basis} onChange={event=>{setBasis(event.target.value as FinanceBasis);setQuery(null);}}>{(['cash','service','issued'] as const).map(value=><option key={value} value={value}>{F2(value)}</option>)}</select></label>
    </div>
    <div className="finance-overview-controls-actions">
@@ -148,14 +149,14 @@ export default function FinanceOverview({permissions,onInvoice,onPayroll,onPayro
    </div>
   </section>
   {loading?<p role="status" className="finance2-loading">{F2('loading')}</p>:failed?<div className="finance2-error-state"><p>{F2('loadFailed')}</p><Button variant="outline" onClick={()=>setVersion(v=>v+1)}>{F2('reload')}</Button></div>:summary&&<>
-   <section className="finance2-core" aria-labelledby="finance2-core-title">
+   <section className="panel finance2-core" aria-labelledby="finance2-core-title">
     <div className="finance2-section-head"><h2 id="finance2-core-title">{F2('coreSummary')}</h2><span className="finance2-scope">{month} · {F2(basis)}</span></div>
     <dl className="finance2-kpis finance2-core-kpis">{coreMetrics.map(metric=><div className="finance2-kpi" key={metric.label}>
      <dt>{F2(metric.label)}</dt><dd><strong>{financeMoney(metric.value)}</strong></dd>
      {['remaining','overdue'].includes(metric.label)&&<small className="finance-overview-metric-scope">{compactLabel(basis==='service'?'本月课程 · 当前欠款':'本月开单 · 当前欠款',basis==='service'?'This service month · current balance':'Issued this month · current balance')}</small>}
      {metric.label==='cashSurplus'&&<small className="finance-overview-metric-scope">{compactLabel('已登记现金 · 非利润','Recorded cash · not profit')}</small>}
      {metric.value==null&&metric.label!=='cashSurplus'&&<small className="finance2-muted">{F2('metricUnavailable')}</small>}
-     {metric.kind&&metric.value!=null&&<Button className="finance-overview-kpi-link" variant="ghost" type="button" onClick={()=>changeKind(metric.kind!)} aria-label={F2(metric.label)+' · '+F2('details')}>{compactLabel('查看明细 →','View details →')}</Button>}
+     {metric.kind&&metric.value!=null&&<Button className="finance-overview-kpi-link" variant="ghost" type="button" onClick={()=>changeKind(metric.kind!)} aria-label={F2(metric.label)+' · '+F2('details')}>{compactLabel('查看明细 →','Details →')}</Button>}
     </div>)}</dl>
    </section>
    <section className="panel finance-overview-tasks" aria-labelledby="finance2-reminders-title">

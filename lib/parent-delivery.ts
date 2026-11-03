@@ -1,9 +1,10 @@
+import {parentPreferenceSql} from './notification-preferences';
 import {reportUnexpectedError} from './diagnostics-server';
 import {learningDb} from './learning-server';
 import {generateParentNotifications,parentNoticeAuthorizationSql,parentNoticeSourceSql,parentNoticePayload} from './parent-notifications';
 import {sendPush,pushConfigured,removeSubscription,NotificationError,type NotificationSubscription} from './notifications-server';
 const AGE=24*3600000;
-const eligible=(n='n')=>`${n}.cancelled_at IS NULL AND ${n}.read_at IS NULL AND (${parentNoticeAuthorizationSql(n)}) AND (${parentNoticeSourceSql(n)})`;
+const eligible=(n='n')=>`${n}.cancelled_at IS NULL AND ${n}.read_at IS NULL AND (${parentNoticeAuthorizationSql(n)}) AND (${parentNoticeSourceSql(n)}) AND ${parentPreferenceSql(n)}`;
 type Claimed={item_id:string;subscription_id:string;notification_revision:number;attempts:number};
 type JobItem=NotificationSubscription&{notificationId:string;kind:string;createdAt:string;revision:number};
 /** Parent queues have independent locks, freshness and health from lesson reminders. */

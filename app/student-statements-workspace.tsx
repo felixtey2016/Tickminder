@@ -1,13 +1,29 @@
 "use client";
-import {useEffect,useState} from 'react';
+import {MonthInput} from '@/components/month-input';
+import {useEffect,useState,type ReactNode} from 'react';
 import {Button} from '@/components/ui/button';
 import {alertActionFailure} from '@/lib/action-feedback';
 import {completeStudentStatement,statementMonthOffset,type StudentStatement,type StudentStatementPage} from '@/lib/student-statements';
-import type {PrepaymentStudent} from '@/lib/prepayments';
-import {financeGet,financeMoney,financeMonth} from './finance-round2-shared';
-import {PrepaymentStudentPicker} from './prepayments-ui-shared';
+import type {PrepaymentList,PrepaymentStudent} from '@/lib/prepayments';
+import {financeGet,financeMoney,financeMonth,FinancePagination} from './finance-round2-shared';
+import {PrepaymentLoadState,usePrepaymentResource} from './prepayments-ui-shared';
 import {FinanceHelp,financeLabel as L} from './finance-layout-tools';
 import './student-statements.css';
+
+function StatementStudentPicker({value,onChange,monthControl}:{value:PrepaymentStudent|null;onChange:(student:PrepaymentStudent)=>void;monthControl:ReactNode}){
+ const [query,setQuery]=useState(''),[search,setSearch]=useState(''),[page,setPage]=useState(1),[version,setVersion]=useState(0);
+ useEffect(()=>{const timer=setTimeout(()=>{setSearch(query.trim());setPage(1);},250);return()=>clearTimeout(timer);},[query]);
+ const {data,loading,failed}=usePrepaymentResource<PrepaymentList<PrepaymentStudent>>({view:'students',q:search,page:String(page)},version);
+ return <div className="statement-student-picker">
+  <div className="statement-filters">{monthControl}<label>{L('搜索学生姓名','Search student name')}<input type="search" value={query} onChange={event=>setQuery(event.target.value)}/></label></div>
+  <PrepaymentLoadState loading={loading} failed={failed} onRetry={()=>setVersion(n=>n+1)}>{data&&<>
+   {data.items.length>0&&<><div className="statement-results-head"><span>{L('学生','Student')}</span><span>{L('当前未抵扣预收款','Current unallocated prepayments')}</span></div><div className="statement-student-results">{data.items.map(item=><Button key={item.studentId} type="button" variant="ghost" aria-pressed={value?.studentId===item.studentId} onClick={()=>onChange(item)}><span>{item.student}</span><strong>{financeMoney(item.balanceCents)}</strong><span aria-hidden="true">›</span></Button>)}</div></>}
+   {!data.items.length&&<p className="finance2-empty">{L('没有找到学生','No students found')}</p>}
+   {data.pages>1&&<FinancePagination page={data.page} pages={data.pages} disabled={loading} onChange={setPage}/>}
+  </>}</PrepaymentLoadState>
+  <p className="statement-selection-hint">{L('选择学生查看账户。','Select a student to view their account.')}</p>
+ </div>;
+}
 
 type Props={scopeKey:string;onRecord?:(studentId:string)=>void;onInvoice:(studentId:string,month:string,studentName:string)=>void;onTuition:()=>void};
 export default function StudentStatementsWorkspace({scopeKey,onRecord,onInvoice,onTuition}:Props){
@@ -36,12 +52,12 @@ export default function StudentStatementsWorkspace({scopeKey,onRecord,onInvoice,
  const data=result?.key===key?result.statement:null;
  const status=data?data.status==='review'?L('待核对','Needs review'):data.status==='in_progress'?L('本月暂计','Month in progress'):L('按已确认记录结算','Reconciled records'):'';
  const signed=(value:number)=>value<0?L('欠款 ','Owing ')+financeMoney(-value):value>0?L('结余 ','Credit ')+financeMoney(value):financeMoney(0);
+ const monthControl=<label className="statement-month">{L('结算月份','Statement month')}<MonthInput type="month" value={month} min="2000-01" max={financeMonth()} onChange={event=>{if(/^20\d\d-(0[1-9]|1[0-2])$/.test(event.target.value)&&event.target.value<=financeMonth())setMonth(event.target.value);}}/></label>;
  return <div className="finance2-workspace student-statements-workspace" data-testid="student-statements-workspace">
-  <section className="panel">
+  <section className="panel statement-selection">
    <div className="finance2-section-head"><h2>{L('学生账户','Student accounts')}</h2><Button type="button" variant="outline" disabled={!studentId||loading} onClick={()=>setVersion(n=>n+1)}>{L('刷新','Refresh')}</Button></div>
    {student&&<div className="statement-student"><strong>{student.student}</strong><Button type="button" variant="outline" aria-expanded={choosing} onClick={()=>setChoosing(value=>!value)}>{L('选择学生','Choose student')}</Button></div>}
-   {(choosing||!student)&&<PrepaymentStudentPicker value={student} onChange={value=>{setStudent(value);setChoosing(false);}}/>}
-   <label className="statement-month">{L('结算月份','Statement month')}<input type="month" value={month} min="2000-01" max={financeMonth()} onChange={event=>{if(/^20\d\d-(0[1-9]|1[0-2])$/.test(event.target.value)&&event.target.value<=financeMonth())setMonth(event.target.value);}}/></label>
+   {(choosing||!student)?<StatementStudentPicker value={student} onChange={value=>{setStudent(value);setChoosing(false);}} monthControl={monthControl}/>:monthControl}
   </section>
   {studentId&&(loading||!data&&!failed)&&<section className="panel" role="status" aria-live="polite"><p>{L('正在核对收款与课程…','Checking payments and lessons…')}{checked>0&&<> · {checked} {L('个月','months')}</>}</p></section>}
   {failed&&!loading&&<section className="panel"><p>{L('暂时无法完成核对，请刷新重试。','The statement could not be completed. Please refresh and try again.')}</p><Button type="button" variant="outline" onClick={()=>setVersion(n=>n+1)}>{L('重试','Retry')}</Button></section>}
@@ -63,7 +79,7 @@ export default function StudentStatementsWorkspace({scopeKey,onRecord,onInvoice,
    <section className="panel">
     <FinanceHelp title={L('月份明细与核对','Monthly details and review')}>
      <p>{L('按当前记录自动重算。漏考勤、费率缺失和已开单课程变动须先核对；原账单和收据保留。','Recalculated from current records. Missing attendance, pricing gaps and changed invoiced lessons need review. Original invoices and receipts are retained.')}</p>
-     <div className="statement-history">{data.months.map(row=><article key={row.month}><div><strong>{row.month}</strong><span>{financeMoney(row.chargeCents)}</span></div><p>{L('已开单','Invoiced')} {financeMoney(row.invoiceCents)} · {L('未开单已确认','Confirmed, unbilled')} {financeMoney(row.unbilledCents)}</p>{(row.pendingCount>0||row.changedInvoiceCount>0)&&<p className="statement-review">{row.pendingCount>0&&<span>{L('待核对记录','Pending records')} {row.pendingCount}</span>}{row.changedInvoiceCount>0&&<span>{L('账单课程有变动','Changed invoiced lessons')} {row.changedInvoiceCount}</span>}</p>}<Button type="button" variant="outline" onClick={()=>onInvoice(studentId,row.month,data.student.name)}>{L('查看账单','View invoices')}</Button></article>)}</div>
+     <div className="statement-history">{data.months.map(row=><article key={row.month}><div><strong>{row.month}</strong><span>{L('费用','Charges')} · {financeMoney(row.chargeCents)}</span></div><p>{L('已开单','Invoiced')} {financeMoney(row.invoiceCents)} · {L('未开单已确认','Confirmed, unbilled')} {financeMoney(row.unbilledCents)}</p>{(row.pendingCount>0||row.changedInvoiceCount>0)&&<p className="statement-review">{row.pendingCount>0&&<span>{L('待核对记录','Pending records')} {row.pendingCount}</span>}{row.changedInvoiceCount>0&&<span>{L('账单课程有变动','Changed invoiced lessons')} {row.changedInvoiceCount}</span>}</p>}<Button type="button" variant="outline" onClick={()=>onInvoice(studentId,row.month,data.student.name)}>{L('查看账单','View invoices')}</Button></article>)}</div>
     </FinanceHelp>
     <FinanceHelp title={L('收款与余额说明','Payments and balance details')}>
      <p>{L('管理员登记实际到账金额；旧收款自动沿用。预收款抵扣属于内部结算，不会重复计作收款。','Record the actual payment received. Existing payments are included automatically. Allocations do not count as new cash received.')}</p>

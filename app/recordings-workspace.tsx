@@ -1,4 +1,6 @@
 "use client";
+import {displayFormatter} from '@/lib/display-preferences';
+import {MonthInput} from '@/components/month-input';
 
 import {useCallback,useEffect,useId,useMemo,useRef,useState,type FormEvent} from 'react';
 import {CalendarDays,ExternalLink,Film,Plus,X} from 'lucide-react';
@@ -26,7 +28,7 @@ const lessonDay=(iso:string)=>new Date(new Date(iso).getTime()+8*3600_000).toISO
 const countLabel=(key:string,count:number)=>t(key).replace('{count}',String(count));
 const recordingText=(zh:string,en:string)=>getLanguage()==='zh'?zh:en;
 const dateLabel=(date:string)=>new Intl.DateTimeFormat(getLanguage()==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric'}).format(new Date(date.length===10?date+'T12:00:00+08:00':date));
-const sessionLabel=(session:Session)=>dateLabel(session.plannedStart)+' · '+new Intl.DateTimeFormat(getLanguage()==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(session.plannedStart))+(session.title?' · '+session.title:'');
+const sessionLabel=(session:Session)=>dateLabel(session.plannedStart)+' · '+displayFormatter(getLanguage()==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(session.plannedStart))+(session.title?' · '+session.title:'');
 async function read<T>(url:string,signal?:AbortSignal):Promise<T>{
   const response=await groupFetch(url,{cache:'no-store',signal}),data=await readApiJson<T&{error?:string}>(response);
   if(!response.ok)throw Object.assign(Error(t(data.error||'recordings.failed')),{status:response.status});
@@ -50,7 +52,11 @@ function RecordingEditor({request,onClose,onSaved}:{request:EditorRequest;onClos
   const pending=useRef<Operation>(null),recipientClass=useRef(''),loadedOptions=useRef(''),closed=useRef(false);
   const dirty=baseline!==null&&JSON.stringify(form)!==JSON.stringify(baseline);
   const close=useCallback(()=>{if(busy)return;if(dirty&&!window.confirm(t('recordings.discard')))return;closed.current=true;onClose();},[busy,dirty,onClose]);
-  useEffect(()=>{dialog.current?.showModal();return()=>dialog.current?.close();},[]);
+  useEffect(()=>{
+    const element=dialog.current,opener=document.activeElement;
+    element?.showModal();
+    return()=>{element?.close();if(opener instanceof HTMLElement&&opener.isConnected)opener.focus();};
+  },[]);
   useEffect(()=>{
     const before=(event:BeforeUnloadEvent)=>{if(dirty){event.preventDefault();event.returnValue='';}};
     const navigate=(event:Event)=>{if(busy||(dirty&&!window.confirm(t('recordings.discard'))))event.preventDefault();};
@@ -157,11 +163,11 @@ export function RecordingsWorkspace({classroomId,createRequest,onCreateRequestHa
   return <section className="recordings-workspace recordings-compact" aria-label={t('recordings.title')}>
     <header className="recordings-heading"><div><h2><Film size={20}/>{t('recordings.title')}</h2></div>{context?.permissions.canCreate&&!selectedClass?.archived&&<Button type="button" disabled={!classes.some(item=>!item.archived)} onClick={()=>setEditor({classroomId})}><Plus size={18}/>{t('recordings.add')}</Button>}</header>
     <form className="recordings-compact-filter-form" onSubmit={event=>{event.preventDefault();setFilters({...draftFilters});}}>
-      <div className="recordings-compact-search"><label className="recordings-search">{t('recordings.search')}<div><input type="search" maxLength={120} value={draftFilters.q} placeholder={t('recordings.searchPlaceholder')} onChange={event=>setDraftFilters(current=>({...current,q:event.target.value}))}/></div></label><Button type="submit" variant="outline" size="sm">{t('recordings.apply')}</Button></div>
-      <details className="recordings-filter-disclosure"><summary>{recordingText('筛选','Filters')}{Object.entries(filters).some(([key,value])=>key!=='q'&&value)&&<span>{recordingText('已启用','Active')}</span>}</summary><div className="recordings-filters">
+      <div className="recordings-compact-search"><label className="recordings-search"><span className="sr-only">{t('recordings.search')}</span><div><input type="search" maxLength={120} value={draftFilters.q} placeholder={t('recordings.searchPlaceholder')} onChange={event=>setDraftFilters(current=>({...current,q:event.target.value}))}/></div></label><Button type="submit" variant="outline" size="sm">{recordingText('搜索','Search')}</Button></div>
+      <details className="recordings-filter-disclosure"><summary>{recordingText('更多筛选','More filters')}{Object.entries(filters).some(([key,value])=>key!=='q'&&value)&&<span>{recordingText('已启用','Active')}</span>}</summary><div className="recordings-filters">
         {!classroomId&&<label>{t('recordings.classroom')}<select value={draftFilters.classroomId} onChange={event=>setDraftFilters(current=>({...current,classroomId:event.target.value}))}><option value="">{t('recordings.allClasses')}</option>{classes.map(item=><option value={item.id} key={item.id}>{item.title}</option>)}</select></label>}
         {!classroomId&&<label>{t('recordings.subject')}<select value={draftFilters.subject} onChange={event=>setDraftFilters(current=>({...current,subject:event.target.value}))}><option value="">{t('recordings.allSubjects')}</option>{subjects.map(subject=><option value={subject} key={subject}>{subject}</option>)}</select></label>}
-        <label>{t('recordings.month')}<input type="month" value={draftFilters.month} onChange={event=>setDraftFilters(current=>({...current,month:event.target.value}))}/></label>
+        <label>{t('recordings.month')}<MonthInput type="month" value={draftFilters.month} onChange={event=>setDraftFilters(current=>({...current,month:event.target.value}))}/></label>
         {manage&&<label>{t('recordings.status')}<select value={draftFilters.status} onChange={event=>setDraftFilters(current=>({...current,status:event.target.value}))}><option value="">{t('recordings.allStatuses')}</option><option value="published">{t('recordings.published')}</option><option value="draft">{t('recordings.draft')}</option></select></label>}
         <div className="recording-actions recordings-filter-actions"><Button type="submit" size="sm" variant="outline">{t('recordings.apply')}</Button><Button type="button" size="sm" variant="outline" onClick={()=>{const empty={q:'',classroomId:'',subject:'',month:'',status:''};setDraftFilters(empty);setFilters(empty);}}>{t('recordings.reset')}</Button></div>
       </div></details>
@@ -170,7 +176,7 @@ export function RecordingsWorkspace({classroomId,createRequest,onCreateRequestHa
     {loading?<p className="recording-loading" role="status">{t('recordings.loading')}</p>:<>
       {!records.length&&!error&&<div className="recordings-empty"><Film size={30} aria-hidden="true"/><p>{t('recordings.empty')}</p>{!manage&&<small>{t('recordings.emptyStudent')}</small>}</div>}
       <div className="recordings-list">{records.map(item=><article className="recording-card" key={item.id}>
-        <div className="recording-row-main"><div className="recording-row-copy"><h3>{item.title}</h3><div className="recording-row-meta"><span className="recording-date"><CalendarDays size={14}/>{dateLabel(item.lessonDate)}</span><span className={'recording-badge recording-badge-'+item.status}>{t('recordings.'+item.status)}</span>{!classroomId&&<span className="recording-row-context">{item.classroomTitle} · {item.subject}</span>}</div></div><a className="recording-watch" href={item.driveUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={16}/>{t('recordings.watch')}</a></div>
+        <div className="recording-row-main"><div className="recording-row-copy"><h3>{item.title}</h3><div className="recording-row-meta"><span className="recording-date"><CalendarDays size={14}/>{dateLabel(item.lessonDate)}</span><span className={'recording-badge recording-badge-'+item.status}>{t('recordings.'+item.status)}</span>{!classroomId&&<span className="recording-row-context">{item.classroomTitle} · {item.subject}</span>}</div></div><a className="recording-watch" href={item.driveUrl} title={t('recordings.watchHint')} aria-label={t('recordings.watch')+' · '+item.title} target="_blank" rel="noopener noreferrer"><ExternalLink size={16}/>{recordingText('观看','Watch')}</a></div>
         <details className="recording-row-details"><summary>{item.canEdit||item.canDelete?recordingText('详情与管理','Details and management'):recordingText('查看详情','View details')}</summary><div className="recording-detail-content"><p className="recording-teacher">{t('recordings.teacher')} · {item.teacherName}</p>{item.description&&<p className="recording-description">{item.description}</p>}{(item.canEdit||item.canDelete)&&<><p className="recording-caption">{item.status==='draft'?t('recordings.draftHint'):item.audienceMode==='classroom'?t('recordings.classroomShared'):countLabel('recordings.recipientCount',item.recipientCount)}</p><dl className="recording-history"><div><dt>{recordingText('添加时间','Added')}</dt><dd>{dateLabel(item.createdAt)}</dd></div><div><dt>{recordingText('最近更新','Updated')}</dt><dd>{dateLabel(item.updatedAt)}</dd></div></dl><div className="recording-actions">{item.canEdit&&<Button type="button" size="sm" variant="outline" disabled={!!deleting} onClick={()=>setEditor({id:item.id})}>{t('recordings.edit')}</Button>}{item.canDelete&&<Button type="button" size="sm" variant="outline" className="recording-delete" disabled={!!deleting} onClick={()=>void remove(item)}>{t(deleting===item.id?'recordings.deleting':'recordings.delete')}</Button>}</div></>}</div></details>
       </article>)}</div>
       {!!records.length&&<small className="recording-watch-hint">{t('recordings.watchHint')}</small>}

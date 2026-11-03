@@ -1,4 +1,6 @@
 "use client";
+import {HorizontalMenu} from '@/components/horizontal-menu';
+import {MonthInput} from '@/components/month-input';
 import {useEffect,useRef,useState,type FormEvent,type ReactNode} from 'react';
 import {Button} from '@/components/ui/button';
 import {PersonSearchPicker,type PersonSearchOption,type PersonSearchPage} from '@/components/person-search-picker';
@@ -10,6 +12,7 @@ import {PAYROLL_METHODS,payrollDraftPreview,type PayrollDetail,type PayrollDocum
 import {financeGet,financePost,financeCents,financeDate,financeInstant,financeMoney,financeMonth,localFinanceTime,FinanceModal,FinancePagination,FinanceCsvButton,type PendingOperation} from './finance-round2-shared';
 import './finance-round2.css';
 import './payroll-compact.css';
+import './finance-operations-wave4.css';
 
 const payLabel=(zh:string,en:string)=>getLanguage()==='en'?en:zh;
 function PayrollHelp({children,title}:{children:ReactNode;title?:string}){return <details className="payroll-help"><summary>{title||payLabel('计算说明','How pay is calculated')}</summary><div>{children}</div></details>;}
@@ -91,10 +94,10 @@ export default function PayrollWorkspace({permissions,initialPayrollId,initialMo
  function requestGenerate(){if(teacherId){if(!teacher||teacher.rosterMissing){alertActionFailure(Error(F2('restoreTeacherHint')));return;}generateFor(teacherId);}else{pending.current=null;setGenerateTeacherId('');setGenerateTeacher(null);setGenerateDialog(true);}}
  const summary=detail?.summary,document=detail?.payroll,blocked=Boolean(detail&&(detail.review.pendingCount||detail.review.missingRateCount||detail.review.upcomingCount));
  const draftPreview=document?.status==='draft'?(summary?.draftPreview??payrollDraftPreview(document.sourceLines,0,document.monthlyLines)):null;
- return <div className="finance2-workspace payroll-compact" data-testid="payroll-workspace">
+ return <div className="finance2-workspace payroll-compact finance-operations-wave4" data-testid="payroll-workspace">
   {!selected&&<section className="panel payroll-controls">
-   <div className="finance2-section-head"><h2 className="sr-only">{F2('payroll')}</h2><div className="finance2-actions"><Button type="button" variant={mode==='monthly'?'default':'outline'} disabled={busy} onClick={()=>{setMode('monthly');}}>{F2('salaryMonths')}</Button>{permissions.rates&&<Button type="button" variant={mode==='rates'?'default':'outline'} disabled={busy} onClick={()=>{setMode('rates');setSelected('');}}>{F2('rateHistory')}</Button>}</div></div>
-   <div className="finance2-filters"><label>{F2('month')}<input type="month" value={month} disabled={busy} onChange={e=>{if(/^20\d\d-(0[1-9]|1[0-2])$/.test(e.target.value)){setMonth(e.target.value);setPage(1);setSelected('');}}}/></label><PersonSearchPicker label={F2('teacher')} value={teacherId} selected={teacher?teacherOption(teacher):null} placeholder={F2(mode==='rates'?'selectTeacher':'allTeachers')} disabled={busy} contextKey={'payroll:'+month+':'+version} load={findTeachers} onChange={(id,person)=>{setTeacherId(id);setTeacher(person?teacherCache.current.get(id)||null:null);setSelected('');setPage(1);setRates(null);}} onResolved={person=>{if(teacherId)setTeacher(person?teacherCache.current.get(person.value)||null:teacher?{...teacher,rosterMissing:true,active:false}:null);}} testId="payroll-teacher-picker"/></div>
+   <div className="finance2-section-head"><h2 className="sr-only">{F2('payroll')}</h2><HorizontalMenu><nav className="finance2-actions finance-operation-tabs" aria-label={F2('payroll')}><Button type="button" aria-current={mode==='monthly'?'page':undefined} variant="outline" disabled={busy} onClick={()=>{setMode('monthly');}}>{F2('salaryMonths')}</Button>{permissions.rates&&<Button type="button" aria-current={mode==='rates'?'page':undefined} variant="outline" disabled={busy} onClick={()=>{setMode('rates');setSelected('');}}>{F2('rateHistory')}</Button>}</nav></HorizontalMenu></div>
+   <div className="finance2-filters"><label>{F2('month')}<MonthInput type="month" value={month} disabled={busy} onChange={e=>{if(/^20\d\d-(0[1-9]|1[0-2])$/.test(e.target.value)){setMonth(e.target.value);setPage(1);setSelected('');}}}/></label><PersonSearchPicker label={F2('teacher')} value={teacherId} selected={teacher?teacherOption(teacher):null} placeholder={F2(mode==='rates'?'selectTeacher':'allTeachers')} disabled={busy} contextKey={'payroll:'+month+':'+version} load={findTeachers} onChange={(id,person)=>{setTeacherId(id);setTeacher(person?teacherCache.current.get(id)||null:null);setSelected('');setPage(1);setRates(null);}} onResolved={person=>{if(teacherId)setTeacher(person?teacherCache.current.get(person.value)||null:teacher?{...teacher,rosterMissing:true,active:false}:null);}} testId="payroll-teacher-picker"/></div>
    {mode==='monthly'&&!selected&&<div className="finance2-actions finance2-spaced-actions">{permissions.edit&&<Button type="button" disabled={busy} onClick={requestGenerate}>{F2(busy?'saving':'generate')}</Button>}{permissions.export&&<FinanceCsvButton params={{kind:'payroll',month,basis:'service',...(teacher?{teacher:teacher.teacherName}:{})}}/>}<Button type="button" variant="outline" disabled={loading||busy} onClick={()=>setVersion(v=>v+1)}>{F2('refresh')}</Button></div>}
    {mode==='monthly'&&<PayrollHelp><p>{F2('payrollListHint')}</p><p>{F2('draftAmountHint')}</p><p>{F2('draftForecastHint')}</p></PayrollHelp>}
   </section>}
@@ -107,14 +110,14 @@ export default function PayrollWorkspace({permissions,initialPayrollId,initialMo
    {loading?<p role="status" className="finance2-loading">{F2('loading')}</p>:failed?<div className="finance2-error-state"><p>{F2('loadFailed')}</p><Button variant="outline" onClick={()=>setVersion(v=>v+1)}>{F2('reload')}</Button></div>:list&&<>
     <p className="payroll-list-count">{F2('total').replace('{count}',String(list.total))}</p>
     <div className="finance2-records payroll-list">{!list.items.length?<p className="finance2-empty">{F2('empty')}</p>:list.items.map(item=>{
-     if(item.status==='not_generated')return <article className="finance2-record" key={item.teacherId}>
+     if(item.status==='not_generated')return <article className="finance2-record payroll-list-row payroll-list-ungenerated" key={item.teacherId}>
       <div className="finance2-record-head"><h3>{item.teacherName}</h3><span className="finance2-badge" data-status="not_generated">{F2('notGenerated')}</span></div>
       <p>{item.month} · {item.lessonCount} {F2('sessions')} · {formatDurationSeconds(item.durationSeconds,getLanguage())} {F2('scheduledReference')}</p>
       {item.rosterMissing&&<p className="finance2-line-warning">{F2('restoreTeacherHint')}</p>}
-      {permissions.edit&&<div className="finance2-actions"><Button type="button" disabled={busy||item.rosterMissing} onClick={()=>generateFor(item.teacherId)}>{F2('generate')}</Button></div>}
+      {permissions.edit&&<div className="finance2-actions"><Button type="button" variant="outline" disabled={busy||item.rosterMissing} onClick={()=>generateFor(item.teacherId)}>{F2('generate')}</Button></div>}
      </article>;
      const status=payrollStatus(item.status,item.totalCents,item.paidCents);
-     return <article className="finance2-record" key={item.id}>
+     return <article className="finance2-record payroll-list-row" key={item.id}>
       <div className="finance2-record-head"><h3>{item.teacherName}</h3><span className="finance2-badge" data-status={status}>{F2(status)}</span></div>
       <p>{item.month} · {item.status==='draft'?F2('calculatedSessions')+' · ':''}{item.lessonCount} {F2('sessions')} · {formatDurationSeconds(item.durationSeconds,getLanguage())}</p>
       {item.status==='draft'?<>{item.draftPreview?<PayrollDraftAmounts compact preview={item.draftPreview}/>:<dl><div><dt>{F2('earnedDraftAmount')}</dt><dd>{financeMoney(item.baseTotalCents)}</dd></div></dl>}</>:<dl><div><dt>{F2('adjustedAmount')}</dt><dd>{financeMoney(item.totalCents)}</dd></div><div><dt>{F2('paidAmount')}</dt><dd>{financeMoney(item.paidCents)}</dd></div><div><dt>{F2('unpaidAmount')}</dt><dd>{financeMoney(item.remainingCents)}</dd></div></dl>}

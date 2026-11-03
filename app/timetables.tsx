@@ -1,4 +1,6 @@
 "use client";
+import {displayFormatter} from '@/lib/display-preferences';
+import {MonthInput} from '@/components/month-input';
 import {ClassSessionLabel} from "@/components/class-session-label";
 import {sessionLessonTitle} from "@/lib/class-session-display";
 import {FilterScope,useFilterPreference} from "@/lib/filter-preferences";
@@ -14,7 +16,7 @@ import {isTeacherStudentPair,teacherStudentOptions,type TeacherStudentPair} from
 
 type Props={type:'student'|'teacher';lessons:TimetableLesson[];students:string[];teachers:string[];month:string;setMonth:(month:string)=>void};
 function date(iso:string){return new Intl.DateTimeFormat(getLanguage()==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',weekday:'short'}).format(new Date(iso));}
-function clock(iso:string){return new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kuala_Lumpur',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(iso));}
+function clock(iso:string){return displayFormatter('en-GB',{timeZone:'Asia/Kuala_Lumpur',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(iso));}
 type TimetablePage=CoursePage<TimetableLesson>&{summary:CourseTimetableSummary;studentOptions?:string[];teacherStudentPairs?:TeacherStudentPair[]};
 export function Timetable({type,students,teachers,month,setMonth}:Props){
  const scope=useContext(FilterScope),[name,setName]=useFilterPreference<string>(`timetable-${type}-name`,''),[studentFilter,setStudentFilter]=useFilterPreference<string>(`timetable-${type}-student`,''),[teacherFilter,setTeacherFilter]=useFilterPreference<string>(`timetable-${type}-teacher`,'');
@@ -40,7 +42,7 @@ export function Timetable({type,students,teachers,month,setMonth}:Props){
   <div className="timetable-filters">
    <label>{t(type==='student'?'学生姓名':'老师姓名')}<select aria-label={t(type==='student'?'学生姓名':'老师姓名')} disabled={!ready} value={selectedName} onChange={e=>changeName(e.target.value)}><option value="">{t('请选择')}</option>{names.map(value=><option key={value} value={value}>{value}</option>)}</select></label>
    <label>{t(type==='teacher'?'学生姓名':'老师姓名')}<select aria-label={t(type==='teacher'?'学生姓名':'老师姓名')} disabled={!ready} value={selectedSecondary} onChange={e=>changeSecondary(e.target.value)}><option value="">{t(type==='teacher'?'所有学生':'所有老师')}</option>{secondaryNames.map(value=><option key={value} value={value}>{value}</option>)}</select></label>
-   <label>{t('月份')}<input type="month" aria-label={t('月份')} value={month} onChange={e=>{if(/^\d{4}-(0[1-9]|1[0-2])$/.test(e.target.value))setMonth(e.target.value);}}/></label>
+   <label>{t('月份')}<MonthInput type="month" aria-label={t('月份')} value={month} onChange={e=>{if(/^\d{4}-(0[1-9]|1[0-2])$/.test(e.target.value))setMonth(e.target.value);}}/></label>
   </div>
   <div className="timetable-actions"><Button type="button" size="sm" variant="outline" onClick={()=>{setName('');setStudentFilter('');setTeacherFilter('');}}>{t('重置筛选')}</Button></div>
   {options.loading?<p role="status">{t('正在加载…')}</p>:options.error?<div role="alert"><p>{options.error}</p><Button type="button" variant="outline" onClick={()=>setVersion(v=>v+1)}>{t('重试')}</Button></div>:selectedName?current.loading?<p role="status">{t('正在加载…')}</p>:current.error?<div role="alert"><p>{t(current.error)}</p><Button type="button" variant="outline" onClick={()=>setVersion(v=>v+1)}>{t('重试')}</Button></div>:<>

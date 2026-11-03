@@ -1,4 +1,5 @@
 "use client";
+import {displayFormatter} from '@/lib/display-preferences';
 import {attendanceLabels} from "@/lib/attendance-types";
 import type {SessionLesson} from "@/lib/class-session-display";
 import {ClassSessionLabel} from "@/components/class-session-label";
@@ -11,6 +12,7 @@ import { LessonHistory } from "./lesson-history";
 import {CourseCompletionFilter} from "@/components/course-completion-filter";
 import {matchesCourseCompletion} from "@/lib/course-completion";
 import {useFilterPreference} from "@/lib/filter-preferences";
+import './course-wave2.css';
 
 type Lesson = SessionLesson & {
   id: string; subject: string; teacherName: string; plannedStart: string; plannedEnd: string;
@@ -18,7 +20,7 @@ type Lesson = SessionLesson & {
   attendanceKind?: string | null; onlineLink?: string | null;
 };
 const statusText: Record<string, string> = { scheduled: "已安排", completed: "已上课", student_absent: "学生缺席", teacher_absent: "老师缺席" };
-const time = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
+const time = (iso: string) => displayFormatter("en-GB",{ timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
 
 export function StudentLessonList({ lessons, proposals = [], onRequestReschedule, busy,serverMode=false }: { serverMode?:boolean;lessons: Lesson[]; proposals?: RescheduleProposal[]; onRequestReschedule?: (id: string) => void; busy?: boolean }) {
   const [completion,setCompletion]=useFilterPreference<string>('student-courses-completion','all');
@@ -30,11 +32,10 @@ export function StudentLessonList({ lessons, proposals = [], onRequestReschedule
     { title: "过往课程", rows: sorted.filter(lesson => malaysiaDay(lesson.plannedStart) < today).reverse() },
   ];
   const date = (iso: string) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "long", day: "numeric", weekday: "short" }).format(new Date(iso));
-  return <div className="student-lesson-list student-portal">{!serverMode&&<section className="panel"><CourseCompletionFilter value={completion} onChange={setCompletion} testId="student-course-completion-filter"/></section>}{sections.filter(section=>!serverMode||section.rows.length).map(section => <section className="panel" key={section.title}>
+  return <div className="student-lesson-list student-portal course-wave2">{!serverMode&&<section className="panel"><CourseCompletionFilter value={completion} onChange={setCompletion} testId="student-course-completion-filter"/></section>}{sections.filter(section=>!serverMode||section.rows.length).map(section => <section className="panel" key={section.title}>
     <div className="section-head"><h2>{t(section.title)}</h2><span>{section.rows.length} {t("堂课")}</span></div>
-    {section.rows.length ? section.rows.map(lesson => <article className="portal-card" key={lesson.id}>
-      <div><strong>{lesson.subject}</strong><span>{date(lesson.plannedStart)} · {time(lesson.plannedStart)}–{time(lesson.plannedEnd)}</span><span>{t("负责老师")}：{lesson.teacherName}</span>
-        <span>{t(lesson.attendanceKind === "early_dismissal" ? "提前结束课程" : statusText[lesson.status] || lesson.status)}</span>
+    {section.rows.length ? section.rows.map(lesson => <article className="portal-card course-student-row" key={lesson.id}>
+      <div><div className="course-row-heading"><strong>{lesson.subject}</strong><span className={`status status-${lesson.status}`}>{t(lesson.attendanceKind === "early_dismissal" ? "提前结束课程" : statusText[lesson.status] || lesson.status)}</span></div><span className="course-row-time">{date(lesson.plannedStart)} · {time(lesson.plannedStart)}–{time(lesson.plannedEnd)}</span><span className="course-row-meta">{t("负责老师")}：{lesson.teacherName}</span>
         {lesson.personalAttendance&&lesson.personalAttendance!=="pending"&&<small>{t("个人出席")} · {t(attendanceLabels[lesson.personalAttendance]||lesson.personalAttendance)}</small>}<OnlineLessonLink href={lesson.onlineLink}/>
       </div>
       {lesson.sessionType!=="group" && lesson.status === "scheduled" && (proposals.some(p => p.lessonId === lesson.id && p.status === "pending") ? <small>{t(proposals.find(p => p.lessonId === lesson.id && p.status === "pending")?.requestedRole === "student" ? "等待老师确认" : "待你确认改期")}</small> : <Button size="sm" variant="outline" disabled={busy} onClick={() => onRequestReschedule?.(lesson.id)}>{t("申请改期")}</Button>)}

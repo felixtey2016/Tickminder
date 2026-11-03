@@ -15,3 +15,21 @@
 .course-navigation-secondary>button[data-active="true"]{border-color:#7454d5;background:#f2edff;color:#4324a8;font-weight:650}
 .course-navigation-badge{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:21px;height:21px;padding:0 5px;border-radius:999px;background:#c52b46;color:#fff;font-size:12px;font-weight:700;line-height:1}
 @media(max-width:640px){.course-navigation{margin-bottom:20px}.course-navigation-main{grid-template-columns:minmax(0,1fr);gap:12px}.course-navigation-actions{grid-row:1;justify-content:flex-start}.course-navigation-row{width:100%;box-sizing:border-box}.course-navigation-row>button{padding-inline:12px}.course-navigation-arrange{min-height:44px}.course-navigation-secondary{padding-top:10px}}
+
+.shell-wave1 .course-navigation{margin-bottom:16px;color:var(--ui-text)}
+.shell-wave1 .course-navigation-row{padding:0;gap:12px;border:0;border-bottom:1px solid var(--ui-border);border-radius:0;background:transparent}
+.shell-wave1 .course-navigation-row>button{border:0;border-bottom:3px solid transparent;border-radius:0;padding:10px 4px;color:var(--ui-muted)}
+.shell-wave1 .course-navigation-row>button:hover{background:var(--ui-surface-muted);color:var(--ui-text)}
+.shell-wave1 .course-navigation-row>button[data-active=true]{background:transparent;color:var(--ui-accent);border-bottom-color:var(--ui-accent)}
+.shell-wave1 .course-navigation-secondary>button{color:var(--ui-muted);background:var(--ui-surface);border-color:var(--ui-border);border-radius:6px}
+.shell-wave1 .course-navigation-secondary>button[data-active=true]{color:var(--ui-accent);background:var(--ui-accent-soft);border-color:var(--ui-accent)}
+.shell-wave1 .course-navigation :is(button):focus-visible{outline:2px solid var(--ui-accent);outline-offset:-2px}
+.shell-wave1 .workspace-course-view .workspace-arrange-compact{display:none}
+@media(max-width:650px){
+ .shell-wave1 .workspace-course-view .workspace-heading:has(.workspace-heading-actions){display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:8px}
+ .shell-wave1 .workspace-course-view .workspace-heading-actions{justify-content:flex-end}
+ .shell-wave1 .workspace-course-view .workspace-heading-text h1{overflow-wrap:normal;word-break:normal}
+ .shell-wave1 .workspace-course-view .workspace-arrange{gap:6px;font-size:14px;white-space:nowrap}
+ .shell-wave1 .workspace-course-view .workspace-arrange-full{display:none}
+ .shell-wave1 .workspace-course-view .workspace-arrange-compact{display:inline}
+}

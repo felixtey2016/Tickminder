@@ -7,7 +7,7 @@ import {DatabaseSync} from 'node:sqlite';
 
 // Real handlers, grading and SQL, isolated in-memory D1/R2. No hosted requests.
 const sqlite=new DatabaseSync(':memory:');
-for(const file of fs.readdirSync(new URL('../drizzle/',import.meta.url)).filter(n=>n.endsWith('.sql')&&!n.startsWith('0062_')).sort())sqlite.exec(fs.readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8'));
+for(const file of fs.readdirSync(new URL('../drizzle/',import.meta.url)).filter(n=>n.endsWith('.sql')&&Number(n.slice(0,4))<=61).sort())sqlite.exec(fs.readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8'));
 if(!sqlite.prepare("SELECT 1 FROM pragma_table_info('quizzes') WHERE name='deleted_at'").get())sqlite.exec('ALTER TABLE quizzes ADD COLUMN deleted_at TEXT; ALTER TABLE quizzes ADD COLUMN deleted_by TEXT;');
 function statement(sql,values=[]){const execute=()=>{const st=sqlite.prepare(sql);return st.columns().length?{results:st.all(...values),meta:{changes:0}}:{results:[],meta:st.run(...values)};};return {bind:(...v)=>statement(sql,v),all:async()=>execute(),first:async()=>execute().results[0]||null,run:async()=>execute(),execute};}
 let beforeBatch=null;const db={prepare:statement,batch:async statements=>{if(beforeBatch){const f=beforeBatch;beforeBatch=null;f();}sqlite.exec('BEGIN');try{const results=statements.map(s=>s.execute());sqlite.exec('COMMIT');return results;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};

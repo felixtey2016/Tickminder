@@ -1,0 +1,28 @@
+/* Remaining R03 management surfaces share the same theme and compact hierarchy. */
+.owner-console-tabs{display:flex;flex-wrap:wrap;gap:12px;min-width:0;max-width:100%;border-bottom:1px solid var(--ui-border)}
+.owner-console-tabs>button{flex:0 1 auto;max-width:100%;min-height:44px;height:auto;padding:10px 12px;font:inherit;font-size:15px;white-space:normal;overflow-wrap:anywhere;cursor:pointer}
+.owner-console-pane{display:grid;gap:20px;min-width:0}
+.owner-console-pane[hidden]{display:none!important}
+.owner-console-pane:focus-visible{outline:2px solid var(--ui-accent);outline-offset:3px}
+.owner-console-pane .group-list{grid-template-columns:repeat(auto-fit,minmax(min(100%,26em),1fr));gap:20px}
+.owner-console-pane .group-entry{gap:12px;padding:20px}
+.owner-console-pane .group-heading-copy{min-width:0;overflow-wrap:anywhere}
+.owner-console-pane .group-heading h2{font-size:20px;line-height:1.4}
+.owner-console-pane .group-heading>svg{flex:none}
+.owner-console-pane .group-counts{grid-template-columns:repeat(auto-fit,minmax(min(100%,7em),1fr));padding:12px 0;gap:12px}
+.owner-console-pane .group-counts dd{font-size:22px;font-variant-numeric:tabular-nums}
+.owner-console-pane :is(.group-chief-settings,.group-invitation,.group-entry-management){padding-block:0;margin:0;min-width:0}
+.owner-console-pane .settings-disclosure>summary{min-height:48px;padding-block:10px;gap:12px}
+.owner-console-pane .group-chief-settings>summary{display:grid;grid-template-columns:minmax(0,1fr) auto}
+.owner-console-pane .group-chief-settings>summary strong{grid-column:1;grid-row:2;font-size:14px;font-weight:500;color:var(--ui-muted);overflow-wrap:anywhere}
+.owner-console-pane .group-chief-settings>summary>svg{grid-column:2;grid-row:1/3}
+.owner-console-pane :is(.group-chief-controls,.group-invitation-content,.group-management-content){display:grid;grid-template-columns:minmax(0,1fr);gap:12px;padding-bottom:16px;min-width:0}
+.owner-console-pane :is(label,.field-hint){min-width:0;overflow-wrap:anywhere}
+.owner-console-pane label{grid-template-columns:minmax(0,1fr)}
+.owner-console-pane .group-entry-primary{margin:0}
+.owner-console-pane :is(input,select){background:var(--ui-surface);color:var(--ui-text);border-color:var(--ui-border)}
+.owner-console-pane .catalogue-scope-actions{display:flex;flex-wrap:wrap;gap:12px}
+.owner-console-pane .catalogue-scope-actions>button{height:auto;min-height:44px;white-space:normal}
+.owner-console-pane .settings-section-heading{display:grid;gap:12px}
+.owner-console-pane .catalogue-syllabus-content{overflow-wrap:anywhere}
+@media(max-width:600px){.owner-console-pane .group-entry{padding:16px}.owner-console-tabs{gap:8px}.owner-console-tabs>button{padding-inline:10px}}

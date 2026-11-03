@@ -20,7 +20,7 @@ export default function QuizCopyLinkButton({quizId,assignmentId,disabled=false}:
  }
  return <>
   <Button type="button" variant="outline" data-testid={assignmentId?'quiz-copy-assignment-link':'quiz-copy-link'} disabled={disabled||copying||!isQuizLinkId(quizId)||(assignmentId!==undefined&&!isQuizLinkId(assignmentId))} onClick={()=>void copyLink()}><Link2 size={17}/>{assignmentId?text('复制本次作业链接','Copy assignment link'):text('复制练习链接','Copy practice link')}</Button>
-  <Dialog open={Boolean(manualUrl)} onOpenChange={open=>{if(!open)setManualUrl('');}}><DialogContent className="quiz-confirm-dialog" data-testid="quiz-link-copy-dialog" onOpenAutoFocus={event=>{event.preventDefault();input.current?.focus();input.current?.select();}}>
+  <Dialog open={Boolean(manualUrl)} onOpenChange={open=>{if(!open)setManualUrl('');}}><DialogContent className="quiz-confirm-dialog quiz-library-dialog" data-testid="quiz-link-copy-dialog" onOpenAutoFocus={event=>{event.preventDefault();input.current?.focus();input.current?.select();}}>
    <DialogTitle>{assignmentId?text('复制本次作业链接','Copy assignment link'):text('复制自主练习链接','Copy practice link')}</DialogTitle>
    <DialogDescription>{assignmentId?text('只有本次布置的学生可以作答，完成后计入这次作业。','Assigned students sign in to answer. Their responses count towards this assignment.'):text('此链接用于自主练习，不计入某一次布置的作业。','This link is for self-practice, separate from an assigned task.')}</DialogDescription>
    <label className="quiz-field"><span>{text('Quiz 链接','Quiz link')}</span><input ref={input} data-testid="quiz-copy-link-value" type="text" value={manualUrl} readOnly style={{fontSize:16}} onFocus={event=>event.currentTarget.select()} onClick={event=>event.currentTarget.select()}/></label>

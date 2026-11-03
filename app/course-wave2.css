@@ -1,0 +1,163 @@
+/* Course workspace: keep the current actions and data flow, shorten the path to a lesson. */
+.shell-wave1 .course-wave2,
+.shell-wave1 .course-query-stack { min-width:0; color:var(--ui-text); }
+.shell-wave1 .course-query-filterbar { display:flex; align-items:flex-end; flex-wrap:wrap; gap:10px; padding:0 0 12px; border-bottom:1px solid var(--ui-border); }
+.shell-wave1 .course-query-filterbar select { box-sizing:border-box; min-height:48px; margin:0; background:var(--ui-surface); color:var(--ui-text); border-color:var(--ui-border); border-radius:6px; }
+.shell-wave1 .course-query-filterbar>.course-completion-field { min-width:min(100%,168px); margin:0; color:var(--ui-muted); font-size:14px; }
+.app-shell.shell-wave1 .workspace .course-query-filterbar>.course-completion-field select { min-height:48px; }
+/* Both closed controls share a baseline; legacy details spacing must not offset the trigger. */
+.shell-wave1 .course-query-filterbar>.filter-panel { box-sizing:border-box; flex:0 1 270px; min-width:min(100%,132px); margin:0; padding:0; }
+.shell-wave1 .course-query-filterbar>.filter-panel>summary { box-sizing:border-box; min-height:46px; margin:0; padding:10px 12px; }
+.shell-wave1 .course-query-filterbar>.filter-panel .filter-panel-fields { padding:12px; }
+.shell-wave1 .course-query-filterbar>.filter-panel[open] { flex:1 1 100%; }
+.shell-wave1 .course-query-stack { gap:14px; }
+.shell-wave1 .compact-course-list-heading { padding:0; }
+.shell-wave1 .course-query-pagination { gap:8px; font-size:14px; }
+.shell-wave1 .course-query-pagination>span { text-align:center; }
+.shell-wave1 .course-query-filters select { color:var(--ui-text); background:var(--ui-surface); border-color:var(--ui-border); }
+.shell-wave1 .course-wave2 :is(.muted,.course-row-meta) { color:var(--ui-muted); }
+.shell-wave1 .course-row-heading { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:8px 12px; min-width:0; }
+.shell-wave1 .course-row-heading>strong { flex:1 1 180px; min-width:0; overflow-wrap:anywhere; font-size:16px; line-height:1.5; }
+.shell-wave1 .course-row-heading>.status { flex:0 0 auto; max-width:100%; margin:0; white-space:normal; overflow-wrap:anywhere; font-size:12px; line-height:1.4; }
+.shell-wave1 .course-row-time { font-size:14px; font-weight:600; line-height:1.5; color:var(--ui-text); overflow-wrap:anywhere; }
+.shell-wave1 .course-row-meta { font-size:14px; line-height:1.5; }
+.shell-wave1 .course-wave2 .course-row-details { margin:0; font-size:14px; }
+.shell-wave1 .course-wave2 .course-row-details>summary { color:var(--ui-accent); }
+.shell-wave1 .course-wave2 .course-row-details[open] { padding-bottom:8px; }
+.shell-wave1 .course-wave2 .section-head { align-items:center; gap:8px; margin-bottom:12px; }
+.shell-wave1 .course-wave2 .section-head h2 { font-size:18px; line-height:1.4; margin:0; }
+
+/* A compact month control and an agenda beside it on larger screens. */
+.shell-wave1 .course-wave2 .student-calendar-layout { gap:16px; align-items:start; }
+.shell-wave1 .course-wave2 :is(.student-calendar-month,.student-day-panel) { background:var(--ui-surface); border:1px solid var(--ui-border); border-radius:8px; box-shadow:none; }
+.shell-wave1 .course-wave2 .student-calendar-toolbar { padding:12px; gap:8px; background:var(--ui-surface); }
+.shell-wave1 .course-wave2 .student-calendar-toolbar h3 { color:var(--ui-text); font-size:18px; line-height:1.4; }
+.shell-wave1 .course-wave2 .student-calendar-toolbar span { color:var(--ui-muted); font-size:13px; }
+.shell-wave1 .course-wave2 .student-calendar-controls { gap:4px; width:auto; }
+.shell-wave1 .course-wave2 .student-calendar-controls button { min-width:44px; min-height:44px; padding:8px; border-color:var(--ui-border); }
+.shell-wave1 .course-wave2 .student-calendar-weekdays { padding:0; background:var(--ui-surface); }
+.shell-wave1 .course-wave2 .student-calendar-weekdays span { padding:8px 0; color:var(--ui-muted); font-size:13px; }
+.shell-wave1 .course-wave2 .student-calendar-days { border-color:var(--ui-border); }
+.shell-wave1 .course-wave2 .student-calendar-day { min-height:88px; padding:6px; border-color:var(--ui-border); color:var(--ui-text); background:var(--ui-surface); }
+.shell-wave1 .course-wave2 .student-calendar-day.is-outside { color:var(--ui-muted); background:var(--ui-surface-muted); }
+.shell-wave1 .course-wave2 .student-calendar-day:hover { background:var(--ui-accent-soft); }
+.shell-wave1 .course-wave2 .student-calendar-day.is-selected { background:var(--ui-accent-soft); box-shadow:inset 0 0 0 2px var(--ui-accent); }
+.shell-wave1 .course-wave2 .student-calendar-day.is-today .student-calendar-day-number { color:var(--ui-primary-text); background:var(--ui-primary); }
+.shell-wave1 .course-wave2 .student-calendar-event.event-scheduled { background:var(--ui-accent-soft); color:var(--ui-accent); }
+.shell-wave1 .course-wave2 .student-calendar-event.event-completed { background:var(--ui-success-bg); color:var(--ui-success-text); }
+.shell-wave1 .course-wave2 :is(.student-calendar-event.event-student_absent,.student-calendar-event.event-teacher_absent) { background:var(--ui-warning-bg); color:var(--ui-warning-text); }
+.shell-wave1 .course-wave2 .student-calendar-legend { padding:10px 12px; gap:8px 14px; color:var(--ui-muted); font-size:13px; }
+.shell-wave1 .course-wave2 .student-day-panel { padding:14px; }
+.shell-wave1 .course-wave2 .student-day-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; padding:0 0 12px; border-color:var(--ui-border); }
+.shell-wave1 .course-wave2 .student-day-heading h3 { margin:0 0 4px; color:var(--ui-text); font-size:17px; line-height:1.4; }
+.shell-wave1 .course-wave2 .student-day-heading p { color:var(--ui-muted); font-size:13px; }
+.shell-wave1 .course-wave2 .student-day-lesson { border:1px solid var(--ui-border); border-left:3px solid var(--ui-accent); border-radius:6px; padding:12px; gap:6px; background:var(--ui-surface); }
+.shell-wave1 .course-wave2 .student-day-lesson.lesson-completed { border-left-color:var(--ui-success-text); }
+.shell-wave1 .course-wave2 :is(.student-day-lesson.lesson-student_absent,.student-day-lesson.lesson-teacher_absent) { border-left-color:var(--ui-warning-text); }
+.shell-wave1 .course-wave2 .student-day-lesson-top { flex-wrap:wrap; }
+.shell-wave1 .course-wave2 .student-day-lesson-top strong { min-width:0; flex:1 1 120px; overflow-wrap:anywhere; color:var(--ui-text); }
+.shell-wave1 .course-wave2 .student-day-lesson-top span { border-radius:4px; background:var(--ui-accent-soft); color:var(--ui-accent); font-size:12px; line-height:1.4; }
+.shell-wave1 .course-wave2 .student-day-lesson.lesson-completed .student-day-lesson-top span { background:var(--ui-success-bg); color:var(--ui-success-text); }
+.shell-wave1 .course-wave2 :is(.lesson-student_absent,.lesson-teacher_absent) .student-day-lesson-top span { background:var(--ui-warning-bg); color:var(--ui-warning-text); }
+.shell-wave1 .course-wave2 .student-day-lesson :is(p,small,.class-session-label) { color:var(--ui-muted); font-size:14px; line-height:1.5; }
+.shell-wave1 .course-wave2 .student-day-lesson>p:first-of-type { color:var(--ui-text); font-weight:600; }
+.shell-wave1 .course-wave2 .student-day-lesson-identity { overflow-wrap:anywhere; }
+.shell-wave1 .course-wave2 .student-teacher-avatar { color:var(--ui-accent); background:var(--ui-accent-soft); }
+.shell-wave1 .course-wave2 .student-lesson-pending { color:var(--ui-accent); background:var(--ui-accent-soft); font-size:14px; }
+.shell-wave1 .course-wave2 .student-day-empty { padding:28px 12px; color:var(--ui-muted); }
+.shell-wave1 .course-wave2 .student-day-empty p { color:var(--ui-muted); font-size:14px; }
+.shell-wave1 .course-wave2 .calendar-role-filters { gap:8px; align-items:end; }
+.shell-wave1 .course-wave2 .calendar-role-filters label { font-size:14px; gap:4px; }
+
+/* Course rows: timing and status first; audit history stays one click away. */
+.shell-wave1 .lesson-card.course-lesson-row { display:grid; grid-template-columns:112px minmax(0,1fr); border-radius:8px; padding:14px; gap:14px; box-shadow:none; }
+.shell-wave1 .lesson-card.course-lesson-row .date-tile { width:auto; min-width:0; padding:8px; border-radius:6px; background:var(--ui-surface-muted); color:var(--ui-text); }
+.shell-wave1 .lesson-card.course-lesson-row .date-tile strong { color:var(--ui-text); font-size:14px; }
+.shell-wave1 .lesson-card.course-lesson-row .date-tile span { color:var(--ui-accent); font-size:14px; }
+.shell-wave1 .lesson-card.course-lesson-row .lesson-title { flex-wrap:wrap; }
+.shell-wave1 .lesson-card.course-lesson-row .lesson-title>strong { flex:1 1 180px; min-width:0; overflow-wrap:anywhere; }
+.shell-wave1 .lesson-card.course-lesson-row .lesson-title>.status { flex:0 0 auto; max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+.shell-wave1 .lesson-card.course-lesson-row .lesson-body>p { margin:4px 0; color:var(--ui-muted); font-size:14px; }
+.shell-wave1 .lesson-card.course-lesson-row .lesson-actions { margin-top:8px; }
+.shell-wave1 .course-wave2 .course-student-row { padding:14px 0; margin:0; border:0; border-bottom:1px solid var(--ui-border); border-radius:0; box-shadow:none; background:var(--ui-surface); }
+.shell-wave1 .course-wave2 .course-student-row>div:first-child { display:grid; gap:5px; flex:1 1 100%; min-width:0; }
+.shell-wave1 .course-wave2 .course-student-row .course-row-heading { display:flex; }
+.shell-wave1 .course-wave2 .course-student-row:last-child { border-bottom:0; }
+.shell-wave1 .course-wave2 .attendance-session { padding:14px 0; margin:0; gap:6px; border:0; border-bottom:1px solid var(--ui-border); border-radius:0; background:var(--ui-surface); }
+.shell-wave1 .course-wave2 .attendance-session>strong { font-size:16px; line-height:1.5; }
+.shell-wave1 .course-wave2 .attendance-session>span { font-size:14px; font-weight:600; }
+.shell-wave1 .course-wave2 .attendance-session>.class-session-controls { margin:2px 0 0; gap:8px; }
+.shell-wave1 .course-wave2 .attendance-session>.course-row-meta { display:flex; flex-wrap:wrap; align-items:center; gap:4px; }
+.shell-wave1 .course-attendance-state { display:inline-flex; padding:3px 7px; border-radius:4px; font-size:12px; background:var(--ui-accent-soft); color:var(--ui-accent); }
+.shell-wave1 .course-attendance-state[data-state=confirmed] { background:var(--ui-success-bg); color:var(--ui-success-text); }
+.shell-wave1 .course-attendance-state[data-state=review] { background:var(--ui-warning-bg); color:var(--ui-warning-text); }
+.shell-wave1 .course-wave2 .class-session-card { padding:14px 0; margin:0; gap:8px; border:0; border-bottom:1px solid var(--ui-border); border-radius:0; background:var(--ui-surface); }
+.shell-wave1 .course-wave2 .class-session-card:last-of-type { border-bottom:0; }
+.shell-wave1 .course-wave2 .course-group-summary { display:grid; gap:5px; min-width:0; }
+.shell-wave1 .course-wave2 .class-session-controls { gap:8px; }
+.shell-wave1 .course-wave2 .class-session-card>.course-row-details ul { margin:0; padding-left:18px; }
+.shell-wave1 .course-wave2 .class-session-card>.course-row-details li { padding:4px 0; }
+.shell-wave1 .course-reschedule-panel>div { padding:12px 0; }
+.shell-wave1 .course-reschedule-panel :is(h2,h3) { margin:0 0 8px; font-size:16px; }
+.shell-wave1 .course-reschedule-panel .portal-card { padding:12px; border-radius:6px; background:var(--ui-surface); }
+.shell-wave1 .course-reschedule-panel .portal-card span { font-size:14px; }
+.shell-wave1 .parents-workspace .parents-lesson-card { background:var(--ui-surface); color:var(--ui-text); border-color:var(--ui-border); }
+.shell-wave1 .parents-workspace .parents-lesson-card :is(.parents-lesson-child,.parents-lesson-details>summary) { color:var(--ui-accent); }
+.shell-wave1 .parents-workspace .parents-lesson-card :is(.parents-lesson-date,.parents-lesson-duration,.parents-lesson-people,.parents-details dt) { color:var(--ui-muted); }
+.shell-wave1 .parents-workspace .parents-lesson-card .parents-lesson-exceptions { color:var(--ui-warning-text); }
+.shell-wave1 .parents-workspace .parents-lesson-card .parents-lesson-details { border-color:var(--ui-border); }
+.shell-wave1 .parents-workspace .parents-lesson-card .parents-badge { color:var(--ui-accent); background:var(--ui-accent-soft); }
+.shell-wave1 .parents-workspace .parents-lesson-card .parents-badge:is([data-status=completed],[data-status=present]) { color:var(--ui-success-text); background:var(--ui-success-bg); }
+.shell-wave1 .parents-workspace .parents-lesson-card .parents-badge:is([data-status=absent],[data-status=student_absent],[data-status=teacher_absent]) { color:var(--ui-warning-text); background:var(--ui-warning-bg); }
+.shell-wave1 .parents-workspace .parents-lesson-card .parents-badge[data-status=cancelled] { color:var(--ui-muted); background:var(--ui-surface-muted); }
+
+/* Forms retain all repeat, conflict, reset and billing safeguards. */
+.shell-wave1 .course-wave2 :is(.schedule-edit-form,.class-session-planner .learning-form) { gap:16px; }
+.shell-wave1 .course-wave2 .schedule-time-fields { container-type:inline-size; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding-top:12px; border-top:1px solid var(--ui-border); }
+.shell-wave1 .course-wave2 .schedule-time-fields>label:first-child { grid-column:1/-1; }
+.shell-wave1 .course-wave2 .schedule-date-note { margin:0; font-size:13px; }
+.shell-wave1 .course-wave2 .schedule-extra-options { border-color:var(--ui-border); border-radius:6px; background:var(--ui-surface); }
+.shell-wave1 .course-wave2 .schedule-extra-options>summary { min-height:44px; padding:10px 12px; font-size:14px; color:var(--ui-text); }
+.shell-wave1 .course-wave2 .schedule-extra-options>div { padding:12px; }
+.shell-wave1 .course-wave2 .schedule-roster-preview { padding:10px 12px; border-radius:6px; background:var(--ui-surface-muted); border:1px solid var(--ui-border); }
+.shell-wave1 .course-wave2 .assigned-teacher { margin:0; font-size:14px; }
+.shell-wave1 .course-wave2 .class-session-planner .form-pair { gap:12px; }
+.shell-wave1 .course-wave2 .form-action-bar { background:var(--ui-surface); border-color:var(--ui-border); }
+.shell-wave1 .course-wave2 .form-action-summary { color:var(--ui-muted); }
+
+@container(max-width:11em) {
+ .shell-wave1 .course-wave2 .schedule-time-fields>label { grid-column:1/-1; }
+}
+
+@media(min-width:1000px) {
+ .shell-wave1 .course-wave2 .student-calendar-layout { grid-template-columns:minmax(320px,1.1fr) minmax(280px,.9fr); }
+ .shell-wave1 .course-wave2 .student-day-panel { position:sticky; top:148px; }
+
+}
+@media(max-width:650px) {
+ .shell-wave1 .course-query-filterbar { gap:8px; }
+ .shell-wave1 .course-query-filterbar>.course-completion-field { flex:1 1 168px; }
+ .shell-wave1 .course-query-filterbar>.filter-panel { flex:1 1 132px; }
+ .shell-wave1 .course-wave2 .student-calendar-layout { gap:12px; }
+ .shell-wave1 .course-wave2 .student-calendar-toolbar { padding:10px; flex-wrap:wrap; }
+ .shell-wave1 .course-wave2 .student-calendar-toolbar h3 { font-size:16px; }
+ .shell-wave1 .course-wave2 .student-calendar-controls { margin-left:auto; }
+ .shell-wave1 .course-wave2 .student-calendar-day { min-height:46px; padding:4px 1px; gap:2px; }
+ .shell-wave1 .course-wave2 .student-calendar-day-number { width:25px; height:25px; }
+ .shell-wave1 .course-wave2 .student-calendar-weekdays span { font-size:12px; }
+ .shell-wave1 .course-wave2 .student-calendar-legend { font-size:12px; gap:6px 10px; padding:8px 10px; }
+ .shell-wave1 .course-wave2 .student-day-panel { padding:12px; }
+ .shell-wave1 .course-wave2 .student-day-heading h3 { font-size:16px; }
+ .shell-wave1 .lesson-card.course-lesson-row { grid-template-columns:minmax(0,1fr); padding:12px; gap:12px; }
+ .shell-wave1 .lesson-card.course-lesson-row .date-tile { display:flex; justify-content:space-between; flex-wrap:wrap; gap:4px 8px; margin:0; padding:0 0 8px; border-bottom:1px solid var(--ui-border); border-radius:0; background:transparent; }
+ .shell-wave1 .course-wave2 .course-row-heading { flex-wrap:wrap; }
+ .shell-wave1 .course-wave2 .course-row-heading>strong { flex:1 1 130px; }
+ .shell-wave1 .course-wave2 .course-student-row { padding:12px 0; }
+ .shell-wave1 .course-query-pagination>span { flex:1 1 80px; }
+ .shell-wave1 .course-query-pagination>button { padding-inline:10px; }
+}
+@media(max-width:650px) {
+ .shell-wave1 .course-wave2 .calendar-role-filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,155px),1fr)); }
+ .shell-wave1 .course-wave2 .calendar-role-filters>label { min-width:0; width:100%; }
+ .shell-wave1 .course-wave2 .calendar-role-filters>button { grid-column:1/-1; justify-self:end; }
+}

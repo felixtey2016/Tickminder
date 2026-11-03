@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, ChevronRight, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getLanguage, t } from "@/lib/i18n";
-import { canNavigateBack, usePageHistoryState } from "@/lib/page-history";
+import { usePageHistoryState } from "@/lib/page-history";
 import type { Homework, Submission } from "./learning-portal";
 import "./learning-list-detail.css";
 
@@ -26,8 +26,9 @@ type RecordItem = { id: string; title: string };
 type RowSummary = { context?: string; meta?: string; status?: string };
 
 /** Selection is independent of filters; returning to the list retains its controls and scroll. */
-export function LearningListDetail<T extends RecordItem>({ items, summary, renderDetail, empty, historyKey }: {
+export function LearningListDetail<T extends RecordItem>({ items, detailItems=items, summary, renderDetail, empty, historyKey }: {
   items: T[];
+  detailItems?: T[];
   historyKey: string;
   summary: (item: T) => RowSummary;
   renderDetail: (item: T) => ReactNode;
@@ -35,7 +36,7 @@ export function LearningListDetail<T extends RecordItem>({ items, summary, rende
 }) {
   const [selectedId, setSelectedId, replaceSelectedId] = usePageHistoryState(`learning.detail:${historyKey}`, "");
   const [visitedIds, setVisitedIds] = useState<string[]>([]);
-  const selected = items.find(item => item.id === selectedId);
+  const selected = detailItems.find(item => item.id === selectedId);
   const listRef = useRef<HTMLDivElement>(null);
   const detailRef = useRef<HTMLElement>(null);
   const returnScroll = useRef(0);
@@ -75,10 +76,11 @@ export function LearningListDetail<T extends RecordItem>({ items, summary, rende
     window.history.replaceState({ ...window.history.state, timelyoLearningDetail: { key: historyKey, scrollY: returnScroll.current } }, "");
   }
   function back() {
-    if (window.history.state?.timelyoLearningDetail?.key === historyKey && canNavigateBack()) window.history.back();
-    else replaceSelectedId("");
+    // Tab switches may have added newer entries. This button always means the
+    // current list; browser Back can still traverse the complete page history.
+    replaceSelectedId("");
   }
-  if (!items.length) return <>{empty}</>;
+  if (!items.length&&!selected) return <>{empty}</>;
   return <div className={`learning-browser${selected ? " has-selection" : ""}`}>
     <div className="learning-browser-list" ref={listRef} aria-label={learningLabel("内容列表", "Content list")}>
       {items.map(item => {
@@ -90,9 +92,9 @@ export function LearningListDetail<T extends RecordItem>({ items, summary, rende
         </button>;
       })}
     </div>
-    <section id={detailId} ref={detailRef} tabIndex={-1} className={`learning-browser-detail${selected ? "" : " is-empty"}`} aria-label={selected?.title || learningLabel("内容详情", "Content details")}>
-      {selected ? <div className="learning-browser-detail-nav"><Button type="button" size="sm" variant="ghost" onClick={back}><ArrowLeft size={16}/>{learningLabel("返回列表", "Back to list")}</Button></div> : <p className="muted">{learningLabel("选择一项查看详情", "Select an item to view details")}</p>}
-      {items.filter(item => visitedIds.includes(item.id) || item.id === selectedId).map(item => <div key={item.id} hidden={item.id !== selected?.id}>{renderDetail(item)}</div>)}
+    <section id={detailId} ref={detailRef} tabIndex={-1} hidden={!selected} className="learning-browser-detail" aria-label={selected?.title || learningLabel("内容详情", "Content details")}>
+      {selected && <div className="learning-browser-detail-nav"><Button type="button" size="sm" variant="ghost" onClick={back}><ArrowLeft size={16}/>{learningLabel("返回列表", "Back to list")}</Button></div>}
+      {detailItems.filter(item => visitedIds.includes(item.id) || item.id === selectedId).map(item => <div key={item.id} hidden={item.id !== selected?.id}>{renderDetail(item)}</div>)}
     </section>
   </div>;
 }

@@ -1,14 +1,16 @@
 "use client";
-import { useCallback,useEffect,useRef,useState } from "react";
+import { useCallback,useEffect,useId,useRef,useState } from "react";
 import { Building2,ArrowRight,Copy,Plus,ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog,DialogContent,DialogDescription,DialogHeader,DialogTitle } from "@/components/ui/dialog";
 import { PageState } from "@/components/page-state";
 import { groupFetch } from "@/lib/group-client";
-import { t } from "@/lib/i18n";
+import { getLanguage,t } from "@/lib/i18n";
 import { readApiJson,showActionToast } from "@/lib/action-feedback";
+import {usePageHistoryState} from '@/lib/page-history';
 import { AcademicCatalogueAdmin } from './academic-catalogue-admin';
 import './settings-compact.css';
+import './management-wave6.css';
 import {SystemDiagnostics} from './system-diagnostics';
 
 type Group={id:string;name:string;joinCode:string;active:boolean|number;admins?:number;teachers?:number;students?:number;classrooms?:number;chiefAdminId?:string|null;adminOptions?:{id:string;name:string}[]};
@@ -27,6 +29,12 @@ function focusGroupControl(element:HTMLElement|null) {
   });
 }
 export function GroupConsole({isOwner,currentGroupId}:{isOwner:boolean;currentGroupId?:string|null}) {
+  const [view,setView]=usePageHistoryState('owner.console.view','groups'),[visited,setVisited]=useState<string[]>(['groups']);
+  const navigationId=useId(),navigation=useRef<HTMLDivElement>(null);
+  const activeView=isOwner&&['groups','catalogue','diagnostics'].includes(view)?view:'groups',zh=getLanguage()==='zh';
+  const views=[{id:'groups',label:zh?'集团管理':'Centres'},{id:'catalogue',label:zh?'分类菜单':'Catalogues'},{id:'diagnostics',label:zh?'系统问题':'System issues'}];
+  useEffect(()=>{setVisited(previous=>previous.includes(activeView)?previous:[...previous,activeView]);},[activeView]);
+  function chooseView(next:string){setView(next);}
   const [groups,setGroups]=useState<Group[]|null>(null),[error,setError]=useState(""),[busy,setBusy]=useState(false),[name,setName]=useState(""),[editing,setEditing]=useState<string|null>(null);
   const [createOpen,setCreateOpen]=useState(false);
   const [chiefDrafts,setChiefDrafts]=useState<Record<string,string>>({});
@@ -73,8 +81,10 @@ export function GroupConsole({isOwner,currentGroupId}:{isOwner:boolean;currentGr
   function chiefName(group:Group){return group.chiefAdminId?group.adminOptions?.find(admin=>admin.id===group.chiefAdminId)?.name||t('admin.chiefUnavailable'):t('admin.chiefUnassigned');}
   if(!groups)return <PageState kind={error?"error":"loading"} title={error||"正在加载…"} action={error?"重试":undefined} onAction={()=>void load()}/>;
   return <div className="group-console">
+    {isOwner&&<div className="owner-console-tabs" role="tablist" aria-label={zh?'平台管理页面':'Platform management pages'} ref={navigation}>{views.map((item,index)=><button key={item.id} id={`${navigationId}-${item.id}-tab`} type="button" role="tab" aria-selected={activeView===item.id} aria-controls={`${navigationId}-${item.id}-panel`} tabIndex={activeView===item.id?0:-1} onClick={()=>chooseView(item.id)} onKeyDown={event=>{const next=event.key==='ArrowRight'?(index+1)%views.length:event.key==='ArrowLeft'?(index+views.length-1)%views.length:event.key==='Home'?0:event.key==='End'?views.length-1:null;if(next===null)return;event.preventDefault();chooseView(views[next].id);const button=navigation.current?.querySelectorAll<HTMLButtonElement>('button')[next];button?.focus();button?.scrollIntoView({block:'nearest',inline:'nearest'});}}>{item.label}</button>)}</div>}
+    {error&&groups&&<div className="error" role="alert">{error}</div>}
+    <div className="owner-console-pane" id={`${navigationId}-groups-panel`} role={isOwner?'tabpanel':undefined} aria-labelledby={isOwner?`${navigationId}-groups-tab`:undefined} hidden={activeView!=='groups'} tabIndex={isOwner?0:undefined}>
     {isOwner&&<details className="panel group-create-disclosure settings-disclosure" open={createOpen} onToggle={event=>setCreateOpen(event.currentTarget.open)}><summary ref={createSummary}><span>{t(editing?"编辑集团名称":"新增补习集团")}</span><ChevronDown size={18} aria-hidden="true"/></summary><form ref={createForm} className="group-create" onSubmit={save}><label>{t("集团名称")}<input ref={nameInput} required maxLength={120} value={name} onChange={e=>setName(e.target.value)}/></label><div className="button-row settings-actions"><Button disabled={busy}><Plus size={16}/>{t(editing?"保存修改":"创建集团")}</Button>{editing&&<Button type="button" variant="outline" onClick={()=>{setEditing(null);setName("");closeCreate();}}>{t("取消")}</Button>}</div></form></details>}
-    {error&&<div className="error" role="alert">{error}</div>}
     <div className="group-list">{groups.map(group=>{const selectedChief=chiefDrafts[group.id]??group.chiefAdminId??'',availableChiefs=group.adminOptions||[];return <section className="panel group-entry" key={group.id}>
       <div className="group-heading"><Building2 size={24} aria-hidden="true"/><div className="group-heading-copy"><h2>{group.name}</h2><p>{t(group.active?"已启用":"已停用")}{group.id===currentGroupId&&` · ${t("当前集团")}`}</p></div></div>
       {isOwner&&<dl className="group-counts"><div><dt>{t("管理员")}</dt><dd>{group.admins||0}</dd></div><div><dt>{t("老师")}</dt><dd>{group.teachers||0}</dd></div><div><dt>{t("学生")}</dt><dd>{group.students||0}</dd></div><div><dt>{t("班级")}</dt><dd>{group.classrooms||0}</dd></div></dl>}
@@ -93,7 +103,8 @@ export function GroupConsole({isOwner,currentGroupId}:{isOwner:boolean;currentGr
       <details className="group-invitation settings-disclosure"><summary><span>{t("新用户邀请链接")}</span><ChevronDown size={18} aria-hidden="true"/></summary><div className="group-invitation-content"><label>{t("新用户邀请链接")}<input readOnly value={origin?`${origin}/?group=${group.joinCode}`:""}/></label><p className="field-hint">{t("新用户通过此链接使用 Google 注册后，归入此集团并等待管理员分配角色。已有账号所属集团不变。")}</p><div className="settings-actions"><Button variant="outline" disabled={busy} onClick={()=>void copy(group)}><Copy size={16}/>{t("复制注册链接")}</Button></div></div></details>
       {isOwner&&<details className="group-entry-management settings-disclosure"><summary><span>{t("更多操作")}</span><ChevronDown size={18} aria-hidden="true"/></summary><div className="group-management-content"><div className="button-row settings-actions"><Button variant="outline" disabled={busy} onClick={()=>{setEditing(group.id);setName(group.name);setCreateOpen(true);focusGroupControl(nameInput.current);}}>{t("修改名称")}</Button><Button variant="outline" disabled={busy} onClick={()=>void toggle(group)}>{t(group.active?"停用集团":"启用集团")}</Button></div></div></details>}
     </section>;})}</div>
-    {isOwner&&<SystemDiagnostics groups={groups} currentGroupId={currentGroupId}/>}{isOwner&&<AcademicCatalogueAdmin/>}
+    </div>
+    {isOwner&&<><div className="owner-console-pane" id={`${navigationId}-catalogue-panel`} role="tabpanel" aria-labelledby={`${navigationId}-catalogue-tab`} hidden={activeView!=='catalogue'} tabIndex={0}>{visited.includes('catalogue')&&<AcademicCatalogueAdmin/>}</div><div className="owner-console-pane" id={`${navigationId}-diagnostics-panel`} role="tabpanel" aria-labelledby={`${navigationId}-diagnostics-tab`} hidden={activeView!=='diagnostics'} tabIndex={0}>{visited.includes('diagnostics')&&<SystemDiagnostics groups={groups} currentGroupId={currentGroupId} active={activeView==='diagnostics'}/>}</div></>}
     <Dialog open={Boolean(chiefConfirmation)} onOpenChange={open=>{if(!open&&!busy)setChiefConfirmation(null);}}><DialogContent className="lesson-dialog group-chief-confirmation" showCloseButton={!busy}><DialogHeader><DialogTitle>{t(chiefConfirmation?.group.chiefAdminId?'admin.chiefConfirmTransfer':'admin.chiefConfirmAssign')}</DialogTitle><DialogDescription>{t('admin.chiefConfirmDescription')}</DialogDescription></DialogHeader>
       {chiefConfirmation&&<><dl className="group-chief-review"><div><dt>{t('集团名称')}</dt><dd>{chiefConfirmation.group.name}</dd></div><div><dt>{t('admin.chiefCurrent')}</dt><dd>{chiefName(chiefConfirmation.group)}</dd></div><div><dt>{t('admin.chiefNext')}</dt><dd>{chiefConfirmation.group.adminOptions?.find(admin=>admin.id===chiefConfirmation.chiefAdminId)?.name}</dd></div></dl><p className="group-chief-notice">{t(chiefConfirmation.group.chiefAdminId?'admin.chiefTransferNotice':'admin.chiefAssignNotice')}</p><div className="settings-actions"><Button variant="outline" disabled={busy} onClick={()=>setChiefConfirmation(null)}>{t('取消')}</Button><Button disabled={busy} onClick={()=>void setChief()}>{t('admin.chiefSave')}</Button></div></>}
     </DialogContent></Dialog>

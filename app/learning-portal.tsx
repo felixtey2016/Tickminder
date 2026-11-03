@@ -15,8 +15,11 @@ import { ContentActions, SubmissionVersion } from "./learning-content-actions";
 import {SharedFilePicker} from "./shared-file-picker";
 import { LearningListDetail, homeworkSummary, latestSubmissions, learningLabel } from "./learning-list-detail";
 import {ClassroomMaterialBrowser} from './classroom-material-browser';
+import {ClassroomFileAction} from '@/lib/classroom-files-ui';
 import {GoogleDriveImport,type DrivePublishItem} from "./google-drive-import";
-import { canNavigateBack, usePageHistoryState } from "@/lib/page-history";
+import { usePageHistoryState } from "@/lib/page-history";
+import {studentHomeworkList,type HomeworkFilter} from "@/lib/homework-priority";
+import "./homework-tasks-workspace.css";
 
 registerTranslations({}, {
   "今天想读些什么？": "What would you like to read today?",
@@ -92,9 +95,23 @@ function ScoreEntry({ item, student, mutate, busy,submissionId }: { item: Homewo
 import { DeleteButton } from "./directory-tools";
 import { BulkDeleteTool } from "./bulk-delete";
 type TeacherLearningProps={learning:LearningState;mutate:LearningMutate;busy:boolean;view:"materials"|"homework";classroom?:{id:string;subject:string;members:string[]};folderId?:string;readOnly?:boolean;legacyOnly?:boolean;legacyClasses?:FolderClass[];onChanged?:()=>Promise<unknown>|void;availableMaterials?:Material[]};
-export function TeacherLearning(props:TeacherLearningProps) {return props.classroom?<TeacherLearningForm {...props}/>:<TeacherFolderPage {...props}/>;}
+export function TeacherLearning(props:TeacherLearningProps) {return props.classroom?<TeacherLearningForm {...props}/>:props.view==="homework"?<TeacherHomeworkOverview {...props}/>:<TeacherFolderPage {...props}/>;}
+function TeacherHomeworkOverview(props:TeacherLearningProps){
+  const [creating,setCreating]=usePageHistoryState("teacher.homework.create",false);
+  const [hasOpened,setHasOpened]=useState(false);
+  useEffect(()=>{if(creating)setHasOpened(true);},[creating]);
+  const [classId,setClassId]=usePageHistoryState("teacher.homework.class","");
+  const classes=[...new Map(props.learning.homework.filter(item=>item.classroomId).map(item=>[item.classroomId!,item.classroomTitle||item.subject])).entries()];
+  const learning={...props.learning,homework:props.learning.homework.filter(item=>!classId||item.classroomId===classId)};
+  const chooseCreate=(value:boolean)=>{if(window.dispatchEvent(new Event("tickminder-navigate",{cancelable:true})))setCreating(value);};
+  return <div className="teacher-homework-overview">
+    <div className="homework-overview-tools">{!creating&&<label>{t("班级")}<select value={classId} onChange={event=>setClassId(event.target.value)}><option value="">{learningLabel("全部班级","All classes")}</option>{classes.map(([id,title])=><option key={id} value={id}>{title}</option>)}</select></label>}<Button type="button" variant={creating?"outline":"default"} onClick={()=>chooseCreate(!creating)}>{creating?learningLabel("返回功课列表","Back to homework"):learningLabel("布置功课","Assign homework")}</Button></div>
+    {(creating||hasOpened)&&<div hidden={!creating}><TeacherFolderPage {...props}/></div>}
+    <div hidden={creating}>{learning.homework.length?<TeacherLearningForm {...props} learning={learning} legacyOnly/>:<PageState kind="empty" title={learningLabel("暂无功课","No homework yet")}/>}</div>
+  </div>;
+}
 function TeacherFolderPage(props:TeacherLearningProps) {
-  const {classes,ready,error,load}=useTeachingClasses();const [classId,setClassId]=useState("");
+  const {classes,ready,error,load}=useTeachingClasses();const [classId,setClassId]=usePageHistoryState(`teacher.publish.class:${props.view}`,"");
   const selected=classes.find(c=>c.id===classId);
   const legacy={...props.learning,materials:props.learning.materials.filter(m=>!m.classroomId),homework:props.learning.homework.filter(h=>!h.classroomId)};
   const legacyCount=props.view==="materials"?legacy.materials.length:legacy.homework.length;
@@ -109,13 +126,13 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
   const composeHistoryKey = `teacher.compose:${view}:${classroom?.id || "legacy"}:${folderId || "root"}`;
   const [formOpen, setFormOpen, replaceFormOpen] = usePageHistoryState(composeHistoryKey, false);
   const previousFormOpen = useRef(false);
+  const materialActionRef=useRef<HTMLButtonElement>(null);
   function openCreateForm() {
     setFormOpen(true);
     window.history.replaceState({ ...window.history.state, timelyoLearningCompose: composeHistoryKey }, "");
   }
   function closeCreateForm() {
-    if (window.history.state?.timelyoLearningCompose === composeHistoryKey && canNavigateBack()) window.history.back();
-    else replaceFormOpen(false);
+    replaceFormOpen(false);
   }
   useEffect(() => {
     if (previousFormOpen.current === formOpen) return;
@@ -123,14 +140,14 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
     const frame = requestAnimationFrame(() => {
       const section = document.getElementById(formId)?.closest(".learning-teacher");
       const selector = formOpen ? "form:not([hidden]) input" : ".learning-compose-toolbar button";
-      const target = Array.from(section?.querySelectorAll<HTMLElement>(selector) || []).find(node => node.getClientRects().length);
+      const target = !formOpen&&view==="materials" ? materialActionRef.current : Array.from(section?.querySelectorAll<HTMLElement>(selector) || []).find(node => node.getClientRects().length);
       if (!target) return;
       target.focus({ preventScroll: true });
       const bounds = target.getBoundingClientRect();
       if (bounds.top < 144 || bounds.bottom > window.innerHeight - 12) target.scrollIntoView({ block: "start" });
     });
     return () => cancelAnimationFrame(frame);
-  }, [formOpen, formId]);
+  }, [formOpen, formId, view]);
   const subjects = classroom ? [classroom.subject] : [...new Set(learning.eligible.map(p => p.subject))].sort();
   const [materialId, setMaterialId] = useState("");
   const [materialTitle, setMaterialTitle] = useState("");
@@ -197,7 +214,7 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
   const disabled = busy || working;
   return <div className="learning-teacher learning-single-view">
     {error && <p className="notice" role="alert">{error}</p>}
-    <section className={`panel teaching-content-panel${classroom ? " learning-content-surface" : ""}`} id={formId} data-material-form hidden={view !== "materials"}><header className="learning-compose-toolbar"><h2>{t(formOpen ? materialId ? "编辑教学资料" : "上传教学资料" : "教学资料")}{!formOpen && <span className="learning-record-count"> {learning.materials.length}</span>}</h2>{!readOnly && !legacyOnly && <Button type="button" variant={formOpen ? "outline" : "default"} disabled={disabled} onClick={()=>formOpen ? closeCreateForm() : openCreateForm()}>{formOpen ? learningLabel("返回列表", "Back to list") : t("上传教学资料")}</Button>}</header>
+    <section className={`panel teaching-content-panel${classroom ? " learning-content-surface" : ""}`} id={formId} data-material-form hidden={view !== "materials"}><header className="learning-compose-toolbar">{(!classroom||formOpen)&&<h2>{t(formOpen ? materialId ? "编辑教学资料" : "上传教学资料" : "教学资料")}{!formOpen && <span className="learning-record-count"> {learning.materials.length}</span>}</h2>}{!readOnly && !legacyOnly && <ClassroomFileAction placement="upload"><Button ref={materialActionRef} className="class-files-upload-action" aria-label={formOpen ? learningLabel("返回列表", "Back to list") : t("上传教学资料")} aria-expanded={formOpen} aria-controls={formId} type="button" variant={formOpen ? "outline" : "default"} disabled={disabled} onClick={()=>formOpen ? closeCreateForm() : openCreateForm()}>{formOpen ? learningLabel("返回列表", "Back to list") : classroom ? learningLabel("上传资料", "Upload files") : t("上传教学资料")}</Button></ClassroomFileAction>}</header>
       {classroom&&!readOnly&&!legacyOnly&&!formOpen&&<GoogleDriveImport key={classroom.id+":"+(folderId||"")} classroomId={classroom.id} folderId={folderId} contextKey={classroom.id+":"+(folderId||"")} maxBytes={pdfLimit(learning)} disabled={disabled} upload={(file,requestId,signal)=>uploadPdf(file,"material",undefined,pdfLimit(learning),classroom.id,undefined,{signal,requestId,quiet:true})} publish={(item,signal)=>publishDriveMaterial(item,classroom,folderId,signal)} onChanged={onChanged}/>}
       <form className="learning-form" hidden={Boolean(!formOpen || readOnly || (legacyOnly && !materialId))} onSubmit={saveMaterial}><fieldset className="learning-form-section"><legend>{t("资料内容")}</legend>
         <label>{t("资料标题")}<input required maxLength={120} value={materialTitle} onChange={e => setMaterialTitle(e.target.value)}/></label>
@@ -212,7 +229,7 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
 
       <div hidden={formOpen}><MaterialList historyKey={`teacher:materials:${classroom?.id || "legacy"}:${folderId || "root"}`} items={learning.materials} summary={material=>({context:[material.recipients?.[0]?.subject,!classroom&&material.classroomTitle].filter(Boolean).join(" · "),meta:`PDF · ${material.recipients?.length || 0} ${learningLabel("位学生","students")}`})} renderDetail={material => <article className="learning-card" key={material.id}><div className="learning-record-content"><header className="learning-record-head"><strong>{material.title}</strong><small>{material.recipients?.[0]?.subject}</small></header>{material.description && <p>{material.description}</p>}<details className="learning-detail-recipients"><summary>{t("分配给学生")} · {material.recipients?.length || 0}</summary><p>{material.recipients?.map(r=>r.studentName).join("、")}</p></details></div><div className="learning-action-row"><FileLinks fileId={material.fileId}/></div><div className="learning-card-actions">{!material.classroomId && legacyClasses && <LegacyOrganizer item={material} kind="material" classes={legacyClasses} onChanged={()=>onChanged?.()}/>}<ContentActions kind="material" id={material.id} editable={!readOnly&&material.canEdit!==false} onChanged={onChanged} maxBytes={pdfLimit(learning)}/><Button size="sm" variant="outline" hidden={readOnly||material.canEdit===false} disabled={disabled} onClick={() => { if (window.confirm(t("确定删除这份教学资料及所有版本？共用 PDF 会保留。"))) void mutate({ action: "deleteMaterial", id: material.id }); }}>{t("删除资料")}</Button></div></article>}/>{view === "materials" && !legacyOnly && !learning.materials.length && <PageState kind="empty" title="尚未发布教学资料"/>}</div>
     </section>
-    <section className={`panel teaching-content-panel${classroom ? " learning-content-surface" : ""}`} hidden={view !== "homework"}><header className="learning-compose-toolbar"><h2>{t(formOpen ? "新功课" : "功课")}{!formOpen && <span className="learning-record-count"> {learning.homework.length}</span>}</h2>{!readOnly && !legacyOnly && <Button type="button" variant={formOpen ? "outline" : "default"} disabled={disabled} onClick={()=>formOpen ? closeCreateForm() : openCreateForm()}>{formOpen ? learningLabel("返回列表", "Back to list") : t("新功课")}</Button>}</header>
+    <section className={`panel teaching-content-panel learning-homework-panel${classroom ? " learning-content-surface" : ""}`} hidden={view !== "homework"}><header className="learning-compose-toolbar"><h2>{t(formOpen ? "新功课" : "功课")}{!formOpen && <span className="learning-record-count"> {learning.homework.length}</span>}</h2>{!readOnly && !legacyOnly && <Button type="button" variant={formOpen ? "outline" : "default"} disabled={disabled} onClick={()=>formOpen ? closeCreateForm() : openCreateForm()}>{formOpen ? learningLabel("返回列表", "Back to list") : t("新功课")}</Button>}</header>
       <form className="learning-form" hidden={Boolean(!formOpen || readOnly || legacyOnly)} onSubmit={publishHomework}><fieldset className="learning-form-section"><legend>{t("功课内容")}</legend>
         <label>{t("功课标题")}<input required maxLength={120} value={homeworkTitle} onChange={e => setHomeworkTitle(e.target.value)}/></label>
         <label>{t("完成要求（可选）")}<textarea maxLength={4000} value={homeworkDescription} onChange={e => setHomeworkDescription(e.target.value)} placeholder={t("例如：教材页码、题号或完成要求")}/></label>
@@ -229,11 +246,11 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
         </fieldset><div className="learning-action-row learning-form-actions"><Button disabled={disabled || !homeworkStudents.length}>{t("发布功课")}</Button></div>
       </form>
       <div hidden={formOpen}>{!readOnly && learning.homework.length>0 && <div className="learning-list-tools"><BulkDeleteTool kind="homework" records={learning.homework.map(item=>({id:item.id,label:item.title}))} mutate={mutate} busy={disabled}/></div>}
-      <LearningListDetail historyKey={`teacher:homework:${classroom?.id || "legacy"}:${folderId || "root"}`} items={learning.homework} summary={item=>({context:[item.subject,!classroom&&item.classroomTitle].filter(Boolean).join(" · "),meta:`${t("截止")} · ${readable(item.dueAt)}`,status:homeworkSummary(item,learning.submissions)})} renderDetail={item => <article className="learning-card" key={item.id}>
+      <LearningListDetail historyKey={`teacher:homework:${classroom?.id || "legacy"}:${folderId || "root"}`} items={learning.homework} summary={item=>({context:[item.subject,!classroom&&item.classroomTitle].filter(Boolean).join(" · "),meta:`${t("截止")} · ${readable(item.dueAt)}`,status:homeworkSummary(item,learning.submissions)})} renderDetail={item => <article className="learning-card homework-detail-card" key={item.id}>
         <div className="learning-record-content"><header className="learning-record-head"><strong>{item.title}</strong><small>{item.subject}</small></header><div className="learning-record-meta"><small>{t("开始")} · {readable(item.startsAt)}</small><small>{t("截止")} · {readable(item.dueAt)}</small>{item.maxScore != null && <small>{t("满分")} · {item.maxScore}</small>}</div>{item.description && <p>{item.description}</p>}</div>
         {item.attachmentFileId && <div className="learning-action-row"><FileLinks fileId={item.attachmentFileId}/></div>}
         <div className="learning-card-actions">{!item.classroomId && legacyClasses && <LegacyOrganizer item={item} kind="homework" classes={legacyClasses} onChanged={()=>onChanged?.()}/>}<ContentActions kind="homework" id={item.id} editable={!readOnly} onChanged={onChanged} maxBytes={pdfLimit(learning)} materials={availableMaterials || learning.materials}/>{!readOnly && <DeleteButton kind="homework" id={item.id} mutate={mutate} busy={disabled} message="永久删除这项功课及所有提交和分数？共用 PDF 会保留，操作无法恢复。"/>}</div>
-        <div className="learning-recipient-status">{item.recipients?.map(student => { const history = latestSubmissions(learning.submissions.filter(s => s.homeworkId === item.id && s.studentName === student)); const latest = history[0]; const savedScore = item.scores?.find(row => row.studentName === student)?.score; return <details className="learning-recipient-row" key={student}><summary className="learning-recipient-head"><strong>{student}</strong><span>{latest ? `${t("已提交")} · ${readable(latest.submittedAt)}${latest.late ? ` · ${t("迟交")}` : ""}` : t("未提交")}</span></summary>{latest && <><FileLinks fileId={latest.fileId}/><SubmissionVersion revision={latest.homeworkRevision} dueAt={latest.dueAtSubmission}/></>}{savedScore != null && <span>{t("得分")}: {savedScore} / {item.maxScore}</span>}{!readOnly && item.maxScore != null && latest && <ScoreEntry key={student+":"+latest.id} item={item} student={student} mutate={mutate} busy={disabled} submissionId={latest.id}/ >}{item.maxScore != null && !latest && <small>{t("学生提交后才可以填写分数")}</small>}{latest&&<HomeworkReview homeworkId={item.id} studentName={student} editable={!readOnly} onChanged={onChanged} maxBytes={pdfLimit(learning)}/ >}{history.length > 1 && <details><summary>{t("查看提交记录")}</summary>{history.map(s => <div className="learning-admin-submission" key={s.id}><small>{readable(s.submittedAt)}{s.late ? ` · ${t("迟交")}` : ""}</small><FileLinks fileId={s.fileId}/><SubmissionVersion revision={s.homeworkRevision} dueAt={s.dueAtSubmission}/></div>)}</details>}</details>; })}</div>
+        <div className="learning-recipient-status"><h3>{learningLabel("提交情况", "Submissions")}</h3>{item.recipients?.map(student => { const history = latestSubmissions(learning.submissions.filter(s => s.homeworkId === item.id && s.studentName === student)); const latest = history[0]; const savedScore = item.scores?.find(row => row.studentName === student)?.score; return <details className="learning-recipient-row" key={student}><summary className="learning-recipient-head"><strong>{student}</strong><span>{latest ? `${t("已提交")}${latest.late ? ` · ${t("迟交")}` : ""}` : t("未提交")}{savedScore != null ? ` · ${savedScore} / ${item.maxScore}` : ""}</span></summary><div className="learning-recipient-body">{latest && <><small>{readable(latest.submittedAt)}</small><FileLinks fileId={latest.fileId}/><SubmissionVersion revision={latest.homeworkRevision} dueAt={latest.dueAtSubmission}/></>}{savedScore != null && <span>{t("得分")}: {savedScore} / {item.maxScore}</span>}{!readOnly && item.maxScore != null && latest && <ScoreEntry key={student+":"+latest.id} item={item} student={student} mutate={mutate} busy={disabled} submissionId={latest.id}/ >}{item.maxScore != null && !latest && <small>{t("学生提交后才可以填写分数")}</small>}{latest&&<HomeworkReview homeworkId={item.id} studentName={student} editable={!readOnly} onChanged={onChanged} maxBytes={pdfLimit(learning)}/ >}{history.length > 1 && <details><summary>{t("查看提交记录")}</summary>{history.map(s => <div className="learning-admin-submission" key={s.id}><small>{readable(s.submittedAt)}{s.late ? ` · ${t("迟交")}` : ""}</small><FileLinks fileId={s.fileId}/><SubmissionVersion revision={s.homeworkRevision} dueAt={s.dueAtSubmission}/></div>)}</details>}</div></details>; })}</div>
       </article>}/>{!learning.homework.length && <p className="muted">{t("尚未布置功课")}</p>}</div>
     </section>
   </div>;
@@ -273,15 +290,16 @@ export function StudentHomeworkCard({ item, submissions, mutate, busy, onPlan, m
     } catch (caught) { setError(alertActionFailure(caught)); }
     finally { submissionInFlight.current = false; setWorking(false); }
   }
-  return <article className="learning-card student-homework-card"><header className="student-homework-detail-head"><div className="learning-record-head"><strong>{item.title}</strong><small>{item.subject} · {t("截止")}: {readable(item.dueAt)}</small></div><span>{latest ? `${t("已提交")}${latest.late ? ` · ${t("迟交")}` : ""}` : notStarted ? t("尚未开始") : now > item.dueAt ? t("已逾期，仍可提交") : t("待提交")}</span></header>
-    <div className="learning-card-detail">{item.description && <p>{item.description}</p>}<div className="learning-record-meta"><small>{t("开始")}: {readable(item.startsAt)}</small><small>{t("截止")}: {readable(item.dueAt)}</small>{item.maxScore != null && <small>{t("满分")}: {item.maxScore}{item.score != null && <> · {t("得分")}: {item.score}</>}</small>}</div>{item.attachmentFileId && <div className="learning-record-content"><strong>{t("功课附件（PDF）")}</strong><div className="learning-action-row"><FileLinks fileId={item.attachmentFileId}/></div></div>}
-      {latest&&<HomeworkReview homeworkId={item.id} maxBytes={maxBytes}/>}{item.resubmitGrantId&&<p className="notice">{t("老师已允许重新提交一次，提交后需要重新评分。")}</p>}<div className="learning-action-row"><ContentActions kind="homework" id={item.id}/>{onPlan&&<Button size="sm" variant="outline" onClick={() => onPlan(item)}>{t("加入学习计划")}</Button>}</div>
-      {latest && !success && <div className="learning-submission-success"><strong>{t("提交成功")}</strong><span>{latest.filename} · {readable(latest.submittedAt)}{latest.late ? ` · ${t("迟交")}` : ""}</span><FileLinks fileId={latest.fileId}/><SubmissionVersion revision={latest.homeworkRevision} dueAt={latest.dueAtSubmission}/></div>}
-      {success && <div role="status" className="homework-submit-confirmation">{illustrateSuccess && <Mascot pose="homework-submitted" size={136}/>}<strong>{t("提交成功")}</strong><p>{latest ? `${latest.filename} · ${readable(latest.submittedAt)}` : success}</p>{latest && <FileLinks fileId={latest.fileId}/>}</div>}
+  return <article className="learning-card student-homework-card homework-detail-card"><header className="student-homework-detail-head"><div className="learning-record-head"><strong>{item.title}</strong><small>{item.subject} · {t("截止")}: {readable(item.dueAt)}</small></div><span>{latest ? `${t("已提交")}${latest.late ? ` · ${t("迟交")}` : ""}` : notStarted ? t("尚未开始") : now > item.dueAt ? t("已逾期，仍可提交") : t("待提交")}</span></header>
+    <div className="learning-card-detail">{item.description && <p>{item.description}</p>}{item.maxScore != null && <div className="learning-record-meta"><small>{t("满分")}: {item.maxScore}{item.score != null && <> · {t("得分")}: {item.score}</>}</small></div>}{item.attachmentFileId && <div className="learning-record-content"><strong>{t("功课附件（PDF）")}</strong><div className="learning-action-row"><FileLinks fileId={item.attachmentFileId}/></div></div>}
+      {item.resubmitGrantId&&<p className="notice">{t("老师已允许重新提交一次，提交后需要重新评分。")}</p>}
+      {latest && !success && <div className="learning-submission-success"><strong>{t("当前提交")}</strong><span>{latest.filename} · {readable(latest.submittedAt)}{latest.late ? ` · ${t("迟交")}` : ""}</span><FileLinks fileId={latest.fileId}/><HomeworkReview homeworkId={item.id} maxBytes={maxBytes}/></div>}
+      {success && <div role="status" className="homework-submit-confirmation">{illustrateSuccess && <Mascot pose="homework-submitted" size={136}/>}<strong>{t("提交成功")}</strong><p>{latest ? `${latest.filename} · ${readable(latest.submittedAt)}` : success}</p>{latest && <><FileLinks fileId={latest.fileId}/><HomeworkReview homeworkId={item.id} maxBytes={maxBytes}/></>}</div>}
       {error && <p role="alert" className="notice">{error}</p>}
-      {!closed && <div className="learning-submit"><p className="muted">{t("选择 PDF 后，点击「提交功课」完成提交。")}</p><div className={`learning-dropzone${dragging ? " dragging" : ""}`} onDragOver={event => { event.preventDefault(); if (!notStarted && !working && !busy) setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); if (!notStarted && !working && !busy) selectFile(event.dataTransfer.files?.[0] || null); }}><label>{t("选择一份 PDF")} · {t("最多")} {maxLabel}<input key={inputKey} type="file" accept="application/pdf,.pdf" disabled={notStarted || working || busy} onChange={e => selectFile(e.target.files?.[0] || null)}/></label><p className="muted">{file ? `${t("已选择")}: ${file.name}` : t("支持拖放 PDF 文件")}</p></div><div className="learning-file-actions"><Button size="sm" disabled={notStarted || working || busy} onClick={submit}>{working ? t("正在提交…") : t("提交功课")}</Button></div>{notStarted && <p className="muted">{t("开始时间到达后开放提交")}</p>}</div>}
+      {!closed && <div className="learning-submit"><h3>{t("提交功课")}</h3><div className={`learning-dropzone${dragging ? " dragging" : ""}`} onDragOver={event => { event.preventDefault(); if (!notStarted && !working && !busy) setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); if (!notStarted && !working && !busy) selectFile(event.dataTransfer.files?.[0] || null); }}><label>{t("选择一份 PDF")} · {t("最多")} {maxLabel}<input key={inputKey} type="file" accept="application/pdf,.pdf" disabled={notStarted || working || busy} onChange={e => selectFile(e.target.files?.[0] || null)}/></label><p className="muted">{file ? `${t("已选择")}: ${file.name}` : t("支持拖放 PDF 文件")}</p></div><div className="learning-file-actions"><Button size="sm" disabled={notStarted || working || busy} onClick={submit}>{working ? t("正在提交…") : t("提交功课")}</Button></div>{notStarted && <p className="muted">{t("开始时间到达后开放提交")}</p>}</div>}
       {closed && <p className="muted">{t("截止后重新提交需要老师授权，请联系老师。")}</p>}
       {submissions.length > 1 && <details><summary>{t("查看提交记录")}</summary>{submissions.map(s => <div className="learning-admin-submission" key={s.id}><small>{readable(s.submittedAt)}{s.late ? ` · ${t("迟交")}` : ""}</small><FileLinks fileId={s.fileId}/><SubmissionVersion revision={s.homeworkRevision} dueAt={s.dueAtSubmission}/></div>)}</details>}
+      <details className="homework-secondary-details"><summary>{learningLabel("功课资料与记录", "Assignment details and history")}</summary><div className="learning-record-meta"><small>{t("开始")}: {readable(item.startsAt)}</small></div>{latest&&<SubmissionVersion revision={latest.homeworkRevision} dueAt={latest.dueAtSubmission}/>}<div className="learning-action-row"><ContentActions kind="homework" id={item.id}/>{onPlan&&<Button size="sm" variant="outline" onClick={() => onPlan(item)}>{t("加入学习计划")}</Button>}</div></details>
     </div>
   </article>;
 }
@@ -291,17 +309,20 @@ export function StudentLearning({ learning, mutate, busy, onPlan, view, onCalend
   const subjects = useMemo(() => [...new Set(learning.materials.map(m => m.subject).filter(Boolean))], [learning.materials]);
   const [filter, setFilter] = useState("");
   const [submittedId, setSubmittedId] = useState("");
+  const [homeworkFilter,setHomeworkFilter]=usePageHistoryState<HomeworkFilter>(`student.homework.filter:${historyScope}`,"todo");
   const [clock, setClock] = useState(() => new Date().toISOString());
   useEffect(() => { const timer = window.setInterval(() => setClock(new Date().toISOString()), 30_000); return () => window.clearInterval(timer); }, []);
   const materials = learning.materials.filter(item => !filter || item.subject === filter);
+  const homework=studentHomeworkList(learning.homework,learning.submissions,homeworkFilter,clock);
   return <div className="student-learning">
-    <section className="panel" hidden={view !== "homework"}>
+    <section className={`${inClassroom ? "panel" : "learning-homework-workspace"} learning-homework-panel`} hidden={view !== "homework"}>
       <h2 className="sr-only">{t("我的功课")}</h2>
-      <LearningListDetail historyKey={`student:homework:${historyScope}`} items={learning.homework} summary={item=>{
+      <div className="homework-status-filter" aria-label={learningLabel("功课状态","Homework status")}>{([["todo",learningLabel("待完成","To do")],["submitted",t("已提交")],["all",learningLabel("全部","All")]] as const).map(([value,text])=><button key={value} type="button" aria-pressed={homeworkFilter===value} onClick={()=>{if(window.dispatchEvent(new Event("tickminder-navigate",{cancelable:true})))setHomeworkFilter(value);}}>{text}</button>)}</div>
+      <LearningListDetail historyKey={`student:homework:${historyScope}`} items={homework} detailItems={learning.homework} summary={item=>{
         const latest=latestSubmissions(learning.submissions.filter(s=>s.homeworkId===item.id))[0];
-        return {context:item.subject,meta:t("截止")+" · "+readable(item.dueAt),status:latest ? t("已提交")+(latest.late ? " · "+t("迟交") : "") : clock<item.startsAt ? t("尚未开始") : clock>item.dueAt ? t("已逾期，仍可提交") : t("待提交")};
+        return {context:[item.subject,!inClassroom&&item.classroomTitle].filter(Boolean).join(" · "),meta:t("截止")+" · "+readable(item.dueAt),status:item.resubmitGrantId?learningLabel("可重新提交","Resubmission available"):latest ? t("已提交")+(latest.late ? " · "+t("迟交") : "") : clock<item.startsAt ? t("尚未开始") : clock>item.dueAt ? t("已逾期，仍可提交") : t("待提交")};
       }} renderDetail={item=><StudentHomeworkCard key={item.id} item={item} submissions={latestSubmissions(learning.submissions.filter(s => s.homeworkId === item.id))} mutate={mutate} busy={busy} onPlan={onPlan} maxLabel={maxPdfLabel(learning)} maxBytes={pdfLimit(learning)} illustrateSuccess={submittedId === item.id} onSubmitted={() => setSubmittedId(item.id)}/>}
-        empty={<PageState kind="empty" title="暂无分配的功课" action={onCalendar ? "打开学习日历" : undefined} onAction={onCalendar}/>}/>
+        empty={<PageState kind="empty" title={homeworkFilter==="todo"?learningLabel("没有待完成的功课","No homework to do"):homeworkFilter==="submitted"?learningLabel("暂无已提交功课","No submitted homework"):t("暂无分配的功课")} action={homeworkFilter!=="all"&&learning.homework.length?learningLabel("查看全部功课","View all homework"):undefined} onAction={()=>setHomeworkFilter("all")}/>}/>
     </section>
     <section className="panel" hidden={view !== "materials"}>
       <h2 className="sr-only">{t("我的教学资料")}</h2>

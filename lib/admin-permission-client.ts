@@ -18,12 +18,12 @@ export function canAdminAction(account: AdminPermissionAccount | null | undefine
 }
 
 const viewGrants: Record<string, AdminGrantKey[]> = {
-  classrooms: ["classrooms.view"], homework: ["homework.view"], materials: ["materials.view", "recordings.view", "resources.view"],
+  classrooms: ["classrooms.view"], homework: ["homework.view", "tasks.view"], materials: ["materials.view", "recordings.view", "resources.view"],
   quizzes: ["quizzes.view", "quizAssignments.view"], quizBank: ["quizzes.view"],
   overview: ["statistics.view"], attention: ["attendance.view"], schedule: ["lessons.create"],
   calendar: ["lessons.view"], list: ["lessons.view"], students: ["lessons.view"], teachers: ["lessons.view"],
   subjects: ["plans.view"], teacherRoster: ["teachers.view"], studentRoster: ["students.view"],
-  accounts: ["accounts.view"], sheet: ["sheetSync.view"], activity: ["audit.view"],
+  parentRoster: ["accounts.view"], accounts: ["accounts.view"], sheet: ["sheetSync.view"], activity: ["audit.view"],
   courses: ["lessons.view", "lessons.create", "attendance.view", "statistics.view"],
   people: ["students.view", "teachers.view", "accounts.view"],
 };

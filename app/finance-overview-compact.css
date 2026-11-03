@@ -8,36 +8,36 @@
 .finance2-overview .finance2-filters.finance-overview-toolbar{grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:12px;align-items:end}
 .finance-overview-toolbar label{gap:6px;font-size:.875rem}
 .finance-overview-toolbar :is(input,select){min-height:44px;padding:9px 11px}
-.finance2-overview .finance-overview-help{margin-top:12px;color:#655872;min-width:0}
+.finance2-overview .finance-overview-help{margin-top:12px;color:var(--ui-muted);min-width:0}
 .finance-overview-controls-actions{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:10px}
 .finance2-overview .finance-overview-controls-actions>.finance-overview-help{margin:0;flex:1 1 160px}
 .finance-overview-controls-actions>.finance-overview-refresh{flex:0 0 auto}
-.finance2-overview .finance-overview-help>summary{display:flex;align-items:center;gap:8px;min-height:44px;width:fit-content;max-width:100%;cursor:pointer;list-style:none;font-size:.85rem;font-weight:600;color:#5b3b99;line-height:1.4;padding:8px 0;box-sizing:border-box}
+.finance2-overview .finance-overview-help>summary{display:flex;align-items:center;gap:8px;min-height:44px;width:fit-content;max-width:100%;cursor:pointer;list-style:none;font-size:.85rem;font-weight:600;color:var(--ui-accent);line-height:1.4;padding:8px 0;box-sizing:border-box}
 .finance2-overview .finance-overview-help>summary::before{content:'›';font-size:20px;line-height:1;transition:transform .12s;flex:none}
 .finance2-overview .finance-overview-help[open]>summary::before{transform:rotate(90deg)}
-.finance2-overview .finance-overview-help>div{border-top:1px solid #e9e2f1;padding-top:8px;font-size:.85rem;line-height:1.65}
+.finance2-overview .finance-overview-help>div{border-top:1px solid var(--ui-border);padding-top:8px;font-size:.85rem;line-height:1.65}
 .finance2-overview .finance-overview-help p{margin:0 0 8px}
 .finance2-overview summary::-webkit-details-marker{display:none}
-.finance2-overview summary:focus-visible{outline:3px solid #d9cbed;outline-offset:3px;border-radius:5px}
+.finance2-overview summary:focus-visible{outline:3px solid var(--ui-accent);outline-offset:3px;border-radius:5px}
 .finance2-overview .finance2-core-kpis{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 .finance2-overview .finance2-core-kpis .finance2-kpi{padding:15px;gap:6px;grid-template-rows:auto auto 1fr;align-content:start}
 .finance2-overview .finance2-core-kpis dt{font-size:.85rem}
 .finance2-overview .finance2-core-kpis dd{font-size:clamp(1.05rem,1.6vw,1.45rem);line-height:1.35;font-variant-numeric:tabular-nums}
-.finance-overview-metric-scope{font-size:.75rem;line-height:1.5;color:#71697d}
-.finance2-overview .finance2-kpi .finance-overview-kpi-link{width:fit-content;max-width:100%;min-height:44px;margin:0 -5px -6px;padding:9px 5px;justify-content:flex-start;align-self:end;font-size:.8rem;color:#5b3b99;text-decoration:underline;text-underline-offset:3px;grid-row:4}
+.finance-overview-metric-scope{font-size:.75rem;line-height:1.5;color:var(--ui-muted)}
+.finance2-overview .finance2-kpi .finance-overview-kpi-link{width:fit-content;max-width:100%;min-height:44px;margin:0 -5px -6px;padding:9px 5px;justify-content:flex-start;align-self:end;font-size:.8rem;color:var(--ui-accent);text-decoration:underline;text-underline-offset:3px;grid-row:4}
 .finance2-overview .finance2-reminder-list{grid-template-columns:repeat(2,minmax(0,1fr));gap:0 20px;margin:0}
-.finance2-overview .finance2-reminder{border:0;border-radius:0;padding:10px 0;gap:12px;border-bottom:1px solid #ece7f2}
+.finance2-overview .finance2-reminder{border:0;border-radius:0;padding:10px 0;gap:12px;border-bottom:1px solid var(--ui-border)}
 .finance2-overview .finance2-reminder>div{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .finance2-overview .finance2-reminder h3{font-size:.9rem;line-height:1.5}
-.finance2-overview .finance2-reminder-count{font-size:.8rem;padding:2px 6px;background:#f2edf9;border-radius:5px;white-space:nowrap}
+.finance2-overview .finance2-reminder-count{font-size:.8rem;padding:2px 6px;background:var(--ui-accent-soft);border-radius:5px;white-space:nowrap}
 .finance2-overview .finance2-reminder button{padding:9px 12px;font-size:.85rem;min-height:44px}
-.finance-overview-no-tasks{font-size:.9rem;color:#71697d;margin:4px 0;line-height:1.6}
+.finance-overview-no-tasks{font-size:.9rem;color:var(--ui-muted);margin:4px 0;line-height:1.6}
 .finance2-overview details.finance-overview-section{padding:0;overflow:visible}
 .finance-overview-section>summary{display:grid;grid-template-columns:minmax(0,1fr) auto 18px;align-items:center;gap:8px 12px;padding:17px 18px;min-height:64px;list-style:none;cursor:pointer;box-sizing:border-box}
-.finance-overview-section>summary::after{content:'⌄';color:#6b4a9d;text-align:center;font-size:20px;line-height:1;grid-column:3;grid-row:1}
+.finance-overview-section>summary::after{content:'⌄';color:var(--ui-accent);text-align:center;font-size:20px;line-height:1;grid-column:3;grid-row:1}
 .finance-overview-section[open]>summary::after{transform:rotate(180deg)}
 .finance-overview-section>summary h2{margin:0}
-.finance-overview-section-body{padding:16px 18px 18px;border-top:1px solid #e8e2ef}
+.finance-overview-section-body{padding:16px 18px 18px;border-top:1px solid var(--ui-border)}
 .finance2-overview .finance-overview-section-body>.finance2-actions{margin-top:16px;gap:10px}
 .finance2-overview .finance-overview-section-body .finance2-metric-line{grid-template-columns:minmax(0,1fr) minmax(0,1fr);padding:12px 0;gap:10px}
 .finance2-overview .finance-overview-section-body .finance2-metric-line dt{gap:4px;font-size:.9rem}
@@ -49,11 +49,18 @@
 .finance2-overview .finance2-debt-tools{margin-top:16px;padding-top:16px;gap:12px}
 .finance2-overview .finance2-debt-tools p{font-size:.8rem;margin-top:6px}
 .finance2-overview .finance2-drilldown,.finance2-overview #finance2-detail-title{scroll-margin-top:152px}
+.finance2-overview .finance2-drilldown>.finance2-section-head{align-items:flex-start;padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--ui-border)}
+.finance2-overview .finance2-drilldown>.finance2-section-head>div{flex:1 1 180px}
+.finance2-overview .finance2-drilldown>.finance2-section-head>button{flex:0 0 auto}
+.finance2-overview .finance2-drilldown .finance2-section-head h2{margin:0}
 .finance2-overview .finance2-drilldown .finance2-section-head p{margin-top:6px}
 .finance2-overview .finance2-record{padding:16px;gap:12px}
 .finance2-overview .finance2-record dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 24px;font-size:.875rem}
 .finance2-overview .finance2-record dl>div{gap:8px;align-items:start}
-.finance2-overview .finance2-detail-summary{margin:14px 0;gap:8px 16px;font-size:.9rem}
+.finance2-overview .finance2-detail-summary{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;margin:16px 0;gap:12px 16px;padding:14px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface-muted);font-size:.9rem}
+.finance2-overview .finance2-detail-summary>strong{padding-inline-start:16px;border-inline-start:1px solid var(--ui-border)}
+.finance2-overview .finance2-detail-summary>span:nth-child(n+3){grid-column:1/-1;padding-top:10px;border-top:1px solid var(--ui-border)}
+.finance2-overview .finance2-drilldown .finance2-empty{margin:0;padding:24px 12px;text-align:center}
 @media(max-width:1000px){
  .finance2-overview .finance2-core-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
  .finance2-overview .finance2-record dl{grid-template-columns:minmax(0,1fr)}
@@ -73,7 +80,7 @@
  .finance-overview-section>summary::after{grid-column:2;grid-row:1/3}
  .finance-overview-section-body{padding:14px}
  .finance2-overview .finance2-outflow-grid{grid-template-columns:minmax(0,1fr)}
- .finance2-overview .finance2-outflow-grid>.panel+.panel{border-top:1px solid #e8e2ef;padding-top:16px}
+ .finance2-overview .finance2-outflow-grid>.panel+.panel{border-top:1px solid var(--ui-border);padding-top:16px}
  .finance2-overview .finance-overview-section-body .finance2-metric-line{grid-template-columns:minmax(0,1fr)}
  .finance2-overview .finance-overview-section-body .finance2-metric-line dd{flex-direction:row;align-items:center;justify-content:space-between}
  .finance2-overview .finance-overview-section-body .finance2-metric-line dd button{width:auto;font-size:.85rem}
@@ -87,3 +94,49 @@
  .finance2-overview .finance2-reminder{flex-direction:row;align-items:center}
  .finance2-overview .finance2-reminder button{width:auto}
 }
+
+/* One monetary group, aligned task rows and quiet disclosures follow R12 / R14. */
+.finance2-overview .finance2-core-kpis{gap:0;border:1px solid var(--ui-border);border-radius:8px;overflow:hidden;}
+.finance2-overview .finance2-core-kpis .finance2-kpi{border:0;border-right:1px solid var(--ui-border);border-radius:0;background:var(--ui-surface);color:var(--ui-text);padding:16px;}
+.finance2-overview .finance2-core-kpis .finance2-kpi:last-child{border-right:0;}
+.finance2-overview .finance2-core-kpis dt{color:var(--ui-muted);}
+.finance2-overview .finance2-core-kpis dd{color:var(--ui-text);}
+.finance2-overview .finance2-reminder-list{grid-template-columns:minmax(0,1fr);gap:0;border:1px solid var(--ui-border);border-radius:8px;padding:0 14px;}
+.finance2-overview .finance2-reminder-list:empty{display:none;}
+.finance2-overview .finance2-reminder{background:transparent;border-color:var(--ui-border);padding:10px 0;min-height:60px;}
+.finance2-overview .finance2-reminder:last-child{border-bottom:0;}
+.finance2-overview .finance2-reminder-count{background:var(--ui-accent-soft);color:var(--ui-accent);}
+.app-shell .finance2-overview .finance2-reminder button[data-slot=button]{border-color:transparent;background:transparent;color:var(--ui-accent);gap:8px;}
+.finance2-overview :is(.finance2-scope,.finance2-muted,.finance2-empty,.finance2-detail-summary,.finance2-record dt,.finance2-metric-line dt small){color:var(--ui-muted);}
+.finance2-overview :is(.finance2-record h3,.finance2-detail-summary strong,.finance2-record dd){color:var(--ui-text);}
+.finance2-overview :is(.finance2-record,.finance2-kpi){background:var(--ui-surface);border-color:var(--ui-border);color:var(--ui-text);}
+.finance2-overview :is(.finance2-debt-tools,.finance2-metric-line,.finance2-trend-row){border-color:var(--ui-border);}
+.finance2-overview .finance2-badge{color:var(--ui-accent);background:var(--ui-accent-soft);}
+.finance2-overview .finance2-badge:is([data-status=paid],[data-status=confirmed]){color:var(--ui-success-text);background:var(--ui-success-bg);}
+.finance2-overview .finance2-badge:is([data-status=reversed],[data-status=void]){color:var(--ui-muted);background:var(--ui-surface-muted);}
+.finance2-overview .finance2-notice{color:var(--ui-muted);background:var(--ui-surface-muted);border-color:var(--ui-border);font-size:14px;}
+.finance2-overview .finance2-error-state{color:var(--ui-warning-text);background:var(--ui-warning-bg);border-color:var(--ui-border);}
+.finance2-overview .finance2-drilldown .finance2-section-head h2:focus:not(:focus-visible){outline:none;}
+.finance2-overview .finance2-drilldown .finance2-section-head h2:focus-visible{outline:2px solid var(--ui-accent);outline-offset:4px;border-radius:2px;}
+.finance2-overview .finance-overview-toolbar{max-width:690px;}
+.finance2-overview .finance-overview-section>summary{min-height:64px;}
+@media(max-width:1000px){
+ .finance2-overview .finance2-core-kpis .finance2-kpi:nth-child(2n){border-right:0;}
+ .finance2-overview .finance2-core-kpis .finance2-kpi:nth-child(n+3){border-top:1px solid var(--ui-border);}
+}
+@media(max-width:600px){
+ .finance2-overview .finance2-core-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:0;}
+ .finance2-overview .finance2-core-kpis .finance2-kpi{padding:12px;}
+ .finance2-overview .finance2-reminder-list{padding:0 10px;}
+ .finance2-overview .finance2-reminder{gap:6px;}
+ .finance2-overview .finance2-reminder>div{gap:6px;}
+ .finance2-overview .finance2-reminder button{padding:8px;min-width:44px;}
+ .finance2-overview .finance2-core-kpis .finance2-kpi .finance-overview-kpi-link{font-size:13px;margin-bottom:-5px;}
+}
+@media(max-width:350px){
+ .finance2-overview .finance2-core-kpis .finance2-kpi{padding:10px;}
+ .finance2-overview .finance2-core-kpis dd{font-size:16px;}
+ .finance2-overview .finance2-reminder>div{gap:4px;}
+}
+
+.finance2-overview .finance2-core-kpis .finance2-kpi .finance-overview-kpi-link{width:fit-content;white-space:normal;text-align:left;justify-content:flex-start;}

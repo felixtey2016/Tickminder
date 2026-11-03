@@ -19,6 +19,7 @@ const applicationRoot=new URL('../',import.meta.url).href;
 // Only the original runtime boundaries above are substituted.
 const hooks=registerHooks({
  resolve(specifier,context,nextResolve){
+  if(specifier.startsWith('.')&&context.parentURL?.startsWith(applicationRoot)&&new URL(specifier+'.ts',context.parentURL).href===new URL('lib/learning-server.ts',applicationRoot).href)return {url:stub,shortCircuit:true};
   if(['cloudflare:workers','@/lib/learning-server','@/lib/auth'].includes(specifier))return {url:stub,shortCircuit:true};
   if(specifier.startsWith('@/'))return {url:new URL(specifier.slice(2)+'.ts',applicationRoot).href,shortCircuit:true};
   if(specifier.startsWith('.')&&context.parentURL?.startsWith(applicationRoot)&&context.parentURL.endsWith('.ts'))return {url:new URL(/\.[cm]?[jt]sx?$/.test(specifier)?specifier:specifier+'.ts',context.parentURL).href,shortCircuit:true};
@@ -65,6 +66,21 @@ account={groupId:'next-genn-edu',id:'student-a',role:'student',studentName:'Stud
 assert.equal((await dispatch.POST(new Request('https://test.invalid/api/notifications/dispatch',{method:'POST',headers:{Authorization:'Bearer wrong'}}))).status,404);
 const originalFetch=globalThis.fetch;let sent=[];
 globalThis.fetch=async(endpoint,payload)=>{assert.ok(engine.allowedPushEndpoint(String(endpoint)));assert.equal(payload.redirect,'manual');assert.ok(payload.signal);assert.equal(payload.headers['Content-Encoding']||payload.headers['content-encoding'],'aes128gcm');assert.ok(payload.body);sent.push({endpoint,payload});return new Response(null,{status:201});};
+// Push preference affects delivery only, including re-enable without replay.
+sqlite.prepare('INSERT INTO notification_preferences(account_id,courses_enabled,updated_at) VALUES(?,0,?)').run('student-a',new Date(now).toISOString());
+await engine.dispatchReminders(now);assert.equal(sent.length,0);assert.equal(sqlite.prepare('SELECT count(*) n FROM notification_items WHERE account_id=?').get('student-a').n,3);
+sqlite.prepare('UPDATE notification_preferences SET courses_enabled=1,courses_since=?').run(new Date(now+1).toISOString());await engine.dispatchReminders(now);assert.equal(sent.length,0);
+sqlite.prepare('DELETE FROM notification_preferences WHERE account_id=?').run('student-a');
+// The learning delivery pipeline must obey its independent category and preserve the inbox.
+const learning=(await load('lib/learning-delivery.ts')).module;
+sqlite.prepare('INSERT INTO homework(id,group_id,owner_id,title,subject,description,starts_at,due_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)').run('preference-fixture','next-genn-edu','teacher-a','Fictional homework','Science','',at,new Date(now+86400000).toISOString(),at);
+sqlite.prepare('INSERT INTO homework_recipients(id,group_id,homework_id,student_name) VALUES(?,?,?,?)').run('preference-recipient','next-genn-edu','preference-fixture','Student A');
+sqlite.prepare('INSERT INTO learning_notifications(id,group_id,account_id,event_id,content_kind,record_id,content_revision,kind,title,subject,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run('preference-notice','next-genn-edu','student-a','preference-event','homework','preference-fixture',1,'homework_updated','Fictional homework','Science',at);
+sqlite.prepare('INSERT INTO notification_preferences(account_id,homework_enabled,updated_at) VALUES(?,0,?)').run('student-a',at);
+await learning.dispatchLearningNotifications(now);assert.equal(sent.length,0);assert.equal(sqlite.prepare('SELECT count(*) n FROM learning_notifications').get().n,1);
+sqlite.prepare('UPDATE notification_preferences SET homework_enabled=1,homework_since=?').run(new Date(now+1).toISOString());await learning.dispatchLearningNotifications(now);assert.equal(sent.length,0);
+sqlite.prepare('DELETE FROM notification_preferences WHERE account_id=?').run('student-a');await learning.dispatchLearningNotifications(now);assert.equal(sent.length,1);assert.equal(sqlite.prepare('SELECT status FROM learning_notification_deliveries').get().status,'sent');
+sqlite.exec("DELETE FROM learning_notification_deliveries;DELETE FROM learning_notifications;DELETE FROM homework_recipients WHERE homework_id='preference-fixture';DELETE FROM homework WHERE id='preference-fixture';");sent=[];
 await Promise.all([engine.dispatchReminders(now),engine.dispatchReminders(now)]);assert.equal(sent.length,3);assert.deepEqual(sent.map(s=>Number(s.payload.headers.TTL || s.payload.headers.ttl)).sort((a,b)=>a-b),[300,600,1500]);assert.ok(sent.every(s=>(s.payload.headers.Urgency || s.payload.headers.urgency)==='high'));assert.equal(sqlite.prepare("SELECT count(*) n FROM notification_deliveries WHERE status='sent'").get().n,3);
 // Decrypt an actual Web Push envelope using the device private key (RFC 8291).
 const bytes=new Uint8Array(sent[0].payload.body),salt=bytes.slice(0,16),sender=bytes.slice(21,21+bytes[20]);

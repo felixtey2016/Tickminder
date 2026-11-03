@@ -31,7 +31,9 @@ import {setLanguage} from './lib/i18n';
 import './app/ui-refresh.css';
 import './app/teaching-layout.css';
 import './app/mascot-experience.css';
+import './app/appearance.css';
 const params=new URLSearchParams(location.search),language=params.get('lang')==='zh'?'zh':'en',initialRole=params.get('role')||'student',view=params.get('view')||'tasks';
+document.documentElement.classList.toggle('dark',params.get('theme')==='dark');
 setLanguage(language);
 const learning={materials:[],homework:[],submissions:[],studyBlocks:[],eligible:[],limits:{pdfMaxBytes:10485760}};
 const classes=['a','b'].map((suffix,index)=>({id:'class-'+suffix,title:'Fictional class '+suffix.toUpperCase(),description:null,subject:'Mathematics',syllabusId:'fixture',subjectId:'math',grade:'Year 1',teacherName:'Fictional Teacher',termId:null,archived:params.get('archived')==='1',createdAt:'2026-10-30T03:00:00.000Z',updatedAt:'2026-10-30T03:00:00.000Z',announcements:[],members:index===0?['Fictional Student A','Fictional Student B']:['Fictional Student C']}));
@@ -45,7 +47,7 @@ function App(){
 createRoot(document.getElementById('root')).render(<App/>);`;
 
 function task(id,title){return {id,title,description:'Practise this fictional activity without uploading a file.',revision:1,archived:false,createdAt,studentState:{studentName:'Fictional Student A',status:'pending',stateVersion:null,completedAt:null,submittedAt:null,reviewedAt:null,reason:'',history:[]}};}
-async function openFixture({width=390,language='en',role='student',view='tasks',scenario='',archived=false,grants='allowed',wait=true}={}){
+async function openFixture({width=390,language='en',role='student',view='tasks',scenario='',archived=false,grants='allowed',wait=true,theme='light'}={}){
  const context=await browser.newContext({viewport:{width,height:900},reducedMotion:'reduce'}),page=await context.newPage();
  const api=[],external=[],errors=[],unexpected=[],routeErrors=[],operations=new Map(),gates=[];
  const tasks={
@@ -126,7 +128,7 @@ async function openFixture({width=390,language='en',role='student',view='tasks',
    if(method==='POST'&&controls.holdWrite)controls.heldWriteFinished=true;
   }
  });
- await page.goto(origin+'/?'+new URLSearchParams({view,lang:language,role,scenario,archived:archived?'1':'0',grants}));
+ await page.goto(origin+'/?'+new URLSearchParams({view,lang:language,role,scenario,archived:archived?'1':'0',grants,theme}));
  await page.locator('.workspace').waitFor();
  if(view==='tasks'){
   await page.getByTestId('classroom-tasks').waitFor();
@@ -146,7 +148,7 @@ async function screenshot(f,name){if(!process.env.TASK_SCREENSHOTS)return;fs.mkd
 async function openForm(f,title='Memorise a fictional poem'){
  await f.page.getByRole('button',{name:text(f.language,'新增任务','New task'),exact:true}).click();
  await f.page.getByLabel(text(f.language,'任务标题','Task title'),{exact:true}).fill(title);
- await f.page.getByLabel(text(f.language,'任务说明（可选）','Instructions (optional)'),{exact:true}).fill('Practise aloud. No attachment is required.');
+ await f.page.locator('form.classroom-task-form textarea').fill('Practise aloud. No attachment is required.');
 }
 async function publish(f){await f.page.getByRole('button',{name:text(f.language,'发布任务','Publish task'),exact:true}).click();}
 async function complete(f,id='task-a'){await card(f,id).getByRole('button',{name:text(f.language,'申请老师确认','Request teacher confirmation'),exact:true}).click();}
@@ -188,7 +190,20 @@ try{
   check(await card(f).getByText(text(language,'此前自行完成','Previously self-completed'),{exact:true}).count()>=1,'legacy completion labelled explicitly '+label);
   await assertFit(f,'teacher review');if(language==='en')await screenshot(f,'teacher-review-'+width);
   await f.switchRole();await card(f).getByText(text(language,'老师已确认','Confirmed by teacher'),{exact:true}).waitFor();check(await card(f).getByRole('button').count()===0,'confirmed task has no student complete button '+label);await assertFit(f,'confirmed student');await f.close();
-  const teacher=await openFixture({width,language,role:'teacher'});await openForm(teacher);await publish(teacher);await card(teacher,'created-task-1').waitFor();check(posts(teacher).filter(p=>p.body.action==='create').length===1,'teacher creates no-file activity '+label);await card(teacher).getByRole('button',{name:text(language,'关闭任务','Close task'),exact:true}).click();await card(teacher).getByText(text(language,'已关闭','Closed'),{exact:true}).waitFor();await assertFit(teacher,'teacher form');await teacher.close();
+  const teacher=await openFixture({width,language,role:'teacher'});await openForm(teacher);await assertFit(teacher,'teacher form');await publish(teacher);await card(teacher,'created-task-1').waitFor();check(posts(teacher).filter(p=>p.body.action==='create').length===1,'teacher creates no-file activity '+label);await card(teacher).getByRole('button',{name:text(language,'关闭任务','Close task'),exact:true}).click();await card(teacher).getByText(text(language,'已关闭','Closed'),{exact:true}).waitFor();await assertFit(teacher,'teacher form');await teacher.close();
+ }
+ for(const width of [320,390,1280])for(const language of ['en','zh'])for(const role of ['student','teacher','admin']){
+  const theme=language==='zh'?'dark':'light',integration=await openFixture({width,language,role,theme,view:'classrooms'}),tabs=integration.page.getByRole('tablist');
+  if(role==='admin')await integration.page.locator('.classroom-chips button').first().click();
+  const expectedSections=role==='student'?6:role==='teacher'?7:3;
+  await tabs.waitFor();check(await tabs.getByRole('tab').count()===expectedSections,'horizontal class tabs retain all permitted sections ('+role+'/'+width+'/'+language+')');
+  if(role!=='admin')check(await tabs.getByRole('tab',{name:text(language,'功课','Homework'),exact:true}).count()===1,'homework remains independently reachable');
+  const taskTab=tabs.getByRole('tab',{name:text(language,'任务','Tasks'),exact:true});await taskTab.click();
+  check(await taskTab.getAttribute('aria-selected')==='true'&&await taskTab.getAttribute('tabindex')==='0','Tasks tab retains accessible selected state');
+  await integration.page.getByRole('tabpanel').getByTestId('classroom-tasks').waitFor();await integration.page.locator('.classroom-task-list[aria-busy=false]').waitFor();
+  await assertFit(integration,'integrated classroom Tasks '+role+'/'+theme);await screenshot(integration,'classroom-'+role+'-'+width+'-'+theme);
+  await taskTab.press('Home');check(await tabs.getByRole('tab').first().getAttribute('aria-selected')==='true','classroom tabs retain Home-key navigation');await tabs.getByRole('tab').first().press('End');check(await tabs.getByRole('tab').last().getAttribute('aria-selected')==='true','classroom tabs retain End-key navigation');
+  check(posts(integration).length===0,'opening and switching classroom sections never changes homework or records');await integration.close();
  }
  const lost=await openFixture({role:'teacher',scenario:'lost-create-response'});await openForm(lost,'Once-only task');await publish(lost);await lost.page.locator('.classroom-task-action-error').waitFor();await publish(lost);await card(lost,'created-task-1').waitFor();check(posts(lost).length===2&&posts(lost)[0].body.operationId===posts(lost)[1].body.operationId,'lost create retry uses same operation');check(lost.tasks['class-a'].filter(t=>t.title==='Once-only task').length===1,'lost create never duplicates');await lost.close();
  const failed=await openFixture({scenario:'complete-failure'});await complete(failed);await failed.page.locator('.classroom-task-action-error').waitFor();check(await card(failed).getByRole('button',{name:'Request teacher confirmation',exact:true}).isEnabled(),'failed request remains retryable');await complete(failed);await card(failed).getByText('Awaiting teacher',{exact:true}).waitFor();check(posts(failed)[0].body.operationId===posts(failed)[1].body.operationId,'request retry retains operation identity');await failed.close();

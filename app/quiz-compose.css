@@ -4,3 +4,14 @@
 .quiz-compose-questions{display:grid;gap:12px;margin:16px 0}.quiz-compose-question{display:flex;gap:12px;border:1px solid #d9d4e8;border-radius:8px;padding:16px;cursor:pointer;min-width:0}.quiz-compose-question>input{flex:0 0 20px;width:20px;height:20px;accent-color:#6245bd;margin-top:4px}.quiz-compose-question>div{min-width:0;overflow-wrap:anywhere}.quiz-compose-question img{max-width:100%;height:180px;object-fit:contain;margin-top:12px}.quiz-compose-question-meta{font-size:13px;color:#605a75;margin-bottom:8px}.quiz-compose-question small{display:block;margin-top:8px}
 .quiz-compose-selected{margin:20px 0;padding:16px;border:1px solid #d9d4e8;border-radius:8px;display:grid;gap:12px}.quiz-compose-selected>div{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}.quiz-compose-selected span{min-width:0;flex:1 1 180px;overflow-wrap:anywhere}.quiz-compose-footer{border-top:1px solid #d9d4e8;padding-top:16px;display:grid;gap:12px;flex-shrink:0;min-width:0}.quiz-compose-footer strong{overflow-wrap:anywhere}
 @media(max-width:600px){.quiz-player-dialog.quiz-compose-dialog[data-slot=dialog-content]{padding:16px;height:calc(100dvh - 24px);max-height:calc(100dvh - 24px);width:calc(100vw - 24px)}.quiz-compose-dialog .quiz-fields{grid-template-columns:minmax(0,1fr)}.quiz-compose-question{padding:12px}.quiz-compose-footer>div>*{flex:1 1 160px}}
+
+/* Use the same calm authoring surfaces in both themes. */
+.quiz-player-dialog.quiz-compose-dialog[data-slot=dialog-content]{background:var(--ui-surface);color:var(--ui-text);border-color:var(--ui-border)}
+.quiz-compose-dialog :is(.quiz-compose-question,.quiz-compose-selected,.quiz-compose-footer){border-color:var(--ui-border)}
+.quiz-compose-dialog .quiz-compose-question{background:var(--ui-surface);color:var(--ui-text);padding:12px;border-radius:6px}
+.quiz-compose-dialog .quiz-compose-question:has(input:checked){background:var(--ui-accent-soft);border-color:var(--ui-accent)}
+.quiz-compose-dialog .quiz-compose-question>input{accent-color:var(--ui-accent)}
+.quiz-compose-dialog :is(.quiz-compose-question-meta,.quiz-compose-question small,.quiz-note){color:var(--ui-muted);font-size:14px}
+.quiz-compose-dialog .quiz-compose-selected{background:var(--ui-surface-muted)}
+.quiz-compose-dialog :is(input:not([type=checkbox]),select,textarea){color:var(--ui-text);background:var(--ui-surface);border-color:var(--ui-border)}
+.quiz-compose-dialog .quiz-compose-footer{background:var(--ui-surface)}

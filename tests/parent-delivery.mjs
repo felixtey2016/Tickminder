@@ -88,4 +88,11 @@ for(const mode of['expired-session','disabled-account','must-change-password']){
  check('legacy parent API rejects '+mode+' before notification or device claims',()=>{assert.equal(requests.length,0);const d=sqlite.prepare("SELECT * FROM push_subscriptions WHERE id='delivery-device'").get();assert.equal(d.last_test_at,null);assert.equal(d.p256dh,'fictional-p256dh');assert.equal(sqlite.prepare('SELECT read_at FROM parent_notifications').get().read_at,null);});
 }
 await reset();currentActor=null;expectStatus(await getLegacy(),401,'anonymous legacy GET');expectStatus(await postLegacy({action:'readAll'}),401,'anonymous legacy POST');check('legacy parent API rejects anonymous requests',()=>assert.equal(requests.length,0));
+
+await reset();await notice();sqlite.prepare('INSERT INTO notification_preferences(account_id,fees_enabled,updated_at) VALUES(?,0,?)').run(parent.id,at());await delivery.dispatchParentNotificationPush(clock);
+check('fee preference disables push without deleting notification history',()=>{assert.equal(requests.length,0);assert.equal(sqlite.prepare('SELECT count(*) n FROM parent_notifications').get().n,1);});
+sqlite.prepare('UPDATE notification_preferences SET fees_enabled=1,fees_since=?').run(new Date(clock+1).toISOString());await delivery.dispatchParentNotificationPush(clock);
+check('reenabling fees never replays prior notices',()=>assert.equal(requests.length,0));
+await reset();await notice();cryptoHook=()=>sqlite.prepare('INSERT INTO notification_preferences(account_id,fees_enabled,updated_at) VALUES(?,0,?)').run(parent.id,at());await delivery.dispatchParentNotificationPush(clock);
+check('preference changed during encryption stops provider request',()=>{assert.equal(payloads.length,1);assert.equal(requests.length,0);assert.equal(job().status,'cancelled');});
 sqlite.close();globalThis.Date=NativeDate;console.log(JSON.stringify({suite:'parent-delivery-real-sqlite',checks,productionWrites:false,realNetworkCalls:0}));

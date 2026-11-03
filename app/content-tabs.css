@@ -1,0 +1,37 @@
+/* Content navigation shares one quiet selection treatment. In particular, a
+   touch browser retaining :hover must not leave a filled highlight behind. */
+:root{--ui-tab-active:var(--ui-accent);--ui-tab-line:var(--ui-accent)}
+:root.dark{--ui-tab-active:#b8a7d2;--ui-tab-line:#a38dbf}
+.app-shell.shell-wave1 :is([role=tablist],.tab-list,.classroom-tabs,.course-navigation-row,.course-navigation-secondary,.management-navigation,.parents-teaching-tabs,.parents-course-tabs,.parents-finance-tabs,.finance-navigation,.finance-operation-tabs)>button,
+[data-slot=dialog-content] .subject-edit-tabs>button{
+ background:transparent!important;
+ color:var(--ui-muted);
+ border:0!important;
+ border-bottom:2px solid transparent!important;
+ border-radius:0!important;
+ box-shadow:none!important;
+ text-shadow:none;
+ min-height:44px;
+ transition:color .15s,border-color .15s;
+ -webkit-tap-highlight-color:transparent;
+}
+.app-shell.shell-wave1 :is([role=tablist],.tab-list,.classroom-tabs,.course-navigation-row,.course-navigation-secondary,.management-navigation,.parents-teaching-tabs,.parents-course-tabs,.parents-finance-tabs,.finance-navigation,.finance-operation-tabs)>button:is([aria-selected=true],[aria-current=page],[data-state=active],.active),
+[data-slot=dialog-content] .subject-edit-tabs>button[aria-current=page]{
+ color:var(--ui-tab-active)!important;
+ border-bottom-color:var(--ui-tab-line)!important;
+ font-weight:650;
+}
+@media(hover:hover){
+ .app-shell.shell-wave1 :is([role=tablist],.tab-list,.classroom-tabs,.course-navigation-row,.course-navigation-secondary,.management-navigation,.parents-teaching-tabs,.parents-course-tabs,.parents-finance-tabs,.finance-navigation,.finance-operation-tabs)>button:hover,
+ [data-slot=dialog-content] .subject-edit-tabs>button:hover{color:var(--ui-tab-active)!important}
+}
+.app-shell.shell-wave1 :is([role=tablist],.tab-list,.classroom-tabs,.course-navigation-row,.course-navigation-secondary,.management-navigation,.parents-teaching-tabs,.parents-course-tabs,.parents-finance-tabs,.finance-navigation,.finance-operation-tabs)>button:focus-visible,
+[data-slot=dialog-content] .subject-edit-tabs>button:focus-visible{
+ outline:2px solid var(--ui-tab-active);
+ outline-offset:-4px;
+}
+@media(prefers-reduced-motion:reduce){
+ .app-shell.shell-wave1 :is([role=tablist],.tab-list,.classroom-tabs,.course-navigation-row,.course-navigation-secondary,.management-navigation,.parents-teaching-tabs,.parents-course-tabs,.parents-finance-tabs,.finance-navigation,.finance-operation-tabs)>button{transition:none}
+}
+
+[data-slot=dialog-content] .subject-edit-tabs{border-bottom:1px solid var(--ui-border);gap:16px}
