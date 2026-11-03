@@ -93,8 +93,8 @@ export function TimeInput({value, defaultValue, onChange, onClick, onKeyDown, on
   </span>;
 }
 
-type WheelHandle = {read: () => number};
-function TimeWheel({id, kind, label, count, value, available, onChange, ref}: {id: string; kind: 'hour' | 'minute'; label: string; count: number; value: number; available: boolean[]; onChange: (value: number) => void; ref: Ref<WheelHandle>}) {
+export type WheelHandle = {read: () => number};
+export function TimeWheel({id, kind, label, count, value, available, onChange, ref}: {id: string; kind: 'hour' | 'minute' | 'second'; label: string; count: number; value: number; available: boolean[]; onChange: (value: number) => void; ref: Ref<WheelHandle>}) {
   const wheel = useRef<HTMLDivElement>(null), settle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const read = () => Math.max(0, Math.min(count - 1, Math.round((wheel.current?.scrollTop || 0) / ROW_HEIGHT)));
   useImperativeHandle(ref, () => ({read}));

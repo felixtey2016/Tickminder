@@ -1,4 +1,5 @@
 "use client";
+import {DateInput} from '@/components/date-time-input';
 import {TimeInput} from '@/components/time-input';
 
 import { useDialogState } from "@/lib/use-dialog-state";
@@ -39,7 +40,7 @@ export function StudentLearningDashboard({ lessons, proposals, learning, mutate,
     <Dialog open={Boolean(form)} onOpenChange={open => { if (!open) setForm(null); }}><DialogContent className="lesson-dialog"><DialogHeader><DialogTitle>{form?.id ? t("编辑学习计划") : t("新增学习计划")}</DialogTitle></DialogHeader>{form && <form className="learning-form" onSubmit={save}>
       {form.homeworkId && <p className="muted">{t("此计划已关联功课。安排学习时间不会提交功课，请在功课页面上传并提交 PDF。")}</p>}
       <label>{t("标题")}<input required maxLength={120} value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}/></label>
-      <label>{t("日期")}<input required type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}/></label>
+      <label>{t("日期")}<DateInput required type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}/></label>
       <div className="form-pair"><label>{t("开始时间")}<TimeInput required type="time" value={form.start} onChange={e => setForm({ ...form, start: e.target.value })}/></label><label>{t("结束时间")}<TimeInput required type="time" min={form.start} value={form.end} onChange={e => setForm({ ...form, end: e.target.value })}/></label></div>
       <label>{t("科目（可选）")}<input maxLength={100} list="study-subjects" value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })}/><datalist id="study-subjects">{[...new Set([...lessons.map(l => l.subject), ...learning.homework.map(h => h.subject)])].map(subject => <option key={subject} value={subject}/>)}</datalist></label>
       <label>{t("备注（可选）")}<textarea maxLength={1000} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })}/></label>

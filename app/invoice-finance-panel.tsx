@@ -1,4 +1,5 @@
 "use client";
+import {DateTimeInput} from '@/components/date-time-input';
 
 import {displayFormatter} from '@/lib/display-preferences';
 import {useEffect,useRef,useState,type FormEvent,type ReactNode} from 'react';
@@ -54,7 +55,7 @@ function FinanceActionDialog({action,summary,busy,canCreditInvoice,onClose,onSub
   <form noValidate className="invoice-finance-form" onSubmit={submit}><fieldset disabled={busy}>
    {action.kind==='adjust'&&<label>{F('adjustmentType')}<select value={kind} onChange={e=>setKind(e.target.value as 'charge'|'credit')}><option value="credit">{F('credit')}</option><option value="charge">{F('charge')}</option></select></label>}
    {needsAmount&&<label>{F('amount')}<input autoFocus type="text" inputMode="decimal" maxLength={11} value={amount} onChange={e=>setAmount(e.target.value)}/></label>}
-   {needsTime&&<label>{F(action.kind==='recordPayment'?'receivedAt':action.kind==='refund'?'refundedAt':'effectiveAt')}<input type="datetime-local" value={when} onChange={e=>setWhen(e.target.value)}/></label>}
+   {needsTime&&<label>{F(action.kind==='recordPayment'?'receivedAt':action.kind==='refund'?'refundedAt':'effectiveAt')}<DateTimeInput type="datetime-local" value={when} onChange={e=>setWhen(e.target.value)}/></label>}
    {(action.kind==='recordPayment'||action.kind==='refund')&&<><label>{F('method')}<select value={method} onChange={e=>setMethod(e.target.value as PaymentMethod)}>{PAYMENT_METHODS.map(item=><option key={item} value={item}>{F('method.'+item)}</option>)}</select></label><label>{F('reference')}<input maxLength={150} value={reference} onChange={e=>setReference(e.target.value)}/></label></>}
    {needsReason&&<label>{F('reason')}<textarea autoFocus={!needsAmount} maxLength={1000} value={reason} onChange={e=>setReason(e.target.value)}/></label>}
    {action.kind==='refund'&&canCreditInvoice&&<label className="invoice-finance-checkbox"><input type="checkbox" checked={creditInvoice} onChange={e=>setCreditInvoice(e.target.checked)}/><span>{F('creditInvoice')}</span></label>}

@@ -1,4 +1,5 @@
 "use client";
+import {DateInput} from '@/components/date-time-input';
 import "@/lib/student-offboarding-i18n";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -94,7 +95,7 @@ function OffboardingEditor({studentName, disabled, onDone, onBusyChange}: {stude
   </div>;
   return <form className="student-offboarding-editor" onSubmit={event => {event.preventDefault(); void submit("mark");}}>
     <p className="student-offboarding-description">{text("先标记退课时间；财务事项处理完成后，再核对并清理资料。", "Mark the leaving date first, then review cleanup after financial items are resolved.")}</p>
-    <label>{text("预计最后上课日（选填）", "Planned last lesson date (optional)")}<input type="date" value={date} disabled={unavailable || !canEdit} onChange={event => setDate(event.target.value)}/></label>
+    <label>{text("预计最后上课日（选填）", "Planned last lesson date (optional)")}<DateInput type="date" value={date} disabled={unavailable || !canEdit} onChange={event => setDate(event.target.value)}/></label>
     <label>{text("原因（选填）", "Reason (optional)")}<textarea maxLength={500} rows={2} value={reason} disabled={unavailable || !canEdit} onChange={event => setReason(event.target.value)}/></label>
     <div className="student-offboarding-actions">{canEdit && <Button disabled={unavailable}>{record?.status === "marked" ? text("保存标记", "Save mark") : text("标记待退课／待清理", "Mark leaving / cleanup")}</Button>}{record?.status === "marked" && canClean && <Button type="button" variant="outline" disabled={unavailable} onClick={() => void submit("preview")}>{text("核对清理范围", "Review cleanup")}</Button>}{record?.status === "marked" && canEdit && <Button type="button" variant="outline" disabled={unavailable} onClick={() => void submit("cancel")}>{text("取消标记", "Cancel mark")}</Button>}</div>
   </form>;

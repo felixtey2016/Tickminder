@@ -1,4 +1,5 @@
 "use client";
+import {DateInput} from '@/components/date-time-input';
 import {useEffect,useRef,useState} from 'react';
 import {Button} from '@/components/ui/button';
 import {groupFetch} from '@/lib/group-client';
@@ -38,7 +39,7 @@ export function BillingRateEditor({planKey,onPreview}:{planKey:string;onPreview?
   {!data.context.active&&<p className="notice" role="status">{t('该学生或课程已停用，收费设置为只读。费率历史保留。')}</p>}
   {data.context.active&&<form className="billing-form" onSubmit={save}>
    <h3>{t(data.context.revision?'新增费率版本':'设置收费')}</h3>
-   <div className="billing-form-grid"><label>{t('计费方式')}<select disabled={busy} value={mode} onChange={e=>setMode(e.target.value as BillingMode)}><option value="hour">{t('按小时')}</option><option value="lesson">{t('按堂')}</option><option value="month">{t('固定月费')}</option></select></label><label>{t('收费金额')} · MYR<input aria-label={t('收费金额')} inputMode="decimal" type="text" required disabled={busy} maxLength={11} value={amount} placeholder="0.00" onChange={e=>setAmount(e.target.value)}/></label><label>{t('生效日期')}<input type="date" required disabled={busy} value={date} onChange={e=>setDate(e.target.value)}/></label></div>
+   <div className="billing-form-grid"><label>{t('计费方式')}<select disabled={busy} value={mode} onChange={e=>setMode(e.target.value as BillingMode)}><option value="hour">{t('按小时')}</option><option value="lesson">{t('按堂')}</option><option value="month">{t('固定月费')}</option></select></label><label>{t('收费金额')} · MYR<input aria-label={t('收费金额')} inputMode="decimal" type="text" required disabled={busy} maxLength={11} value={amount} placeholder="0.00" onChange={e=>setAmount(e.target.value)}/></label><label>{t('生效日期')}<DateInput type="date" required disabled={busy} value={date} onChange={e=>setDate(e.target.value)}/></label></div>
    <p className="muted">{t('修改收费会新增历史版本。已生效版本保留；之后的变更从新的生效日期开始。')}</p>
    {error&&<p role="alert" className="error">{error}</p>}<div className="billing-actions"><Button disabled={busy}>{t(busy?'正在保存…':'保存收费设置')}</Button>{error&&<Button type="button" variant="outline" disabled={busy} onClick={()=>setReload(x=>x+1)}>{t('重新载入收费设置')}</Button>}</div>
   </form>}

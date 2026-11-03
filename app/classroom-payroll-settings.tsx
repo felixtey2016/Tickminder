@@ -1,4 +1,5 @@
 "use client";
+import {DateInput} from '@/components/date-time-input';
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {Button} from '@/components/ui/button';
 import {alertActionFailure,showActionToast} from '@/lib/action-feedback';
@@ -45,7 +46,7 @@ export default function ClassroomPayrollSettings({classroomId,canEdit}:{classroo
      <label>{F2('teacher')}<select value={teacherId} onChange={event=>fill(data,event.target.value)}>{data.teachers.map(item=><option key={item.teacherId} value={item.teacherId}>{item.teacherName}{!item.active?' · '+F2('inactive'):''}</option>)}</select></label>
      <label>{F2('payMode')}<select value={mode} onChange={event=>{setMode(event.target.value as PayMode);pending.current=null;}}><option value="hour">{F2('payByHour')}</option><option value="lesson">{F2('payByLesson')}</option><option value="month">{F2('payByMonth')}</option></select></label>
      <label>{F2(mode==='hour'?'hourlyRate':mode==='lesson'?'lessonRate':'monthlyRate')}<input inputMode="decimal" maxLength={11} value={amount} onChange={event=>{setAmount(event.target.value);setSuggested(false);pending.current=null;}} placeholder="0.00"/></label>
-     <label>{F2('effectiveFrom')}<input type="date" value={effectiveFrom} onChange={event=>{setEffectiveFrom(event.target.value);pending.current=null;}}/></label>
+     <label>{F2('effectiveFrom')}<DateInput type="date" value={effectiveFrom} onChange={event=>{setEffectiveFrom(event.target.value);pending.current=null;}}/></label>
     </div></fieldset>
     {suggested&&<p className="finance2-notice">{F2('prefillRateHint')}</p>}
     <details className="payroll-help"><summary>{payLabel('计算说明','How pay is calculated')}</summary><div><p>{F2(mode==='month'?'monthlyPayHint':mode==='lesson'?'lessonPayHint':'hourlyPayHint')}</p></div></details>

@@ -1,4 +1,5 @@
 "use client";
+import {DateTimeInput} from '@/components/date-time-input';
 import { useState } from "react";
 import { useDialogState } from "@/lib/use-dialog-state";
 import { t } from "@/lib/i18n";
@@ -17,7 +18,7 @@ export function RescheduleRequestDialog({ lesson, close, mutate, busy }: { lesso
   return <Dialog open={Boolean(lesson)} onOpenChange={open => { if (!open) close(); }}><DialogContent className="lesson-dialog"><DialogHeader><DialogTitle>{t("申请改期")}</DialogTitle></DialogHeader>{lesson && <form onSubmit={async e => { e.preventDefault(); if (await mutate({ action: "proposeReschedule", id: lesson.id, start, end, note })) close(); }}>
     <p className="dialog-sub">{lesson.subject} · {lesson.teacherName}<br/>{t("原时间：")}{range(lesson.plannedStart, lesson.plannedEnd)}</p>
     <p className="muted">{t("对方同意后才会更新上课时间。")}</p>
-    <div className="form-pair"><label>{t("新开始时间")}<input type="datetime-local" required value={start} onChange={e => setStart(e.target.value)}/></label><label>{t("新结束时间")}<input type="datetime-local" required value={end} onChange={e => setEnd(e.target.value)}/></label></div>
+    <div className="form-pair"><label>{t("新开始时间")}<DateTimeInput type="datetime-local" required value={start} onChange={e => setStart(e.target.value)}/></label><label>{t("新结束时间")}<DateTimeInput type="datetime-local" required value={end} onChange={e => setEnd(e.target.value)}/></label></div>
     <ConflictPreview enabled={Boolean(start && end && start < end)} value={{ action: "proposeReschedule", id: lesson.id, start, end }}/>
     <label>{t("备注（可选）")}<textarea maxLength={500} value={note} onChange={e => setNote(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("提交改期申请")}</Button>
   </form>}</DialogContent></Dialog>;
