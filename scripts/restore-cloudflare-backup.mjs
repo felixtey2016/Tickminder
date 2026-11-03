@@ -80,9 +80,11 @@ try {
   const database = JSON.parse(plain.toString('utf8'));
   const legacyOwnerEmail=String(expected.legacyOwnerEmail||'').trim().toLowerCase();
   if(database.tables?.accounts&&!database.tables.accounts.columns.includes('group_id')&&!legacyOwnerEmail)throw new Error('Legacy restore requires legacyOwnerEmail in the private expected-target file');
-  if (snapshotVersion(database)<7) throw new Error('Recovery branch requires a v7–v24 database snapshot');
+  if (snapshotVersion(database)<7) throw new Error('Recovery branch requires a supported database snapshot at v7 or later');
   const tables = orderedSnapshotTables(database.tables);
   const external=externalSnapshotSchema(database);
+  // Always recover into the current schema. Older snapshots omit preference rows
+  // (default enabled) and device metadata is recreated only for surviving sessions.
   const schema = readdirSync(join(root, 'drizzle')).filter(name => /^\d{4}_.*\.sql$/.test(name)).sort()
     .map(name => readFileSync(join(root, 'drizzle', name), 'utf8')).join('\n');
   const schemaCheck=new DatabaseSync(':memory:');let triggers;

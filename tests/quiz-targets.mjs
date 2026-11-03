@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import ts from 'typescript';
+import {createFixtureLoader} from './fixture-loader.mjs';
 import {DatabaseSync} from 'node:sqlite';
 const db=new DatabaseSync(':memory:');
 db.exec(`CREATE TABLE teachers(group_id TEXT,name TEXT,active INTEGER,PRIMARY KEY(group_id,name));
@@ -10,9 +9,11 @@ CREATE TABLE classroom_members(id TEXT PRIMARY KEY,group_id TEXT,classroom_id TE
 CREATE TABLE plans(group_id TEXT,key TEXT,student TEXT,subject TEXT,teacher_name TEXT,active INTEGER);`);
 let queryCount=0;function statement(sql,values=[]){return {bind:(...args)=>statement(sql,args),all:async()=>{queryCount++;return {results:db.prepare(sql).all(...values)};}};}
 globalThis.__quizTargetsDb={prepare:statement};
-const cache=new Map(),stub='data:text/javascript,export function learningDb(){return globalThis.__quizTargetsDb;}';
-async function load(file){if(cache.has(file))return cache.get(file);let code=ts.transpileModule(fs.readFileSync(new URL('../lib/'+file+'.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;for(const m of [...code.matchAll(/from ['"]([^'"]+)['"]/g)]){const spec=m[1],url=spec==='@/lib/learning-server'?stub:(await load(spec.slice('@/lib/'.length))).url;code=code.replaceAll(`'${spec}'`,`'${url}'`).replaceAll(`"${spec}"`,`"${url}"`);}const url='data:text/javascript;base64,'+Buffer.from(code).toString('base64'),loaded={url,module:await import(url)};cache.set(file,loaded);return loaded;}
-const subject=(await load('quiz-subjects')).module,targets=(await load('quiz-targets')).module;
+// This bounded roster fixture keeps preparation-mode administrator grants;
+// enforced administrator permissions are exercised by the sharing/server suites.
+const runtime='data:text/javascript;base64,'+Buffer.from("export function learningDb(){return globalThis.__quizTargetsDb;} export const OWNER_EMAIL='fixture-owner@example.test'; export function isOwnerAccount(){return false;}").toString('base64');
+const load=createFixtureLoader({runtimeUrl:runtime,environmentUrl:'data:text/javascript;base64,'+Buffer.from('export const env={ADMIN_PERMISSIONS_MODE:"prepare"};').toString('base64'),runtimeFiles:['lib/learning-server.ts','lib/owner.ts']});
+const subject=(await load('lib/quiz-subjects.ts')).module,targets=(await load('lib/quiz-targets.ts')).module;
 for(const [left,right] of [['Mathematics','数学'],[' MATHS\t','Matematik'],[' mAtH ','Mathematics'],['SCIENCE',' science '],['A\t\tB',' a  b '],['\u00a0Math\u3000','Mathematics']]){
  assert.equal(subject.quizSubjectsMatch(left,right),true);assert.equal(db.prepare('SELECT '+subject.quizSubjectSql('?')+' = '+subject.quizSubjectSql('?')+' AS same').get(left,right).same,1);
 }

@@ -244,7 +244,7 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
         setLinkedQuizId(undefined);
         // Only replace our strict internal route; never accept a return URL.
         if(quizLinkIdFromPath(window.location.pathname)){
-            const url=new URL(window.location.href);url.pathname='/';
+            const url=new URL(window.location.href);url.pathname='/';url.searchParams.delete('assignment');
             window.history.replaceState(window.history.state,'',url);
         }
     },[]);
@@ -667,6 +667,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "subjects", label: "学生课程设置", Icon: BookOpen },
         { id: "teacherRoster", label: "老师名单", Icon: UserRound },
         { id: "studentRoster", label: "学生名单", Icon: UsersRound },
+        { id: "parentRoster", label: "parents.parentRoster", Icon: UsersRound },
         { id: "accounts", label: "账号管理", Icon: Users },
         { id: "sheet", label: "课时写入表格", Icon: FileSpreadsheet },
         { id: "activity", label: "操作日志", Icon: History },
@@ -793,7 +794,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
     if (courseView) lastCourseView.current = activeView;
     if (managementView) lastManagementViews.current[managementView] = activeView as typeof lastManagementViews.current.people;
     const title = primaryLabel || (activeView==='homework'?(language==='zh'?'功课与任务':'Homework & tasks'):courseView ? activeView === 'schedule' ? '安排课程' : "course.nav.title" : managementView ? managementTitle(managementView) : items.find(item => item.id === activeView)?.label || items[0].label);
-    const requiredScope: StateScope | null = activeView === "classrooms" ? "classrooms" : activeView === "accounts" ? "accounts" : activeView==='homework'&&canAdminAction(account,'homework.view')||role==='student'&&activeView==='calendar' ? "learning" : null;
+    const requiredScope: StateScope | null = activeView === "classrooms" ? "classrooms" : activeView === "accounts" || activeView === "parentRoster" ? "accounts" : activeView==='homework'&&canAdminAction(account,'homework.view')||role==='student'&&activeView==='calendar' ? "learning" : null;
     const scopeLoaded = !requiredScope || state?.loadedScopes?.includes(requiredScope) || (!state?.loadedScopes && Boolean(requiredScope === "learning" ? state?.learning : requiredScope === "classrooms" ? state?.classrooms : requiredScope === "accounts" ? state?.users : state?.users));
     const scopeError = requiredScope ? state?.scopeErrors?.[requiredScope] : undefined;
     useEffect(() => {
@@ -846,7 +847,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
     else if (activeView === "home" && role === "pending") {
         pageContent = <section className="panel pending-home"><h2>{t(account.assignmentStatus === "ACTIVE" ? "账号已启用" : "等待分配")}</h2><p>{t("管理员分配身份后，课程、功课及班级会显示在这里。")}</p>{account.pendingExpiresAt && <p className="notice">{t("待分配期限")} · {new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-GB",{timeZone:"Asia/Kuala_Lumpur",dateStyle:"medium",timeStyle:"short"}).format(new Date(account.pendingExpiresAt))}<br/>{t("新注册账号在 7 天内未启用或绑定，会到期清理。请联系管理员。")}</p>}<Button variant="outline" onClick={()=>choose("myAccount")}>{t("我的账号")}</Button></section>;
     } else if (activeView === "home" && role !== "pending") {
-        pageContent = <HomeDashboard role={role} name={account.name} taskCounts={state?.taskCounts} lessons={lessons} learning={learning} learningReady={learningReady || role === "admin"} learningError={state?.scopeErrors?.learning} onNavigate={choose}/>;
+        pageContent = <HomeDashboard role={role} name={account.name} taskCounts={state?.taskCounts} lessons={lessons} learning={learning} learningReady={learningReady || role === "admin"} learningError={state?.scopeErrors?.learning} onNavigate={destination=>{if(destination==='quizHistory'){if(!canView('quizzes')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;window.history.replaceState({...window.history.state,timelyoQuizTab:'history'},'');choose('quizzes');}else choose(destination);}} onOpenTask={(classroomId,taskId)=>{if(!canView('classrooms')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;setClassroomTaskTarget({classroomId,taskId});choose('classrooms');}}/>;
     } else if (activeView === "notifications") {
         pageContent = <NotificationWorkspace key={`${account.groupId}:${role}`} role={role} language={language} learningMutate={learningMutate} courseMutate={mutate} onLesson={lesson=>setModal({type:'edit',lesson})} busy={busy}/>;
     } else if (activeView === "myAccount") {
@@ -871,8 +872,8 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
             pageContent = <SubjectAdmin studentProfiles={(canAdminAction(account,"students.view")?state?.allStudents:state?.studentOptions)||[]} students={state?.students || []} teachers={state?.teachers || []} plans={state?.allPlans || []} mutate={mutate} busy={busy} canFinance={Boolean(account.isOwner||account.isGroupChief)} onPreview={()=>choose('billing')}/>;
         } else if (activeView==='billing'&&role==='admin'&&canAdminView(account,'billing')) {
             pageContent=<FinanceWorkspace openInvoiceList={openInvoiceList} onInvoiceListOpened={()=>setOpenInvoiceList(false)} account={account} key={account.groupId} students={(state?.allStudents?.length?state.allStudents:state?.studentOptions||[]).map(student=>student.name)} onCourses={()=>choose('subjects')}/>;
-        } else if (["teacherRoster", "studentRoster", "accounts"].includes(activeView)) {
-            const view = activeView === "teacherRoster" ? "teachers" : activeView === "studentRoster" ? "students" : activeView as "binding" | "accounts";
+        } else if (["teacherRoster", "studentRoster", "parentRoster", "accounts"].includes(activeView)) {
+            const view = activeView === "teacherRoster" ? "teachers" : activeView === "studentRoster" ? "students" : activeView === "parentRoster" ? "parents" : activeView as "binding" | "accounts";
             pageContent = <RosterAdmin account={account} state={state} mutate={mutate} busy={busy} view={view} onOpenAccounts={()=>choose("accounts")} onAccountsChanged={()=>void ensureScope("accounts",true)}/>;
         } else if (activeView === "sheet") {
             pageContent = <SheetSyncPanel/>;
@@ -951,11 +952,12 @@ function AdminDashboard({ state, lessons, open, view,mutate,busy,onOpenFinance }
     return <div className="dashboard">{can('attendance.view')&&<TeachingSummary summary={state?.teachingSummary}/>}<div className="metric-grid">{can('statistics.view')&&<><div className="metric"><span>{t('学生累计出席课时')}</span><strong>{formatDurationHours(summary.reduce((n,x)=>n+x.completed,0),getLanguage())}</strong><p>{month} · {t('已记录出席')}</p></div><div className="metric"><span>{t('未来已安排课时')}</span><strong>{formatDurationHours(summary.reduce((n,x)=>n+x.upcoming,0),getLanguage())}</strong><p>{t('所选月份')}</p></div></>}<div className="metric attention"><span>{t('待复核记录')}</span><strong>{state?.taskCounts?.pendingReview??'—'}</strong></div></div>{can('attendance.view')&&<PagedAttendanceBoard onOpenFinance={onOpenFinance} mode="review" role="admin" month={month} mutate={mutate} busy={busy} teachers={teachers}/ >}{can('lessons.view')&&<PagedLessonRows mode="upcoming" month={month} sessionType="" title="即将上课" renderLesson={l=><LessonCard key={l.id} lesson={l} admin open={open}/>}/ >}{can('statistics.view')&&<section className="panel"><h2>{t('学生科目统计')}</h2><p className="muted">{t('按实际开始日期归属月份')}</p><div className="summary-grid">{summary.map(row=><div className="summary-row" key={row.key}><strong>{row.key.replace('|',' · ')}</strong><span>{formatDurationHours(row.completed,getLanguage())} · {row.lessons} {t('堂已上课')}</span><span>{formatDurationHours(row.upcoming,getLanguage())} · {t('未来已安排')}</span><span>{row.pending} {t('待记录出席')} · {row.makeupNeeded} {t('待补')}</span></div>)}</div></section>}</div>;
 }
 
-function RosterAdmin({ account, state, mutate, busy, view,onAccountsChanged,onOpenAccounts }: {onOpenAccounts?:()=>void; onAccountsChanged?:()=>void; account: Account; state: State | null; mutate: (x: Record<string, unknown>) => Promise<boolean>; busy: boolean; view: "teachers" | "students" | "binding" | "accounts" }) {
+function RosterAdmin({ account, state, mutate, busy, view,onAccountsChanged,onOpenAccounts }: {onOpenAccounts?:()=>void; onAccountsChanged?:()=>void; account: Account; state: State | null; mutate: (x: Record<string, unknown>) => Promise<boolean>; busy: boolean; view: "teachers" | "students" | "parents" | "binding" | "accounts" }) {
     if (view === "teachers" || view === "students") return <PeopleDirectory kind={view === "teachers" ? "teacher" : "student"} people={view === "teachers" ? state?.allTeachers || [] : state?.allStudents || []} mutate={mutate} busy={busy} onCreateAccount={onOpenAccounts}/>;
-    return <AccountDirectory onAccountsChanged={onAccountsChanged} actor={account} users={state?.users || []} teachers={state?.teachers || []} students={state?.students || []} mutate={mutate} busy={busy} createForm={onCreated=><LocalAccountAdmin account={account} state={state} mutate={mutate} busy={busy} onCreated={onCreated}/>}/>;
+    return <AccountDirectory key={view} roleFilter={view==='parents'?'parent':undefined} onAccountsChanged={onAccountsChanged} actor={account} users={state?.users || []} teachers={state?.teachers || []} students={state?.students || []} mutate={mutate} busy={busy} createForm={onCreated=><LocalAccountAdmin initialRole={view==='parents'?'parent':undefined} account={account} state={state} mutate={mutate} busy={busy} onCreated={onCreated}/>}/>;
 }
-function LocalAccountAdmin({ account, state, mutate, busy,onCreated }: {
+function LocalAccountAdmin({ account, state, mutate, busy,onCreated,initialRole='student' }: {
+    initialRole?:'teacher'|'student'|'parent'|'admin';
     onCreated?:(role:string)=>void;
     account: Account;
     state: State | null;
@@ -963,7 +965,7 @@ function LocalAccountAdmin({ account, state, mutate, busy,onCreated }: {
     busy: boolean;
 }) {
     const [username,setUsername]=useState(''),[password,setPassword]=useState('');
-    const [role,setRole]=useState<'teacher'|'student'|'parent'|'admin'>('student');
+    const [role,setRole]=useState<'teacher'|'student'|'parent'|'admin'>(initialRole);
     const [person,setPerson]=useState(()=>createPersonIdentityDraft());
     const [resetUserId,setResetUserId]=useState(''),[resetPassword,setResetPassword]=useState('');
     const can=useAdminAction(),canManageAdministrators=account.canManageAdministrators===true;

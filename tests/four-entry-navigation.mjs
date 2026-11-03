@@ -11,7 +11,7 @@ for(const [role,expected] of Object.entries(layouts)){
  assert.equal(isPrimaryHub(role,'unknownHub'),false);
 }
 const leaves={
- admin:{teachingHub:['calendar','list','schedule','attention','overview','students','teachers','subjects','classrooms','homework','materials','quizzes'],manageHub:['groups','studentRoster','teacherRoster','accounts','groupInfo','myAccount','sheet','activity','notifications'],financeHub:['billing']},
+ admin:{teachingHub:['calendar','list','schedule','attention','overview','students','teachers','subjects','classrooms','homework','materials','quizzes'],manageHub:['groups','studentRoster','teacherRoster','parentRoster','accounts','groupInfo','myAccount','sheet','activity','notifications'],financeHub:['billing']},
  teacher:{courses:['calendar','lessons','attendance','reschedule','hours','schedule'],teachingHub:['classrooms','homework','materials','quizzes','students'],myHub:['myAccount','notifications']},
  student:{courses:['calendar','list','reschedule'],learningHub:['classrooms','homework','materials','quizzes'],myHub:['myAccount','notifications']},
 };
@@ -20,7 +20,7 @@ for(const [role,areas] of Object.entries(leaves))for(const [area,ids] of Object.
 for(const role of Object.keys(layouts)){
  const shortcuts=primaryEntries(role).flatMap(entry=>hubGroups(role,entry.id).flatMap(group=>group.ids));
  for(const id of Object.values(leaves[role]).flat().filter(id=>!['calendar','list','schedule','attention','overview','teachers','lessons','attendance','reschedule','hours','billing'].includes(id)&&!(role==='admin'&&id==='students'))){assert(shortcuts.includes(id),role+' missing '+id);}
- if(role!=='admin')for(const id of ['billing','accounts','groups','teacherRoster','studentRoster','activity','sheet'])assert(!shortcuts.includes(id),role+' exposes '+id);
+ if(role!=='admin')for(const id of ['billing','accounts','groups','teacherRoster','studentRoster','parentRoster','activity','sheet'])assert(!shortcuts.includes(id),role+' exposes '+id);
 }
 // Permissions can remove any leaf without losing the main account/home paths.
 const allowed=new Set(['home','myAccount','notifications','accounts']);

@@ -18,11 +18,14 @@ check(canAdminAction(privileged,'students.edit'),'the server-supplied privileged
 check(!canAdminAction(privileged,'future.destroy'),'even privileged accounts cannot invent a future grant');
 check(!canAdminAction(actor(['future.destroy']),'future.destroy'),'unknown grants are rejected');
 for(const view of ['home','myAccount','notifications','groupInfo','settings'])check(canAdminView(actor(),view),'empty profile retains '+view);
-for(const view of ['classrooms','homework','materials','quizzes','overview','attention','schedule','calendar','list','students','teachers','subjects','teacherRoster','studentRoster','accounts','sheet','activity','people','courses'])check(!canAdminView(actor(),view),'empty profile hides '+view);
+for(const view of ['classrooms','homework','materials','quizzes','overview','attention','schedule','calendar','list','students','teachers','subjects','teacherRoster','studentRoster','parentRoster','accounts','sheet','activity','people','courses'])check(!canAdminView(actor(),view),'empty profile hides '+view);
 check(canAdminView(actor(['quizAssignments.view']),'quizzes'),'assignment readers can enter the quiz hub');
 check(!canAdminView(actor(['quizAssignments.view']),'quizBank'),'assignment reading does not open the library');
 check(canAdminView(actor(['students.view']),'people'),'the people area is reachable for a student reader');
 check(!canAdminView(actor(['students.view']),'accounts'),'student reading does not open accounts');
+check(canAdminView(actor(['accounts.view']),'parentRoster'),'account readers can enter the parent roster without child-link access');
+check(!canAdminView(actor(['parents.view']),'parentRoster'),'parent viewing alone cannot bypass the account scope');
+check(!canAdminView(actor([], {canManageAdministrators:true}),'parentRoster'),'identity manager entry exception does not grant parent roster access');
 check(canAdminView(actor([], {canManageAdministrators:true}),'accounts'),'identity managers retain their protected account-management entry');
 check(!canAdminView(actor(['students.view']),'billing'),'a module grant cannot open finance');
 check(canAdminView(privileged,'billing'),'finance remains available to the platform owner');

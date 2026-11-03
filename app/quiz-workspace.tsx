@@ -16,6 +16,7 @@ import {emptyQuiz,newQuestion,type QuizContent} from '@/lib/quiz';
 import type {LocalQuiz} from './quiz-editor';
 import QuizCopyLinkButton from './quiz-copy-link-button';
 import {isQuizLinkId} from '@/lib/quiz-link';
+import type {PracticeAttemptSummary,PracticeState} from '@/lib/quiz-practice-types';
 import QuizPracticePanel,{QuizAllocateDialog,QuizPracticeStart,type PracticeSource} from './quiz-practice-panel';
 import {useAcademicCatalogue} from '@/lib/use-academic-catalogue';
 import {findCatalogueSyllabus,findCatalogueSubject} from '@/lib/academic-catalogue';
@@ -71,6 +72,7 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
  const [editor,setEditor]=useState<LocalQuiz|null>(null),[preview,setPreview]=useState<{content:QuizContent;creator:string}|null>(null),[reload,setReload]=useState(0);
  const [opening,setOpening]=useState<Opening|null>(null);
  const [practiceSource,setPracticeSource]=useState<PracticeSource|null>(null),[allocation,setAllocation]=useState<PracticeSource|null>(null),[attemptId,setAttemptId]=useState<string|null>(null);
+ const [ownPending,setOwnPending]=useState<PracticeAttemptSummary[]>([]),[assignedFocus,setAssignedFocus]=useState<string|undefined>(),[linkedReload,setLinkedReload]=useState(0);
  const [deleting,setDeleting]=useState<Item|null>(null),deleteOperation=useRef<{id:string;operationId:string}|null>(null);
  const generation=useRef(0),copyOperations=useRef(new Map<string,CopyOperation>());
  const listAbort=useRef<AbortController|null>(null),openAbort=useRef<AbortController|null>(null),openGeneration=useRef(0),actionLocks=useRef(new Set<string>());
@@ -82,6 +84,12 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
  const suspended=Boolean(importOpen||linkedQuizId||editor||opening||preview||practiceSource||allocation||attemptId);
  const tabs:typeof tab[]=(author?['assigned','bank','mine','history',...(facets.manageQuizzes?['manage' as const]:[])]:role==='parent'?['bank','history']:['assigned','bank','history']).filter(value=>value==='assigned'?assignmentsAllowed:value==='history'?(catalogueAllowed||assignmentsAllowed):catalogueAllowed) as typeof tab[];
  useEffect(()=>{if(!tabs.includes(tab)&&tabs[0])setTab(tabs[0]);},[tab,tabs.join(',')]);
+ useEffect(()=>{
+  if(!catalogueAllowed||linkedQuizId||attemptId)return;
+  const controller=new AbortController();
+  void api<PracticeState&{error?:string}>('/api/quiz-practice?ownInProgress=1&scope=self',{signal:controller.signal,cache:'no-store'}).then(data=>{if(!controller.signal.aborted)setOwnPending(data.attempts.filter(attempt=>!attempt.assignmentId&&attempt.canAnswer));}).catch(()=>{/* Exact lookup before starting still handles a failed summary request. */});
+  return()=>controller.abort();
+ },[catalogueAllowed,linkedQuizId,attemptId,reload]);
  const selectedSyllabus=catalogue?findCatalogueSyllabus(catalogue,filters.syllabus):null;
  const chapters=useMemo(()=>facets.chapters.filter(chapter=>(chapter.subject===filters.subject||Boolean(selectedSyllabus&&findCatalogueSubject(selectedSyllabus,filters.subject)?.name===chapter.subject))&&(!filters.level||chapter.level===filters.level)),[facets.chapters,filters.subject,filters.level,selectedSyllabus]);
  const subjectOptions=selectedSyllabus?selectedSyllabus.subjects.filter(s=>s.active):catalogue?[...new Map(catalogue.syllabuses.filter(s=>s.active).flatMap(s=>s.subjects.filter(x=>x.active)).map(s=>[s.id,s])).values()]:[];
@@ -94,7 +102,7 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
  function closeTools(){toolbarMore.current?.removeAttribute('open');}
 
  useEffect(()=>{
-  if(window.history.state?.timelyoQuizTab==='bank'){replaceTab('bank');const next={...window.history.state};delete next.timelyoQuizTab;window.history.replaceState(next,'');}
+  if(['bank','history'].includes(window.history.state?.timelyoQuizTab)){replaceTab(window.history.state.timelyoQuizTab);const next={...window.history.state};delete next.timelyoQuizTab;window.history.replaceState(next,'');}
  },[replaceTab]);
  useEffect(()=>{
   const close=(event:PointerEvent)=>{if(!(event.target instanceof Node))return;if(!toolbarMore.current?.contains(event.target))closeTools();for(const menu of workspaceRoot.current?.querySelectorAll<HTMLDetailsElement>('.quiz-item-more[open]')||[])if(!menu.contains(event.target))menu.removeAttribute('open');};
@@ -122,7 +130,7 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
 
  function clearFilters(){setSearchInput('');setFilters({...EMPTY_FILTERS});}
  function cancelOpening(){openGeneration.current++;openAbort.current?.abort();setOpening(null);}
- function changeTab(next:typeof tab){closeTools();cancelOpening();setTab(next);setActionError('');setActionRetry(null);}
+ function changeTab(next:typeof tab){closeTools();cancelOpening();setAssignedFocus(undefined);setTab(next);setActionError('');setActionRetry(null);}
  async function open(item:Item,previewOnly=false){
   openAbort.current?.abort();const controller=new AbortController(),token=++openGeneration.current;openAbort.current=controller;setOpening({item,mode:previewOnly?'preview':'edit',token,error:''});setActionError('');setActionRetry(null);
   try{const data=await api<LocalQuiz&{error?:string}>('/api/quizzes?id='+encodeURIComponent(item.id)+(itemBank(item)?'&bank=1':'')+(previewOnly?'&preview=1':''),{signal:controller.signal});if(token!==openGeneration.current)return;if(previewOnly)setPreview({content:data.content,creator:item.creator});else setEditor({...data,bank:false,maintenanceImport:Boolean(facets.maintenanceImport&&data.sourceKey)});setOpening(null);}
@@ -139,6 +147,17 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
    const draft=await api<LocalQuiz&{error?:string}>('/api/quizzes?id='+encodeURIComponent(operation.resultId),{signal:controller.signal});if(token!==openGeneration.current)return;copyOperations.current.delete(operationKey);setTab('mine');setEditor({...draft,bank:false});setOpening(null);setReload(value=>value+1);if(!can('quizzes.edit'))showActionToast('success','quiz.copiedDraft');
   }catch(error){if(token===openGeneration.current&&!controller.signal.aborted)setOpening({item,mode:'copy',token,error:errorCode(error)});}finally{actionLocks.current.delete(lock);setBusy(value=>value===lock?null:value);}
  }
+ async function beginPractice(source:PracticeSource){
+  const lock='resume:'+source.id;if(actionLocks.current.has(lock))return;actionLocks.current.add(lock);setBusy(lock);setActionError('');setActionRetry(null);
+  openAbort.current?.abort();const controller=new AbortController(),token=++openGeneration.current;openAbort.current=controller;
+  try{
+   const state=await api<PracticeState&{error?:string}>('/api/quiz-practice?ownInProgress=1&scope=self&quizId='+encodeURIComponent(source.id),{cache:'no-store',signal:controller.signal});
+   if(token!==openGeneration.current||controller.signal.aborted)return;
+   const pending=state.attempts.find(attempt=>!attempt.assignmentId&&attempt.canAnswer);
+   if(pending)setAttemptId(pending.id);else setPracticeSource(source);
+  }catch(error){if(token===openGeneration.current&&!controller.signal.aborted){setActionError(errorCode(error));setActionRetry(()=>()=>void beginPractice(source));}}
+  finally{actionLocks.current.delete(lock);setBusy(value=>value===lock?null:value);}
+ }
  async function importFile(file:File):Promise<boolean>{
   if(!author||!can("quizzes.import")||!facets.maintenanceImport)throw new Error('quiz.forbidden');
   if(actionLocks.current.has('import'))throw new Error('quiz.uploadBusy');actionLocks.current.add('import');setBusy('import');cancelOpening();setActionError('');setActionRetry(null);
@@ -149,14 +168,15 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
  async function deleteQuiz(){if(!can("quizzes.delete")||!deleting||actionLocks.current.has('delete'))return;actionLocks.current.add('delete');setBusy('delete');setActionError('');if(!deleteOperation.current)deleteOperation.current={id:deleting.id,operationId:crypto.randomUUID()};try{await api<{ok:boolean;error?:string}>('/api/quizzes',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'delete',...deleteOperation.current,...(deleting.revision?{revision:deleting.revision}:{})})});facetCache.current.clear();setDeleting(null);deleteOperation.current=null;setReload(value=>value+1);}catch(error){setActionError(errorCode(error));}finally{actionLocks.current.delete('delete');setBusy(value=>value==='delete'?null:value);}}
  function itemCard(item:Item){
   const source:PracticeSource={id:item.id,title:item.title,subject:item.subject,bank:itemBank(item)},copyBusy=busy==='copy:'+(itemBank(item)?'bank:':'mine:')+item.id,deleteBusy=busy==='delete'&&deleting?.id===item.id;
+  const pending=ownPending.find(attempt=>attempt.quizId===item.id),resumeBusy=busy==='resume:'+item.id;
   const deleteAction=author&&Boolean(item.canDelete)&&<Button adminGrant="quizzes.delete" variant="outline" disabled={deleteBusy} onClick={()=>{setDeleting(item);deleteOperation.current=null;setActionError('');}}><Trash2 size={17}/>{t('quiz.deleteQuiz')}</Button>;
   return <article className="quiz-library-item" key={item.id} data-testid="quiz-library-card">
    <div className="quiz-card-content"><div className="quiz-card-heading"><div className="quiz-card-title-row"><h3>{item.title}</h3><span className="quiz-visibility">{visibilityLabel(item)}</span></div><p className="quiz-card-context">{[item.subject,item.exam,item.catalog?.level].filter(Boolean).join(' · ')}</p></div>
-    <div className="quiz-card-byline"><p className="quiz-card-creator"><span>{compactLabel('创作者','Creator')}</span><strong>{item.creator||compactLabel('未提供创作者','Creator unavailable')}</strong></p><div className="quiz-card-facts"><span>{item.questionCount} {t('quiz.questions')}</span><span>{t('quiz.'+item.difficulty)}</span></div></div>
+    <div className="quiz-card-byline"><p className="quiz-card-creator"><span>{compactLabel('创作者','Creator')}</span><strong>{item.creator||compactLabel('未提供创作者','Creator unavailable')}</strong></p><div className="quiz-card-facts"><span>{item.questionCount} {t('quiz.questions')}</span><span>{t('quiz.'+item.difficulty)}</span>{pending&&<span className="quiz-resume-progress">{t('quiz.answeredProgress').replace('{answered}',String(pending.answeredCount||0)).replace('{total}',String(pending.questionCount||item.questionCount))}</span>}</div></div>
     <details className="quiz-card-details"><summary>{compactLabel('详情','Details')}</summary><div><p>{item.totalScore} {t('quiz.pointsUnit')}</p>{item.organisation&&<p>{item.organisation}</p>}{item.catalog&&<p>{[item.catalog.chapterCode,item.catalog.chapterTitle,item.catalog.subtopicCode,item.catalog.subtopicTitle].filter(Boolean).join(' · ')}</p>}{dateLabel(item.updatedAt||item.createdAt)&&<p className="quiz-card-date">{dateLabel(item.updatedAt||item.createdAt)}</p>}</div></details>
    </div>
    <div className="quiz-item-actions">
-    {tab!=='manage'&&<div className="quiz-item-primary-actions">{author&&<Button adminGrant="quizAssignments.assign" data-testid="quiz-assign-to-students" onClick={()=>setAllocation(source)}><UsersRound size={17}/>{compactLabel('布置给学生','Assign to students')}</Button>}<Button adminGrant="quizzes.view" variant={author?'outline':'default'} data-testid="quiz-card-practice" onClick={()=>setPracticeSource(source)}><Play size={17}/>{author?compactLabel('试做','Try quiz'):t('quiz.practice')}</Button></div>}
+    {tab!=='manage'&&<div className="quiz-item-primary-actions">{author&&<Button adminGrant="quizAssignments.assign" data-testid="quiz-assign-to-students" onClick={()=>setAllocation(source)}><UsersRound size={17}/>{compactLabel('布置给学生','Assign to students')}</Button>}<Button adminGrant="quizzes.view" variant={author?'outline':'default'} data-testid="quiz-card-practice" disabled={resumeBusy} onClick={()=>void beginPractice(source)}><Play size={17}/>{resumeBusy?t('quiz.loading'):pending?t('quiz.resume'):author?compactLabel('试做','Try quiz'):t('quiz.practice')}</Button></div>}
     {tab!=='manage'&&<details className="quiz-item-more"><summary aria-label={t('更多操作')} title={t('更多操作')}><MoreHorizontal size={18}/></summary><div className="quiz-item-secondary-actions" onClick={event=>{if((event.target as HTMLElement).closest('button'))event.currentTarget.closest('details')?.removeAttribute('open');}}>{author&&<>{!itemBank(item)&&Boolean(item.canEdit)&&<Button adminGrant="quizzes.edit" variant="outline" onClick={()=>void open(item)}><SquarePen size={17}/>{t('quiz.edit')}</Button>}{Boolean(item.canShare)&&(!Boolean(item.canEdit)||!can("quizzes.edit"))&&<Button adminGrant="quizzes.share" variant="outline" onClick={()=>void open(item)}>{t("quiz.bankSettings")}</Button>}<Button variant="outline" onClick={()=>void open(item,true)}><Eye size={17}/>{t('quiz.previewQuiz')}</Button><Button adminGrant="quizzes.duplicate" variant="outline" disabled={copyBusy} onClick={()=>void duplicate(item)}><Copy size={17}/>{t(can('quizzes.edit')?'quiz.copyEdit':'quiz.duplicate')}</Button>{deleteAction}</>}<QuizCopyLinkButton quizId={item.id}/>{bank&&item.visibility==='public'&&<Button type="button" variant="outline" onClick={()=>setReporting(item.id)}>{t('quiz.report')}</Button>}</div></details>}
     {tab==='manage'&&<><QuizCopyLinkButton quizId={item.id}/>{deleteAction}</>}
    </div>
@@ -166,7 +186,7 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
  function emptyState(message:string){return <section className="quiz-empty"><h3>{t(message)}</h3><div className="quiz-empty-actions">{hasFilters?<Button variant="outline" onClick={clearFilters}>{t('quiz.clearFilters')}</Button>:<>{author&&can('quizzes.create')&&<Button adminGrant="quizzes.create" onClick={create}><Plus size={17}/>{t('quiz.createQuiz')}</Button>}{tab==='mine'&&<Button variant="outline" onClick={()=>changeTab('bank')}>{compactLabel('浏览题库','Browse question bank')}</Button>}{!author&&tabs.includes('assigned')&&<Button variant="outline" onClick={()=>changeTab('assigned')}>{compactLabel('查看老师布置','View assigned work')}</Button>}</>}</div></section>;}
 
  function openingBody(){return <>{opening?.error?<div className="quiz-error" role="alert"><p>{t(opening.error)}</p><Button variant="outline" onClick={()=>{if(opening.mode==='copy')void duplicate(opening.item);else void open(opening.item,opening.mode==='preview');}}>{t('quiz.retry')}</Button></div>:loadingState()}</>;}
- if(linkedQuizId)return <Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizLinkLanding quizId={linkedQuizId} role={role} language={language} onClose={()=>{setLinkedQuizId(null);setAttemptId(null);setTab('bank');onLinkedQuizExit?.();}} onOpen={setAttemptId}/>{attemptId&&<QuizPracticePlayer attemptId={attemptId} language={language} onClose={()=>{setAttemptId(null);setReload(value=>value+1);}} onChanged={()=>setReload(value=>value+1)}/>}</Suspense>;
+ if(linkedQuizId)return <Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizLinkLanding quizId={linkedQuizId} role={role} language={language} reload={linkedReload} onClose={()=>{setLinkedQuizId(null);setAttemptId(null);setTab('bank');onLinkedQuizExit?.();}} onOpen={setAttemptId}/>{attemptId&&<QuizPracticePlayer attemptId={attemptId} language={language} onClose={()=>{setAttemptId(null);setLinkedReload(value=>value+1);setReload(value=>value+1);}} onChanged={()=>setReload(value=>value+1)}/>}</Suspense>;
  if(reviewOpen)return <Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizModerationWorkspace owner={Boolean(facets.canModerate)} language={language} onBack={()=>{setReviewOpen(false);setReload(value=>value+1);}}/></Suspense>;
  if(editor)return <Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizEditor key={editor.id} initial={editor} onBack={()=>{setEditor(null);setReload(value=>value+1);}} onSaved={()=>{facetCache.current.clear();setReload(value=>value+1);}}/></Suspense>;
  if(opening&&opening.mode!=='preview')return <section className="quiz-editor quiz-opening" aria-busy={!opening.error}><header className="quiz-editor-header"><Button variant="outline" onClick={cancelOpening}><ArrowLeft size={17}/>{t('quiz.back')}</Button><div className="quiz-editor-title"><h2>{opening.item.title}</h2><p>{t(opening.mode==='copy'?'quiz.copying':'quiz.loading')}</p></div></header>{openingBody()}</section>;
@@ -178,7 +198,7 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
   </div>
   <section id="quiz-hub-panel" role="tabpanel" aria-labelledby={'quiz-tab-'+tab}>
    {catalogueError&&<div className="quiz-error" role="alert"><span>{t('quiz.catalogueUnavailable')}</span><Button variant="outline" onClick={()=>void reloadCatalogue()}>{t('quiz.retry')}</Button></div>}
-   {!catalogTab?<QuizPracticePanel mode={tab==='assigned'?'assigned':'history'} role={role} language={language} reload={reload} onOpen={setAttemptId} onStart={setPracticeSource} onBrowseLibrary={catalogueAllowed?()=>changeTab("bank"):undefined}/>:<>
+   {!catalogTab?<QuizPracticePanel mode={tab==='assigned'?'assigned':'history'} role={role} language={language} reload={reload} initialAssignmentId={tab==='assigned'?assignedFocus:undefined} onAssignmentBack={()=>setAssignedFocus(undefined)} onOpen={setAttemptId} onStart={setPracticeSource} onBrowseLibrary={catalogueAllowed?()=>changeTab("bank"):undefined}/>:<>
     <form className="quiz-catalog-filters" onSubmit={event=>{event.preventDefault();setFilters(old=>({...old,search:searchInput.trim()}));}}>
      <div className="quiz-filter-bar">
      <FilterField label={t('quiz.search')} className="quiz-catalog-search">{id=><div className="quiz-search-input"><Search size={17} aria-hidden="true"/><input id={id} value={searchInput} maxLength={100} placeholder={t('quiz.searchPlaceholder')} onChange={event=>setSearchInput(event.target.value)}/></div>}</FilterField>
@@ -208,7 +228,7 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
   {reporting&&<Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizReportDialog quizId={reporting} onClose={()=>setReporting(null)}/></Suspense>}
   {preview&&<Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizPlayer content={preview.content} creator={preview.creator} onClose={()=>setPreview(null)}/></Suspense>}
   {practiceSource&&<QuizPracticeStart source={practiceSource} onClose={()=>setPracticeSource(null)} onOpen={id=>{setPracticeSource(null);setAttemptId(id);setReload(value=>value+1);}}/>}
-  {allocation&&can("quizAssignments.assign")&&<QuizAllocateDialog source={allocation} onClose={()=>setAllocation(null)} onAssigned={()=>{setAllocation(null);setTab('assigned');setReload(value=>value+1);}}/>}
+  {allocation&&can("quizAssignments.assign")&&<QuizAllocateDialog source={allocation} onClose={()=>setAllocation(null)} onAssigned={id=>{setAllocation(null);setAssignedFocus(id);setTab('assigned');setReload(value=>value+1);}}/>}
   {attemptId&&<Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizPracticePlayer attemptId={attemptId} language={language} onClose={()=>{setAttemptId(null);setReload(value=>value+1);}} onChanged={()=>setReload(value=>value+1)}/></Suspense>}
   <Dialog open={Boolean(deleting)&&can("quizzes.delete")} onOpenChange={open=>{if(!open&&busy!=='delete'){setDeleting(null);deleteOperation.current=null;}}}><DialogContent className="quiz-confirm-dialog quiz-library-dialog"><DialogTitle>{t('quiz.deleteQuiz')}</DialogTitle><DialogDescription>{t('quiz.deleteQuizConfirm').replace('{title}',deleting?.title||'')}</DialogDescription>{actionError&&deleting&&<p className="quiz-error" role="alert">{t(actionError)}</p>}<div className="quiz-confirm-actions"><Button variant="outline" disabled={busy==='delete'} onClick={()=>{setDeleting(null);deleteOperation.current=null;}}>{t('quiz.cancel')}</Button><Button adminGrant="quizzes.delete" variant="destructive" disabled={busy==='delete'} onClick={()=>void deleteQuiz()}>{t('quiz.removeConfirm')}</Button></div></DialogContent></Dialog>
  </div>;

@@ -9,7 +9,7 @@ import {snapshotVersion} from '../scripts/backup-order.mjs';
 // Real config, PDF upload, publication, tenant and grant SQL. Only signed-in
 // identities and a private in-memory R2 binding are fixtures; no Google call.
 const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys=ON');
-for(const name of fs.readdirSync(new URL('../drizzle/',import.meta.url)).filter(n=>n.endsWith('.sql')).sort())sqlite.exec(fs.readFileSync(new URL('../drizzle/'+name,import.meta.url),'utf8'));
+for(const name of fs.readdirSync(new URL('../drizzle/',import.meta.url)).filter(n=>n.endsWith('.sql')&&Number(n.slice(0,4))<=61).sort())sqlite.exec(fs.readFileSync(new URL('../drizzle/'+name,import.meta.url),'utf8'));
 let actor=null,beforeStatement=null,beforeBatch=null,putHook=null,headHook=null,statementExecutions=0;
 function statement(sql,values=[]){const execute=()=>{statementExecutions++;if(beforeStatement&&beforeStatement(sql,values))beforeStatement=null;assert(values.length<=100,'D1 bind ceiling');const q=sqlite.prepare(sql);return q.columns().length?{results:q.all(...values),meta:{changes:0}}:{results:[],meta:q.run(...values)};};return{sql,bind:(...v)=>statement(sql,v),first:async()=>execute().results[0]||null,all:async()=>execute(),run:async()=>execute(),execute};}
 const db={prepare:statement,batch:async items=>{if(beforeBatch&&items.some(s=>/INSERT(?: OR IGNORE)? INTO teaching_materials/.test(s.sql))){const hook=beforeBatch;beforeBatch=null;await hook();}sqlite.exec('BEGIN');try{const out=items.map(s=>s.execute());sqlite.exec('COMMIT');return out;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
@@ -64,6 +64,7 @@ expect(await getConfig(teacher,b.id),403,'teacher cannot import into another tea
 grants(admin,['materials.create']);expect(await getConfig(admin),200,'admin material create supports class root without folder placement');expect(await getConfig(admin,a.id,a.folder),403,'selected folder requires its separate placement grant');grants(admin,['materials.create','folders.placeContent']);
 const savedAppId=env.GOOGLE_DRIVE_APP_ID;delete env.GOOGLE_DRIVE_APP_ID;cfg=expect(await getConfig(teacher),200,'missing actual project number remains an unconfigured feature');check('missing app ID is never inferred and no partial keys are returned',()=>{assert.equal(cfg.configured,false);assert.equal(cfg.apiKey,null);assert.equal(cfg.projectNumber,null);});env.GOOGLE_DRIVE_APP_ID=savedAppId;
 let before=snapshot();expect(await upload(reader),403,'view-only admin cannot upload');expect(await upload(admin,a.id,op(),{kind:'homework'}),403,'material create does not grant admin homework upload');expect(await publish(admin,{action:'publishHomework'}),403,'material create does not grant admin homework publication');check('denied material actions leave files, quota and content unchanged',()=>assert.equal(snapshot(),before));
+// This guard-version regression intentionally pins migrations through 0061.
 // Genuine pre-0061 schema export: the same tables keep their old guard semantics.
 const currentGuard=rows('sqlite_master',"type='trigger' AND name='material_active_class_insert'")[0].sql;
 const oldGuard=fs.readFileSync(path.join(root,'drizzle/0019_classroom_folders.sql'),'utf8').match(/CREATE TRIGGER material_active_class_insert\b[\s\S]*?\nEND;/)[0];

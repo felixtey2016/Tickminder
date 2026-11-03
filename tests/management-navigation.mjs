@@ -6,7 +6,7 @@ const source = fs.readFileSync(new URL('../lib/management-navigation.ts',import.
 const js = ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
 const {managementArea,managementTabs,defaultManagementView,normalizeManagementView}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
 
-for(const [area,leaves] of Object.entries({people:['studentRoster','teacherRoster','accounts'],settings:['groupInfo','myAccount','sheet','activity']})){
+for(const [area,leaves] of Object.entries({people:['studentRoster','teacherRoster','parentRoster','accounts'],settings:['groupInfo','myAccount','sheet','activity']})){
  assert.deepEqual(managementTabs(area).map(item=>item.view),leaves);
  assert.equal(defaultManagementView(area),leaves[0]);
  assert.equal(normalizeManagementView('admin',area),leaves[0]);

@@ -30,6 +30,10 @@
 .quiz-player-wave3 :is(button,summary):focus-visible {outline:2px solid var(--ui-accent);outline-offset:3px;}
 .quiz-player-wave3 .quiz-player-nav {gap:12px;margin-top:20px;padding-top:16px;border-top:1px solid var(--ui-border);}
 .quiz-player-wave3 .quiz-player-nav button {min-height:44px;}
+/* Keep the completion hint above the mobile full-width submit button. */
+.quiz-player-wave3 .quiz-practice-submit {display:grid;grid-template-columns:minmax(0,1fr);gap:12px;}
+.quiz-player-wave3 .quiz-practice-submit>.quiz-note {min-width:0;margin:0;}
+.quiz-player-wave3 .quiz-practice-submit>button {justify-self:end;}
 .quiz-player-wave3 .quiz-attempt-navigation {background:var(--ui-surface-muted);border-color:var(--ui-border);margin:12px 0;}
 .quiz-player-wave3 .quiz-attempt-navigation>summary {min-height:44px;color:var(--ui-muted);}
 .quiz-player-wave3 .quiz-attempt-navigation>summary>span {color:inherit;}
