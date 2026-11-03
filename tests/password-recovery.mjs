@@ -35,7 +35,7 @@ let beforeBatch = null;
 const d1 = {
   prepare: statement,
   async batch(items) {
-    if (beforeBatch) { const callback = beforeBatch; beforeBatch = null; callback(items); }
+    if (beforeBatch) { const callback = beforeBatch; beforeBatch = null; await callback(items); }
     sqlite.exec('BEGIN');
     try { const results = items.map(item => item.execute()); sqlite.exec('COMMIT'); return results; }
     catch (error) { sqlite.exec('ROLLBACK'); throw error; }
@@ -63,7 +63,8 @@ const next = {
     return response;
   },
 };
-globalThis.__recoveryTest = { env, waitUntil, NextResponse: next, cookies: async () => ({ get: () => undefined }), headers: async () => new Headers(), getDb: () => drizzle(d1) };
+let currentCookie;
+globalThis.__recoveryTest = { env, waitUntil, NextResponse: next, cookies: async () => ({ get: name => name === 'tuition_session' && currentCookie ? { value: currentCookie } : undefined }), headers: async () => new Headers(), getDb: () => drizzle(d1) };
 const stub = 'data:text/javascript;base64,' + Buffer.from('export const {env,waitUntil,NextResponse,cookies,headers,getDb}=globalThis.__recoveryTest;').toString('base64');
 const applicationRoot = new URL('../', import.meta.url).href;
 const hooks = registerHooks({
@@ -107,12 +108,15 @@ globalThis.fetch = async (input, options) => {
 };
 const route = await import(new URL('../app/api/password-recovery/route.ts', import.meta.url));
 const authRoute = await import(new URL('../app/api/auth/route.ts', import.meta.url));
+const passwordRoute = await import(new URL('../app/api/password/route.ts', import.meta.url));
+const setupRoute = await import(new URL('../app/api/account-setup/route.ts', import.meta.url));
+const { hashToken } = await import(new URL('../lib/auth.ts', import.meta.url));
 const { hashPassword, verifyPassword } = await import(new URL('../lib/password.ts', import.meta.url));
 const initialPassword = 'OriginalPassword26!';
 const initialHash = await hashPassword(initialPassword);
 let sequence = 0;
 let checks = 0;
-function freshLimits() { sqlite.exec('DELETE FROM login_attempts'); mails.length = 0; providerStatus = 201; beforeBatch = null; clock += 3600_000; }
+function freshLimits() { sqlite.exec('DELETE FROM login_attempts'); mails.length = 0; providerStatus = 201; beforeBatch = null; currentCookie = undefined; clock += 3600_000; }
 function seed(options = {}) {
   const n = ++sequence;
   const account = { id: `recovery-account-${n}`, username: `recovery.user.${n}`, email: `verified-${n}@gmail.com`, subject: `verified-google-${n}`, ...options };
@@ -160,6 +164,18 @@ function sessions(account) {
   }
 }
 function credential(account) { return sqlite.prepare('SELECT * FROM local_credentials WHERE account_id=?').get(account.id); }
+async function signedIn(account) {
+  currentCookie = 'fictional-password-change-' + account.id;
+  const tokenHash = await hashToken(currentCookie);
+  sqlite.prepare('INSERT INTO sessions VALUES(?,?,?)').run(tokenHash, account.id, '2099-01-01T00:00:00.000Z');
+  return tokenHash;
+}
+function changePassword(newPassword = 'ChangedInSettings26!') {
+  return passwordRoute.POST(new Request('https://test.invalid/api/password', { method: 'POST', headers: { origin: 'https://test.invalid', 'content-type': 'application/json' }, body: JSON.stringify({ currentPassword: initialPassword, newPassword }) }));
+}
+function setupPassword(account) {
+  return setupRoute.POST(new Request('https://test.invalid/api/account-setup', { method: 'POST', headers: { origin: 'https://test.invalid', 'content-type': 'application/json' }, body: JSON.stringify({ username: account.username, password: initialPassword }) }));
+}
 
 try {
   const available = await route.GET();
@@ -311,6 +327,104 @@ try {
   assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM session_devices d JOIN sessions s ON s.token_hash=d.token_hash WHERE s.account_id=?').get(loginRace.id).n, 0);
   checks += 4;
 
+  // Initial credential setup also issues a session only while its newly saved
+  // password remains current. A recovery in that gap must not reauthenticate it.
+  freshLimits();
+  const setupAccount = seed({ googleOnly: true });
+  await signedIn(setupAccount);
+  const setupSuccess = await setupPassword(setupAccount);
+  assert.equal(setupSuccess.status, 200);
+  assert.match(setupSuccess.headers.get('set-cookie'), /tuition_session=.+;/);
+  assert.equal(await verifyPassword(initialPassword, credential(setupAccount).password_hash), true);
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM sessions WHERE account_id=?').get(setupAccount.id).n, 1);
+  checks += 4;
+
+  freshLimits();
+  const setupRaceAccount = seed({ googleOnly: true });
+  await signedIn(setupRaceAccount);
+  const setupAccountBefore = sqlite.prepare('SELECT * FROM accounts WHERE id=?').get(setupRaceAccount.id);
+  const setupGoogleBefore = sqlite.prepare('SELECT * FROM google_identities WHERE account_id=?').get(setupRaceAccount.id);
+  const setupSessionRace = async items => {
+    if (!items.some(item => /INSERT\s+INTO\s+sessions/i.test(item.sql))) { beforeBatch = setupSessionRace; return; }
+    const challenge = await issued(setupRaceAccount);
+    assert.equal((await call(resetBody(challenge.challenge, challenge.code, 'RecoveredDuringSetup26!'))).status, 200);
+  };
+  beforeBatch = setupSessionRace;
+  const setupRaceResponse = await setupPassword(setupRaceAccount);
+  assert.equal(setupRaceResponse.status, 409);
+  assert.equal(setupRaceResponse.headers.get('set-cookie'), null, 'Stale setup cannot restore a session after recovery');
+  assert.match((await setupRaceResponse.json()).error, /已改变.*重新登录/, 'Conflict explains the new account state, not a failed setup');
+  assert.equal(await verifyPassword('RecoveredDuringSetup26!', credential(setupRaceAccount).password_hash), true);
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM sessions WHERE account_id=?').get(setupRaceAccount.id).n, 0);
+  assert.deepEqual(sqlite.prepare('SELECT * FROM accounts WHERE id=?').get(setupRaceAccount.id), setupAccountBefore);
+  assert.deepEqual(sqlite.prepare('SELECT * FROM google_identities WHERE account_id=?').get(setupRaceAccount.id), setupGoogleBefore);
+  assert.equal(sqlite.prepare("SELECT count(*) n FROM audit WHERE actor_id=? AND action='setupCredentials'").get(setupRaceAccount.id).n, 1, 'The already committed setup remains recorded');
+  checks += 9;
+
+  // Exercise the ordinary password endpoint too: it must not overwrite a
+  // recovery that commits after the old password/session were read.
+  freshLimits();
+  const changeRace = seed(), changeRecovery = await issued(changeRace);
+  await signedIn(changeRace);
+  const changeBusinessBefore = JSON.stringify(sqlite.prepare('SELECT * FROM accounts WHERE id=?').get(changeRace.id));
+  beforeBatch = async items => {
+    assert(items.some(item => /UPDATE\s+local_credentials/i.test(item.sql)));
+    assert.equal((await call(resetBody(changeRecovery.challenge, changeRecovery.code))).status, 200);
+  };
+  assert.equal((await changePassword()).status, 409, 'Old ordinary password request loses to recovery CAS');
+  assert.equal(await verifyPassword('NewRecoveryPassword26!', credential(changeRace).password_hash), true);
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM sessions WHERE account_id=?').get(changeRace.id).n, 0);
+  assert.equal(JSON.stringify(sqlite.prepare('SELECT * FROM accounts WHERE id=?').get(changeRace.id)), changeBusinessBefore, 'Recovery and losing password change preserve business identity');
+  checks += 5;
+
+  freshLimits();
+  const issueRace = seed();
+  await signedIn(issueRace);
+  let resetBetweenChangeAndSession = false;
+  const sessionRace = async items => {
+    if (!items.some(item => /INSERT\s+INTO\s+sessions/i.test(item.sql))) { beforeBatch = sessionRace; return; }
+    const replacement = await issued(issueRace);
+    assert.equal((await call(resetBody(replacement.challenge, replacement.code))).status, 200);
+    resetBetweenChangeAndSession = true;
+  };
+  beforeBatch = sessionRace;
+  assert.equal((await changePassword()).status, 409, 'Recovery between change commit and session issuance cannot mint an old session');
+  assert.equal(resetBetweenChangeAndSession, true);
+  assert.equal(await verifyPassword('NewRecoveryPassword26!', credential(issueRace).password_hash), true);
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM sessions WHERE account_id=?').get(issueRace.id).n, 0);
+  checks += 5;
+
+  for (const change of ['logout', 'disabled', 'pending-expiry']) {
+    freshLimits();
+    const ordinary = seed(change === 'pending-expiry' ? { role: 'pending', pendingExpiresAt: new Date(clock + 10000).toISOString() } : {});
+    sessions(ordinary); const tokenHash = await signedIn(ordinary);
+    beforeBatch = () => {
+      if (change === 'logout') sqlite.prepare('DELETE FROM sessions WHERE token_hash=?').run(tokenHash);
+      if (change === 'disabled') sqlite.prepare('UPDATE accounts SET disabled_at=? WHERE id=?').run(new Date().toISOString(), ordinary.id);
+      if (change === 'pending-expiry') clock += 10001;
+    };
+    assert.equal((await changePassword()).status, 409, change + ' at ordinary change commit blocks write');
+    assert.equal(credential(ordinary).password_hash, initialHash);
+    assert.equal(sqlite.prepare('SELECT count(*) n FROM sessions WHERE account_id=?').get(ordinary.id).n, change === 'logout' ? 2 : 3, 'Failed ordinary change does not revoke other sessions');
+    checks += 3;
+  }
+  freshLimits();
+  const ordinary = seed(); sessions(ordinary); await signedIn(ordinary);
+  const parallelChanges = await Promise.all([changePassword('ConcurrentSettingsOne26!'), changePassword('ConcurrentSettingsTwo26!')]);
+  assert.deepEqual(parallelChanges.map(r => r.status).sort(), [200, 409]);
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM sessions WHERE account_id=?').get(ordinary.id).n, 1);
+  assert.equal(credential(ordinary).must_change_password, 0, 'Initial password change remains supported');
+  checks += 3;
+  freshLimits();
+  const ordinaryRollback = seed(); await signedIn(ordinaryRollback);
+  sqlite.exec("CREATE TEMP TRIGGER fail_ordinary_session_delete BEFORE DELETE ON sessions BEGIN SELECT RAISE(ABORT,'isolated transaction failure'); END");
+  try {
+    await assert.rejects(changePassword());
+    assert.equal(credential(ordinaryRollback).password_hash, initialHash);
+    assert.equal(sqlite.prepare('SELECT count(*) n FROM sessions WHERE account_id=?').get(ordinaryRollback.id).n, 1);
+  } finally { sqlite.exec('DROP TRIGGER fail_ordinary_session_delete'); }
+  checks += 3;
+
   // Mutating authority immediately before the transactional write tests the
   // final SQL guard, not merely the initial read before password hashing.
   for (const change of ['password', 'email', 'disabled']) {
@@ -413,9 +527,60 @@ try {
 
   freshLimits();
   for (let i = 0; i < 250; i++) assert.equal((await issue(`daily.target.${i}`, { 'cf-connecting-ip': `198.18.0.${i + 1}` })).status, 200);
-  assert.equal((await issue('daily.target.limit', { 'cf-connecting-ip': '198.18.1.1' })).status, 429);
   assert.equal(mails.length, 0);
+  const afterUnknownFlood = seed();
+  assert.equal((await issue(afterUnknownFlood.username, { 'cf-connecting-ip': '198.18.1.1' })).status, 200);
+  assert.equal(mails.length, 1, '250 nonexistent usernames cannot exhaust the real mail budget');
   checks += 252;
+
+  const prefix = '~password-recovery:v1:';
+  freshLimits();
+  const mailDay = new Date().toISOString().slice(0, 10);
+  sqlite.prepare('INSERT INTO login_attempts VALUES(?,249,?,NULL)').run(prefix + 'daily:' + mailDay, new Date().toISOString());
+  const lastMailAccounts = [seed(), seed()];
+  const lastMailResults = await Promise.all(lastMailAccounts.map((a, i) => issue(a.username, { 'cf-connecting-ip': '203.0.113.' + (i + 1) })));
+  assert(lastMailResults.every(r => r.status === 200));
+  assert.equal(mails.length, 1, 'Concurrent sends preserve legacy daily usage and reserve only its last remaining slot');
+  const noMailAccount = seed();
+  const fullMail = await issue(noMailAccount.username, { 'cf-connecting-ip': '203.0.113.3' });
+  const fullMailDecoy = await issue('no.mail.unknown', { 'cf-connecting-ip': '203.0.113.4' });
+  assert.equal(fullMail.status, 200);
+  assert.equal(fullMailDecoy.status, 200);
+  assert.deepEqual(Object.keys(fullMail.data), Object.keys(fullMailDecoy.data));
+  assert.equal(fullMail.data.challenge.length, fullMailDecoy.data.challenge.length);
+  assert.equal(mails.length, 1);
+  checks += 7;
+
+  freshLimits();
+  const requestDay = new Date().toISOString().slice(0, 10);
+  const dayKey = prefix + 'requests:' + requestDay;
+  sqlite.prepare('INSERT INTO login_attempts VALUES(?,2499,?,NULL)').run(dayKey, new Date().toISOString());
+  const lastRequests = await Promise.all([issue('last.slot.a', { 'cf-connecting-ip': '203.0.113.11' }), issue('last.slot.b', { 'cf-connecting-ip': '203.0.113.12' })]);
+  assert.deepEqual(lastRequests.map(r => r.status).sort(), [200, 429]);
+  const rowCount = sqlite.prepare('SELECT count(*) n FROM login_attempts').get().n;
+  for (let i = 0; i < 10; i++) assert.equal((await issue('rejected.key.' + i, { 'cf-connecting-ip': '203.0.113.' + (30 + i) })).status, 429);
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM login_attempts').get().n, rowCount, 'Exhausted admission budget creates no IP, identifier or challenge rows');
+  checks += 12;
+
+  // Cleanup also runs on rejected requests, removes at most 100 old recovery
+  // rows and preserves normal login/link locks and live challenges.
+  const staleTime = new Date(clock - 3 * 86400000).toISOString();
+  for (let i = 0; i < 150; i++) sqlite.prepare('INSERT INTO login_attempts VALUES(?,5,?,NULL)').run(prefix + 'old:' + i, staleTime);
+  for (const key of ['ordinary.user', 'link:ordinary-account']) sqlite.prepare('INSERT INTO login_attempts VALUES(?,5,?,?)').run(key, staleTime, '2099-01-01T00:00:00.000Z');
+  assert.equal((await issue('cleanup.rejected', { 'cf-connecting-ip': '203.0.113.99' })).status, 429);
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM login_attempts WHERE username LIKE ?').get(prefix + 'old:%').n, 50);
+  assert.equal(sqlite.prepare("SELECT count(*) n FROM login_attempts WHERE username IN ('ordinary.user','link:ordinary-account')").get().n, 2);
+  checks += 3;
+
+  freshLimits();
+  for (let i = 0; i < 10; i++) await issue('blocked.ip.' + i);
+  const publicBefore = sqlite.prepare('SELECT failures FROM login_attempts WHERE username=?').get(prefix + 'requests:' + new Date().toISOString().slice(0, 10)).failures;
+  const keysBefore = sqlite.prepare('SELECT count(*) n FROM login_attempts').get().n;
+  const rejectedBurst = await Promise.all(Array.from({ length: 20 }, (_, i) => issue('blocked.ip.extra.' + i)));
+  assert(rejectedBurst.every(r => r.status === 429));
+  assert.equal(sqlite.prepare('SELECT failures FROM login_attempts WHERE username=?').get(prefix + 'requests:' + new Date().toISOString().slice(0, 10)).failures, publicBefore, 'IP-rejected attempts do not consume global slots');
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM login_attempts').get().n, keysBefore);
+  checks += 3;
 
   freshLimits();
   assert.equal((await call({ action: 'request', identifier: 'normal.user' }, { origin: 'https://evil.invalid' })).status, 403);

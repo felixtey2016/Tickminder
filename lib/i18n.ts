@@ -870,6 +870,8 @@ const en: Record<string, string> = {
   "请求格式错误": "Invalid request format",
   "当前密码错误": "Current password is incorrect",
   "新密码不能与当前密码相同": "New password must be different from the current password",
+  "账号状态或密码已改变，请重新登录后再试。": "Your account or password has changed. Sign in again before trying again.",
+  "密码或账号状态已改变，请重新登录。": "Your password or account status has changed. Please sign in again.",
   "至": "to",
   "账号：": "Username: ", "日期：": "Date: ", "负责": "Assigned", "结束": "End", "状态": "Status", "实际": "Actual", "收费": "Billable",
   "管理员工作台": "Administration", "学生工作台": "Learning", "老师工作台": "Teaching",

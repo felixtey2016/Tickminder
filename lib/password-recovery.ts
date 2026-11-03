@@ -6,6 +6,8 @@ import { hashPassword, normalizeUsername, validPassword, validUsername, verifyPa
 export const RECOVERY_TTL_SECONDS = 600;
 export const RECOVERY_RETRY_SECONDS = 60;
 export const RECOVERY_MAX_ATTEMPTS = 5;
+const DAILY_REQUEST_LIMIT = 2500;
+const DAILY_MAIL_LIMIT = 250;
 const PREFIX = "~password-recovery:v1:"; // Cannot be a valid login username/email.
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -116,6 +118,43 @@ async function rateRetry(db: D1Database, key: string, now: number, period: numbe
   const until = Math.max(now + 1000, row.failures >= limit ? Date.parse(row.windowStart) + period : now, row.blockedUntil ? Date.parse(row.blockedUntil) : now);
   return Math.ceil((until - now) / 1000);
 }
+
+async function reserveRequest(db: D1Database, ipKey: string, identifierKey: string, now: number) {
+  const iso = new Date(now).toISOString(), threshold = new Date(now - 3600000).toISOString();
+  const day = iso.slice(0, 10), dayKey = PREFIX + "requests:" + day, ticket = randomHex();
+  const available = "NOT EXISTS(SELECT 1 FROM login_attempts WHERE username=? AND window_start>? AND (failures>=? OR blocked_until>?))";
+  // Reserve all public budgets together. Rejected IPs/identifiers cannot drain
+  // the global budget, and a full global budget cannot create arbitrary keys.
+  const admitted = `EXISTS(SELECT 1 FROM login_attempts WHERE username=? AND blocked_until=?)`;
+  const counter = (key: string, cooldown: number) => db.prepare(`INSERT INTO login_attempts(username,failures,window_start,blocked_until)
+    SELECT ?,1,?,? WHERE ${admitted}
+    ON CONFLICT(username) DO UPDATE SET failures=CASE WHEN login_attempts.window_start<=? THEN 1 ELSE login_attempts.failures+1 END,
+    window_start=CASE WHEN login_attempts.window_start<=? THEN excluded.window_start ELSE login_attempts.window_start END,blocked_until=excluded.blocked_until`)
+    .bind(key, iso, cooldown ? new Date(now + cooldown).toISOString() : null, dayKey, ticket, threshold, threshold);
+  const result = await db.batch([
+    db.prepare(`INSERT INTO login_attempts(username,failures,window_start,blocked_until)
+      SELECT ?,1,?,? WHERE ${available} AND ${available}
+      ON CONFLICT(username) DO UPDATE SET failures=login_attempts.failures+1,blocked_until=excluded.blocked_until
+      WHERE login_attempts.failures<? RETURNING failures`)
+      .bind(dayKey, iso, ticket, ipKey, threshold, 10, iso, identifierKey, threshold, 3, iso, DAILY_REQUEST_LIMIT),
+    counter(ipKey, 0), counter(identifierKey, RECOVERY_RETRY_SECONDS * 1000),
+  ]);
+  if (result[0].results?.length) return;
+  const dayFull = await db.prepare("SELECT 1 FROM login_attempts WHERE username=? AND failures>=?").bind(dayKey, DAILY_REQUEST_LIMIT).first();
+  const retry = dayFull ? Math.ceil((Date.parse(day + "T00:00:00Z") + 86400000 - now) / 1000)
+    : Math.max(await rateRetry(db, ipKey, now, 3600000, 10), await rateRetry(db, identifierKey, now, 3600000, 3));
+  throw new RecoveryError("RATE_LIMITED", 429, retry);
+}
+
+async function cleanRecoveryCounters(db: D1Database, now: number) {
+  try {
+    // Independent of successful admission or delivery, and bounded per call.
+    // The primary-key range excludes ordinary login and Google-link counters.
+    await db.prepare(`DELETE FROM login_attempts WHERE username IN (
+      SELECT username FROM login_attempts WHERE username>=? AND username<? AND window_start<? LIMIT 100
+    )`).bind(PREFIX, PREFIX + "~", new Date(now - 2 * 86400000).toISOString()).run();
+  } catch { console.warn("Password recovery counter cleanup unavailable"); }
+}
 async function safeSend(config: Config, identity: Identity, code: string, language: "zh" | "en") {
   const zh = language === "zh";
   const textContent = zh
@@ -136,14 +175,10 @@ export async function requestPasswordRecovery(config: Config, rawIdentifier: unk
   const identifier = normalizeUsername(rawIdentifier);
   if (identifier.length > 254 || (!validUsername(identifier) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier))) throw new RecoveryError("INVALID_REQUEST");
   const now = Date.now(), iso = new Date(now).toISOString();
+  defer(cleanRecoveryCounters(config.db, now));
   const ipKey = PREFIX + "ip:" + await stamp(config.secret, "ip", ip);
   const identifierKey = PREFIX + "identifier:" + await stamp(config.secret, "identifier", identifier);
-  if (!await reserve(config.db, ipKey, now, 3600000, 10)) throw new RecoveryError("RATE_LIMITED", 429, await rateRetry(config.db, ipKey, now, 3600000, 10));
-  if (!await reserve(config.db, identifierKey, now, 3600000, 3, RECOVERY_RETRY_SECONDS * 1000)) throw new RecoveryError("RATE_LIMITED", 429, await rateRetry(config.db, identifierKey, now, 3600000, 3));
-  // The global ceiling is intentionally below Brevo's free daily email allowance;
-  // it protects this endpoint, not unrelated mail sent from the Brevo account.
-  const day = new Date(now).toISOString().slice(0, 10);
-  if (!await reserve(config.db, PREFIX + "daily:" + day, now, 86400000, 250)) throw new RecoveryError("RATE_LIMITED", 429, Math.ceil((Date.parse(day + "T00:00:00Z") + 86400000 - now) / 1000));
+  await reserveRequest(config.db, ipKey, identifierKey, now);
   const identity = await findIdentity(config.db, identifier, iso);
   const nonce = randomHex(), code = randomCode();
   const challenge: Challenge = {
@@ -162,12 +197,16 @@ export async function requestPasswordRecovery(config: Config, rawIdentifier: unk
       if (identity) {
         const accountKey = PREFIX + "account:" + await stamp(config.secret, "account", identity.accountId);
         const allowed = await reserve(config.db, accountKey, now, 3600000, 3, RECOVERY_RETRY_SECONDS * 1000);
-        if (!allowed || !await safeSend(config, identity, code, language)) {
+        // Unknown identifiers never consume the actual email budget. Keep its
+        // result private: returning a different response would expose identity.
+        const deliveryNow = Date.now(), day = new Date(deliveryNow).toISOString().slice(0, 10);
+        // Retain the original daily key so upgrading cannot reset today's
+        // already-consumed allowance (legacy decoy requests count until UTC midnight).
+        const mailAllowed = allowed && await reserve(config.db, PREFIX + "daily:" + day, deliveryNow, 86400000, DAILY_MAIL_LIMIT);
+        if (!mailAllowed || !await safeSend(config, identity, code, language)) {
           await config.db.prepare("UPDATE login_attempts SET blocked_until=? WHERE username=?").bind("used", attemptKey).run();
         }
       }
-      // Bound counter storage without touching ordinary login attempts.
-      await config.db.prepare("DELETE FROM login_attempts WHERE username LIKE ? AND window_start<?").bind(PREFIX + "%", new Date(now - 2 * 86400000).toISOString()).run();
     } catch { console.error("Password recovery background delivery failed"); }
   })());
   return { ok: true, challenge: token, retryAfter: RECOVERY_RETRY_SECONDS, expiresIn: RECOVERY_TTL_SECONDS };

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentAccount, createSession } from "@/lib/auth";
+import { currentAccount, createSession, StaleSessionCredentialError } from "@/lib/auth";
 import { first, learningDb } from "@/lib/learning-server";
 import { hashPassword, normalizeUsername, validPassword, validUsername } from "@/lib/password";
 import { DEFAULT_GROUP_ID } from "@/lib/group-data";
@@ -30,11 +30,12 @@ export async function POST(request: Request) {
     ]);
     const saved = await first("SELECT 1 AS found FROM local_credentials WHERE account_id = ? AND username = ?",account.id,username);
     if (!saved) return NextResponse.json({error:"账号暂时不可用，请重新登录"},{status:409});
-    const session = await createSession(account.id,request);
+    const session = await createSession(account.id,request,passwordHash);
     const response = NextResponse.json({ok:true});
     response.cookies.set("tuition_session",session.token,{httpOnly:true,secure:true,sameSite:"lax",path:"/",expires:new Date(session.expiresAt)});
     return response;
   } catch(error) {
+    if (error instanceof StaleSessionCredentialError) return NextResponse.json({error:"密码或账号状态已改变，请重新登录。"},{status:409,headers:{"Cache-Control":"no-store"}});
     const duplicate = /UNIQUE constraint|unique constraint/i.test(error instanceof Error ? error.message : "");
     return NextResponse.json({error:duplicate ? "此账号名已被使用，请选择其他用户名" : "账号设置未完成，请重新登录后重试"},{status:duplicate ? 409 : 400});
   }
