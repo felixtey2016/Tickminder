@@ -1,20 +1,50 @@
-/* Native month pickers do not wrap their localized year. Keep a readable mirror. */
-.native-month-input{position:relative;display:flex;align-items:center;gap:10px;box-sizing:border-box;min-width:0;width:100%;min-height:44px;padding:10px 12px;border:1px solid var(--ui-border,#dddfe7);border-radius:6px;background:var(--ui-surface,#fff);color:var(--ui-text,#252334);font-size:16px;font-weight:400;line-height:1.5;cursor:pointer;}
+/* The form input remains real; only the visible field and picker are custom. */
+.month-field{position:relative;display:block;box-sizing:border-box;min-width:0;width:100%;}
+.app-shell.shell-wave1 .workspace-period .month-select>span:not(.month-field){flex:0 0 auto;white-space:nowrap;}
+.app-shell.shell-wave1 .workspace-period .month-select>.month-field{flex:1 1 auto;min-width:0;width:auto;}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month-picker:has(.month-field){padding:0;border:0;background:transparent;}
+.parent-calendar-month-picker:has(.month-field)::after{display:none;}
+.parent-calendar-month-picker:has(.month-field):focus-within{outline:0;}
+.parents-workspace .parent-calendar-month-picker .month-field>button.native-month-input{width:100%;min-width:0;flex:1 1 auto;padding:10px 12px;font-size:15px;font-weight:600;}
+.month-field>button.native-month-input{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px;box-sizing:border-box;min-width:0;width:100%;min-height:44px;height:auto;margin:0;padding:10px 14px;border:1px solid var(--ui-border,#dddfe7);border-radius:6px;background:var(--ui-surface,#fff);color:var(--ui-text,#252334);font:inherit;font-size:16px;font-weight:400;line-height:1.5;text-align:start;box-shadow:none;cursor:pointer;}
 .native-month-value{flex:1 1 auto;min-width:0;white-space:normal;overflow-wrap:normal;word-break:normal;}
 .native-month-input>svg{flex:0 0 20px;color:var(--ui-muted,#626575);}
-:is(.app-shell,dialog,[role=dialog]) .native-month-input>input.native-month-control,.native-month-input>input.native-month-control{position:absolute;inset:0;display:block;box-sizing:border-box;width:100%;min-width:0;max-width:none;min-height:100%;height:100%;margin:0;padding:0;opacity:0;cursor:pointer;}
-.native-month-input:focus-within{outline:2px solid var(--ui-accent,#6547c6);outline-offset:2px;}
-.native-month-input[data-disabled=true]{background:var(--ui-surface-muted,#f1f2f6);color:var(--ui-muted,#626575);cursor:not-allowed;}
-.native-month-input[data-disabled=true]>input.native-month-control{cursor:not-allowed;}
-.native-month-input[data-native-fallback=true]{padding:0;border:0;background:transparent;}
-.native-month-input[data-native-fallback=true]>.native-month-value,.native-month-input[data-native-fallback=true]>svg{display:none;}
-:is(.app-shell,dialog,[role=dialog]) .native-month-input[data-native-fallback=true]>input.native-month-control,.native-month-input[data-native-fallback=true]>input.native-month-control{position:static;opacity:1;min-height:44px;height:auto;padding:10px 12px;border:1px solid var(--ui-border,#dddfe7);border-radius:6px;background:var(--ui-surface,#fff);color:var(--ui-text,#252334);font:inherit;cursor:auto;}
-.native-month-input[data-native-fallback=true]:focus-within{outline:0;}
-.native-month-input[data-native-fallback=true]>input.native-month-control:focus-visible{outline:2px solid var(--ui-accent,#6547c6);outline-offset:2px;}
+:is(.app-shell,dialog,[role=dialog]) .month-field>input.native-month-control,.month-field>input.native-month-control{position:absolute;inset:auto;left:0;bottom:0;box-sizing:border-box;display:block;width:1px;min-width:0;max-width:1px;height:1px;min-height:0;margin:0;padding:0;border:0;opacity:0;overflow:hidden;clip-path:inset(50%);pointer-events:none;}
+.month-field>button.native-month-input:focus-visible{outline:2px solid var(--ui-accent,#6547c6);outline-offset:2px;}
+.month-field>button.native-month-input:disabled,.month-field>button.native-month-input[aria-disabled=true]{background:var(--ui-surface-muted,#f1f2f6);color:var(--ui-muted,#626575);cursor:not-allowed;}
+.month-field-error{display:block;padding-top:5px;color:var(--ui-danger,#b42335);font-size:13px;line-height:1.5;}
+
+/* One restrained picker across the calendar, billing, reports and parent filters. */
+.month-picker-overlay{position:fixed;inset:0;z-index:1650;background:rgba(27,23,39,.29);}
+.dark .month-picker-overlay{background:rgba(5,7,12,.46);}
+div.month-picker-panel[role=dialog]{position:fixed;z-index:1651;left:50%;top:50%;display:flex;flex-direction:column;gap:0;box-sizing:border-box;width:min(380px,calc(100vw - 32px));margin:0;padding:20px;transform:translate(-50%,-50%);overflow:auto;overscroll-behavior:contain;outline:0;border:1px solid var(--ui-border,#dddfe7);border-radius:16px;background:var(--ui-surface,#fff);color:var(--ui-text,#252334);box-shadow:0 10px 32px #090b1628;font-family:inherit;font-size:16px;line-height:1.5;}
+div.month-picker-panel.is-mobile[role=dialog]{left:0;top:auto;bottom:0;width:100%;padding:0 20px max(18px,env(safe-area-inset-bottom));transform:none;border-bottom:0;border-radius:23px 23px 0 0;}
+.month-picker-handle{display:none;}
+.month-picker-panel.is-mobile>.month-picker-handle{display:block;flex:0 0 4px;width:32px;height:4px;margin:10px auto 6px;border-radius:4px;background:var(--ui-border,#dddfe7);}
+.month-picker-panel .month-picker-heading{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;gap:12px;min-height:48px;margin:0 0 14px;padding:0;}
+.month-picker-panel.is-mobile .month-picker-heading{min-height:52px;margin-bottom:14px;}
+.month-picker-panel .month-picker-heading h2{margin:0;font-size:20px;line-height:1.4;font-weight:650;overflow-wrap:anywhere;}
+.month-picker-panel button{display:flex;align-items:center;justify-content:center;gap:6px;box-sizing:border-box;min-height:44px;margin:0;padding:9px 12px;border:1px solid var(--ui-border,#dddfe7);border-radius:10px;background:var(--ui-surface,#fff);color:var(--ui-text,#252334);font:inherit;font-size:16px;line-height:1.5;box-shadow:none;cursor:pointer;}
+.month-picker-panel button:focus-visible,.month-picker-panel input:focus-visible{outline:2px solid var(--ui-accent,#6547c6);outline-offset:2px;}
+.month-picker-panel button:disabled{opacity:.4;cursor:not-allowed;}
+.month-picker-panel button.month-picker-close{flex:0 0 44px;width:44px;height:44px;min-width:44px;padding:0;margin-right:-7px;border:0;background:transparent;color:var(--ui-muted,#626575);}
+.month-picker-panel .month-picker-year{display:flex;align-items:center;gap:12px;flex:0 0 auto;margin:0 0 18px;padding:10px;border:1px solid var(--ui-border,#dddfe7);border-radius:12px;background:var(--ui-surface-muted,#f1eff5);}
+.month-picker-year>button{flex:0 0 44px;width:44px;height:44px;padding:0;}
+.month-picker-panel .month-picker-year>label{display:flex;flex:1 1 auto;align-items:center;justify-content:center;gap:8px;min-width:0;margin:0;color:var(--ui-muted,#626575);font-size:13px;}
+div.month-picker-panel[role=dialog] .month-picker-year input{box-sizing:border-box;width:90px;min-width:0;max-width:100%;height:44px;min-height:44px;margin:0;padding:7px 5px;border:1px solid var(--ui-border,#dddfe7);border-radius:8px;background:var(--ui-surface,#fff);color:var(--ui-text,#252334);font:inherit;font-size:19px;font-weight:600;line-height:1.4;text-align:center;}
+.month-picker-panel .month-picker-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;flex:0 0 auto;margin:0;}
+.month-picker-panel .month-picker-grid>button{min-width:0;min-height:50px;padding:10px 5px;}
+.month-picker-panel .month-picker-grid>button[aria-pressed=true]{background:var(--ui-accent-soft,#eee9fb);color:var(--ui-accent,#6547c6);border-color:color-mix(in srgb,var(--ui-accent,#6547c6) 50%,var(--ui-border,#dddfe7));font-weight:600;}
+.month-picker-panel .month-picker-grid>button>svg{flex:0 0 16px;}
+.month-picker-panel .month-picker-footer{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex:0 0 auto;margin-top:20px;padding-top:16px;border-top:1px solid var(--ui-border,#dddfe7);}
+.month-picker-panel .month-picker-footer button{min-width:88px;}
+.month-picker-panel .month-picker-footer .month-picker-clear{margin-right:auto;border-color:transparent;background:transparent;color:var(--ui-muted,#626575);}
+@media(hover:hover){.month-picker-panel button:not(:disabled):not([aria-pressed=true]):hover{background:var(--ui-surface-muted,#f1eff5);}}
+@media(max-width:360px){.month-picker-panel .month-picker-year{gap:8px}.month-picker-panel .month-picker-year>label{gap:4px}.month-picker-panel .month-picker-year input{width:76px}}
 
 /* Narrow filters must reflow before a month and adjacent selector are squeezed. */
 .app-shell.shell-wave1 :is(.finance2-filters,.billing-filters,.invoice-list-filters,.statement-filters,.recordings-filters,.timetable-filters,.teaching-stat-filters):has(.native-month-input){grid-template-columns:repeat(auto-fit,minmax(min(100%,15em),1fr));}
 .app-shell.shell-wave1 .teaching-stat-filters>label:has(.native-month-input){grid-template-columns:minmax(0,1fr);}
 .app-shell.shell-wave1 :is(.parents-course-filters,.parents-finance-filters):has(.native-month-input){grid-template-columns:repeat(auto-fit,minmax(min(100%,15em),1fr));}
 
-@media(forced-colors:active){.native-month-input{border-color:ButtonText}.native-month-input:focus-within{outline-color:Highlight}}
+@media(forced-colors:active){.month-field>button.native-month-input{border-color:ButtonText}.month-field>button.native-month-input:focus-visible{outline-color:Highlight}.month-picker-panel .month-picker-grid>button[aria-pressed=true]{outline:2px solid Highlight;outline-offset:-2px}.month-picker-panel button:disabled{color:GrayText}}

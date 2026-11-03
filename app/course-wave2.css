@@ -1,10 +1,14 @@
 /* Course workspace: keep the current actions and data flow, shorten the path to a lesson. */
 .shell-wave1 .course-wave2,
 .shell-wave1 .course-query-stack { min-width:0; color:var(--ui-text); }
-.shell-wave1 .course-query-filterbar { gap:10px; padding:0 0 12px; border-bottom:1px solid var(--ui-border); }
-.shell-wave1 .course-query-filterbar select { background:var(--ui-surface); color:var(--ui-text); border-color:var(--ui-border); border-radius:6px; }
-.shell-wave1 .course-query-filterbar>.course-completion-field { font-size:14px; }
-.shell-wave1 .course-query-filterbar>.filter-panel { flex:0 1 270px; }
+.shell-wave1 .course-query-filterbar { display:flex; align-items:flex-end; flex-wrap:wrap; gap:10px; padding:0 0 12px; border-bottom:1px solid var(--ui-border); }
+.shell-wave1 .course-query-filterbar select { box-sizing:border-box; min-height:48px; margin:0; background:var(--ui-surface); color:var(--ui-text); border-color:var(--ui-border); border-radius:6px; }
+.shell-wave1 .course-query-filterbar>.course-completion-field { min-width:min(100%,168px); margin:0; color:var(--ui-muted); font-size:14px; }
+.app-shell.shell-wave1 .workspace .course-query-filterbar>.course-completion-field select { min-height:48px; }
+/* Both closed controls share a baseline; legacy details spacing must not offset the trigger. */
+.shell-wave1 .course-query-filterbar>.filter-panel { box-sizing:border-box; flex:0 1 270px; min-width:min(100%,132px); margin:0; padding:0; }
+.shell-wave1 .course-query-filterbar>.filter-panel>summary { box-sizing:border-box; min-height:46px; margin:0; padding:10px 12px; }
+.shell-wave1 .course-query-filterbar>.filter-panel .filter-panel-fields { padding:12px; }
 .shell-wave1 .course-query-filterbar>.filter-panel[open] { flex:1 1 100%; }
 .shell-wave1 .course-query-stack { gap:14px; }
 .shell-wave1 .compact-course-list-heading { padding:0; }
@@ -12,9 +16,9 @@
 .shell-wave1 .course-query-pagination>span { text-align:center; }
 .shell-wave1 .course-query-filters select { color:var(--ui-text); background:var(--ui-surface); border-color:var(--ui-border); }
 .shell-wave1 .course-wave2 :is(.muted,.course-row-meta) { color:var(--ui-muted); }
-.shell-wave1 .course-row-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; min-width:0; }
-.shell-wave1 .course-row-heading>strong { min-width:0; overflow-wrap:anywhere; font-size:16px; line-height:1.5; }
-.shell-wave1 .course-row-heading>.status { flex:0 0 auto; margin:0; font-size:12px; line-height:1.4; }
+.shell-wave1 .course-row-heading { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:8px 12px; min-width:0; }
+.shell-wave1 .course-row-heading>strong { flex:1 1 180px; min-width:0; overflow-wrap:anywhere; font-size:16px; line-height:1.5; }
+.shell-wave1 .course-row-heading>.status { flex:0 0 auto; max-width:100%; margin:0; white-space:normal; overflow-wrap:anywhere; font-size:12px; line-height:1.4; }
 .shell-wave1 .course-row-time { font-size:14px; font-weight:600; line-height:1.5; color:var(--ui-text); overflow-wrap:anywhere; }
 .shell-wave1 .course-row-meta { font-size:14px; line-height:1.5; }
 .shell-wave1 .course-wave2 .course-row-details { margin:0; font-size:14px; }
@@ -66,12 +70,13 @@
 .shell-wave1 .course-wave2 .calendar-role-filters label { font-size:14px; gap:4px; }
 
 /* Course rows: timing and status first; audit history stays one click away. */
-.shell-wave1 .lesson-card.course-lesson-row { grid-template-columns:112px minmax(0,1fr); border-radius:8px; padding:14px; gap:14px; box-shadow:none; }
-.shell-wave1 .lesson-card.course-lesson-row .date-tile { padding:8px; border-radius:6px; background:var(--ui-surface-muted); color:var(--ui-text); }
+.shell-wave1 .lesson-card.course-lesson-row { display:grid; grid-template-columns:112px minmax(0,1fr); border-radius:8px; padding:14px; gap:14px; box-shadow:none; }
+.shell-wave1 .lesson-card.course-lesson-row .date-tile { width:auto; min-width:0; padding:8px; border-radius:6px; background:var(--ui-surface-muted); color:var(--ui-text); }
 .shell-wave1 .lesson-card.course-lesson-row .date-tile strong { color:var(--ui-text); font-size:14px; }
 .shell-wave1 .lesson-card.course-lesson-row .date-tile span { color:var(--ui-accent); font-size:14px; }
 .shell-wave1 .lesson-card.course-lesson-row .lesson-title { flex-wrap:wrap; }
-.shell-wave1 .lesson-card.course-lesson-row .lesson-title>strong { flex:1 1 180px; min-width:0; }
+.shell-wave1 .lesson-card.course-lesson-row .lesson-title>strong { flex:1 1 180px; min-width:0; overflow-wrap:anywhere; }
+.shell-wave1 .lesson-card.course-lesson-row .lesson-title>.status { flex:0 0 auto; max-width:100%; white-space:normal; overflow-wrap:anywhere; }
 .shell-wave1 .lesson-card.course-lesson-row .lesson-body>p { margin:4px 0; color:var(--ui-muted); font-size:14px; }
 .shell-wave1 .lesson-card.course-lesson-row .lesson-actions { margin-top:8px; }
 .shell-wave1 .course-wave2 .course-student-row { padding:14px 0; margin:0; border:0; border-bottom:1px solid var(--ui-border); border-radius:0; box-shadow:none; background:var(--ui-surface); }
@@ -131,8 +136,8 @@
 }
 @media(max-width:650px) {
  .shell-wave1 .course-query-filterbar { gap:8px; }
- .shell-wave1 .course-query-filterbar>.course-completion-field { flex:1 1 140px; }
- .shell-wave1 .course-query-filterbar>.filter-panel { flex:1 1 110px; }
+ .shell-wave1 .course-query-filterbar>.course-completion-field { flex:1 1 168px; }
+ .shell-wave1 .course-query-filterbar>.filter-panel { flex:1 1 132px; }
  .shell-wave1 .course-wave2 .student-calendar-layout { gap:12px; }
  .shell-wave1 .course-wave2 .student-calendar-toolbar { padding:10px; flex-wrap:wrap; }
  .shell-wave1 .course-wave2 .student-calendar-toolbar h3 { font-size:16px; }
@@ -143,7 +148,7 @@
  .shell-wave1 .course-wave2 .student-calendar-legend { font-size:12px; gap:6px 10px; padding:8px 10px; }
  .shell-wave1 .course-wave2 .student-day-panel { padding:12px; }
  .shell-wave1 .course-wave2 .student-day-heading h3 { font-size:16px; }
- .shell-wave1 .lesson-card.course-lesson-row { grid-template-columns:minmax(0,1fr); padding:12px; gap:6px; }
+ .shell-wave1 .lesson-card.course-lesson-row { grid-template-columns:minmax(0,1fr); padding:12px; gap:12px; }
  .shell-wave1 .lesson-card.course-lesson-row .date-tile { display:flex; justify-content:space-between; flex-wrap:wrap; gap:4px 8px; margin:0; padding:0 0 8px; border-bottom:1px solid var(--ui-border); border-radius:0; background:transparent; }
  .shell-wave1 .course-wave2 .course-row-heading { flex-wrap:wrap; }
  .shell-wave1 .course-wave2 .course-row-heading>strong { flex:1 1 130px; }

@@ -25,12 +25,13 @@
 .shell-account-link strong{font-size:14px;line-height:1.4;font-weight:650;overflow-wrap:anywhere}
 .shell-account-link small{font-size:12px;line-height:1.4;color:var(--ui-muted,#626575)}
 .app-shell.shell-wave1 .shell-account-link:hover{background:var(--ui-surface-muted,#f1f1f6)}
-.app-shell.shell-wave1 .menu-group+.menu-group{margin-top:16px}
-.app-shell.shell-wave1 .menu-group-title{color:var(--ui-muted,#626575);font-size:12px;font-weight:600;margin:0 10px 4px}
-.app-shell.shell-wave1 .menu-links{gap:4px}
-.app-shell.shell-wave1 .menu-link{position:relative;display:flex;align-items:center;gap:10px;min-height:44px;padding:10px 12px;border-radius:6px;color:var(--ui-text,#252334);font-size:14px;background:transparent;line-height:1.45}
+.app-shell.shell-wave1 .menu-group+.menu-group{margin-top:12px;padding-top:14px;border-top:1px solid var(--ui-border,#e4e4ec)}
+.app-shell.shell-wave1 .menu-group-title{color:var(--ui-muted,#626575);font-size:12px;font-weight:600;margin:0 10px 6px}
+.app-shell.shell-wave1 :is(.menu-links,.menu-group){gap:6px}
+.app-shell.shell-wave1 .menu-link{position:relative;display:flex;align-items:center;gap:10px;min-height:44px;padding:10px 12px;border:1px solid var(--ui-border,#e4e4ec);border-radius:8px;color:var(--ui-text,#252334);font-size:14px;background:var(--ui-surface,#fff);line-height:1.45}
 .app-shell.shell-wave1 .menu-link>svg{color:var(--ui-muted,#626575);flex-shrink:0}
 .app-shell.shell-wave1 .menu-link:hover{background:var(--ui-surface-muted,#f1f1f6);color:var(--ui-text,#252334)}
+.app-shell.shell-wave1 .menu-link:focus-visible{outline:2px solid var(--ui-accent,#6547c6);outline-offset:2px;background:var(--ui-surface-muted,#f1f1f6);color:var(--ui-text,#252334)}
 .app-shell.shell-wave1 .menu-link.active{background:var(--ui-nav-active,#e5ddf7);color:var(--ui-accent,#6547c6);font-weight:650;box-shadow:inset 3px 0 0 var(--ui-accent,#6547c6)}
 .app-shell.shell-wave1 .menu-link.active>svg{color:inherit}
 .app-shell.shell-wave1 .menu-utilities{padding-top:12px;margin-top:20px;border-color:var(--ui-border,#e4e4ec)}

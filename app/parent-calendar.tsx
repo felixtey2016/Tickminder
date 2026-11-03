@@ -2,6 +2,7 @@
 import {useEffect,useState,type ReactNode} from 'react';
 import {ChevronLeft,ChevronRight} from 'lucide-react';
 import {Button} from '@/components/ui/button';
+import {MonthInput} from '@/components/month-input';
 import {getLanguage} from '@/lib/i18n';
 import {PC} from '@/lib/parent-calendar-i18n';
 import type {ParentChild,ParentCourseLesson,ParentPage} from '@/lib/parents';
@@ -29,7 +30,7 @@ export default function ParentCalendar({studentId,month,status='all',version,sel
  return <div className="parent-calendar course-wave2" data-testid="parent-calendar"><div className="parent-calendar-month">
   <div className="parent-calendar-toolbar"><div className="parent-calendar-month-controls">
    <Button type="button" variant="outline" aria-label={PC('previousMonth')} disabled={month<='2000-01'} onClick={()=>onMonthChange(shiftMonth(month,-1))}><ChevronLeft size={20} aria-hidden="true"/></Button>
-   <label className="parent-calendar-month-picker"><span className="parent-calendar-month-label" aria-hidden="true">{monthLabel}</span><input type="month" min="2000-01" max="2099-12" aria-label={PW('chooseMonth')} value={month} onChange={event=>{if(/^20\d\d-(0[1-9]|1[0-2])$/.test(event.target.value))onMonthChange(event.target.value);}}/></label>
+   <div className="parent-calendar-month-picker"><MonthInput required min="2000-01" max="2099-12" aria-label={PW('chooseMonth')} value={month} onChange={event=>{if(/^20\d\d-(0[1-9]|1[0-2])$/.test(event.target.value))onMonthChange(event.target.value);}}/></div>
    <Button type="button" variant="outline" aria-label={PC('nextMonth')} disabled={month>='2099-12'} onClick={()=>onMonthChange(shiftMonth(month,1))}><ChevronRight size={20} aria-hidden="true"/></Button>
   </div><Button type="button" variant="outline" onClick={()=>{const current=today();onMonthChange(current.slice(0,7));chooseDay(current);}}>{PC('today')}</Button></div>
   <ParentLoadState loading={calendar.loading} failed={calendar.failed} onRetry={retry}>{calendar.data&&<>
