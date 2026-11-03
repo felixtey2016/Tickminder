@@ -156,6 +156,8 @@ async function issued(account) {
   return { challenge: result.data.challenge, code: lastCode() };
 }
 function resetBody(challenge, code, newPassword = 'NewRecoveryPassword26!') { return { action: 'reset', challenge, code, newPassword }; }
+function verifyCode(challenge, code) { return call({ action: 'verify', challenge, code }); }
+function grantReset(resetToken, newPassword = 'NewRecoveryPassword26!') { return call({ action: 'reset', resetToken, newPassword }); }
 function sessions(account) {
   for (const suffix of ['browser', 'phone']) {
     const token = `${account.id}-${suffix}`;
@@ -588,6 +590,148 @@ try {
   assert.ok((await call({ action: 'request', identifier: 'x'.repeat(20_000) })).status >= 400);
   assert.ok((await call({ action: 'unexpected' })).status >= 400);
   assert.equal(mails.length, 0);
+  checks += 5;
+
+  // The new UI verifies email possession before displaying a password form.
+  // Original challenges and verified grants have distinct authenticated uses.
+  freshLimits();
+  const staged = seed(), stagedChallenge = await issued(staged);
+  sessions(staged);
+  assert.equal((await grantReset(stagedChallenge.challenge)).status, 400, 'An unverified challenge is never a reset grant');
+  const stagedWrong = stagedChallenge.code === '000000' ? '000001' : '000000';
+  const wrongVerify = await verifyCode(stagedChallenge.challenge, stagedWrong);
+  assert.equal(wrongVerify.status, 400);
+  assert.equal(wrongVerify.data.resetToken, undefined);
+  const stagedVerify = await call({ action: 'verify', ...stagedChallenge, newPassword: 'NeverSavedByVerification26!' });
+  assert.equal(stagedVerify.status, 200);
+  assert.deepEqual(Object.keys(stagedVerify.data).sort(), ['expiresIn', 'ok', 'resetToken']);
+  assert.equal(stagedVerify.data.expiresIn, 600);
+  assert.equal(credential(staged).password_hash, initialHash, 'Verification cannot save a supplied new password');
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM sessions WHERE account_id=?').get(staged.id).n, 2, 'Verification does not revoke sessions');
+  assert.equal((await grantReset(stagedChallenge.challenge)).status, 400, 'Even a verified original challenge cannot replace the grant');
+  assert.equal((await verifyCode(stagedVerify.data.resetToken, stagedChallenge.code)).status, 400, 'A reset grant cannot be used as a code challenge');
+  assert.equal((await call({ ...resetBody(stagedChallenge.challenge, stagedChallenge.code), resetToken: null })).status, 400, 'Malformed explicit resetToken never falls back to legacy credentials');
+  assert.equal((await grantReset(stagedVerify.data.resetToken, 'short')).data.code, 'INVALID_PASSWORD');
+  assert.equal((await grantReset(stagedVerify.data.resetToken, initialPassword)).data.code, 'PASSWORD_UNCHANGED');
+  assert.equal(sqlite.prepare("SELECT failures FROM login_attempts WHERE username LIKE '~password-recovery:v1:challenge:%'").get().failures, 2, 'Password corrections do not consume more OTP attempts');
+  assert.equal((await grantReset(stagedVerify.data.resetToken)).status, 200);
+  assert.equal(await verifyPassword('NewRecoveryPassword26!', credential(staged).password_hash), true);
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM sessions WHERE account_id=?').get(staged.id).n, 0);
+  assert.equal((await grantReset(stagedVerify.data.resetToken, 'ReplayGrantPassword26!')).status, 400);
+  assert.equal((await verifyCode(stagedChallenge.challenge, stagedChallenge.code)).status, 400, 'Consumed recovery cannot be verified again');
+  checks += 19;
+
+  // A caller who lost a successful verify response may retry within the same
+  // budget. Equivalent grants share expiry and one atomic consumption point.
+  freshLimits();
+  const retryAccount = seed(), retryChallenge = await issued(retryAccount);
+  clock += 120_000;
+  const retryFirst = await verifyCode(retryChallenge.challenge, retryChallenge.code);
+  clock += 10_000;
+  const retrySecond = await verifyCode(retryChallenge.challenge, retryChallenge.code);
+  assert.equal(retryFirst.status, 200);
+  assert.equal(retrySecond.status, 200);
+  assert.equal(retryFirst.data.expiresIn, 480);
+  assert.equal(retrySecond.data.expiresIn, 470, 'Retry never extends the original ten-minute deadline');
+  const grantRace = await Promise.all([grantReset(retryFirst.data.resetToken, 'FirstEquivalentGrant26!'), grantReset(retrySecond.data.resetToken, 'SecondEquivalentGrant26!')]);
+  assert.deepEqual(grantRace.map(result => result.status).sort(), [200, 400], 'Equivalent grants permit exactly one commit');
+  checks += 5;
+
+  freshLimits();
+  const bounded = seed(), boundedChallenge = await issued(bounded);
+  const boundedGrant = await verifyCode(boundedChallenge.challenge, boundedChallenge.code);
+  assert.equal(boundedGrant.status, 200);
+  const boundedWrong = boundedChallenge.code === '000000' ? '000001' : '000000';
+  for (let i = 0; i < 4; i++) {
+    const result = i === 0 ? await call(resetBody(boundedChallenge.challenge, boundedWrong)) : await verifyCode(boundedChallenge.challenge, boundedWrong);
+    assert.equal(result.status, 400);
+  }
+  assert.equal((await verifyCode(boundedChallenge.challenge, boundedChallenge.code)).status, 400, 'Correct retries cannot bypass the shared five-attempt limit');
+  assert.equal((await grantReset(boundedGrant.data.resetToken)).status, 200, 'Exhausted guessing cannot revoke an already verified grant');
+  checks += 7;
+
+  freshLimits();
+  const expiredGrantAccount = seed(), expiredGrantChallenge = await issued(expiredGrantAccount);
+  clock += 599_000;
+  const expiringGrant = await verifyCode(expiredGrantChallenge.challenge, expiredGrantChallenge.code);
+  assert.equal(expiringGrant.status, 200);
+  assert.equal(expiringGrant.data.expiresIn, 1);
+  clock += 1001;
+  assert.equal((await grantReset(expiringGrant.data.resetToken)).status, 400);
+  assert.equal(credential(expiredGrantAccount).password_hash, initialHash);
+  checks += 4;
+
+  freshLimits();
+  const grantStateAccount = seed(), grantStateChallenge = await issued(grantStateAccount);
+  const stateGrant = await verifyCode(grantStateChallenge.challenge, grantStateChallenge.code);
+  const grantText = stateGrant.data.resetToken, grantAt = Math.floor(grantText.length / 2);
+  const tamperedGrant = grantText.slice(0, grantAt) + (grantText[grantAt] === 'A' ? 'B' : 'A') + grantText.slice(grantAt + 1);
+  assert.equal((await grantReset(tamperedGrant)).status, 400);
+  sqlite.prepare("UPDATE login_attempts SET blocked_until=NULL WHERE username LIKE '~password-recovery:v1:challenge:%'").run();
+  assert.equal((await grantReset(grantText)).status, 400, 'A valid encrypted grant also requires server-side verified state');
+  assert.equal(credential(grantStateAccount).password_hash, initialHash);
+  checks += 3;
+
+  for (const change of ['password', 'unlink', 'email', 'disabled', 'pending-expiry']) {
+    freshLimits();
+    const changedGrantAccount = seed(change === 'pending-expiry' ? { role: 'pending', pendingExpiresAt: new Date(clock + 10000).toISOString() } : {});
+    const changedGrantChallenge = await issued(changedGrantAccount);
+    const changedGrant = await verifyCode(changedGrantChallenge.challenge, changedGrantChallenge.code);
+    assert.equal(changedGrant.status, 200);
+    sessions(changedGrantAccount);
+    if (change === 'password') sqlite.prepare('UPDATE local_credentials SET password_hash=? WHERE account_id=?').run(await hashPassword('NewAdministratorPassword26!'), changedGrantAccount.id);
+    if (change === 'unlink') sqlite.prepare('DELETE FROM google_identities WHERE account_id=?').run(changedGrantAccount.id);
+    if (change === 'email') sqlite.prepare('UPDATE google_identities SET email=? WHERE account_id=?').run('changed-verified@example.test', changedGrantAccount.id);
+    if (change === 'disabled') sqlite.prepare('UPDATE accounts SET disabled_at=? WHERE id=?').run(new Date().toISOString(), changedGrantAccount.id);
+    if (change === 'pending-expiry') clock += 10001;
+    const hashBefore = credential(changedGrantAccount).password_hash;
+    assert.equal((await grantReset(changedGrant.data.resetToken)).status, 400, change + ' invalidates an already verified grant');
+    assert.equal(credential(changedGrantAccount).password_hash, hashBefore);
+    assert.equal(sqlite.prepare('SELECT count(*) n FROM sessions WHERE account_id=?').get(changedGrantAccount.id).n, 2);
+    checks += 4;
+  }
+
+  freshLimits();
+  const verifyResetAccount = seed(), verifyResetChallenge = await issued(verifyResetAccount);
+  const concurrentVerifications = await Promise.all([verifyCode(verifyResetChallenge.challenge, verifyResetChallenge.code), verifyCode(verifyResetChallenge.challenge, verifyResetChallenge.code)]);
+  assert.ok(concurrentVerifications.every(result => result.status === 200), 'Parallel correct verification returns equivalent bounded grants');
+  const verifyResetRace = await Promise.all([verifyCode(verifyResetChallenge.challenge, verifyResetChallenge.code), grantReset(concurrentVerifications[0].data.resetToken)]);
+  assert.equal(verifyResetRace[1].status, 200);
+  assert.ok([200, 400].includes(verifyResetRace[0].status));
+  assert.equal((await grantReset(concurrentVerifications[1].data.resetToken)).status, 400);
+  if (verifyResetRace[0].status === 200) assert.equal((await grantReset(verifyResetRace[0].data.resetToken)).status, 400, 'Verification racing a reset cannot resurrect the consumed grant');
+  assert.equal((await verifyCode(verifyResetChallenge.challenge, verifyResetChallenge.code)).status, 400);
+  checks += 5 + Number(verifyResetRace[0].status === 200);
+
+  freshLimits();
+  const ordinaryGrantAccount = seed(), ordinaryGrantChallenge = await issued(ordinaryGrantAccount);
+  const ordinaryGrant = await verifyCode(ordinaryGrantChallenge.challenge, ordinaryGrantChallenge.code);
+  await signedIn(ordinaryGrantAccount);
+  let ordinaryWon = false;
+  beforeBatch = async items => {
+    assert.ok(items.some(item => /UPDATE\s+local_credentials/i.test(item.sql)));
+    const changed = await changePassword('OrdinaryWinsAfterVerification26!');
+    assert.equal(changed.status, 200);
+    ordinaryWon = true;
+  };
+  assert.equal((await grantReset(ordinaryGrant.data.resetToken)).status, 400, 'Final grant CAS loses to an ordinary password change');
+  assert.equal(ordinaryWon, true);
+  assert.equal(await verifyPassword('OrdinaryWinsAfterVerification26!', credential(ordinaryGrantAccount).password_hash), true);
+  assert.equal(sqlite.prepare('SELECT count(*) n FROM sessions WHERE account_id=?').get(ordinaryGrantAccount.id).n, 1, 'A losing grant cannot revoke the new ordinary-change session');
+  checks += 6;
+
+  freshLimits();
+  const grantRollbackAccount = seed(), grantRollbackChallenge = await issued(grantRollbackAccount);
+  const rollbackGrant = await verifyCode(grantRollbackChallenge.challenge, grantRollbackChallenge.code);
+  sessions(grantRollbackAccount);
+  sqlite.exec("CREATE TEMP TRIGGER fail_grant_session_delete BEFORE DELETE ON sessions BEGIN SELECT RAISE(ABORT,'isolated grant transaction failure'); END");
+  try {
+    assert.equal((await grantReset(rollbackGrant.data.resetToken)).status, 503);
+    assert.equal(credential(grantRollbackAccount).password_hash, initialHash);
+    assert.equal(sqlite.prepare("SELECT blocked_until FROM login_attempts WHERE username LIKE '~password-recovery:v1:challenge:%'").get().blocked_until, 'verified', 'Failed transaction does not consume the verified grant');
+    assert.equal(sqlite.prepare('SELECT count(*) n FROM sessions WHERE account_id=?').get(grantRollbackAccount.id).n, 2);
+  } finally { sqlite.exec('DROP TRIGGER fail_grant_session_delete'); }
+  assert.equal((await grantReset(rollbackGrant.data.resetToken)).status, 200, 'Grant remains usable after a fully rolled-back transaction');
   checks += 5;
 
   console.log(`PASS password recovery: ${checks} security assertions, real SQL/Web Crypto, isolated database and intercepted mail only.`);

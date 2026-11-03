@@ -1,6 +1,6 @@
 import { env, waitUntil } from "cloudflare:workers";
 import { NextResponse } from "next/server";
-import { recoveryConfig, RecoveryError, requestPasswordRecovery, resetRecoveredPassword } from "@/lib/password-recovery";
+import { recoveryConfig, RecoveryError, requestPasswordRecovery, verifyPasswordRecovery, resetVerifiedPassword, resetRecoveredPassword } from "@/lib/password-recovery";
 
 const noStore = { "Cache-Control": "no-store, max-age=0" };
 const messages: Record<string, string> = {
@@ -40,8 +40,15 @@ export async function POST(request: Request) {
       const ip = request.headers.get("cf-connecting-ip") || "unknown";
       return NextResponse.json(await requestPasswordRecovery(config, body.identifier, ip, body.language === "en" ? "en" : "zh", waitUntil), { headers: noStore });
     }
+    if (body.action === "verify") {
+      return NextResponse.json(await verifyPasswordRecovery(config, body.challenge, body.code), { headers: noStore });
+    }
     if (body.action === "reset") {
-      const result = await resetRecoveredPassword(config, body.challenge, body.code, body.newPassword);
+      // Presence of a grant selects the new contract, even when malformed;
+      // never fall back from an invalid grant to another credential in the body.
+      const result = "resetToken" in body
+        ? await resetVerifiedPassword(config, body.resetToken, body.newPassword)
+        : await resetRecoveredPassword(config, body.challenge, body.code, body.newPassword);
       const response = NextResponse.json(result, { headers: noStore });
       response.cookies.set("tuition_session", "", { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 0 });
       return response;

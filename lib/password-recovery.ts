@@ -26,7 +26,7 @@ type Identity = {
   accountId: string; username: string; passwordHash: string;
   subject: string; email: string; linkedAt: string;
 };
-type Challenge = { v: 1; nonce: string; accountId: string; credentialStamp: string; identityStamp: string; codeStamp: string; issued: number; expires: number };
+type Challenge = { v: 1; purpose?: "reset"; nonce: string; accountId: string; credentialStamp: string; identityStamp: string; codeStamp: string; issued: number; expires: number };
 export class RecoveryError extends Error {
   constructor(public code: string, public status = 400, public retryAfter?: number) { super(code); }
 }
@@ -64,14 +64,14 @@ async function seal(secret: string, challenge: Challenge) {
   const token = new Uint8Array(iv.length + encrypted.length); token.set(iv); token.set(encrypted, iv.length);
   return base64(token);
 }
-async function open(secret: string, token: string): Promise<Challenge> {
+async function open(secret: string, token: string, purpose?: "reset"): Promise<Challenge> {
   try {
     if (!/^[A-Za-z0-9_-]{1403}$/.test(token)) throw new Error("token");
     const bytes = unbase64(token);
     const decoded = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12), additionalData: associatedData }, await encryptionKey(secret), bytes.slice(12));
     const value = JSON.parse(decoder.decode(decoded)) as Challenge;
     const now = Date.now();
-    if (value.v !== 1 || !/^[a-f0-9]{32}$/.test(value.nonce) || typeof value.accountId !== "string" || value.accountId.length > 200 || ![value.codeStamp, value.credentialStamp, value.identityStamp].every(item => typeof item === "string" && /^[A-Za-z0-9_-]{43}$/.test(item)) || !Number.isSafeInteger(value.issued) || !Number.isSafeInteger(value.expires) || value.issued > now + 1000 || value.expires <= now || value.expires - value.issued !== RECOVERY_TTL_SECONDS * 1000) throw new Error("token");
+    if (value.v !== 1 || value.purpose !== purpose || !/^[a-f0-9]{32}$/.test(value.nonce) || typeof value.accountId !== "string" || value.accountId.length > 200 || ![value.codeStamp, value.credentialStamp, value.identityStamp].every(item => typeof item === "string" && /^[A-Za-z0-9_-]{43}$/.test(item)) || !Number.isSafeInteger(value.issued) || !Number.isSafeInteger(value.expires) || value.issued > now + 1000 || value.expires <= now || value.expires - value.issued !== RECOVERY_TTL_SECONDS * 1000) throw new Error("token");
     return value;
   } catch { throw new RecoveryError("INVALID_CODE"); }
 }
@@ -212,18 +212,46 @@ export async function requestPasswordRecovery(config: Config, rawIdentifier: unk
   return { ok: true, challenge: token, retryAfter: RECOVERY_RETRY_SECONDS, expiresIn: RECOVERY_TTL_SECONDS };
 }
 
-export async function resetRecoveredPassword(config: Config, token: unknown, rawCode: unknown, newPassword: unknown) {
+async function checkedIdentity(config: Config, challenge: Challenge) {
+  const identity = await identityByAccount(config.db, challenge.accountId, new Date(Date.now()).toISOString());
+  if (!identity || !equal(challenge.credentialStamp, await stamp(config.secret, "credential", identity.passwordHash)) || !equal(challenge.identityStamp, await identityStamp(config.secret, identity))) throw new RecoveryError("INVALID_CODE");
+  return identity;
+}
+
+export async function verifyPasswordRecovery(config: Config, token: unknown, rawCode: unknown) {
   if (typeof token !== "string" || typeof rawCode !== "string" || !/^\d{6}$/.test(rawCode)) throw new RecoveryError("INVALID_CODE");
-  if (!validPassword(newPassword)) throw new RecoveryError("INVALID_PASSWORD");
   const challenge = await open(config.secret, token);
   const attemptKey = PREFIX + "challenge:" + challenge.nonce;
   const issued = new Date(challenge.issued).toISOString();
-  const attempt = await config.db.prepare(`UPDATE login_attempts SET failures=failures+1 WHERE username=? AND window_start=? AND blocked_until IS NULL AND failures<? RETURNING failures`)
+  // A lost verification response can be retried, but every verification still
+  // shares the same five-attempt budget, including correct retries. Otherwise a
+  // verified challenge could become an unlimited six-digit-code oracle.
+  const attempt = await config.db.prepare(`UPDATE login_attempts SET failures=failures+1 WHERE username=? AND window_start=? AND (blocked_until IS NULL OR blocked_until='verified') AND failures<? RETURNING failures`)
     .bind(attemptKey, issued, RECOVERY_MAX_ATTEMPTS).first<{ failures: number }>();
   if (!attempt || !equal(challenge.codeStamp, await stamp(config.secret, "code", challenge.nonce, rawCode))) throw new RecoveryError("INVALID_CODE");
-  const now = new Date(Date.now()).toISOString();
-  const identity = await identityByAccount(config.db, challenge.accountId, now);
-  if (!identity || !equal(challenge.credentialStamp, await stamp(config.secret, "credential", identity.passwordHash)) || !equal(challenge.identityStamp, await identityStamp(config.secret, identity))) throw new RecoveryError("INVALID_CODE");
+  const identity = await checkedIdentity(config, challenge);
+  const verified = await config.db.prepare(`UPDATE login_attempts SET blocked_until='verified'
+    WHERE username=? AND window_start=? AND (blocked_until IS NULL OR blocked_until='verified') AND failures<=?
+    AND EXISTS(SELECT 1 FROM local_credentials c JOIN accounts a ON a.id=c.account_id JOIN google_identities g ON g.account_id=a.id
+      WHERE c.account_id=? AND c.password_hash=? AND ${eligible.replace('<= ?', "<= strftime('%Y-%m-%dT%H:%M:%fZ','now')")} AND g.subject=? AND g.email=? AND g.linked_at=?)
+    AND (julianday('now')-2440587.5)*86400000<? RETURNING username`)
+    .bind(attemptKey, issued, RECOVERY_MAX_ATTEMPTS, identity.accountId, identity.passwordHash, identity.subject, identity.email, identity.linkedAt, challenge.expires).first();
+  if (!verified) throw new RecoveryError("INVALID_CODE");
+  // The purpose is authenticated inside the encrypted payload. Original
+  // challenges can never be submitted as grants, even after verification.
+  const resetToken = await seal(config.secret, { ...challenge, purpose: "reset" });
+  const expiresIn = Math.floor((challenge.expires - Date.now()) / 1000);
+  if (expiresIn <= 0) throw new RecoveryError("INVALID_CODE");
+  return { ok: true, resetToken, expiresIn };
+}
+
+export async function resetVerifiedPassword(config: Config, token: unknown, newPassword: unknown) {
+  if (typeof token !== "string") throw new RecoveryError("INVALID_CODE");
+  if (!validPassword(newPassword)) throw new RecoveryError("INVALID_PASSWORD");
+  const challenge = await open(config.secret, token, "reset");
+  const attemptKey = PREFIX + "challenge:" + challenge.nonce;
+  const issued = new Date(challenge.issued).toISOString();
+  const identity = await checkedIdentity(config, challenge);
   if (await verifyPassword(newPassword, identity.passwordHash)) throw new RecoveryError("PASSWORD_UNCHANGED");
   const passwordHash = await hashPassword(newPassword);
   const committedAt = new Date(Date.now()).toISOString();
@@ -235,7 +263,7 @@ export async function resetRecoveredPassword(config: Config, token: unknown, raw
     config.db.prepare(`UPDATE local_credentials SET password_hash=?,must_change_password=0,updated_at=?
       WHERE account_id=? AND password_hash=? AND EXISTS(SELECT 1 FROM accounts a JOIN google_identities g ON g.account_id=a.id
       WHERE a.id=local_credentials.account_id AND ${eligible.replace('<= ?', "<= strftime('%Y-%m-%dT%H:%M:%fZ','now')")} AND g.subject=? AND g.email=? AND g.linked_at=?)
-      AND EXISTS(SELECT 1 FROM login_attempts WHERE username=? AND window_start=? AND blocked_until IS NULL AND failures<=?) AND (julianday('now')-2440587.5)*86400000<?`)
+      AND EXISTS(SELECT 1 FROM login_attempts WHERE username=? AND window_start=? AND blocked_until='verified' AND failures<=?) AND (julianday('now')-2440587.5)*86400000<?`)
       .bind(passwordHash, committedAt, identity.accountId, identity.passwordHash, identity.subject, identity.email, identity.linkedAt, attemptKey, issued, RECOVERY_MAX_ATTEMPTS, challenge.expires),
     config.db.prepare("DELETE FROM sessions WHERE account_id=? AND EXISTS(SELECT 1 FROM local_credentials WHERE account_id=? AND password_hash=?)").bind(identity.accountId, identity.accountId, passwordHash),
     config.db.prepare("DELETE FROM login_attempts WHERE username=? AND EXISTS(SELECT 1 FROM local_credentials WHERE account_id=? AND password_hash=?)").bind(identity.username, identity.accountId, passwordHash),
@@ -243,4 +271,12 @@ export async function resetRecoveredPassword(config: Config, token: unknown, raw
   ]);
   if (result[0].meta.changes !== 1) throw new RecoveryError("INVALID_CODE");
   return { ok: true };
+}
+
+// Cached clients may still submit code and password together. They use exactly
+// the same verification budget and grant CAS as the new three-screen flow.
+export async function resetRecoveredPassword(config: Config, token: unknown, rawCode: unknown, newPassword: unknown) {
+  if (!validPassword(newPassword)) throw new RecoveryError("INVALID_PASSWORD");
+  const verified = await verifyPasswordRecovery(config, token, rawCode);
+  return resetVerifiedPassword(config, verified.resetToken, newPassword);
 }
