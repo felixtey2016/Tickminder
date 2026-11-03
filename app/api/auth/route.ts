@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { accounts, googleIdentities, localCredentials, loginAttempts, sessions } from "@/db/schema";
-import { createSession, currentIdentity, hashToken, verifyGoogleCredential, type Account } from "@/lib/auth";
+import { StaleSessionCredentialError, createSession, currentIdentity, hashToken, verifyGoogleCredential, type Account } from "@/lib/auth";
 import { normalizeUsername, validUsername, verifyPassword } from "@/lib/password";
 import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 import { lifecycleView, pendingDeadline, pendingExpired } from "@/lib/account-lifecycle";
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       if (!loginAccount || loginAccount.disabledAt) return NextResponse.json({ error: "账号已停用，请联系管理员" }, { status: 403 });
       if (pendingExpired(loginAccount)) return NextResponse.json({ error: "待分配账号已到期，请联系管理员" }, { status: 403 });
       if (attempt) await db.delete(loginAttempts).where(eq(loginAttempts.username, username));
-      const session = await createSession(credential.accountId,request);
+      const session = await createSession(credential.accountId,request,credential.passwordHash);
       const response = NextResponse.json({ ok: true, ...await authPayload(loginAccount, credential, loginIdentity?.googleEmail ? {email: loginIdentity.googleEmail} : null) }, {headers: {"Cache-Control": "no-store"}});
       response.cookies.set("tuition_session", session.token, { httpOnly: true, secure: true, sameSite: "lax", path: "/", expires: new Date(session.expiresAt) });
       return response;
@@ -93,6 +93,7 @@ export async function POST(request: Request) {
     response.cookies.set("tuition_session", session.token, { httpOnly: true, secure: true, sameSite: "lax", path: "/", expires: new Date(session.expiresAt) });
     return response;
   } catch (error) {
+    if (error instanceof StaleSessionCredentialError) return NextResponse.json({ error: "账号或密码错误" }, { status: 401, headers: { "Cache-Control": "no-store" } });
     const message = error instanceof Error ? error.message : "";
     return NextResponse.json({ error: /无法连接 Google 登录验证服务/.test(message) ? message : /Google login is not configured/.test(message) ? "Google 登录尚未配置" : /Invalid Google|Google signing key unavailable|Google key lookup failed/.test(message) ? "Google 登录验证失败，请重试" : "登录失败，请稍后重试" }, { status: 400 });
   }

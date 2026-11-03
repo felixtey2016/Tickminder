@@ -6,6 +6,10 @@ declare namespace Cloudflare {
     DIAGNOSTICS_FEED_URL?: string;
     CF_VERSION_METADATA?: {id:string;tag?:string;timestamp?:string};
     GOOGLE_CLIENT_ID?: string;
+    BREVO_API_KEY?: string;
+    BREVO_SENDER_EMAIL?: string;
+    BREVO_SENDER_NAME?: string;
+    PASSWORD_RECOVERY_SECRET?: string;
     GOOGLE_PICKER_API_KEY?: string;
     GOOGLE_DRIVE_APP_ID?: string;
     ADMIN_EMAIL?: string;

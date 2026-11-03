@@ -2,6 +2,7 @@
 import {useDisplayPreferences} from '@/lib/use-display-preferences';
 import {displayFormatter} from '@/lib/display-preferences';
 import {PasswordInput} from '@/components/password-input';
+import {PasswordRecoveryButton} from './password-recovery';
 import {TimeInput} from '@/components/time-input';
 import {ServiceBrandIcon} from '@/components/service-brand-icon';
 import {MonthInput} from '@/components/month-input';
@@ -614,7 +615,7 @@ function LoginForm({ googleButton, clientId, login, busy, message, language, cha
     const [password, setPassword] = useState("");
     return <main className="auth-shell auth-login-shell"><div className="auth-layout"><section className="auth-story"><div className="auth-story-brand"><BrandLogo/><strong>{BRAND_NAME}</strong></div><img className="auth-story-illustration" src="/mascots/reading.png" width={512} height={512} alt="" loading="lazy" decoding="async"/><h2>{t("学习与协作")}</h2><p>{t("集中管理课程日程、功课与教学资料。")}</p></section><div className="auth-card"><div className="auth-login-heading"><div className="auth-mobile-brand"><BrandLogo small/><strong>{BRAND_NAME}</strong></div><LanguageSwitcher language={language} change={changeLanguage}/></div><p className="eyebrow">{language === "zh" ? `欢迎使用 ${BRAND_NAME}` : `Welcome to ${BRAND_NAME}`}</p><h1>{t("登录")}</h1>{invitedGroup&&<p className="notice">{t("注册加入")} · {invitedGroup}</p>}<p>{t("使用密码或 Google 账号登录")}</p>
     <form onSubmit={e => { e.preventDefault(); login(username, password); }}><label>{t("邮箱或用户名")}<input required autoComplete="username" autoCapitalize="none" maxLength={254} value={username} onChange={e => setUsername(e.target.value)}/></label><label>{t("\u5BC6\u7801")}<PasswordInput required type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("登录")}</Button></form>
-    <p className="auth-divider">{t("\u6216\u4F7F\u7528 Google \u767B\u5F55")}</p>{clientId ? <div ref={googleButton} className="google-signin"/> : <div className="notice">{t("Google \u767B\u5F55\u5C1A\u672A\u914D\u7F6E\uFF1B\u53EF\u4EE5\u4F7F\u7528\u7BA1\u7406\u5458\u521B\u5EFA\u7684\u8D26\u53F7\u5BC6\u7801\u3002")}</div>}{busy && <small>{t("\u6B63\u5728\u9A8C\u8BC1\u8D26\u53F7\u2026")}</small>}{message && <div className="error" role="alert">{message}</div>}<span className="auth-foot">{t("忘记密码？请联系所属集团管理员重置。")}</span><p className="auth-legal-note">{t("登录前，请阅读服务条款与隐私政策。")}</p><LegalLinks language={language} className="auth-legal"/></div></div></main>;
+    <p className="auth-divider">{t("\u6216\u4F7F\u7528 Google \u767B\u5F55")}</p>{clientId ? <div ref={googleButton} className="google-signin"/> : <div className="notice">{t("Google \u767B\u5F55\u5C1A\u672A\u914D\u7F6E\uFF1B\u53EF\u4EE5\u4F7F\u7528\u7BA1\u7406\u5458\u521B\u5EFA\u7684\u8D26\u53F7\u5BC6\u7801\u3002")}</div>}{busy && <small>{t("\u6B63\u5728\u9A8C\u8BC1\u8D26\u53F7\u2026")}</small>}{message && <div className="error" role="alert">{message}</div>}<PasswordRecoveryButton language={language} initialIdentifier={username} disabled={busy}/><p className="auth-legal-note">{t("登录前，请阅读服务条款与隐私政策。")}</p><LegalLinks language={language} className="auth-legal"/></div></div></main>;
 }
 function PasswordChange({ name, change, logout, busy, message, language, changeLanguage }: {
     name: string;

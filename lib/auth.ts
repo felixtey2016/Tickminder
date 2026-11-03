@@ -110,11 +110,24 @@ export async function currentBusinessAccount(): Promise<Account | null> {
   setDiagnosticActor(account);return account;
 }
 
-export async function createSession(accountId: string, request?: Request) {
+export class StaleSessionCredentialError extends Error {
+  constructor() { super("Credential changed during login"); }
+}
+
+export async function createSession(accountId: string, request?: Request, expectedPasswordHash?: string) {
   const token = toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
   const expiresAt = new Date(Date.now() + 30 * 86400000).toISOString();
   const tokenHash=await hashToken(token),device=sessionDeviceLabel(request?.headers.get("user-agent")||"");
   const database=env.DB;if(!database)throw new Error("Database is not configured");
-  await database.batch([database.prepare("INSERT INTO sessions(token_hash,account_id,expires_at) VALUES(?,?,?)").bind(tokenHash,accountId,expiresAt),database.prepare("INSERT INTO session_devices(id,token_hash,created_at,browser,os) VALUES(?,?,?,?,?)").bind(crypto.randomUUID(),tokenHash,new Date().toISOString(),device.browser,device.os)]);
+  // A password login may have started before a concurrent password reset.
+  // Bind issuance to the credential actually verified, inside the D1 batch.
+  const insertSession = expectedPasswordHash === undefined
+    ? database.prepare("INSERT INTO sessions(token_hash,account_id,expires_at) VALUES(?,?,?)").bind(tokenHash,accountId,expiresAt)
+    : database.prepare(`INSERT INTO sessions(token_hash,account_id,expires_at) SELECT ?,?,? WHERE EXISTS(
+      SELECT 1 FROM local_credentials c JOIN accounts a ON a.id=c.account_id WHERE c.account_id=? AND c.password_hash=? AND a.disabled_at IS NULL
+      AND NOT(a.role='pending' AND COALESCE(a.activated_at,'')='' AND COALESCE(a.teacher_name,'')='' AND COALESCE(a.student_name,'')='' AND COALESCE(a.pending_expires_at,'')<>'' AND a.pending_expires_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    )`).bind(tokenHash,accountId,expiresAt,accountId,expectedPasswordHash);
+  const result = await database.batch([insertSession,database.prepare("INSERT INTO session_devices(id,token_hash,created_at,browser,os) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM sessions WHERE token_hash=?)").bind(crypto.randomUUID(),tokenHash,new Date().toISOString(),device.browser,device.os,tokenHash)]);
+  if (expectedPasswordHash !== undefined && result[0].meta.changes !== 1) throw new StaleSessionCredentialError();
   return { token, expiresAt };
 }
