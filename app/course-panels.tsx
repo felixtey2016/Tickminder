@@ -1,14 +1,18 @@
 "use client";
-import {useRef,useState,type ReactNode} from 'react';
+import {lazy,useRef,useState,type ReactNode} from 'react';
 import {Button} from '@/components/ui/button';
 import {FilterPanel} from '@/components/filter-panel';
 import {CourseCompletionFilter} from '@/components/course-completion-filter';
 import {DirectoryFilters} from './directory-tools';
-import {SessionAttendanceBoard,SessionAttendanceLoaderDialog} from './session-attendance';
+const SessionAttendanceBoard=lazy(()=>import('./session-attendance').then(m=>({default:m.SessionAttendanceBoard})));
+const SessionAttendanceLoaderDialog=lazy(()=>import('./session-attendance').then(m=>({default:m.SessionAttendanceLoaderDialog})));
 import type {AttendanceSession} from '@/lib/attendance-types';
-import {GroupSessionBoard,type GroupSession,type GroupSessionRequest} from './class-session-schedule';
-import {ReschedulePanel,RescheduleRequestDialog,type RescheduleProposal} from './reschedule-panel';
-import {StudentLessonList} from './student-lesson-list';
+import type {GroupSession,GroupSessionRequest} from './class-session-schedule';
+const GroupSessionBoard=lazy(()=>import('./class-session-schedule').then(m=>({default:m.GroupSessionBoard})));
+import type {RescheduleProposal} from './reschedule-panel';
+const ReschedulePanel=lazy(()=>import('./reschedule-panel').then(m=>({default:m.ReschedulePanel})));
+const RescheduleRequestDialog=lazy(()=>import('./reschedule-panel').then(m=>({default:m.RescheduleRequestDialog})));
+const StudentLessonList=lazy(()=>import('./student-lesson-list').then(m=>({default:m.StudentLessonList})));
 import {useFilterPreference} from '@/lib/filter-preferences';
 import type {SessionLesson} from '@/lib/class-session-display';
 import type {CourseTeachingSummary} from '@/lib/course-query';
@@ -52,9 +56,9 @@ export function PagedReschedules({role,month,mutate,busy,requestsOnly=false}: {r
  if(requestsOnly&&data&&!data.classSessionRequests.length&&!data.proposals.length)return null;
  return <div className="course-query-stack"><CoursePageState {...query} retry={query.reload}>{data&&<>{role!=='student'&&data.classSessionRequests.length>0&&<GroupSessionBoard serverMode sessions={data.classSessions} requests={data.classSessionRequests} role={role} mutate={mutate} busy={busy}/ >}{role!=='admin'&&<ReschedulePanel role={role} lessons={data.lessons} proposals={data.proposals} mutate={mutate} busy={busy}/>}<CoursePagination data={data} onChange={setPage}/></>}</CoursePageState>{!requestsOnly&&role!=='admin'&&<>{role==='teacher'&&<PagedGroupSessions role={role} month={month} mode="upcoming" mutate={mutate} busy={busy}/>}<PagedLessonRows mode="upcoming" month={month} title="接下来的课" renderLesson={l=><article className="portal-card" key={l.id}><div><strong>{l.student} · {l.subject}</strong><span>{stamp(l.plannedStart)} · {l.teacherName}</span></div><Button variant="outline" disabled={busy} onClick={()=>setRequest(l)}>{t('申请改期')}</Button></article>}/></>}<RescheduleRequestDialog key={request?.id||'closed'} lesson={request} close={()=>setRequest(null)} mutate={mutate} busy={busy}/></div>;
 }
-export function PagedStudentLessons({month,proposals,onRequest,busy}:{month:string;proposals:RescheduleProposal[];onRequest:(lesson:CourseLesson)=>void;busy:boolean}){
+export function PagedStudentLessons({month,onRequest,busy}:{month:string;onRequest:(lesson:CourseLesson)=>void;busy:boolean}){
  const [completion,setCompletion]=useFilterPreference<string>('student-courses-completion','all'),base={view:'lessons',mode:'month',month,completion},[page,setPage]=useCoursePageNumber(base),query=useCoursePage<CourseLesson>({...base,page:String(page)});
- return <div className="course-query-stack"><div className="course-query-filterbar"><CourseCompletionFilter value={completion} onChange={setCompletion} testId="student-course-completion-filter"/></div><CoursePageState {...query} retry={query.reload}>{query.data&&<>{!query.data.total&&<p className="muted">{t("没有符合条件的记录")}</p>}<StudentLessonList serverMode lessons={query.data.items} proposals={proposals} busy={busy} onRequestReschedule={id=>{const l=query.data?.items.find(l=>l.id===id);if(l)onRequest(l);}}/><CoursePagination data={query.data} onChange={setPage}/></>}</CoursePageState></div>;
+ return <div className="course-query-stack"><div className="course-query-filterbar"><CourseCompletionFilter value={completion} onChange={setCompletion} testId="student-course-completion-filter"/></div><CoursePageState {...query} retry={query.reload}>{query.data&&<>{!query.data.total&&<p className="muted">{t("没有符合条件的记录")}</p>}<StudentLessonList serverMode lessons={query.data.items} proposals={query.data.proposals||[]} busy={busy} onRequestReschedule={id=>{const l=query.data?.items.find(l=>l.id===id);if(l)onRequest(l);}}/><CoursePagination data={query.data} onChange={setPage}/></>}</CoursePageState></div>;
 }
 export function TeachingSummary({summary}:{summary?:CourseTeachingSummary}){
  return <section className="panel teaching-hours"><h2>{summary?.month} · {t('老师授课时长')}</h2>{summary?<><div className="timetable-summary"><strong>{formatDurationMilliseconds(summary.recordedMilliseconds,getLanguage())} · {t('已登记')}</strong><span>{formatDurationMilliseconds(summary.approvedMilliseconds,getLanguage())} · {t('已确认考勤')}</span><span>{summary.count} {t('堂课')}</span></div><p className="muted">{t('按课次实际授课起止时间计算，整班只计一次；按实际开始日期归属月份。')}</p></>:<p role="status">{t('正在加载…')}</p>}</section>;

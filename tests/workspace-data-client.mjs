@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import {build} from 'esbuild';
+const root=path.resolve(import.meta.dirname,'..'),temp=fs.mkdtempSync(path.join(os.tmpdir(),'tickminder-page-data-'));
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE_URL||'file:///C:/Users/felix/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
+const entry=`import React,{useState}from'react';import{createRoot}from'react-dom/client';import{useWorkspaceData}from'./lib/use-workspace-data';import{setClientGroup}from'./lib/group-client';
+window.calls=[];window.authRefreshes=0;window.addEventListener('timelyo:auth-refresh',()=>window.authRefreshes++);
+window.fetch=(url,init)=>new Promise(resolve=>{window.calls.push({url:String(url),signal:init.signal,account:structuredClone(window.actor),resolve});});
+window.respond=(index,token,status=200,override={})=>{const call=window.calls[index];call.resolve(new Response(JSON.stringify({view:new URL(call.url,location.href).searchParams.get('view'),account:call.account,revision:1,data:{lessons:[{id:token}],students:[token],teachers:[]},...override}),{status,headers:{'content-type':'application/json'}}));};
+function App(){const[view,setView]=useState(null),[account,setAccount]=useState({id:'fictional-admin',groupId:'fictional-a',role:'admin',teacherName:null,studentName:null,adminPermissions:{enforced:false}}),[params,setParams]=useState({from:'2026-11-01',to:'2026-12-01'});
+window.actor=account;window.setView=setView;window.setAccount=setAccount;window.setParams=setParams;setClientGroup(account.groupId);
+const result=useWorkspaceData(view,account,params);window.result=result;window.reload=result.reload;return <><pre id='state'>{JSON.stringify(result)}</pre>{result.data&&<textarea id='draft' defaultValue='original'/>}</>;}
+createRoot(document.getElementById('root')).render(<App/>);`;
+await build({absWorkingDir:root,stdin:{contents:entry,resolveDir:root,sourcefile:'page-data-test.tsx',loader:'tsx'},bundle:true,platform:'browser',format:'esm',jsx:'automatic',outfile:path.join(temp,'ui.js'),alias:{'@':root},logLevel:'silent'});
+const server=http.createServer((req,res)=>{if(req.url==='/ui.js'){res.setHeader('content-type','application/javascript');res.end(fs.readFileSync(path.join(temp,'ui.js')));}else{res.setHeader('content-type','text/html');res.end('<!doctype html><div id="root"></div><script type="module" src="/ui.js"></script>');}});
+await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));let browser,checks=0;
+const check=(value,label)=>{assert(value,label);checks++;};
+try{
+  browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||'C:/Program Files/Google/Chrome/Application/chrome.exe'});
+  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.result);
+  check(await page.evaluate(()=>window.calls.length===0&&!window.result.loading),'independent page has no bootstrap request');
+  await page.evaluate(()=>window.setView('calendar'));await page.waitForFunction(()=>window.calls.length===1);
+  check(await page.evaluate(()=>window.result.loading&&window.result.data===null),'initial loading differs from empty data');
+  await page.evaluate(()=>window.respond(0,'first'));await page.waitForFunction(()=>window.result.data?.lessons[0].id==='first');checks++;
+  await page.evaluate(()=>window.setParams({from:'2026-12-01',to:'2027-01-01'}));await page.waitForFunction(()=>window.calls.length===2);
+  check(await page.evaluate(()=>window.result.data===null&&window.result.loading),'new calendar range hides old data immediately');
+  await page.evaluate(()=>window.setParams({from:'2027-01-01',to:'2027-02-01'}));await page.waitForFunction(()=>window.calls.length===3);
+  await page.evaluate(()=>window.respond(1,'old-range'));await page.waitForTimeout(20);
+  check(await page.evaluate(()=>window.result.loading&&window.result.data===null),'late range response cannot fill next range');
+  await page.evaluate(()=>window.respond(2,'latest'));await page.waitForFunction(()=>window.result.data?.lessons[0].id==='latest');checks++;
+  for(const change of [{groupId:'fictional-b'},{role:'teacher',teacherName:'Fictional Teacher'},{teacherName:'Rebound Teacher'},{studentName:'Rebound Student'},{adminPermissions:{enforced:true,version:2}},{isGroupChief:true,canManageAdministrators:true}]){
+    await page.evaluate(()=>window.reload());await page.waitForFunction(()=>window.result.loading);const old=await page.evaluate(()=>window.calls.length-1);
+    await page.evaluate(change=>window.setAccount(previous=>({...previous,...change})),change);await page.waitForFunction(old=>window.calls.length===old+2,old);
+    await page.evaluate(index=>window.respond(index,'old-identity'),old);await page.waitForTimeout(20);
+    check(await page.evaluate(()=>window.result.loading&&window.result.data===null),'old response rejected for '+Object.keys(change).join(','));
+    await page.evaluate(()=>window.respond(window.calls.length-1,'current-identity'));await page.waitForFunction(()=>window.result.data?.lessons[0].id==='current-identity');checks++;
+  }
+  await page.evaluate(()=>window.reload());await page.waitForFunction(()=>window.result.loading);const pending=await page.evaluate(()=>window.calls.length-1);
+  await page.evaluate(index=>{window.dispatchEvent(new Event('tickminder:data-changed'));window.respond(index,'before-mutation');},pending);
+  await page.waitForFunction(index=>window.calls.length===index+2,pending);
+  check(await page.evaluate(()=>window.result.loading&&window.result.revision===1&&window.result.data?.lessons[0].id==='current-identity'),'mutation rejects stale completion while keeping the active authorized snapshot');
+  await page.locator('#draft').fill('unsaved fictional draft');
+  await page.evaluate(()=>window.respond(window.calls.length-1,'after-mutation'));await page.waitForFunction(()=>window.result.data?.lessons[0].id==='after-mutation');checks++;
+  await page.evaluate(()=>window.reload());await page.waitForFunction(()=>window.result.loading);
+  await page.evaluate(()=>window.respond(window.calls.length-1,'unused',503,{error:'Fictional temporary error'}));await page.waitForFunction(()=>Boolean(window.result.error));
+  check(await page.evaluate(()=>window.result.data?.lessons[0].id==='after-mutation'&&!window.result.loading),'background failure retains the last authorized data with an explicit error');
+  check(await page.locator('#draft').inputValue()==='unsaved fictional draft','background refresh and failure do not unmount an unsaved form');
+  await page.evaluate(()=>window.reload());await page.waitForFunction(()=>window.result.loading);await page.evaluate(()=>window.respond(window.calls.length-1,'retry'));await page.waitForFunction(()=>window.result.data?.lessons[0].id==='retry');checks++;
+  await page.evaluate(()=>window.reload());await page.waitForFunction(()=>window.result.loading);await page.evaluate(()=>window.respond(window.calls.length-1,'wrong-account',200,{account:{...window.actor,id:'another-account'}}));await page.waitForFunction(()=>window.authRefreshes===1);
+  check(await page.evaluate(()=>window.result.data===null&&Boolean(window.result.error)),'mismatched account is discarded and requires live auth');
+  await page.evaluate(()=>window.reload());await page.waitForFunction(()=>window.result.loading);await page.evaluate(()=>window.respond(window.calls.length-1,'denied',403,{error:'Denied'}));await page.waitForFunction(()=>window.authRefreshes===2);
+  check(await page.evaluate(()=>window.result.data===null&&Boolean(window.result.error)),'403 clears private data and refreshes auth');
+  await page.evaluate(()=>window.reload());await page.waitForFunction(()=>window.result.loading);const closing=await page.evaluate(()=>window.calls.length-1);await page.evaluate(()=>window.setView(null));await page.waitForFunction(()=>!window.result.loading);await page.evaluate(index=>window.respond(index,'closed'),closing);await page.waitForTimeout(20);
+  check(await page.evaluate(()=>window.result.data===null&&!window.result.loading),'closed page cannot be refilled by a late request');
+  check(await page.evaluate(()=>window.calls.every(call=>call.url.startsWith('/api/workspace-data?'))),'hook never requests legacy core or full learning');
+  check(errors.length===0,'no React/browser errors');console.log(JSON.stringify({passed:true,checks,realReact:true,remoteRequests:0}));
+}finally{await browser?.close();await new Promise(resolve=>server.close(resolve));const resolved=path.resolve(temp);assert(resolved.startsWith(path.resolve(os.tmpdir())+path.sep)&&path.basename(resolved).startsWith('tickminder-page-data-'));fs.rmSync(resolved,{recursive:true,force:true});}

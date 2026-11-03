@@ -38,8 +38,9 @@ export async function teacherMayAssign(account: Account, student: string, subjec
     WHERE p.student = ? AND ${planSubjectLabelSql()} AND p.teacher_name = ? AND p.active = 1 AND s.active = 1 AND t.active = 1`, subject,student,account.teacherName));
 }
 
-export async function teacherSubjects(account: Account) {
-  const {first,rows}=groupReader(account.groupId);
+type LearningRows = <T extends Row = Row>(query: string, ...values: unknown[]) => Promise<T[]>;
+export async function teacherSubjects(account: Account, readRows?: LearningRows) {
+  const rows=readRows || groupReader(account.groupId).rows;
   if (account.role !== "teacher" || !account.teacherName) return [];
   return rows<{ student: string; subject: string }>(`SELECT p.student, p.subject FROM plans p
     JOIN students s ON s.name = p.student JOIN teachers t ON t.name = p.teacher_name
@@ -118,21 +119,22 @@ async function authorizedPdf(account: Account, fileId: string) {
   return null;
 }
 
-export async function learningState(account: Account) {
-  const {first,rows}=groupReader(account.groupId);
+export async function learningState(account: Account, selection?: {part: 'materials' | 'homework'; rows: LearningRows}) {
+  const rows=selection?.rows || groupReader(account.groupId).rows;
+  const includeMaterials=selection?.part!=='homework',includeHomework=selection?.part!=='materials';
   const limits = { pdfMaxBytes: configuredBytes(env.PDF_MAX_BYTES, DEFAULT_PDF_MAX_BYTES) };
   if (account.role === "teacher" || account.role === "admin") {
     const ownerWhere = (alias: string) => account.role === "admin" ? "" : ` WHERE ${alias}.owner_id = ?`;
     const ownerValues = account.role === "admin" ? [] : [account.id];
     const imported=teacherAdminMaterialRead(account),materialWhere=account.role==="admin"?"":` WHERE (m.owner_id=? OR ${imported.sql})`,materialValues=account.role==="admin"?[]:[account.id,...imported.values];
-    const mayMaterials=await hasAdminPermission(account,"materials.view"),mayHomework=await hasAdminPermission(account,"homework.view"),materialRows=guardedLearningReader(account,"materials.view").rows,homeworkRows=guardedLearningReader(account,"homework.view").rows;
+    const mayMaterials=includeMaterials&&await hasAdminPermission(account,"materials.view"),mayHomework=includeHomework&&await hasAdminPermission(account,"homework.view"),materialRows=selection?.rows||guardedLearningReader(account,"materials.view").rows,homeworkRows=selection?.rows||guardedLearningReader(account,"homework.view").rows;
     const [materials, materialRecipients, homework, homeworkRecipients, submissions, eligible] = await Promise.all([
       mayMaterials?materialRows(`SELECT m.id, m.revision,m.updated_at AS updatedAt,m.title, m.description, m.file_id AS fileId, m.created_at AS createdAt, m.folder_id AS folderId, m.classroom_id AS classroomId, m.owner_id AS ownerId, coalesce(c.teacher_name,u.teacher_name,u.name,'老师') AS teacherName,u.name AS uploaderName, c.title AS classroomTitle, f.filename FROM teaching_materials m JOIN pdf_files f ON f.id = m.file_id LEFT JOIN accounts u ON u.id = m.owner_id LEFT JOIN classrooms c ON c.id = m.classroom_id${materialWhere} ORDER BY m.created_at DESC`, ...materialValues):Promise.resolve([]),
       mayMaterials?materialRows<{ materialId: string; studentName: string; subject: string }>(`SELECT r.material_id AS materialId, r.student_name AS studentName, r.subject FROM material_recipients r JOIN teaching_materials m ON m.id = r.material_id${materialWhere}`, ...materialValues):Promise.resolve([]),
       mayHomework?homeworkRows(`SELECT h.id,h.revision,h.updated_at AS updatedAt,h.title, h.subject, h.description, h.starts_at AS startsAt, h.due_at AS dueAt, h.max_score AS maxScore, h.attachment_file_id AS attachmentFileId, h.folder_id AS folderId, h.classroom_id AS classroomId, h.created_at AS createdAt, h.owner_id AS ownerId, coalesce(u.teacher_name,u.name,'老师') AS teacherName, c.title AS classroomTitle FROM homework h LEFT JOIN accounts u ON u.id = h.owner_id LEFT JOIN classrooms c ON c.id = h.classroom_id${ownerWhere("h")} ORDER BY h.created_at DESC`, ...ownerValues):Promise.resolve([]),
       mayHomework?homeworkRows<{ homeworkId: string; studentName: string; score: number | null; scoredAt: string | null;scoreRevision:number }>(`SELECT r.homework_id AS homeworkId, r.student_name AS studentName, r.score,r.score_revision AS scoreRevision,r.scored_at AS scoredAt FROM homework_recipients r JOIN homework h ON h.id = r.homework_id${ownerWhere("h")}`, ...ownerValues):Promise.resolve([]),
       mayHomework?homeworkRows(`SELECT s.id, s.homework_id AS homeworkId, s.student_name AS studentName, s.file_id AS fileId, s.submitted_at AS submittedAt,s.attempt,s.homework_revision AS homeworkRevision,s.due_at_submission AS dueAtSubmission,s.max_score_submission AS maxScoreSubmission,s.late, f.filename FROM homework_submissions s JOIN homework h ON h.id = s.homework_id JOIN pdf_files f ON f.id = s.file_id${ownerWhere("h")} ORDER BY s.attempt DESC,s.submitted_at DESC,s.id DESC`, ...ownerValues):Promise.resolve([]),
-      teacherSubjects(account),
+      teacherSubjects(account,selection?.rows),
     ]);
     return {
       materials: materials.map(m => ({ ...m,canEdit:account.role==="teacher"&&m.ownerId===account.id, filename: displayPdfName(String(m.filename), "教学资料"), recipients: materialRecipients.filter(r => r.materialId === m.id) })),
@@ -145,10 +147,10 @@ export async function learningState(account: Account) {
   }
   if (account.role === "student" && account.studentName) {
     const [materials, homework, submissions, studyBlocks] = await Promise.all([
-      rows(`SELECT m.id,m.revision,m.updated_at AS updatedAt,m.title, m.description, m.file_id AS fileId, m.created_at AS createdAt, m.folder_id AS folderId, m.classroom_id AS classroomId, r.subject, f.filename FROM teaching_materials m JOIN material_recipients r ON r.material_id = m.id JOIN pdf_files f ON f.id = m.file_id WHERE r.student_name = ? AND ${activeClassroomAccess("m")} ORDER BY m.created_at DESC`, account.studentName, account.studentName),
-      rows(`SELECT h.id,h.revision,h.updated_at AS updatedAt,h.title, h.subject, h.description, h.starts_at AS startsAt, h.due_at AS dueAt, h.max_score AS maxScore, r.score, r.scored_at AS scoredAt, CASE WHEN EXISTS(SELECT 1 FROM homework_resubmission_grants g WHERE g.id=r.active_grant_id AND g.used_at IS NULL AND g.revoked_at IS NULL AND g.base_submission_id=(SELECT id FROM homework_submissions s WHERE s.homework_id=h.id AND s.student_name=r.student_name ORDER BY attempt DESC,submitted_at DESC,id DESC LIMIT 1)) THEN r.active_grant_id ELSE NULL END AS resubmitGrantId,r.resubmit_revision AS resubmitRevision,h.attachment_file_id AS attachmentFileId, h.folder_id AS folderId, h.classroom_id AS classroomId, h.created_at AS createdAt FROM homework h JOIN homework_recipients r ON r.homework_id = h.id WHERE r.student_name = ? AND ${activeClassroomAccess("h")} ORDER BY h.due_at`, account.studentName, account.studentName),
-      rows(`SELECT s.id, s.homework_id AS homeworkId, s.file_id AS fileId, s.submitted_at AS submittedAt,s.attempt,s.homework_revision AS homeworkRevision,s.due_at_submission AS dueAtSubmission,s.max_score_submission AS maxScoreSubmission,s.late,f.filename FROM homework_submissions s JOIN pdf_files f ON f.id = s.file_id WHERE s.student_name = ? ORDER BY s.attempt DESC,s.submitted_at DESC,s.id DESC`, account.studentName),
-      rows(`SELECT id, title, subject, note, starts_at AS startsAt, ends_at AS endsAt, homework_id AS homeworkId, created_at AS createdAt FROM study_blocks WHERE account_id = ? ORDER BY starts_at`, account.id),
+      includeMaterials?rows(`SELECT m.id,m.revision,m.updated_at AS updatedAt,m.title, m.description, m.file_id AS fileId, m.created_at AS createdAt, m.folder_id AS folderId, m.classroom_id AS classroomId, r.subject, f.filename FROM teaching_materials m JOIN material_recipients r ON r.material_id = m.id JOIN pdf_files f ON f.id = m.file_id WHERE r.student_name = ? AND ${activeClassroomAccess("m")} ORDER BY m.created_at DESC`, account.studentName, account.studentName):Promise.resolve([]),
+      includeHomework?rows(`SELECT h.id,h.revision,h.updated_at AS updatedAt,h.title, h.subject, h.description, h.starts_at AS startsAt, h.due_at AS dueAt, h.max_score AS maxScore, r.score, r.scored_at AS scoredAt, CASE WHEN EXISTS(SELECT 1 FROM homework_resubmission_grants g WHERE g.id=r.active_grant_id AND g.used_at IS NULL AND g.revoked_at IS NULL AND g.base_submission_id=(SELECT id FROM homework_submissions s WHERE s.homework_id=h.id AND s.student_name=r.student_name ORDER BY attempt DESC,submitted_at DESC,id DESC LIMIT 1)) THEN r.active_grant_id ELSE NULL END AS resubmitGrantId,r.resubmit_revision AS resubmitRevision,h.attachment_file_id AS attachmentFileId, h.folder_id AS folderId, h.classroom_id AS classroomId, h.created_at AS createdAt FROM homework h JOIN homework_recipients r ON r.homework_id = h.id WHERE r.student_name = ? AND ${activeClassroomAccess("h")} ORDER BY h.due_at`, account.studentName, account.studentName):Promise.resolve([]),
+      includeHomework?rows(`SELECT s.id, s.homework_id AS homeworkId, s.file_id AS fileId, s.submitted_at AS submittedAt,s.attempt,s.homework_revision AS homeworkRevision,s.due_at_submission AS dueAtSubmission,s.max_score_submission AS maxScoreSubmission,s.late,f.filename FROM homework_submissions s JOIN pdf_files f ON f.id = s.file_id WHERE s.student_name = ? ORDER BY s.attempt DESC,s.submitted_at DESC,s.id DESC`, account.studentName):Promise.resolve([]),
+      !selection?rows(`SELECT id, title, subject, note, starts_at AS startsAt, ends_at AS endsAt, homework_id AS homeworkId, created_at AS createdAt FROM study_blocks WHERE account_id = ? ORDER BY starts_at`, account.id):Promise.resolve([]),
     ]);
     return {
       materials: materials.map(m => ({ ...m, filename: displayPdfName(String(m.filename), "教学资料") })),
@@ -160,4 +162,15 @@ export async function learningState(account: Account) {
     };
   }
   return { materials: [], homework: [], submissions: [], studyBlocks: [], eligible: [], limits };
+}
+
+export async function studentStudyProjection(account: Account, range: {from: string; to: string; start: string; end: string}, readRows: LearningRows) {
+  if (account.role !== 'student' || !account.studentName) throw new Error('Student identity required');
+  const [studyBlocks, subjects] = await Promise.all([
+    readRows<{id: string; title: string; subject: string | null; note: string | null; startsAt: string; endsAt: string; homeworkId: string | null}>(`SELECT id,title,subject,note,starts_at AS startsAt,ends_at AS endsAt,homework_id AS homeworkId FROM study_blocks
+      WHERE account_id=? AND julianday(starts_at)<julianday(?) AND julianday(ends_at)>julianday(?) ORDER BY starts_at,id`, account.id,range.end,range.start),
+    readRows<{subject: string}>(`SELECT DISTINCT h.subject FROM homework h JOIN homework_recipients r ON r.homework_id=h.id
+      WHERE r.student_name=? AND ${activeClassroomAccess('h')} ORDER BY h.subject`, account.studentName, account.studentName),
+  ]);
+  return {studyBlocks, homeworkSubjects: subjects.map(row=>row.subject), courseRange: {from: range.from, to: range.to}};
 }

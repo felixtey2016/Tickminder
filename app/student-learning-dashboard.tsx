@@ -8,17 +8,23 @@ import { t } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { StudentCalendar } from "./student-calendar";
+import {PageState} from '@/components/page-state';
+import {useWorkspaceData} from '@/lib/use-workspace-data';
+import type {WorkspaceReadIdentity} from '@/lib/workspace-page-data';
+import {ScopedLearningWorkspace} from './scoped-learning-workspace';
 import type {CalendarRange} from "@/lib/course-calendar-range";
-import { StudentLearning, type Homework, type LearningMutate, type LearningState, type StudyBlock } from "./learning-portal";
+import { type Homework, type LearningMutate, type StudyBlock } from "./learning-portal";
 
 type Lesson = { id: string; subject: string; teacherName: string; plannedStart: string; plannedEnd: string; actualStart: string | null; actualEnd: string | null; status: string; attendanceKind?: string | null; onlineLink?: string | null };
 type Proposal = { lessonId: string; status: string; proposedStart: string; proposedEnd: string; requestedRole?: string };
 const local = (iso: string) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso)).replace(" ", "T");
 type Form = { id: string; title: string; date: string; start: string; end: string; subject: string; note: string; homeworkId: string };
 
-export function StudentLearningDashboard({ lessons, proposals, learning, mutate, busy, view, onRequestReschedule, onCalendar,calendarDate,onCalendarDateChange,onCalendarRangeChange,calendarLoading }: { calendarLoading?:boolean;calendarDate?:string;onCalendarDateChange?:(date:string)=>void;onCalendarRangeChange?:(range:CalendarRange)=>void;lessons: Lesson[]; proposals: Proposal[]; learning: LearningState; mutate: LearningMutate; busy: boolean; view: "calendar" | "homework" | "materials"; onRequestReschedule?: (id: string) => void; onCalendar?: () => void }) {
+export function StudentLearningDashboard({ lessons, proposals, account, identityKey, calendarRange, mutate, busy, view, onRequestReschedule, onCalendar,calendarDate,onCalendarDateChange,onCalendarRangeChange,calendarLoading }: { account:WorkspaceReadIdentity;identityKey?:string;calendarRange:CalendarRange;calendarLoading?:boolean;calendarDate?:string;onCalendarDateChange?:(date:string)=>void;onCalendarRangeChange?:(range:CalendarRange)=>void;lessons: Lesson[]; proposals: Proposal[]; mutate: LearningMutate; busy: boolean; view: "calendar" | "homework" | "materials"; onRequestReschedule?: (id: string) => void; onCalendar?: () => void }) {
+  const study=useWorkspaceData(view==='calendar'?'study':null,account,{from:calendarRange.from,to:calendarRange.to});
   const [form, setForm] = useDialogState<Form | null>("student-study", null);
   const [saving, setSaving] = useState(false);
+  const [homeworkSubjects,setHomeworkSubjects]=useState<string[]>([]);
   function add(day: string) { setForm({ id: "", title: "", date: day, start: "18:00", end: "19:00", subject: "", note: "", homeworkId: "" }); }
   function edit(block: StudyBlock) {
     const start = local(block.startsAt), end = local(block.endsAt);
@@ -35,14 +41,14 @@ export function StudentLearningDashboard({ lessons, proposals, learning, mutate,
     setSaving(false); if (ok) setForm(null);
   }
   return <div className="student-learning-dashboard">
-    {view === "calendar" && <StudentCalendar loading={calendarLoading} selectedDate={calendarDate} onDateChange={onCalendarDateChange} onRangeChange={onCalendarRangeChange} busy={busy} onRequestReschedule={onRequestReschedule} lessons={lessons} proposals={proposals} studyBlocks={learning.studyBlocks} onAddStudy={add} onEditStudy={edit}/>}
-    {(view === "homework" || view === "materials") && <StudentLearning learning={learning} mutate={mutate} busy={busy} onPlan={plan} view={view} onCalendar={onCalendar}/>}
+    {view === "calendar" && <>{study.error&&<PageState kind="error" title="页面加载失败" description={study.error} action="重试" onAction={study.reload}/>}<StudentCalendar loading={calendarLoading||study.loading} selectedDate={calendarDate} onDateChange={onCalendarDateChange} onRangeChange={onCalendarRangeChange} busy={busy||Boolean(study.error)} onRequestReschedule={onRequestReschedule} lessons={lessons} proposals={proposals} studyBlocks={study.data?.studyBlocks||[]} onAddStudy={add} onEditStudy={edit}/></>}
+    {(view === "homework" || view === "materials") && <ScopedLearningWorkspace role="student" account={account} identityKey={identityKey} mutate={mutate} busy={busy} onPlan={plan} view={view} onCalendar={onCalendar} onHomeworkSubjects={setHomeworkSubjects}/>}
     <Dialog open={Boolean(form)} onOpenChange={open => { if (!open) setForm(null); }}><DialogContent className="lesson-dialog"><DialogHeader><DialogTitle>{form?.id ? t("编辑学习计划") : t("新增学习计划")}</DialogTitle></DialogHeader>{form && <form className="learning-form" onSubmit={save}>
       {form.homeworkId && <p className="muted">{t("此计划已关联功课。安排学习时间不会提交功课，请在功课页面上传并提交 PDF。")}</p>}
       <label>{t("标题")}<input required maxLength={120} value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}/></label>
       <label>{t("日期")}<DateInput required type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}/></label>
       <div className="form-pair"><label>{t("开始时间")}<TimeInput required type="time" value={form.start} onChange={e => setForm({ ...form, start: e.target.value })}/></label><label>{t("结束时间")}<TimeInput required type="time" min={form.start} value={form.end} onChange={e => setForm({ ...form, end: e.target.value })}/></label></div>
-      <label>{t("科目（可选）")}<input maxLength={100} list="study-subjects" value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })}/><datalist id="study-subjects">{[...new Set([...lessons.map(l => l.subject), ...learning.homework.map(h => h.subject)])].map(subject => <option key={subject} value={subject}/>)}</datalist></label>
+      <label>{t("科目（可选）")}<input maxLength={100} list="study-subjects" value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })}/><datalist id="study-subjects">{[...new Set([...lessons.map(l => l.subject), ...(study.data?.homeworkSubjects||homeworkSubjects), ...(form.subject?[form.subject]:[])])].map(subject => <option key={subject} value={subject}/>)}</datalist></label>
       <label>{t("备注（可选）")}<textarea maxLength={1000} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })}/></label>
       <div className="learning-file-actions"><Button disabled={busy || saving}>{t("保存学习计划")}</Button>{form.id && <Button type="button" variant="outline" disabled={busy || saving} onClick={async () => { if (window.confirm(t("确定删除此学习计划？关联的功课会保留。")) && await mutate({ action: "deleteStudyBlock", id: form.id })) setForm(null); }}>{t("删除此计划")}</Button>}</div>
     </form>}</DialogContent></Dialog>

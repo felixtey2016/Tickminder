@@ -1,4 +1,5 @@
 import type {Account} from './auth';
+import {operationalStudentVisible} from './group-data';
 import {learningDb} from './learning-server';
 import {isOwnerAccount,OWNER_EMAIL} from './owner';
 import {adminPermissionPredicate} from './admin-permission-access';
@@ -16,6 +17,14 @@ function context(actor:Account){if((actor.role!=='admin'&&!(actor.role==='parent
 function readAuthority(actor:Account){const c=context(actor),session=accountSessionPredicate(actor),parent=parentReadGrants.get(actor);if(parent)return parent.scope;if(isOwnerAccount(actor))return{sql:`(${ownerSql}) AND (${session.sql})`,args:[...c.args,...session.args]};const permission=adminPermissionPredicate(actor,invoiceReadGrants.get(actor)||'fees.view');return{sql:`EXISTS(SELECT 1 FROM accounts fee_actor JOIN tuition_groups fee_group ON fee_group.id=fee_actor.group_id AND fee_group.active=1 WHERE fee_actor.id=? AND fee_actor.group_id=? AND fee_actor.role='admin' AND fee_actor.disabled_at IS NULL AND NOT EXISTS(SELECT 1 FROM local_credentials fee_credential WHERE fee_credential.account_id=fee_actor.id AND fee_credential.must_change_password=1)) AND (${permission.sql}) AND (${session.sql})`,args:[actor.id,c.group,...permission.args,...session.args]};}
 async function read<T>(actor:Account,sql:string,...args:unknown[]):Promise<T[]>{const permission=readAuthority(actor);return(await learningDb().prepare(`SELECT * FROM (${sql}) WHERE ${permission.sql}`).bind(...args,...permission.args).all<T>()).results||[];}
 export async function requireBillingViewer(actor:Account){const c=context(actor),permission=readAuthority(actor),allowed=await learningDb().prepare(`SELECT 1 AS allowed WHERE ${permission.sql}`).bind(...permission.args).first();if(!allowed)throw new BillingError('没有权限查看或修改财务资料',403);return c.group;}
+// The tuition filter uses operational roster names, including inactive students.
+// Do not read invoices, synchronize billing identities, or load course/fee records.
+export async function billingStudentOptions(actor:Account):Promise<{students:string[]}>{
+ const group=await requireBillingViewer(actor);
+ const rows=await read<{name:string}>(actor,`SELECT s.name FROM students s WHERE s.group_id=? AND ${operationalStudentVisible('s.group_id','s.name')} ORDER BY s.name`,group);
+ await requireBillingViewer(actor);
+ return{students:[...new Set(rows.map(row=>row.name))].sort()};
+}
 function writeAuthority(actor:Account){if(actor.role!=='admin')throw new BillingError('没有权限查看或修改财务资料',403);const c=context(actor),session=accountSessionPredicate(actor);return{sql:`(${managerSql}) AND (${session.sql})`,args:[...c.args,...session.args]};}
 export async function requireBillingManager(actor:Account){const c=context(actor),permission=writeAuthority(actor),allowed=await learningDb().prepare(`SELECT 1 AS allowed WHERE ${permission.sql}`).bind(...permission.args).first();if(!allowed)throw new BillingError('收费设置仅对平台最高管理员及本集团最高管理员开放。',403);return c.group;}
 const policyColumns='id,revision,currency,hour_rounding AS hourRounding,attendance_basis AS attendanceBasis,monthly_partial AS monthlyPartial,effective_from AS effectiveFrom,created_at AS createdAt';

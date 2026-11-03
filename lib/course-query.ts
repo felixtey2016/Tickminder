@@ -210,6 +210,12 @@ export async function courseList(actor:Account,params:URLSearchParams){
   items=requests.map(r=>actor.role==='student'?studentRescheduleResponse(r):r);related={lessons,classSessions:actor.role==='student'?data.sessions.map(s=>studentSessionResponse(s,actor.studentName)):data.sessions,proposals:items.filter((_,i)=>!requests[i].sessionId||!groupIds.has(requests[i].sessionId!)),classSessionRequests:actor.role==='student'?[]:requests.filter(r=>r.sessionId&&groupIds.has(r.sessionId))};
  }else{
   const source=await reader.rows<Lesson>(`SELECT ${lessonColumns} ${from} WHERE ${where} ORDER BY ${order} LIMIT 20 OFFSET ?`,...args,(page-1)*20),decorated=await decorateLessons(actor,source);items=mode==='timetable'&&params.get('timetableType')==='teacher'?uniqueSessionLessons(decorated):decorated;
+   if(actor.role==='student'){
+    // The student's page must retain pending-request actions without a second
+    // full-month core read. Scope the related records to this exact page.
+    const pending=source.length?await reader.rows<RequestRow>(`SELECT ${requestColumns} FROM reschedule_requests r JOIN lessons l ON l.group_id=r.group_id AND l.id=r.lesson_id WHERE r.lesson_id IN(SELECT value FROM json_each(?)) AND r.status='pending' AND ${scope.sql} ORDER BY r.requested_at,r.id`,JSON.stringify(source.map(lesson=>lesson.id)),...scope.args):[];
+    related={proposals:pending.map(studentRescheduleResponse)};
+   }
  }
  await assertCourseActor(actor,keys);
  return{items,page,pages:Math.max(1,Math.ceil(total/20)),total,pageSize:20 as const,revision:await readRevision(actor.groupId),month,courseRange:{from:range.from,to:range.to},teacherStudentPairs,...summary?{summary}:{},...studentOptions?{studentOptions}:{},...related};

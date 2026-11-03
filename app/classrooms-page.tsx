@@ -1,6 +1,9 @@
 "use client";
 import {displayFormatter} from '@/lib/display-preferences';
 import {usePageHistoryState} from '@/lib/page-history';
+import {useWorkspaceData} from '@/lib/use-workspace-data';
+import type {WorkspaceReadIdentity} from '@/lib/workspace-page-data';
+import {scopedLearningState} from './scoped-learning-workspace';
 
 import { useAdminAction } from "./admin-permission-context";
 
@@ -41,10 +44,9 @@ type Plan = { student: string; subject: string; subjectId?:string|null;syllabusI
 
 const dateLabel = (iso: string) => displayFormatter(getLanguage() === "zh" ? "zh-CN" : "en-GB",{ timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
-export function ClassroomsPage({ role, classes, terms, learning, learningReady = true, learningError, loadLearning, teacherName, teachers, plans, mutate, learningMutate, busy, onCalendar, taskTarget, onTaskTargetOpened }: {
-  role: Role; classes: Classroom[]; terms: Term[]; learning: LearningState; teacherName?: string | null;
-  learningReady?: boolean; learningError?: string; loadLearning?: (force?: boolean) => Promise<void>;
-  teachers: string[]; plans: Plan[]; mutate: ClassMutate; learningMutate: LearningMutate; busy: boolean; onCalendar: () => void;
+export function ClassroomsPage({ role, account, classes, terms, teacherName, mutate, learningMutate, busy, onCalendar, taskTarget, onTaskTargetOpened }: {
+  role: Role; account:WorkspaceReadIdentity; classes: Classroom[]; terms: Term[]; teacherName?: string | null;
+  mutate: ClassMutate; learningMutate: LearningMutate; busy: boolean; onCalendar: () => void;
   taskTarget?:{classroomId:string;taskId:string}|null;onTaskTargetOpened?:()=>void;
 }) {
   const can=useAdminAction();
@@ -54,6 +56,9 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
   const [syllabusId,setSyllabusId]=useState(''),[grade,setGrade]=useState('');
   const [filterSyllabus,setFilterSyllabus]=useFilterPreference<string>('classes-syllabus',''),[filterGrade,setFilterGrade]=useFilterPreference<string>('classes-grade',''),[filterSubject,setFilterSubject]=useFilterPreference<string>('classes-subject','');
   const [creating, setCreating] = useState(false);
+  const options=useWorkspaceData(creating&&role!=='student'?'classroom-options':null,account);
+  const teachers=role==='teacher'&&teacherName?[teacherName]:options.data?.teachers||[];
+  const plans:Plan[]=role==='teacher'?(options.data?.plans||[]).map(plan=>({...plan,teacherName:teacherName||'',active:true})):can('plans.view')?options.data?.allPlans||[]:options.data?.planOptions||[];
   const [tab, setTab] = usePageHistoryState<ClassroomTab>("classroom.tab","announcements");
   const [focusedTask,setFocusedTask]=useState<{classroomId:string;taskId:string}|null>(null);
   const tabListId = useId();
@@ -103,9 +108,10 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
     });
     return()=>cancelAnimationFrame(frame);
   },[taskTarget,classes,onTaskTargetOpened,setSearch,setArchived,setFilterTerm,setFilterSyllabus,setFilterGrade,setFilterSubject,setFilterTeacher,setFilterStudent,setSelectedId,setTab]);
-  useEffect(() => {
-    if (!creating && selected?.id && (tab === "materials" || tab === "homework") && !learningReady && !learningError) void loadLearning?.();
-  }, [creating, selected?.id, tab, learningReady, learningError, loadLearning]);
+  const learningView=!creating&&selected?.id&&(tab==='materials'||tab==='homework')&&can(tab==='materials'?'materials.view':'homework.view')?tab:null;
+  const learningQuery=useWorkspaceData(learningView,account);
+  const learning=scopedLearningState(learningQuery.data),learningReady=Boolean(learningQuery.data),learningError=learningQuery.error;
+  const loadLearning=async(_force?:boolean)=>{learningQuery.reload();};
   useEffect(() => {
     if (managementRef.current) managementRef.current.open = false;
     const list = tabListRef.current, button = tabButtons.current[tab];
@@ -170,6 +176,7 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
   }
   async function saveClassroom(event: React.FormEvent) {
     event.preventDefault();
+    if (busy || !options.data || options.loading || options.error || !members.length) return;
     const result = await mutate({ action: "saveClassroom", id: editingId, title, description, termId, teacherName: teacher, subject,subjectId:subject,syllabusId,grade, students: members });
     if (result.ok) { setSearch(""); setFilterTerm(termId || "unassigned"); setCreating(false); setDirectoryOpen(false); if (result.id) setSelectedId(result.id); setTab("announcements"); focusClassroomContent(); }
   }
@@ -207,6 +214,7 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
     </details>
 
     {creating && canManage && can(editingId?"classrooms.edit":"classrooms.create") && <section className="panel classroom-form-panel"><h2>{editingId ? t("编辑班级") : t("新建班级")}</h2>
+      {(options.loading||options.error)&&<PageState kind={options.error?'error':'loading'} title={options.error?'页面加载失败':'正在加载…'} description={options.error} action={options.error?'重试':undefined} onAction={options.reload}/>}
       <form className="learning-form" onSubmit={saveClassroom}>
         {catalogueError&&<p role="alert">{catalogueError} <Button type="button" variant="outline" onClick={()=>void reloadCatalogue()}>{t('重试')}</Button></p>}
         <label>{t("班级名称")}<input required maxLength={100} value={title} onChange={event => setTitle(event.target.value)} placeholder={t("例如：Form 4 Science 小班")}/></label>
@@ -217,7 +225,7 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
         <label>{t(syllabusId==='stpm'?'学期':syllabusId==='a-level'?'阶段':'年级')}<select required={!editingId} disabled={Boolean(editingId)||!syllabus} value={grade} onChange={event=>{setGrade(event.target.value);setMembers([]);}}><option value="">{t('请选择')}</option>{syllabus?.grades.map(item=><option key={item}>{item}</option>)}</select></label>
         <label>{t("科目")}<select required disabled={Boolean(editingId)||!syllabus} value={subject} onChange={event => { setSubject(event.target.value); setMembers([]); }}><option value="">{t("请选择")}</option>{subjects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}{editingId&&!subjects.some(item=>item.id===subject)&&<option value={subject}>{selected?.subject||subject}</option>}</select></label>
         <fieldset className="learning-checks"><legend>{t("班级成员")} · {members.length}</legend>{eligibleStudents.map(student => <label key={student}><input type="checkbox" checked={members.includes(student)} onChange={event => setMembers(current => event.target.checked ? [...current, student] : current.filter(name => name !== student))}/>{student}</label>)}{!eligibleStudents.length && <p className="muted">{t("请选择已分配学生的老师与科目")}</p>}</fieldset>
-        <div className="learning-card-actions"><Button adminGrant={editingId?"classrooms.edit":"classrooms.create"} disabled={busy || !members.length}>{t("保存班级")}</Button><Button type="button" variant="outline" onClick={() => setCreating(false)}>{t("取消")}</Button></div>
+        <div className="learning-card-actions"><Button adminGrant={editingId?"classrooms.edit":"classrooms.create"} disabled={busy || !members.length || !options.data || options.loading || Boolean(options.error)}>{t("保存班级")}</Button><Button type="button" variant="outline" onClick={() => setCreating(false)}>{t("取消")}</Button></div>
       </form>
     </section>}
 
@@ -240,6 +248,8 @@ export function ClassroomsPage({ role, classes, terms, learning, learningReady =
       <button type="button" className="classroom-tabs-scroll classroom-tabs-scroll-right" aria-label={getLanguage()==="zh"?"向右滚动班级菜单":"Scroll class menu right"} aria-controls={`${tabListId}-tabs`} disabled={!tabScroll.right} onClick={()=>scrollTabs(1)}><ChevronRight size={20}/></button>
       </div>
       <div id={`${tabListId}-panel`} className="classroom-content-panel" role="tabpanel" aria-labelledby={`${tabListId}-current`} tabIndex={0}>
+      {learningView&&learningReady&&learningQuery.loading&&<p role="status" className="muted">{t("正在加载…")}</p>}
+      {learningView&&learningReady&&learningError&&<PageState kind="error" title="页面加载失败" description={learningError} action="重试" onAction={learningQuery.reload}/>}
       {tab === "announcements" && can("announcements.view") && <section className="panel classroom-announcements-panel">
         <div className="round1-section-head"><h2>{t("班级公告")} <span className="learning-record-count">{selected.announcements.length}</span></h2>{canManage && !selected.archived && can("announcements.create") && <Button adminGrant="announcements.create" type="button" size="sm" onClick={() => { setAnnouncementId(""); setAnnouncementTitle(""); setAnnouncementBody(""); setPinned(false); setAnnouncementOpen(true); }}><Plus size={16}/>{t("发布公告")}</Button>}</div>
         <div className="classroom-announcement-columns" aria-hidden="true"><span>{getLanguage()==="zh"?"公告":"Announcement"}</span><span>{getLanguage()==="zh"?"发布人 / 时间":"Published by / date"}</span><span>{getLanguage()==="zh"?"操作":"Action"}</span></div><div className="learning-list round1-announcement-list">{selected.announcements.map(item => <article key={item.id} className="learning-card classroom-announcement"><details className="round1-announcement-detail"><summary className="classroom-announcement-row"><span className="round1-announcement-heading"><strong>{item.title}</strong>{Boolean(item.pinned) && <span className="classroom-pinned">{t("置顶")}</span>}</span><span className="classroom-announcement-meta">{item.authorName} · {dateLabel(item.createdAt)}</span><span className="classroom-announcement-action">{getLanguage() === "zh" ? "查看公告" : "Read announcement"}<ChevronDown size={15}/></span></summary><p>{item.body}</p>{canManage && !selected.archived && <div className="learning-card-actions"><Button adminGrant="announcements.edit" size="sm" variant="outline" onClick={() => { setAnnouncementId(item.id); setAnnouncementTitle(item.title); setAnnouncementBody(item.body); setPinned(Boolean(item.pinned)); setAnnouncementOpen(true); }}>{t("编辑")}</Button><Button adminGrant="announcements.delete" size="sm" variant="outline" disabled={busy} onClick={() => { if (window.confirm(t("确定删除这则公告？"))) void mutate({ action: "deleteAnnouncement", classroomId: selected.id, id: item.id }); }}>{t("删除公告")}</Button></div>}</details></article>)}{!selected.announcements.length && <p className="muted">{t("尚无公告")}</p>}</div>
