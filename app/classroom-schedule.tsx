@@ -1,4 +1,5 @@
 "use client";
+import {displayFormatter} from '@/lib/display-preferences';
 import {useEffect,useRef,useState} from "react";
 import {CalendarDays,RefreshCw} from "lucide-react";
 import {Button} from "@/components/ui/button";
@@ -14,10 +15,10 @@ import {useFilterPreference} from "@/lib/filter-preferences";
 type ClassroomSession={id:string;sessionType:string;classroomId:string|null;classroomTitle:string|null;subject:string;teacherName:string;plannedStart:string;plannedEnd:string;status:string;teachingStatus?:string;onlineLink:string|null;participantCount:number;participants:Array<{lessonId:string;studentName:string}>};
 const labels:Record<string,string>={scheduled:"已安排",completed:"已上课",student_absent:"学生缺席",teacher_absent:"老师缺席",cancelled:"已取消",not_taught:"未授课"};
 function displayedStatus(session:ClassroomSession){if(session.status==='cancelled')return 'cancelled';if(courseIsCompleted(session))return 'completed';return session.sessionType==='group'&&['teacher_absent','not_taught'].includes(session.teachingStatus||'')?session.teachingStatus!:session.status;}
-function when(value:string){return new Intl.DateTimeFormat(getLanguage()==="zh"?"zh-CN":"en-GB",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(value));}
+function when(value:string){return displayFormatter(getLanguage()==="zh"?"zh-CN":"en-GB",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(value));}
 function whenRange(start:string,end:string){
  const localDay=(value:string)=>new Date(Date.parse(value)+8*3600_000).toISOString().slice(0,10);
- const endLabel=localDay(start)===localDay(end)?new Intl.DateTimeFormat(getLanguage()==="zh"?"zh-CN":"en-GB",{timeZone:"Asia/Kuala_Lumpur",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(end)):when(end);
+ const endLabel=localDay(start)===localDay(end)?displayFormatter(getLanguage()==="zh"?"zh-CN":"en-GB",{timeZone:"Asia/Kuala_Lumpur",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(end)):when(end);
  return when(start)+" – "+endLabel;
 }
 

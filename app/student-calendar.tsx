@@ -1,4 +1,7 @@
 "use client";
+import {useDisplayPreferences} from '@/lib/use-display-preferences';
+import {orderedWeekdays} from '@/lib/display-preferences';
+import {displayFormatter} from '@/lib/display-preferences';
 import {attendanceLabels} from "@/lib/attendance-types";
 import type {SessionLesson} from "@/lib/class-session-display";
 import {uniqueSessionLessons,sessionLessonTitle} from "@/lib/class-session-display";
@@ -35,7 +38,7 @@ const statusText: Record<string, string> = {
   scheduled: "已安排", completed: "已上课", student_absent: "学生缺席", teacher_absent: "老师缺席",
 };
 const weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-const timeFormatter = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
+const timeFormatter = displayFormatter("en-GB",{ timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
 const time = (iso: string) => timeFormatter.format(new Date(iso));
 const dateFormatters = new Map<string, Intl.DateTimeFormat>();
 const dateLabel = (day: string, options: Intl.DateTimeFormatOptions) => {
@@ -46,14 +49,15 @@ const dateLabel = (day: string, options: Intl.DateTimeFormatOptions) => {
 };
 
 export function StudentCalendar({ lessons:sourceLessons, proposals, studyBlocks = [], onAddStudy, onEditStudy, onRequestReschedule, busy, role = "student", toolbar, renderActions, onPending, selectedDate, onDateChange, onRangeChange,loading=false }: { loading?:boolean;lessons: Lesson[]; proposals: Proposal[]; studyBlocks?: StudyBlock[]; onAddStudy?: (day: string) => void; onEditStudy?: (block: StudyBlock) => void; onRequestReschedule?: (id: string) => void; busy?: boolean; role?: "student" | "teacher" | "admin"; toolbar?: ReactNode; renderActions?: (id: string) => ReactNode; onPending?: (id: string) => void; selectedDate?: string; onDateChange?: (day: string) => void; onRangeChange?: (range:CalendarRange) => void }) {
+  const preferences=useDisplayPreferences();
   const today = malaysiaDay(new Date().toISOString());
   const [localDay, setSelectedDay] = useState(today);
   const lessons=role==="student"?sourceLessons:uniqueSessionLessons(sourceLessons);
   const selectedDay = selectedDate || localDay;
   const [localMonth, setVisibleMonth] = useState(today.slice(0, 7));
   const visibleMonth = selectedDate?.slice(0, 7) || localMonth;
-  const days = useMemo(() => monthDays(visibleMonth), [visibleMonth]);
-  useEffect(()=>{if(days.length)onRangeChange?.({from:days[0],to:shiftCalendarDay(days[days.length-1],1)});},[visibleMonth,onRangeChange]);
+  const days = useMemo(() => monthDays(visibleMonth,preferences.weekStart), [visibleMonth,preferences.weekStart]);
+  useEffect(()=>{if(days.length)onRangeChange?.({from:days[0],to:shiftCalendarDay(days[days.length-1],1)});},[days,onRangeChange]);
   const byDay = useMemo(() => new Map(days.map(day => [day, activeLessonsOnDay(lessons, day)])), [days, lessons]);
   const selectedLessons = byDay.get(selectedDay) || activeLessonsOnDay(lessons, selectedDay);
   const pending = new Map(proposals.filter(proposal => proposal.status === "pending").map(proposal => [proposal.lessonId, proposal]));
@@ -85,7 +89,7 @@ export function StudentCalendar({ lessons:sourceLessons, proposals, studyBlocks 
             <Button size="icon" variant="outline" aria-label={t("下一月")} onClick={() => changeMonth(1)}><ChevronRight size={18}/></Button>
           </div>
         </div>
-        <div className="student-calendar-weekdays">{weekdays.map(day => <span key={day}>{t(day)}</span>)}</div>
+        <div className="student-calendar-weekdays">{orderedWeekdays(weekdays,preferences.weekStart).map(day => <span key={day}>{t(day)}</span>)}</div>
         <div className="student-calendar-days">{days.map(day => {
           const dayLessons = byDay.get(day) || [];
           const dayStudy = studyOnDay(day);

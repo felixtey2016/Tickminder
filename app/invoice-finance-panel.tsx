@@ -1,5 +1,6 @@
 "use client";
 
+import {displayFormatter} from '@/lib/display-preferences';
 import {useEffect,useRef,useState,type FormEvent,type ReactNode} from 'react';
 import {Button} from '@/components/ui/button';
 import {groupFetch} from '@/lib/group-client';
@@ -22,7 +23,7 @@ type Pending={signature:string;operationId:string}|null;
 const F=(key:string)=>t('invoiceFinance.'+key);
 export const financeMoney=(cents:number)=>new Intl.NumberFormat(getLanguage()==='zh'?'zh-MY':'en-MY',{style:'currency',currency:'MYR'}).format(cents/100);
 const localTime=()=>new Date(Date.now()+8*3600_000).toISOString().slice(0,16);
-const stamp=(value:string)=>{const d=new Date(value);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat(getLanguage()==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(d)+' GMT+8':'—';};
+const stamp=(value:string)=>{const d=new Date(value);return Number.isFinite(d.getTime())?displayFormatter(getLanguage()==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(d)+' GMT+8':'—';};
 function amountCents(value:string){
  if(!/^\d{1,7}(?:\.\d{1,2})?$/.test(value.trim()))throw Error(F('invalidAmount'));
  const [whole,part='']=value.trim().split('.'),cents=Number(whole)*100+Number(part.padEnd(2,'0'));

@@ -1,5 +1,6 @@
 "use client";
 
+import {displayFormatter} from '@/lib/display-preferences';
 import { useEffect, useState } from "react";
 import { BookOpen, CalendarDays, ChevronRight, ClipboardCheck, Clock3, LibraryBig, NotebookPen, type LucideIcon } from "lucide-react";
 import { uniqueSessionLessons, sessionLessonTitle, type SessionLesson } from "@/lib/class-session-display";
@@ -41,10 +42,10 @@ type HomeCard = { label: string; value: string; detail?: string; Icon: LucideIco
 const malaysiaDay = (iso: string) => new Intl.DateTimeFormat("sv-SE", {
   timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
 }).format(new Date(iso));
-const lessonTime = (iso: string) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", {
+const lessonTime = (iso: string) => displayFormatter(getLanguage() === "zh" ? "zh-CN" : "en-GB",{
   timeZone: "Asia/Kuala_Lumpur", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
 }).format(new Date(iso));
-const clockTime = (iso: string) => new Intl.DateTimeFormat("en-GB", {
+const clockTime = (iso: string) => displayFormatter("en-GB",{
   timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false,
 }).format(new Date(iso));
 

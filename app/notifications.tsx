@@ -1,4 +1,5 @@
 "use client";
+import {displayFormatter} from '@/lib/display-preferences';
 import {groupFetch} from "@/lib/group-client";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
@@ -167,7 +168,7 @@ export function NotificationCentre({onOpen,language}:{onOpen:(target:Notificatio
   const {state,loadError,enabled,busy,enable,disable,test,refresh,read,showHelp}=value;
   const label=(zh:string,en:string)=>language==='zh'?zh:en;
   const items=state?.items.filter(item=>(status==='all'||!item.readAt)&&(category==='all'||(item.contentKind||'course')===category))||[];
-  const date=(input:string)=>new Intl.DateTimeFormat(language==="en"?"en-GB":"zh-CN",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(input));
+  const date=(input:string)=>displayFormatter(language==="en"?"en-GB":"zh-CN",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(input));
   const messageTitle=(item:Item)=>item.kind==="quiz_assigned"?"收到新的 Quiz 安排":item.kind==="quiz_updated"?"Quiz 安排已更新":item.kind==="quiz_retake_granted"?"Quiz 作答权限已更新":item.kind==="quiz_pending_marking"?"Quiz 有待批改的提交":item.kind==="group_reschedule_requested"?"老师申请整班改期":item.kind==="feedback_published"?"老师已发布批改反馈":item.kind==="resubmission_granted"?"老师已授予一次重交权限":item.kind==="homework_updated"?"功课已更新":item.kind==="material_updated"?"教学资料已更新":item.kind==="cancel"?"课程已取消":item.kind==="rejectReschedule"?"改期申请已被拒绝":item.kind==="reschedule"||item.kind==="acceptReschedule"?"课程时间已变更":item.minutes===0?"课程时间已到":item.minutes===5?"课前 5 分钟提醒":"课前 30 分钟提醒";
   return <div className="notification-page"><section className="panel notification-inbox"><div className="notification-list-heading"><h2>{t("通知中心")}</h2><Button variant="outline" disabled={busy||!state?.items.some(item=>!item.readAt)} onClick={()=>void read()}>{t("全部标为已读")}</Button></div>
     <div className="notification-filters"><label>{label('状态','Status')}<select aria-label={label('通知状态','Notification status')} value={status} onChange={event=>setStatus(event.target.value)}><option value="unread">{label('未读','Unread')}</option><option value="all">{label('全部','All')}</option></select></label><label>{label('分类','Category')}<select aria-label={label('通知分类','Notification category')} value={category} onChange={event=>setCategory(event.target.value)}><option value="all">{label('全部分类','All categories')}</option><option value="course">{label('课程','Courses')}</option><option value="homework">{label('功课','Homework')}</option><option value="material">{label('教学资料','Materials')}</option><option value="quiz">Quiz</option></select></label></div>

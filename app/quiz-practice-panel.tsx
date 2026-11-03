@@ -1,4 +1,5 @@
 'use client';
+import {displayFormatter} from '@/lib/display-preferences';
 import { useAdminAction } from "./admin-permission-context";
 import {lazy,Suspense,useEffect,useMemo,useRef,useState} from 'react';
 import {ArrowLeft,Check,Clock3,Play,RotateCcw,Trash2,UsersRound} from 'lucide-react';
@@ -18,7 +19,7 @@ const STATUSES:PracticeRecipient['status'][]=['not_started','in_progress','submi
 const DATE_FORMATTERS:Partial<Record<Language,Intl.DateTimeFormat>>={};
 const toInput=(value:string|null|undefined)=>value&&Number.isFinite(Date.parse(value))?new Date(Date.parse(value)+8*3600000).toISOString().slice(0,16):'';
 function toIso(value:string):string|null{if(!value)return null;if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value))throw new Error('quiz.assignmentDatesInvalid');const date=new Date(value+':00+08:00');if(!Number.isFinite(date.getTime())||toInput(date.toISOString())!==value)throw new Error('quiz.assignmentDatesInvalid');return date.toISOString();}
-function displayDate(value:string|null|undefined,language:Language){if(!value||!Number.isFinite(Date.parse(value)))return '—';const formatter=DATE_FORMATTERS[language]||(DATE_FORMATTERS[language]=new Intl.DateTimeFormat(language==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}));return formatter.format(new Date(value))+' GMT+8';}
+function displayDate(value:string|null|undefined,language:Language){if(!value||!Number.isFinite(Date.parse(value)))return '—';const formatter=DATE_FORMATTERS[language]||(DATE_FORMATTERS[language]=displayFormatter(language==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}));return formatter.format(new Date(value))+' GMT+8';}
 function blockedLabel(a:PracticeAssignment){if(a.withdrawnAt)return 'quiz.assignmentWithdrawn';if(a.remainingAttempts===0)return 'quiz.noAttempts';if(a.state==='planned')return 'quiz.assignmentOpensLater';if(a.state==='closed')return 'quiz.assignmentDuePassed';return a.startBlockedReason?.startsWith('quiz.')?a.startBlockedReason:'quiz.assignmentClosed';}
 
 export function QuizPracticeStart({source,onClose,onOpen}:{source:PracticeSource;onClose:()=>void;onOpen:(id:string)=>void}){
@@ -86,7 +87,7 @@ export default function QuizPracticePanel({mode,role,language,reload,onOpen,onSt
  const [showAnalysis,setShowAnalysis]=useState(false),[analysisRefresh,setAnalysisRefresh]=useState(0);
  const [announcedLoadFailure,setAnnouncedLoadFailure]=useState(false);
  const generation=useRef(0),operation=useRef<Record<string,unknown>|null>(null),student=role==='student'||role==='parent';
- const format=useMemo(()=>new Intl.DateTimeFormat(language==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),[language]);
+ const format=useMemo(()=>displayFormatter(language==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),[language]);
  const date=(value:string|null)=>value&&Number.isFinite(Date.parse(value))?<time dateTime={value}>{format.format(new Date(value))} GMT+8</time>:null;
  async function load(offset=0){const gen=++generation.current;setLoading(true);setError('');setAnnouncedLoadFailure(false);try{const target=selected?.id||initialAssignmentId;const next=await practiceApi<PracticeState>({...(target?{assignmentId:target}:{}),offset:String(offset)});if(gen!==generation.current)return;if(initialAssignmentId&&!next.assignments.some(item=>item.id===initialAssignmentId))throw new Error('quiz.notFound');setState(old=>offset&&old?{...next,attempts:[...old.attempts,...next.attempts].filter((item,index,all)=>all.findIndex(other=>other.id===item.id)===index)}:next);setAnalysisRefresh(value=>value+1);}catch(e){if(gen===generation.current){const message=practiceError(e);setError(message);if(initialAssignmentId){setAnnouncedLoadFailure(true);alertActionFailure(new Error(message));}}}finally{if(gen===generation.current)setLoading(false);}}
  useEffect(()=>{setSelected(null);setStudentSearch('');setStatusFilter('');},[mode]);

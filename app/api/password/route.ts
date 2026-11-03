@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   const passwordHash = await hashPassword(body.newPassword);
   await db.update(localCredentials).set({ passwordHash, mustChangePassword: false, updatedAt: new Date().toISOString() }).where(eq(localCredentials.accountId, account.id));
   await db.delete(sessions).where(eq(sessions.accountId, account.id));
-  const session = await createSession(account.id);
+  const session = await createSession(account.id,request);
   const response = NextResponse.json({ ok: true });
   response.cookies.set("tuition_session", session.token, { httpOnly: true, secure: true, sameSite: "lax", path: "/", expires: new Date(session.expiresAt) });
   return response;

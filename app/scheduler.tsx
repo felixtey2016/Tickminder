@@ -1,4 +1,6 @@
 "use client";
+import {useDisplayPreferences} from '@/lib/use-display-preferences';
+import {displayFormatter} from '@/lib/display-preferences';
 import {PasswordInput} from '@/components/password-input';
 import {TimeInput} from '@/components/time-input';
 import {ServiceBrandIcon} from '@/components/service-brand-icon';
@@ -223,7 +225,7 @@ const dayFormatters = {
     zh: new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Kuala_Lumpur", month: "short", day: "numeric", weekday: "short" }),
     en: new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", month: "short", day: "numeric", weekday: "short" }),
 };
-const timeFormatter = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
+const timeFormatter = displayFormatter("en-GB",{ timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
 const localFormatter = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 const day = (iso: string) => dayFormatters[getLanguage()].format(new Date(iso));
 const time = (iso: string) => timeFormatter.format(new Date(iso));
@@ -235,6 +237,7 @@ function actionSuccessText(action: string) {
 async function request(url: string, options?: RequestInit): Promise<any> { const r = await groupFetch(url, { ...options, cache: "no-store" }); const v = await readApiJson<{ error?: string; [key: string]: any }>(r); if (!r.ok)
     throw Object.assign(new Error(v.conflict ? conflictDescription(v.conflict as ConflictDetail) : t(r.status === 401 && url !== "/api/auth" ? "登录已过期，请重新登录" : v.error || "请求失败")), { status: r.status }); return v; }
 export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
+ useDisplayPreferences();
     const [linkedQuizId,setLinkedQuizId]=useState<string|undefined>(()=>validQuizLinkId(initialQuizId)?initialQuizId:undefined);
     useEffect(()=>{setLinkedQuizId(validQuizLinkId(initialQuizId)?initialQuizId:undefined);},[initialQuizId]);
     const exitLinkedQuiz=useCallback(()=>{

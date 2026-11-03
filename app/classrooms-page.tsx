@@ -1,4 +1,5 @@
 "use client";
+import {displayFormatter} from '@/lib/display-preferences';
 import {usePageHistoryState} from '@/lib/page-history';
 
 import { useAdminAction } from "./admin-permission-context";
@@ -38,7 +39,7 @@ type Role = "admin" | "teacher" | "student";
 type ClassroomTab = "announcements" | "schedule" | "materials" | "recordings" | "homework" | "tasks" | "members" | "payroll";
 type Plan = { student: string; subject: string; subjectId?:string|null;syllabusId?:string;grade?:string|null;teacherName: string; active: boolean };
 
-const dateLabel = (iso: string) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+const dateLabel = (iso: string) => displayFormatter(getLanguage() === "zh" ? "zh-CN" : "en-GB",{ timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
 export function ClassroomsPage({ role, classes, terms, learning, learningReady = true, learningError, loadLearning, teacherName, teachers, plans, mutate, learningMutate, busy, onCalendar, taskTarget, onTaskTargetOpened }: {
   role: Role; classes: Classroom[]; terms: Term[]; learning: LearningState; teacherName?: string | null;

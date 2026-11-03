@@ -1,5 +1,6 @@
 "use client";
 
+import {displayFormatter} from '@/lib/display-preferences';
 import {useCallback,useEffect,useId,useRef,useState,type FormEvent,type ReactNode} from "react";
 import {Archive,Check,CheckCircle2,ClipboardCheck,Plus,RefreshCw} from "lucide-react";
 import {Button} from "@/components/ui/button";
@@ -23,7 +24,7 @@ const label=(zh:string,en:string)=>getLanguage()==="zh"?zh:en;
 const aborted=(error:unknown)=>error instanceof DOMException&&error.name==="AbortError";
 function completedDate(value:string){
   const date=new Date(value);
-  return Number.isFinite(date.getTime())?new Intl.DateTimeFormat(getLanguage()==="zh"?"zh-CN":"en-GB",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}).format(date):"";
+  return Number.isFinite(date.getTime())?displayFormatter(getLanguage()==="zh"?"zh-CN":"en-GB",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}).format(date):"";
 }
 
 type Props={classroom:TaskClassroom;role:Role;focusTaskId?:string};

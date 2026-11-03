@@ -1,4 +1,5 @@
 'use client';
+import {displayFormatter} from '@/lib/display-preferences';
 import {HorizontalMenu} from '@/components/horizontal-menu';
 import {usePageHistoryState} from '@/lib/page-history';
 
@@ -75,7 +76,7 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
  const listAbort=useRef<AbortController|null>(null),openAbort=useRef<AbortController|null>(null),openGeneration=useRef(0),actionLocks=useRef(new Set<string>());
  // Scheduler keys this workspace by groupId; caches never survive a group switch.
  const facetCache=useRef(new Map<string,Facets>());
- const dateFormatter=useMemo(()=>new Intl.DateTimeFormat(language==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),[language]);
+ const dateFormatter=useMemo(()=>displayFormatter(language==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),[language]);
  function dateLabel(value:string|undefined){if(!value||!Number.isFinite(Date.parse(value)))return null;return <time dateTime={value}>{t('quiz.updatedAt')} {dateFormatter.format(new Date(value))} GMT+8</time>;}
  const bank=tab==='bank',catalogTab=catalogueAllowed&&(bank||tab==='mine'||tab==='manage');
  const suspended=Boolean(importOpen||linkedQuizId||editor||opening||preview||practiceSource||allocation||attemptId);

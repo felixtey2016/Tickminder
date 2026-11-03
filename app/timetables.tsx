@@ -1,4 +1,5 @@
 "use client";
+import {displayFormatter} from '@/lib/display-preferences';
 import {MonthInput} from '@/components/month-input';
 import {ClassSessionLabel} from "@/components/class-session-label";
 import {sessionLessonTitle} from "@/lib/class-session-display";
@@ -15,7 +16,7 @@ import {isTeacherStudentPair,teacherStudentOptions,type TeacherStudentPair} from
 
 type Props={type:'student'|'teacher';lessons:TimetableLesson[];students:string[];teachers:string[];month:string;setMonth:(month:string)=>void};
 function date(iso:string){return new Intl.DateTimeFormat(getLanguage()==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',weekday:'short'}).format(new Date(iso));}
-function clock(iso:string){return new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kuala_Lumpur',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(iso));}
+function clock(iso:string){return displayFormatter('en-GB',{timeZone:'Asia/Kuala_Lumpur',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(iso));}
 type TimetablePage=CoursePage<TimetableLesson>&{summary:CourseTimetableSummary;studentOptions?:string[];teacherStudentPairs?:TeacherStudentPair[]};
 export function Timetable({type,students,teachers,month,setMonth}:Props){
  const scope=useContext(FilterScope),[name,setName]=useFilterPreference<string>(`timetable-${type}-name`,''),[studentFilter,setStudentFilter]=useFilterPreference<string>(`timetable-${type}-student`,''),[teacherFilter,setTeacherFilter]=useFilterPreference<string>(`timetable-${type}-teacher`,'');

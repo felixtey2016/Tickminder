@@ -1,4 +1,6 @@
 "use client";
+import {useDisplayPreferences} from '@/lib/use-display-preferences';
+import {orderedWeekdays} from '@/lib/display-preferences';
 import {useEffect,useState,type ReactNode} from 'react';
 import {ChevronLeft,ChevronRight} from 'lucide-react';
 import {Button} from '@/components/ui/button';
@@ -19,12 +21,13 @@ const today=()=>new Date(Date.now()+8*3600000).toISOString().slice(0,10);
 const firstDay=(month:string)=>today().startsWith(month+'-')?today():month+'-01';
 function shiftMonth(month:string,offset:number){const date=new Date(month+'-01T00:00:00Z');date.setUTCMonth(date.getUTCMonth()+offset);return date.toISOString().slice(0,7);}
 export default function ParentCalendar({studentId,month,status='all',version,selectedDate='',onDateChange,onMonthChange,onAuthorityLost,renderLesson}:{studentId:string;month:string;status?:ParentCourseStatus;version:number;selectedDate?:string;onDateChange?:(date:string)=>void;onMonthChange:(month:string)=>void;onAuthorityLost:()=>void;renderLesson:(lesson:ParentCourseLesson)=>ReactNode}){
+ const preferences=useDisplayPreferences();
  const [chosen,setChosen]=useState(()=>firstDay(month)),[page,setPage]=useState(1),[reload,setReload]=useState(0);
  const selection=onDateChange?selectedDate:chosen,day=selection.startsWith(month+'-')?selection:firstDay(month),chooseDay=(date:string)=>{setChosen(date);onDateChange?.(date);setPage(1);};
  useEffect(()=>{setPage(1);},[studentId,month,status,day]);
  const calendar=useParentResource<CalendarResponse>({view:'calendar',studentId,month,status},version+reload,onAuthorityLost);
  const lessons=useParentResource<DayResponse>({view:'lessons',studentId,month,status,date:day,page:String(page)},version+reload,onAuthorityLost);
- const retry=()=>setReload(value=>value+1),dayRows=calendar.data?.days||[],weekday=(new Date(month+'-01T00:00:00Z').getUTCDay()+6)%7;
+ const retry=()=>setReload(value=>value+1),dayRows=calendar.data?.days||[],weekday=(new Date(month+'-01T00:00:00Z').getUTCDay()-preferences.weekStart+7)%7;
  const monthLabel=new Intl.DateTimeFormat(getLanguage()==='zh'?'zh-CN':'en-GB',{timeZone:'UTC',year:'numeric',month:'long'}).format(new Date(month+'-01T00:00:00Z'));
  const selectedLabel=parentDate(day+'T00:00:00Z');
  return <div className="parent-calendar course-wave2" data-testid="parent-calendar"><div className="parent-calendar-month">
@@ -35,7 +38,7 @@ export default function ParentCalendar({studentId,month,status='all',version,sel
   </div><Button type="button" variant="outline" onClick={()=>{const current=today();onMonthChange(current.slice(0,7));chooseDay(current);}}>{PC('today')}</Button></div>
   <ParentLoadState loading={calendar.loading} failed={calendar.failed} onRetry={retry}>{calendar.data&&<>
    <div className="parent-calendar-grid" role="group" aria-label={monthLabel}>
-    {['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].map(key=><span className="parent-calendar-weekday" key={key}>{PC(key)}</span>)}
+    {orderedWeekdays(['monday','tuesday','wednesday','thursday','friday','saturday','sunday'],preferences.weekStart).map(key=><span className="parent-calendar-weekday" key={key}>{PC(key)}</span>)}
     {Array.from({length:weekday},(_,index)=><span aria-hidden="true" key={'empty-'+index}/>)}
     {dayRows.map(item=>{const allCancelled=item.total>0&&item.cancelled===item.total,status=allCancelled?'cancelled':item.absent>0?'absent':item.scheduled>0?'scheduled':item.completed>0?'completed':'empty';return <button type="button" key={item.date} className="parent-calendar-day" data-date={item.date} data-status={status} data-today={item.date===today()} aria-pressed={item.date===day} aria-label={PC('dayAria').replace('{date}',parentDate(item.date+'T00:00:00Z')).replace('{count}',String(item.total))} onClick={()=>chooseDay(item.date)}><span className="parent-calendar-number">{Number(item.date.slice(-2))}</span>{item.total>0&&<span className="parent-calendar-count">{PC('dayCount').replace('{count}',String(item.total))}</span>}</button>;})}
    </div>

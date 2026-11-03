@@ -1,4 +1,5 @@
 import { setDiagnosticActor } from "@/lib/diagnostics-context";
+import {sessionDeviceLabel} from "@/lib/session-device-label";
 import { env } from "cloudflare:workers";
 import { cookies } from "next/headers";
 import { and, eq, gt } from "drizzle-orm";
@@ -109,9 +110,11 @@ export async function currentBusinessAccount(): Promise<Account | null> {
   setDiagnosticActor(account);return account;
 }
 
-export async function createSession(accountId: string) {
+export async function createSession(accountId: string, request?: Request) {
   const token = toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
   const expiresAt = new Date(Date.now() + 30 * 86400000).toISOString();
-  await getDb().insert(sessions).values({ tokenHash: await hashToken(token), accountId, expiresAt });
+  const tokenHash=await hashToken(token),device=sessionDeviceLabel(request?.headers.get("user-agent")||"");
+  const database=env.DB;if(!database)throw new Error("Database is not configured");
+  await database.batch([database.prepare("INSERT INTO sessions(token_hash,account_id,expires_at) VALUES(?,?,?)").bind(tokenHash,accountId,expiresAt),database.prepare("INSERT INTO session_devices(id,token_hash,created_at,browser,os) VALUES(?,?,?,?,?)").bind(crypto.randomUUID(),tokenHash,new Date().toISOString(),device.browser,device.os)]);
   return { token, expiresAt };
 }

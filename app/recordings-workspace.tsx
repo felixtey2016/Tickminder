@@ -1,4 +1,5 @@
 "use client";
+import {displayFormatter} from '@/lib/display-preferences';
 import {MonthInput} from '@/components/month-input';
 
 import {useCallback,useEffect,useId,useMemo,useRef,useState,type FormEvent} from 'react';
@@ -27,7 +28,7 @@ const lessonDay=(iso:string)=>new Date(new Date(iso).getTime()+8*3600_000).toISO
 const countLabel=(key:string,count:number)=>t(key).replace('{count}',String(count));
 const recordingText=(zh:string,en:string)=>getLanguage()==='zh'?zh:en;
 const dateLabel=(date:string)=>new Intl.DateTimeFormat(getLanguage()==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric'}).format(new Date(date.length===10?date+'T12:00:00+08:00':date));
-const sessionLabel=(session:Session)=>dateLabel(session.plannedStart)+' · '+new Intl.DateTimeFormat(getLanguage()==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(session.plannedStart))+(session.title?' · '+session.title:'');
+const sessionLabel=(session:Session)=>dateLabel(session.plannedStart)+' · '+displayFormatter(getLanguage()==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(session.plannedStart))+(session.title?' · '+session.title:'');
 async function read<T>(url:string,signal?:AbortSignal):Promise<T>{
   const response=await groupFetch(url,{cache:'no-store',signal}),data=await readApiJson<T&{error?:string}>(response);
   if(!response.ok)throw Object.assign(Error(t(data.error||'recordings.failed')),{status:response.status});

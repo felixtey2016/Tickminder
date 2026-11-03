@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     ]);
     const saved = await first("SELECT 1 AS found FROM local_credentials WHERE account_id = ? AND username = ?",account.id,username);
     if (!saved) return NextResponse.json({error:"账号暂时不可用，请重新登录"},{status:409});
-    const session = await createSession(account.id);
+    const session = await createSession(account.id,request);
     const response = NextResponse.json({ok:true});
     response.cookies.set("tuition_session",session.token,{httpOnly:true,secure:true,sameSite:"lax",path:"/",expires:new Date(session.expiresAt)});
     return response;

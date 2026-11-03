@@ -1,4 +1,5 @@
 'use client';
+import {displayFormatter} from '@/lib/display-preferences';
 import {useAdminAction} from "@/app/admin-permission-context";
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {Check,ChevronLeft,ChevronRight,Clock3,Flag,Save,X} from 'lucide-react';
@@ -31,7 +32,7 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
  const done=attempt?.status==='submitted',answering=Boolean(attempt?.canAnswer&&!done);
  const editingText=useRef(false);
  const requestCompletesSelf=Boolean(pending.current&&!attempt?.assignmentId&&pending.current.body.deferCompletion!==true&&attempt?.content.questions.every(question=>filled(pending.current!.snapshot[question.id])&&(!attempt.immediate||attempt.manualQuestionIds.includes(question.id)||attempt.checkedQuestionIds.includes(question.id)||pending.current!.body.action==='check'&&pending.current!.body.questionId===question.id)));
- const dateFormatter=useMemo(()=>new Intl.DateTimeFormat(language==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),[language]);
+ const dateFormatter=useMemo(()=>displayFormatter(language==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),[language]);
  function syncClock(value:string|undefined){if(value&&Number.isFinite(Date.parse(value))){serverOffset.current=Date.parse(value)-Date.now();setClockOffset(serverOffset.current);}}
  async function load(){setLoading(true);setError('');try{const {attempt:next,serverNow}=await practiceApi<{attempt:PracticeAttempt;serverNow?:string}>({attemptId});if(!mounted.current)return;syncClock(serverNow);current.current=next;local.current=next.answers;localFlags.current=next.flaggedQuestionIds;setAttempt(next);setAnswers(next.answers);setFlags(next.flaggedQuestionIds);setDirty(false);pending.current=null;deadlineSent.current=false;}catch(e){if(mounted.current)setError(practiceError(e));}finally{if(mounted.current)setLoading(false);}}
  useEffect(()=>{mounted.current=true;void load();return()=>{mounted.current=false;};},[attemptId]);

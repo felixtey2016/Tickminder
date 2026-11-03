@@ -1,4 +1,5 @@
 'use client';
+import {displayFormatter} from '@/lib/display-preferences';
 import {HorizontalMenu} from '@/components/horizontal-menu';
 import {useEffect,useRef,useState} from 'react';
 import {Button} from '@/components/ui/button';
@@ -17,7 +18,7 @@ async function api<T>(query:string,body?:unknown):Promise<T>{const response=awai
 export default function QuizModerationWorkspace({owner,language,onBack}:{owner:boolean;language:Language;onBack:()=>void}){
  const [view,setView]=useState<'queue'|'reports'|'appeals'>(owner?'queue':'reports'),[status,setStatus]=useState('pending'),[rows,setRows]=useState<Row[]>([]),[more,setMore]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState(''),[selected,setSelected]=useState<{row:Row;action:string;decision?:string}|null>(null),[reason,setReason]=useState(''),[busy,setBusy]=useState(false),[refresh,setRefresh]=useState(0);
  const [detail,setDetail]=useState<{publication:QuizPublication;content:QuizContent;keys:QuizKey[]}|null>(null),[preview,setPreview]=useState<QuizContent|null>(null);const request=useRef(0),operation=useRef<{stamp:string;id:string}|null>(null);
- const date=(value:string)=>new Intl.DateTimeFormat(language==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(value))+' GMT+8';
+ const date=(value:string)=>displayFormatter(language==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(value))+' GMT+8';
  async function load(offset=0){const generation=++request.current;setLoading(true);setError('');try{const data=await api<{items:Row[];hasMore:boolean}>('?view='+view+'&offset='+offset+(view==='queue'?'&status='+encodeURIComponent(status):''));if(generation!==request.current)return;setRows(old=>offset?[...old,...data.items].filter((row,i,all)=>all.findIndex(r=>r.id===row.id)===i):data.items);setMore(data.hasMore);}catch(e){if(generation===request.current)setError(e instanceof Error?e.message:'quiz.unavailable');}finally{if(generation===request.current)setLoading(false);}}
  useEffect(()=>{setRows([]);void load();return()=>{request.current++;};},[view,status,refresh]);
  async function inspect(row:QuizPublication){if(busy)return;setBusy(true);setError('');try{setDetail(await api('?view=detail&id='+encodeURIComponent(row.id)));}catch(e){setError(e instanceof Error?e.message:'quiz.unavailable');}finally{setBusy(false);}}

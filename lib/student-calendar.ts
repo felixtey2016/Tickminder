@@ -18,9 +18,9 @@ export function shiftMonth(month: string, by: number) {
   return date.toISOString().slice(0, 7);
 }
 
-export function monthDays(month: string) {
+export function monthDays(month: string, weekStart:0|1=1) {
   const first = new Date(`${month}-01T00:00:00Z`);
-  const mondayOffset = (first.getUTCDay() + 6) % 7;
+  const mondayOffset = (first.getUTCDay() - weekStart + 7) % 7;
   const lastDay = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
   const cells = Math.ceil((mondayOffset + lastDay) / 7) * 7;
   return Array.from({ length: cells }, (_, index) =>

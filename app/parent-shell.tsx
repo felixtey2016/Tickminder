@@ -1,4 +1,5 @@
 "use client";
+import {useDisplayPreferences} from '@/lib/use-display-preferences';
 import {lazy,Suspense,useEffect,useRef,useState} from 'react';
 import {BarChart3,Bell,BookOpen,CalendarDays,House,LibraryBig,ListChecks,LogOut,NotebookPen,UserRound,Video,WalletCards} from 'lucide-react';
 import {Button} from '@/components/ui/button';
@@ -31,6 +32,7 @@ type ParentIdentity={id?:string;name:string;groupId?:string|null;groupName?:stri
 type ParentShellProps={account:ParentIdentity;language:Language;changeLanguage:(value:Language)=>void;logout:()=>void;refreshIdentity:()=>Promise<void>;initialQuizId?:string;onLinkedQuizExit?:()=>void};
 
 export default function ParentShell(props:ParentShellProps){
+ useDisplayPreferences();
   return <NotificationsProvider key={props.account.id+':'+props.account.groupId} accountId={props.account.id||''} groupId={props.account.groupId||''} language={props.language} audience="parent"><ParentShellContent {...props}/></NotificationsProvider>;
 }
 

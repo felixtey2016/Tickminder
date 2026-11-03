@@ -1,4 +1,5 @@
 "use client";
+import {displayFormatter} from '@/lib/display-preferences';
 import {groupFetch} from "@/lib/group-client";
 
 
@@ -10,7 +11,7 @@ export type ConflictDetail = {
   start: string; end: string; reason: "student" | "teacher" | "both";
   student?: string; teacherName?: string;
 };
-const stamp = (iso: string) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", {
+const stamp = (iso: string) => displayFormatter(getLanguage() === "zh" ? "zh-CN" : "en-GB",{
   timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric",
   hour: "2-digit", minute: "2-digit", hour12: false,
 }).format(new Date(iso));

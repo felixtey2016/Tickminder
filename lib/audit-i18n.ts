@@ -1,5 +1,6 @@
 import {t,registerTranslations} from './i18n';
 const entries:Record<string,[string,string]>={
+ 'action.accountSessions.revoke':['退出其他设备','Sign out other devices'],
  'action.accountUsername.update':['修改登录用户名','Change login username'],
  'action.classTask.create':['创建课堂任务','Create classroom task'],'action.classTask.complete':['完成课堂任务','Complete classroom task'],'action.classTask.archive':['封存课堂任务','Archive classroom task'],
  allRecords:['全部记录','All records'],eventCode:['原始事件','Event code'],

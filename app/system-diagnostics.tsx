@@ -1,4 +1,5 @@
 "use client";
+import {displayFormatter} from '@/lib/display-preferences';
 import {useEffect,useRef,useState} from "react";
 import {ChevronDown,Copy,Download,RefreshCw,ShieldCheck} from "lucide-react";
 import {Button} from "@/components/ui/button";
@@ -10,7 +11,7 @@ import "./system-diagnostics.css";
 type Group={id:string;name:string};
 type AccessKey={id:string;label:string;scope:"all"|"group";groupId:string|null;createdAt:string;expiresAt:string;revokedAt:string|null};
 const titles:Record<string,[string,string]>={runtime_exception:["页面运行异常","Page runtime error"],unhandled_rejection:["未处理的操作异常","Unhandled operation error"],api_5xx:["服务接口异常","Service error"],network_failure:["网络请求失败","Network request failed"],invalid_response:["响应格式异常","Invalid response"],render_failure:["页面加载异常","Page loading error"],background_failure:["后台任务异常","Background task error"],cron_failure:["定时任务异常","Scheduled task error"],storage_failure:["文件储存异常","File storage error"],database_failure:["数据库异常","Database error"],database_limit:["数据库额度限制","Database limit"],database_timeout:["数据库超时","Database timeout"],resource_limit:["运行资源限制","Runtime resource limit"]};
-function date(value:string,zh:boolean){const d=new Date(value);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat(zh?"zh-CN":"en-GB",{timeZone:"Asia/Kuala_Lumpur",month:"short",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(d):"—";}
+function date(value:string,zh:boolean){const d=new Date(value);return Number.isFinite(d.getTime())?displayFormatter(zh?"zh-CN":"en-GB",{timeZone:"Asia/Kuala_Lumpur",month:"short",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(d):"—";}
 function safeFeedUrl(value:unknown){try{if(typeof value!=="string")return null;const url=new URL(value);return url.protocol==="https:"&&!url.username&&!url.password&&!url.search&&!url.hash&&["/diagnostics/feed","/api/diagnostics/feed"].includes(url.pathname)?url.href:null;}catch{return null;}}
 function download(value:unknown,name:string){const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:"application/json"})),link=document.createElement("a");link.href=url;link.download=name;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 async function api<T>(query:string,body?:Record<string,unknown>){const response=await groupFetch("/api/diagnostics"+query,body?{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body),cache:"no-store"}:{cache:"no-store"});const data=await readApiJson<T&{error?:string}>(response);if(!response.ok)throw Error(data.error||"诊断资料暂时无法读取，请稍后重试");return data;}

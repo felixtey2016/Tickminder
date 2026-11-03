@@ -1,4 +1,5 @@
 "use client";
+import {displayFormatter} from '@/lib/display-preferences';
 import { useAdminAction } from "./admin-permission-context";
 
 import { useState } from "react";
@@ -16,8 +17,8 @@ import {ClassroomMaterialBrowser} from "./classroom-material-browser";
 import {GoogleDriveImport} from "./google-drive-import";
 
 const dateFormatters = {
-  zh: new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
-  en: new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+  zh: displayFormatter("zh-CN",{ timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+  en: displayFormatter("en-GB",{ timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
 };
 const readable = (iso: string) => dateFormatters[getLanguage()].format(new Date(iso));
 const subjectOf = (item: Material | Homework) => "subject" in item && item.subject || (item as Material).recipients?.[0]?.subject || "";

@@ -1,4 +1,5 @@
 "use client";
+import {displayFormatter} from '@/lib/display-preferences';
 import {attendanceLabels} from "@/lib/attendance-types";
 import type {SessionLesson} from "@/lib/class-session-display";
 import {ClassSessionLabel} from "@/components/class-session-label";
@@ -19,7 +20,7 @@ type Lesson = SessionLesson & {
   attendanceKind?: string | null; onlineLink?: string | null;
 };
 const statusText: Record<string, string> = { scheduled: "已安排", completed: "已上课", student_absent: "学生缺席", teacher_absent: "老师缺席" };
-const time = (iso: string) => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
+const time = (iso: string) => displayFormatter("en-GB",{ timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
 
 export function StudentLessonList({ lessons, proposals = [], onRequestReschedule, busy,serverMode=false }: { serverMode?:boolean;lessons: Lesson[]; proposals?: RescheduleProposal[]; onRequestReschedule?: (id: string) => void; busy?: boolean }) {
   const [completion,setCompletion]=useFilterPreference<string>('student-courses-completion','all');
