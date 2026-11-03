@@ -17,7 +17,9 @@ import { LearningListDetail, homeworkSummary, latestSubmissions, learningLabel }
 import {ClassroomMaterialBrowser} from './classroom-material-browser';
 import {ClassroomFileAction} from '@/lib/classroom-files-ui';
 import {GoogleDriveImport,type DrivePublishItem} from "./google-drive-import";
-import { canNavigateBack, usePageHistoryState } from "@/lib/page-history";
+import { usePageHistoryState } from "@/lib/page-history";
+import {studentHomeworkList,type HomeworkFilter} from "@/lib/homework-priority";
+import "./homework-tasks-workspace.css";
 
 registerTranslations({}, {
   "今天想读些什么？": "What would you like to read today?",
@@ -93,9 +95,23 @@ function ScoreEntry({ item, student, mutate, busy,submissionId }: { item: Homewo
 import { DeleteButton } from "./directory-tools";
 import { BulkDeleteTool } from "./bulk-delete";
 type TeacherLearningProps={learning:LearningState;mutate:LearningMutate;busy:boolean;view:"materials"|"homework";classroom?:{id:string;subject:string;members:string[]};folderId?:string;readOnly?:boolean;legacyOnly?:boolean;legacyClasses?:FolderClass[];onChanged?:()=>Promise<unknown>|void;availableMaterials?:Material[]};
-export function TeacherLearning(props:TeacherLearningProps) {return props.classroom?<TeacherLearningForm {...props}/>:<TeacherFolderPage {...props}/>;}
+export function TeacherLearning(props:TeacherLearningProps) {return props.classroom?<TeacherLearningForm {...props}/>:props.view==="homework"?<TeacherHomeworkOverview {...props}/>:<TeacherFolderPage {...props}/>;}
+function TeacherHomeworkOverview(props:TeacherLearningProps){
+  const [creating,setCreating]=usePageHistoryState("teacher.homework.create",false);
+  const [hasOpened,setHasOpened]=useState(false);
+  useEffect(()=>{if(creating)setHasOpened(true);},[creating]);
+  const [classId,setClassId]=usePageHistoryState("teacher.homework.class","");
+  const classes=[...new Map(props.learning.homework.filter(item=>item.classroomId).map(item=>[item.classroomId!,item.classroomTitle||item.subject])).entries()];
+  const learning={...props.learning,homework:props.learning.homework.filter(item=>!classId||item.classroomId===classId)};
+  const chooseCreate=(value:boolean)=>{if(window.dispatchEvent(new Event("tickminder-navigate",{cancelable:true})))setCreating(value);};
+  return <div className="teacher-homework-overview">
+    <div className="homework-overview-tools">{!creating&&<label>{t("班级")}<select value={classId} onChange={event=>setClassId(event.target.value)}><option value="">{learningLabel("全部班级","All classes")}</option>{classes.map(([id,title])=><option key={id} value={id}>{title}</option>)}</select></label>}<Button type="button" variant={creating?"outline":"default"} onClick={()=>chooseCreate(!creating)}>{creating?learningLabel("返回功课列表","Back to homework"):learningLabel("布置功课","Assign homework")}</Button></div>
+    {(creating||hasOpened)&&<div hidden={!creating}><TeacherFolderPage {...props}/></div>}
+    <div hidden={creating}>{learning.homework.length?<TeacherLearningForm {...props} learning={learning} legacyOnly/>:<PageState kind="empty" title={learningLabel("暂无功课","No homework yet")}/>}</div>
+  </div>;
+}
 function TeacherFolderPage(props:TeacherLearningProps) {
-  const {classes,ready,error,load}=useTeachingClasses();const [classId,setClassId]=useState("");
+  const {classes,ready,error,load}=useTeachingClasses();const [classId,setClassId]=usePageHistoryState(`teacher.publish.class:${props.view}`,"");
   const selected=classes.find(c=>c.id===classId);
   const legacy={...props.learning,materials:props.learning.materials.filter(m=>!m.classroomId),homework:props.learning.homework.filter(h=>!h.classroomId)};
   const legacyCount=props.view==="materials"?legacy.materials.length:legacy.homework.length;
@@ -116,8 +132,7 @@ function TeacherLearningForm({ learning, mutate, busy, view, classroom,folderId,
     window.history.replaceState({ ...window.history.state, timelyoLearningCompose: composeHistoryKey }, "");
   }
   function closeCreateForm() {
-    if (window.history.state?.timelyoLearningCompose === composeHistoryKey && canNavigateBack()) window.history.back();
-    else replaceFormOpen(false);
+    replaceFormOpen(false);
   }
   useEffect(() => {
     if (previousFormOpen.current === formOpen) return;
@@ -294,17 +309,20 @@ export function StudentLearning({ learning, mutate, busy, onPlan, view, onCalend
   const subjects = useMemo(() => [...new Set(learning.materials.map(m => m.subject).filter(Boolean))], [learning.materials]);
   const [filter, setFilter] = useState("");
   const [submittedId, setSubmittedId] = useState("");
+  const [homeworkFilter,setHomeworkFilter]=usePageHistoryState<HomeworkFilter>(`student.homework.filter:${historyScope}`,"todo");
   const [clock, setClock] = useState(() => new Date().toISOString());
   useEffect(() => { const timer = window.setInterval(() => setClock(new Date().toISOString()), 30_000); return () => window.clearInterval(timer); }, []);
   const materials = learning.materials.filter(item => !filter || item.subject === filter);
+  const homework=studentHomeworkList(learning.homework,learning.submissions,homeworkFilter,clock);
   return <div className="student-learning">
     <section className={`${inClassroom ? "panel" : "learning-homework-workspace"} learning-homework-panel`} hidden={view !== "homework"}>
       <h2 className="sr-only">{t("我的功课")}</h2>
-      <LearningListDetail historyKey={`student:homework:${historyScope}`} items={learning.homework} summary={item=>{
+      <div className="homework-status-filter" aria-label={learningLabel("功课状态","Homework status")}>{([["todo",learningLabel("待完成","To do")],["submitted",t("已提交")],["all",learningLabel("全部","All")]] as const).map(([value,text])=><button key={value} type="button" aria-pressed={homeworkFilter===value} onClick={()=>{if(window.dispatchEvent(new Event("tickminder-navigate",{cancelable:true})))setHomeworkFilter(value);}}>{text}</button>)}</div>
+      <LearningListDetail historyKey={`student:homework:${historyScope}`} items={homework} detailItems={learning.homework} summary={item=>{
         const latest=latestSubmissions(learning.submissions.filter(s=>s.homeworkId===item.id))[0];
-        return {context:item.subject,meta:t("截止")+" · "+readable(item.dueAt),status:latest ? t("已提交")+(latest.late ? " · "+t("迟交") : "") : clock<item.startsAt ? t("尚未开始") : clock>item.dueAt ? t("已逾期，仍可提交") : t("待提交")};
+        return {context:[item.subject,!inClassroom&&item.classroomTitle].filter(Boolean).join(" · "),meta:t("截止")+" · "+readable(item.dueAt),status:item.resubmitGrantId?learningLabel("可重新提交","Resubmission available"):latest ? t("已提交")+(latest.late ? " · "+t("迟交") : "") : clock<item.startsAt ? t("尚未开始") : clock>item.dueAt ? t("已逾期，仍可提交") : t("待提交")};
       }} renderDetail={item=><StudentHomeworkCard key={item.id} item={item} submissions={latestSubmissions(learning.submissions.filter(s => s.homeworkId === item.id))} mutate={mutate} busy={busy} onPlan={onPlan} maxLabel={maxPdfLabel(learning)} maxBytes={pdfLimit(learning)} illustrateSuccess={submittedId === item.id} onSubmitted={() => setSubmittedId(item.id)}/>}
-        empty={<PageState kind="empty" title="暂无分配的功课" action={onCalendar ? "打开学习日历" : undefined} onAction={onCalendar}/>}/>
+        empty={<PageState kind="empty" title={homeworkFilter==="todo"?learningLabel("没有待完成的功课","No homework to do"):homeworkFilter==="submitted"?learningLabel("暂无已提交功课","No submitted homework"):t("暂无分配的功课")} action={homeworkFilter!=="all"&&learning.homework.length?learningLabel("查看全部功课","View all homework"):undefined} onAction={()=>setHomeworkFilter("all")}/>}/>
     </section>
     <section className="panel" hidden={view !== "materials"}>
       <h2 className="sr-only">{t("我的教学资料")}</h2>

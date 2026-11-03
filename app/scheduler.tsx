@@ -59,6 +59,7 @@ import type { LearningState } from "./learning-portal";
 const GroupConsole=lazy(()=>import("./group-console").then(m=>({default:m.GroupConsole})));
 const TeacherLearning = lazy(() => import("./learning-portal").then(module => ({default: module.TeacherLearning})));
 const AdminLearning = lazy(() => import("./admin-learning").then(module => ({default: module.AdminLearning})));
+const HomeworkTasksWorkspace=lazy(()=>import('./homework-tasks-workspace').then(module=>({default:module.HomeworkTasksWorkspace})));
 const QuizWorkspace=lazy(()=>import('./quiz-workspace'));
 const ParentShell=lazy(()=>import('./parent-shell'));
 const FinanceWorkspace=lazy(()=>import('./finance-workspace'));
@@ -732,6 +733,8 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
     const badgeCounts=role==="admin"&&!canAdminAction(account,"attendance.view")?{...rawBadgeCounts,attention:0,overview:0}:rawBadgeCounts;
     const [selectedView, setSelectedView] = useState(initialQuizId?'quizzes':'home');
     const [openInvoiceList,setOpenInvoiceList]=useState(false);
+    const [classroomTaskTarget,setClassroomTaskTarget]=useState<{classroomId:string;taskId:string}|null>(null);
+    const clearClassroomTaskTarget=useCallback(()=>setClassroomTaskTarget(null),[]);
     const [statisticsDetail,setStatisticsDetail]=useDialogState<TeachingStatisticsDetailTarget|null>("teaching-statistics-detail",null);
     const lastCourseView = useRef<string>(defaultCourseView(role) || "calendar");
     const lastManagementViews = useRef({ people: defaultManagementView('people'), settings: defaultManagementView('settings') });
@@ -784,8 +787,8 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
     const managementView = managementArea(role, activeView);
     if (courseView) lastCourseView.current = activeView;
     if (managementView) lastManagementViews.current[managementView] = activeView as typeof lastManagementViews.current.people;
-    const title = primaryLabel || (courseView ? activeView === 'schedule' ? '安排课程' : "course.nav.title" : managementView ? managementTitle(managementView) : items.find(item => item.id === activeView)?.label || items[0].label);
-    const requiredScope: StateScope | null = activeView === "classrooms" ? "classrooms" : activeView === "accounts" ? "accounts" : ["homework", ...(role === "student" ? ["calendar"] : [])].includes(activeView) ? "learning" : null;
+    const title = primaryLabel || (activeView==='homework'?(language==='zh'?'功课与任务':'Homework & tasks'):courseView ? activeView === 'schedule' ? '安排课程' : "course.nav.title" : managementView ? managementTitle(managementView) : items.find(item => item.id === activeView)?.label || items[0].label);
+    const requiredScope: StateScope | null = activeView === "classrooms" ? "classrooms" : activeView === "accounts" ? "accounts" : activeView==='homework'&&canAdminAction(account,'homework.view')||role==='student'&&activeView==='calendar' ? "learning" : null;
     const scopeLoaded = !requiredScope || state?.loadedScopes?.includes(requiredScope) || (!state?.loadedScopes && Boolean(requiredScope === "learning" ? state?.learning : requiredScope === "classrooms" ? state?.classrooms : requiredScope === "accounts" ? state?.users : state?.users));
     const scopeError = requiredScope ? state?.scopeErrors?.[requiredScope] : undefined;
     useEffect(() => {
@@ -845,7 +848,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
         pageContent = <AccountSettings/>;
     } else if (activeView === "classrooms" && role !== "pending") {
         const classPlans = role === "teacher" ? (state?.plans || []).map(plan => ({ student: plan.student, subject: plan.subject,subjectId:plan.subjectId,syllabusId:plan.syllabusId,grade:plan.grade, teacherName: account.teacherName || "", active: true })) : ((canAdminAction(account,"plans.view")?state?.allPlans:state?.planOptions) || []).map(plan => ({ student: plan.student, subject: plan.subject,subjectId:plan.subjectId,syllabusId:plan.syllabusId,grade:plan.grade, teacherName: plan.teacherName, active: plan.active }));
-        pageContent = <ClassroomsPage role={role} classes={state?.classrooms || []} terms={state?.terms || state?.termOptions || []} learning={learning} learningReady={learningReady} learningError={state?.scopeErrors?.learning} loadLearning={force => ensureScope("learning", force)} teacherName={account.teacherName} teachers={role === "teacher" && account.teacherName ? [account.teacherName] : state?.teachers || []} plans={classPlans} mutate={classroomMutate} learningMutate={learningMutate} busy={busy} onCalendar={() => choose("calendar")}/>;
+        pageContent = <ClassroomsPage role={role} classes={state?.classrooms || []} terms={state?.terms || state?.termOptions || []} learning={learning} learningReady={learningReady} learningError={state?.scopeErrors?.learning} loadLearning={force => ensureScope("learning", force)} teacherName={account.teacherName} teachers={role === "teacher" && account.teacherName ? [account.teacherName] : state?.teachers || []} plans={classPlans} mutate={classroomMutate} learningMutate={learningMutate} busy={busy} onCalendar={() => choose("calendar")} taskTarget={classroomTaskTarget} onTaskTargetOpened={clearClassroomTaskTarget}/>;
     } else if (role === "admin") {
         if (activeView === "homework" || activeView === "materials") {
             pageContent = <AdminLearning key={activeView} learning={learning} view={activeView} onChanged={()=>ensureScope("learning",true)}/>;
@@ -885,6 +888,8 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
         }
     }
 
+    if(activeView==='homework'&&role!=='pending')pageContent=<HomeworkTasksWorkspace key={`${account.id}:${account.groupId}`} role={role} canHomework={canAdminAction(account,'homework.view')} canTasks={canAdminAction(account,'tasks.view')&&canView('classrooms')} canReview={canAdminAction(account,'tasks.review')} onClasses={()=>choose('classrooms')} onOpenTask={(classroomId,taskId)=>{if(!canView('classrooms')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;setClassroomTaskTarget({classroomId,taskId});choose('classrooms');}}>{canAdminAction(account,'homework.view')?learningReady?pageContent:<PageState kind={scopeError?"error":"loading"} title={scopeError?"页面加载失败":"正在加载…"} description={scopeError} action={scopeError?"重试":undefined} onAction={()=>void ensureScope("learning",true)}/>:null}</HomeworkTasksWorkspace>;
+
     if(activeView==="calendar"&&!calendarReady&&state?.coreError)pageContent=<><PageState kind="error" title="页面加载失败" description={state.coreError} action="重试" onAction={()=>void reload()}/>{pageContent}</>;
     if(activeView === "materials" && role !== "pending") pageContent=<TeachingResources key={account.groupId} ready={learningReady} error={state?.scopeErrors?.learning} load={force=>ensureScope("learning",force)} setActiveScopes={setActiveScopes}>{pageContent}</TeachingResources>;
     return <NotificationsProvider inboxOpen={activeView==="notifications"} groupId={account.groupId || ""} key={`${account.id}:${role}:${account.groupId}`} accountId={account.id || ""} language={language}><div className="app-shell shell-wave1 four-entry-shell" data-home-view={activeView==='home'?'true':undefined}>{statisticsDetail&&(role==="admin"||role==="teacher")&&<Suspense fallback={<PageState kind="loading" title="正在加载…"/>}><TeachingStatisticsDetails key={account.groupId+permissionSignature} target={statisticsDetail} role={role} lang={language} mutate={mutate} busy={busy} close={()=>setStatisticsDetail(null)} onOpenFinance={openAttendanceFinance}/></Suspense>}
@@ -904,7 +909,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
                 {message && state && !state.error && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("关闭")}>×</button></div>}
 
                 {role === "teacher" && state && !state.error && !(state.plans || []).length && <div className="notice">{t("暂无负责的学生科目。请联系管理员完成课程分配。")}</div>}
-                <FilterScope.Provider value={`${account.id || "anonymous"}:${account.groupId || "none"}`}>{role !== "pending" && activeView !== "quizzes" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "页面加载失败" : "正在加载…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : !scopeLoaded ? <PageState kind={scopeError ? "error" : "loading"} title={scopeError ? "页面加载失败" : "正在加载…"} description={scopeError} action={scopeError ? "重试" : undefined} onAction={() => { if (requiredScope) void ensureScope(requiredScope, true); }}/> : <Suspense fallback={<PageState kind="loading" title="正在加载…"/>}>{courseView ? <div id="course-view-content" data-testid="course-view-content" data-course-leaf={activeView}>{pageContent}</div> : managementView ? <div id="management-view-content" data-testid="management-view-content" data-management-leaf={activeView}>{pageContent}</div> : pageContent}</Suspense>}</FilterScope.Provider>
+                <FilterScope.Provider value={`${account.id || "anonymous"}:${account.groupId || "none"}`}>{role !== "pending" && activeView !== "quizzes" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "页面加载失败" : "正在加载…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : !scopeLoaded && activeView!=="homework" ? <PageState kind={scopeError ? "error" : "loading"} title={scopeError ? "页面加载失败" : "正在加载…"} description={scopeError} action={scopeError ? "重试" : undefined} onAction={() => { if (requiredScope) void ensureScope(requiredScope, true); }}/> : <Suspense fallback={<PageState kind="loading" title="正在加载…"/>}>{courseView ? <div id="course-view-content" data-testid="course-view-content" data-course-leaf={activeView}>{pageContent}</div> : managementView ? <div id="management-view-content" data-testid="management-view-content" data-management-leaf={activeView}>{pageContent}</div> : pageContent}</Suspense>}</FilterScope.Provider>
             </main>
         </div>
         <MobileBottomNavigation primary items={bottomItems} active={bottomActive} onNavigate={choose} ariaLabel={language==='zh'?'主要功能':'Primary navigation'} hidden={busy}/>

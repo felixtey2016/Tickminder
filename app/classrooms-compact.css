@@ -149,3 +149,26 @@
   .app-shell .classrooms-wave2 .classroom-label-short { display: inline; }
   .app-shell .classrooms-wave2 .classroom-new-button { padding-inline: 10px; }
 }
+
+/* Keep class discovery ahead of the less frequent directory settings. */
+.app-shell .classrooms-wave2 .classroom-picker .classroom-directory-primary { grid-template-columns: minmax(0,1.4fr) minmax(0,1fr); margin: 8px 0 10px; }
+.app-shell .classrooms-wave2 .classroom-search-field { position: relative; min-width: 0; }
+.app-shell .classrooms-wave2 .classroom-search-field > svg { position: absolute; inset-inline-start: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--ui-muted); }
+.app-shell.shell-wave1 .classrooms-page.classrooms-wave2 .classroom-picker .classroom-directory-primary .classroom-search-field > input[type=search] { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 9px 12px 9px 38px; }
+.app-shell .classrooms-wave2 .classroom-picker > .filter-panel { margin: 10px 0; }
+.app-shell .classrooms-wave2 .classroom-picker .classroom-directory-academic { grid-template-columns: repeat(3,minmax(0,1fr)); margin: 0; }
+.app-shell .classrooms-wave2 .classroom-directory-filter-actions { grid-column: 1 / -1; flex-wrap: wrap; }
+.app-shell .classrooms-wave2 .classroom-directory-list-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.app-shell .classrooms-wave2 .classroom-directory-list-tools > span { margin-inline-end: auto; }
+.app-shell .classrooms-wave2 .classroom-teacher-group { margin: 10px 0; border-radius: 8px; }
+.app-shell .classrooms-wave2 .classroom-teacher-group > summary { min-height: 44px; padding: 10px 12px; font-size: 14px; }
+.app-shell .classrooms-wave2 .classroom-teacher-group .classroom-chips { margin-top: 0; }
+.app-shell .classrooms-wave2 .classroom-chips .classroom-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--ui-text); }
+.app-shell .classrooms-wave2 .classroom-card-heading > strong { min-width: 0; overflow-wrap: anywhere; }
+.app-shell .classrooms-wave2 .classroom-card-heading > svg { flex: none; color: var(--ui-muted); }
+.app-shell .classrooms-wave2 .classroom-context-meta { margin: 4px 0 0; color: var(--ui-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+@media (max-width:600px) {
+  .app-shell .classrooms-wave2 .classroom-picker .classroom-directory-primary,
+  .app-shell .classrooms-wave2 .classroom-picker .classroom-directory-academic { grid-template-columns: minmax(0,1fr); }
+  .app-shell .classrooms-wave2 .classroom-search-field > input[type=search] { font-size: 16px; }
+}

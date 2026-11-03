@@ -1,7 +1,7 @@
 import {NextResponse} from 'next/server';
 import {currentBusinessAccount} from '@/lib/auth';
 import {ClassroomTaskError} from '@/lib/classroom-tasks';
-import {mutateClassroomTask, readClassroomTasks} from '@/lib/classroom-tasks-server';
+import {mutateClassroomTask, readClassroomTasks, readClassroomTaskInbox} from '@/lib/classroom-tasks-server';
 
 const headers = {'cache-control': 'private, no-store'};
 const response = (body: unknown, status = 200) => NextResponse.json(body, {status, headers});
@@ -35,7 +35,7 @@ async function readBody(request: Request): Promise<Record<string, unknown>> {
 export async function GET(request: Request) {
   const actor = await currentBusinessAccount();
   if (!actor) return response({error: '请先登录'}, 401);
-  try { return response(await readClassroomTasks(actor, new URL(request.url).searchParams)); }
+  try { const params=new URL(request.url).searchParams;return response(await (params.get('view')==='inbox'?readClassroomTaskInbox(actor,params):readClassroomTasks(actor,params))); }
   catch (error) { return failed(error); }
 }
 
