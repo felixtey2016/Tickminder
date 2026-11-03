@@ -2,15 +2,21 @@
 import {useDisplayPreferences} from '@/lib/use-display-preferences';
 import {displayFormatter} from '@/lib/display-preferences';
 import {PasswordInput} from '@/components/password-input';
-import {PasswordRecoveryButton} from './password-recovery';
+import {LoginForm} from './login-form';
+import {workspaceViewFromPath,legacyWorkspaceView,workspaceUrl,workspaceNeedsCore} from '@/lib/workspace-route';
 import {TimeInput} from '@/components/time-input';
 import {ServiceBrandIcon} from '@/components/service-brand-icon';
 import {MonthInput} from '@/components/month-input';
-import {SessionAttendanceBoard,SessionAttendanceDialog,SessionAttendanceLoaderDialog,TeachingHoursPanel} from "./session-attendance";
+const SessionAttendanceBoard=lazy(()=>import("./session-attendance").then(m=>({default:m.SessionAttendanceBoard})));
+const SessionAttendanceDialog=lazy(()=>import("./session-attendance").then(m=>({default:m.SessionAttendanceDialog})));
+const SessionAttendanceLoaderDialog=lazy(()=>import("./session-attendance").then(m=>({default:m.SessionAttendanceLoaderDialog})));
+const TeachingHoursPanel=lazy(()=>import("./session-attendance").then(m=>({default:m.TeachingHoursPanel})));
 import type {AttendanceSession} from "@/lib/attendance-types";
 import '@/lib/finance-round2-i18n';
 import '@/lib/parents-i18n';
-import {GroupSessionPlanner,GroupSessionBoard,type GroupSession,type GroupSessionRequest} from "./class-session-schedule";
+import type {GroupSession,GroupSessionRequest} from "./class-session-schedule";
+const GroupSessionPlanner=lazy(()=>import("./class-session-schedule").then(m=>({default:m.GroupSessionPlanner})));
+const GroupSessionBoard=lazy(()=>import("./class-session-schedule").then(m=>({default:m.GroupSessionBoard})));
 import {uniqueSessionLessons} from "@/lib/class-session-display";
 import type {SessionLesson} from "@/lib/class-session-display";
 import {ClassSessionLabel} from "@/components/class-session-label";
@@ -18,7 +24,7 @@ import {CourseCompletionFilter} from "@/components/course-completion-filter";
 import {matchesCourseCompletion} from "@/lib/course-completion";
 import {groupFetch,setClientGroup} from "@/lib/group-client";
 
-import { BulkDeleteTool } from "./bulk-delete";
+const BulkDeleteTool=lazy(()=>import("./bulk-delete").then(m=>({default:m.BulkDeleteTool})));
 import { FilterScope, useFilterPreference } from "@/lib/filter-preferences";
 import { getLanguage, setLanguage, t, type Language } from "@/lib/i18n";
 import {readBrowserLanguagePreference,rememberLanguagePreference} from '@/lib/language-preference';
@@ -33,19 +39,20 @@ import { actionFailureMessage } from "@/lib/action-feedback";
 import { BarChart3, CalendarClock, ContactRound, LibraryBig, ListChecks, UserRound, UsersRound, SquarePen, ArrowLeftRight,Building2,NotebookPen } from "lucide-react";
 import { BRAND_NAME } from "@/lib/brand";
 import { LegalLinks } from "@/components/legal-links";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Bell, BookOpen, CalendarDays, CalendarPlus, ChevronDown, ClipboardCheck, Clock3, FileSpreadsheet, FileText, GraduationCap, History, LayoutDashboard, List, LogOut, RefreshCw, Settings, ShieldCheck, UserRoundPlus, Users, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { LessonCalendar } from "./week-calendar";
+const LessonCalendar=lazy(()=>import("./week-calendar").then(m=>({default:m.LessonCalendar})));
 import { LessonHistory } from "./lesson-history";
 import {FloatingBackButton} from "@/components/floating-back-button";
 import { ConflictPreview, conflictDescription, type ConflictDetail } from "./conflict-preview";
-import { ActivityLog } from "./activity-log";
+const ActivityLog=lazy(()=>import("./activity-log").then(m=>({default:m.ActivityLog})));
 import { useLessonWebMcp } from "./webmcp";
 import { monthlyAttendanceForPair } from "@/lib/lesson-rules";
-import { StudentPortal, TeacherPortal } from "./portals";
-import {TeachingResources} from "./teaching-resources";
+const StudentPortal=lazy(()=>import("./portals").then(m=>({default:m.StudentPortal})));
+const TeacherPortal=lazy(()=>import("./portals").then(m=>({default:m.TeacherPortal})));
+const TeachingResources=lazy(()=>import("./teaching-resources").then(m=>({default:m.TeachingResources})));
 import type {TeachingStatisticsDetailTarget} from "@/lib/teaching-statistics-types";
 const TeachingStatistics=lazy(()=>import("./teaching-statistics").then(m=>({default:m.TeachingStatistics})));
 const TeachingStatisticsDetails=lazy(()=>import("./teaching-statistics-details").then(m=>({default:m.TeachingStatisticsDetails})));
@@ -70,17 +77,23 @@ const ParentShell=lazy(()=>import('./parent-shell'));
 const FinanceWorkspace=lazy(()=>import('./finance-workspace'));
 import type { Classroom } from "./classrooms-page";
 const ClassroomsPage = lazy(() => import("./classrooms-page").then(module => ({default: module.ClassroomsPage})));
-import { Timetable } from "./timetables";
-import { SubjectAdmin } from "./roster-forms";
+const Timetable=lazy(()=>import("./timetables").then(m=>({default:m.Timetable})));
+const SubjectAdmin=lazy(()=>import("./roster-forms").then(m=>({default:m.SubjectAdmin})));
 const SheetSyncPanel = lazy(() => import("./sheet-sync-panel").then(module => ({default: module.SheetSyncPanel})));
 const TermManager = lazy(() => import("./term-manager").then(module => ({default: module.TermManager})));
 const AccountDirectory = lazy(() => import("./account-directory").then(module => ({default: module.AccountDirectory})));
-import { AccountSettings } from "./account-settings";
+const AccountSettings=lazy(()=>import("./account-settings").then(m=>({default:m.AccountSettings})));
 import { NotificationsProvider, MenuBadge, detachPushOnLogout } from "./notifications";
 const NotificationWorkspace=lazy(()=>import('./notification-workspace').then(module=>({default:module.NotificationWorkspace})));
 import type {CourseTaskCounts,CourseTeachingSummary} from "@/lib/course-query";
+import type {HomeSummary} from "@/lib/home-summary-types";
 import {monthCalendarRange,type CalendarRange} from "@/lib/course-calendar-range";
-import {PagedAttendanceBoard,PagedGroupSessions,PagedLessonRows,PagedReschedules,TeachingSummary,MakeupOriginalPicker} from "./course-panels";
+const PagedAttendanceBoard=lazy(()=>import("./course-panels").then(m=>({default:m.PagedAttendanceBoard})));
+const PagedGroupSessions=lazy(()=>import("./course-panels").then(m=>({default:m.PagedGroupSessions})));
+const PagedLessonRows=lazy(()=>import("./course-panels").then(m=>({default:m.PagedLessonRows})));
+const PagedReschedules=lazy(()=>import("./course-panels").then(m=>({default:m.PagedReschedules})));
+const TeachingSummary=lazy(()=>import("./course-panels").then(m=>({default:m.TeachingSummary})));
+const MakeupOriginalPicker=lazy(()=>import("./course-panels").then(m=>({default:m.MakeupOriginalPicker})));
 import { courseBadgeCount, defaultCourseView, isCourseView, normalizeCourseView } from "@/lib/course-navigation";
 import { CourseNavigation } from "@/components/course-navigation";
 import { ManagementNavigation } from "@/components/management-navigation";
@@ -90,7 +103,7 @@ import { DeleteButton, DirectoryFilters, PeopleDirectory } from "./directory-too
 import { AdminPermissionContext, useAdminAction } from "./admin-permission-context";
 import { canAdminAction, canAdminView, adminMutationGrant, type AdminPermissionAccount } from "@/lib/admin-permission-client";
 
-type Account = AdminPermissionAccount & {
+export type Account = AdminPermissionAccount & {
     id?: string;
     name: string;
     email?: string;
@@ -237,15 +250,17 @@ function actionSuccessText(action: string) {
 }
 async function request(url: string, options?: RequestInit): Promise<any> { const r = await groupFetch(url, { ...options, cache: "no-store" }); const v = await readApiJson<{ error?: string; [key: string]: any }>(r); if (!r.ok)
     throw Object.assign(new Error(v.conflict ? conflictDescription(v.conflict as ConflictDetail) : t(r.status === 401 && url !== "/api/auth" ? "登录已过期，请重新登录" : v.error || "请求失败")), { status: r.status }); return v; }
-export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
+export type SchedulerAuth = {account: Account | null; clientId: string | null};
+export function Scheduler({initialQuizId,initialAuth,onAuthChange}:{initialQuizId?:string;initialAuth?:SchedulerAuth;onAuthChange?:(auth:SchedulerAuth)=>void}={}) {
  useDisplayPreferences();
     const [linkedQuizId,setLinkedQuizId]=useState<string|undefined>(()=>validQuizLinkId(initialQuizId)?initialQuizId:undefined);
     useEffect(()=>{setLinkedQuizId(validQuizLinkId(initialQuizId)?initialQuizId:undefined);},[initialQuizId]);
+    useEffect(()=>{const restore=()=>queueMicrotask(()=>setLinkedQuizId(quizLinkIdFromPath(window.location.pathname)||undefined));window.addEventListener("popstate",restore);return()=>window.removeEventListener("popstate",restore);},[]);
     const exitLinkedQuiz=useCallback(()=>{
         setLinkedQuizId(undefined);
         // Only replace our strict internal route; never accept a return URL.
         if(quizLinkIdFromPath(window.location.pathname)){
-            const url=new URL(window.location.href);url.pathname='/';url.searchParams.delete('assignment');
+            const url=new URL(window.location.href);url.pathname='/quizzes';url.searchParams.delete('assignment');
             window.history.replaceState(window.history.state,'',url);
         }
     },[]);
@@ -256,10 +271,9 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
         setLanguage(next);setLanguageState(next);setLanguageReady(true);
     }, []);
     function changeLanguage(next: Language) { setLanguage(next);setLanguageState(next);rememberLanguagePreference(next); }
-    const [auth, setAuth] = useState<{
-        account: Account | null;
-        clientId: string | null;
-    } | null>(null);
+    const [auth, setAuth] = useState<SchedulerAuth | null>(initialAuth || null);
+    const authChange=useRef(onAuthChange);authChange.current=onAuthChange;
+    useEffect(()=>{if(auth)authChange.current?.(auth);},[auth]);
     setClientGroup(auth?.account?.groupId);
     const [invitedGroup,setInvitedGroup]=useState("");
     useEffect(()=>{const code=new URLSearchParams(location.search).get("group");if(code)void request(`/api/groups?code=${encodeURIComponent(code)}`).then(r=>setInvitedGroup(r.group.name)).catch(e=>setMessage(e.message));},[]);
@@ -281,6 +295,13 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
     const latestStateRequest = useRef(0);
     const revisionRef = useRef<number | null>(null);
     const coreFailureMessage=useRef('');
+    const coreWanted=useRef(false),coreLoaded=useRef(false),coreIdentity=useRef(''),coreVersion=useRef(0);
+    const [coreReady,setCoreReady]=useState(false);
+    const corePending=useRef<{key:string;promise:Promise<void>}|null>(null);
+    const coreLessons=useRef<{identity:string;lessons:Lesson[]}>({identity:'',lessons:[]});
+    const identityKey=JSON.stringify([auth?.account?.id,auth?.account?.groupId,auth?.account?.role,auth?.account?.adminPermissions,auth?.account?.teacherName,auth?.account?.studentName]);
+    const activeIdentity=useRef(identityKey);activeIdentity.current=identityKey;
+    const setCoreNeeded=useCallback((needed:boolean)=>{coreWanted.current=needed;},[]);
     const channelRef = useRef<BroadcastChannel | null>(null);
     const loadedScopes = useRef(new Set<StateScope>());
     const wantedScopes = useRef(new Set<StateScope>());
@@ -290,6 +311,7 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
     activeAccountId.current = auth?.account?.id;
     const ensureScope = useCallback(async (scope: StateScope, force = false) => {
         const accountId = auth?.account?.id;
+        const requestIdentity=activeIdentity.current;
         if (!accountId || auth?.account?.role==='parent') return;
         if (!force && loadedScopes.current.has(scope)) return;
         const pending = scopeRequests.current.get(scope);
@@ -298,7 +320,7 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
         const promise = (async () => {
             try {
                 const next = await request(`/api/state?scope=${scope}`) as State;
-                if (epoch !== latestStateRequest.current || accountId !== activeAccountId.current) return;
+                if (epoch !== latestStateRequest.current || accountId !== activeAccountId.current || requestIdentity!==activeIdentity.current) return;
                 if (next.account.id !== accountId) return;
                 if (JSON.stringify(next.account.adminPermissions)!==JSON.stringify(auth?.account?.adminPermissions)) {
                     // A lazy scope can observe revocation before the next poll.
@@ -322,14 +344,25 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
                         scopeErrors: {...previous.scopeErrors, [scope]: undefined}};
                 });
             } catch (error) {
-                if (epoch === latestStateRequest.current && accountId === activeAccountId.current) setState(previous => previous ? {...previous, scopeErrors: {...previous.scopeErrors, [scope]: actionFailureMessage(error)}} : previous);
+                if (epoch === latestStateRequest.current && accountId === activeAccountId.current && requestIdentity===activeIdentity.current) setState(previous => previous ? {...previous, scopeErrors: {...previous.scopeErrors, [scope]: actionFailureMessage(error)}} : previous);
             }
         })();
         scopeRequests.current.set(scope, promise);
         try { await promise; } finally { if (scopeRequests.current.get(scope) === promise) scopeRequests.current.delete(scope); }
-    }, [auth?.account?.id,auth?.account?.adminPermissions]);
-    const refreshState = useCallback(async (silent: boolean) => {
+    }, [identityKey]);
+    const refreshState = useCallback(async (silent: boolean, forceCore=false) => {
         if(auth?.account?.role==='parent'){setState(null);return;}
+        if(!coreWanted.current&&!forceCore){
+            latestStateRequest.current++;coreVersion.current++;scopeRequests.current.clear();
+            coreLoaded.current=false;setCoreReady(false);
+            loadedScopes.current.clear();
+            setState(previous=>previous?{...previous,loadedScopes:[]}:previous);
+            window.dispatchEvent(new Event("tickminder:data-changed"));
+            return;
+        }
+        const requestIdentity=activeIdentity.current;
+        coreLoaded.current=false;
+        if(coreIdentity.current!==requestIdentity)setCoreReady(false);
         const requestId = ++latestStateRequest.current;
         setState(previous=>previous?{...previous,coreError:undefined}:previous);
         scopeRequests.current.clear();
@@ -337,7 +370,7 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
             // A completed mutation can hold an older reload callback while the
             // user has already selected another reporting/calendar range.
             const next = await request(`/api/state?scope=core&${new URLSearchParams(coreQueryRef.current)}`) as State;
-            if (requestId !== latestStateRequest.current) return;
+            if (requestId !== latestStateRequest.current || requestIdentity!==activeIdentity.current) return;
             if (next.account?.id && next.account.id !== auth?.account?.id) {
                 setAuth(await request("/api/auth"));
                 setState(null);
@@ -346,6 +379,8 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
             }
             if(coreFailureMessage.current){const prior=coreFailureMessage.current;setMessage(current=>current===prior?"":current);coreFailureMessage.current="";}
             revisionRef.current = typeof next.revision === "number" ? next.revision : null;
+            coreIdentity.current=requestIdentity;coreLoaded.current=true;setCoreReady(true);
+            coreLessons.current={identity:requestIdentity,lessons:next.lessons||[]};
             // Non-visible scopes become stale, rather than being reread after
             // every mutation for the rest of this signed-in session.
             const retainedScopes = [...wantedScopes.current].filter(scope => loadedScopes.current.has(scope));
@@ -363,16 +398,29 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
             await Promise.all([...wantedScopes.current].map(scope => ensureScope(scope, true)));
             window.dispatchEvent(new Event("tickminder:data-changed"));
         } catch (error) {
-            if (requestId !== latestStateRequest.current) return;
+            if (requestId !== latestStateRequest.current || requestIdentity!==activeIdentity.current) return;
             const status = (error as Error & { status?: number }).status;
             if (status === 401 || status === 403) {
                 try { setAuth(await request("/api/auth")); setState(null); revisionRef.current = null; }
                 catch { /* Retry on the next foreground check. */ }
             } else {setState(previous=>previous?{...previous,coreError:actionFailureMessage(error)}:previous);if(!silent){coreFailureMessage.current=(error as Error).message;setMessage(coreFailureMessage.current);}}
         }
-    }, [selectedMonth, calendarRange.from,calendarRange.to,auth?.account?.id, ensureScope]);
+    }, [selectedMonth, calendarRange.from,calendarRange.to,identityKey, ensureScope]);
     useEffect(() => { const refreshAuth = () => { void request("/api/auth").then(setAuth).catch(alertActionFailure); }; window.addEventListener("timelyo:auth-refresh", refreshAuth); return () => window.removeEventListener("timelyo:auth-refresh", refreshAuth); }, []);
     const reload = useCallback(() => refreshState(false), [refreshState]);
+    const ensureCore=useCallback(async(force=false)=>{
+        const key=activeIdentity.current+":"+JSON.stringify(coreQueryRef.current)+":"+coreVersion.current;
+        if(!force&&coreLoaded.current&&coreIdentity.current===activeIdentity.current)return;
+        if(corePending.current?.key===key)return corePending.current.promise;
+        const promise=refreshState(false,force);corePending.current={key,promise};
+        try{await promise;}finally{if(corePending.current?.promise===promise)corePending.current=null;}
+    },[refreshState]);
+    const getToolLessons=useCallback(async()=>{
+        const identity=activeIdentity.current;
+        await ensureCore(true);
+        if(identity!==activeIdentity.current||!coreLoaded.current||coreLessons.current.identity!==identity)throw new Error(t('页面加载失败'));
+        return coreLessons.current.lessons;
+    },[ensureCore]);
     useEffect(() => { const refresh = () => { void refreshState(true); }; window.addEventListener('tickminder-roster-updated', refresh); return () => window.removeEventListener('tickminder-roster-updated', refresh); }, [refreshState]);
     useEffect(() => {
         if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
@@ -388,9 +436,21 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
         }).catch(() => { /* Normal loading works when browser storage is unavailable. */ });
         return () => { active = false; };
     }, []);
-    useEffect(() => { loadedScopes.current.clear(); wantedScopes.current.clear(); scopeRequests.current.clear(); }, [auth?.account?.id]);
-    useEffect(() => { let active = true; request("/api/auth").then(a => { if (active) setAuth(a); }).catch(e => { if (active) setMessage(e.message); }); return () => { active = false; }; }, []);
-    useEffect(() => { if (auth?.account && auth.account.role!=='parent' && !auth.account.requiresAccountSetup && !auth.account.mustChangePassword && !auth.account.requiresStudentPhone && auth.account.nameConfirmedAt) void reload(); }, [auth?.account?.id, auth?.account?.role, auth?.account?.requiresAccountSetup, auth?.account?.requiresStudentPhone, auth?.account?.mustChangePassword, auth?.account?.nameConfirmedAt, reload]);
+    useLayoutEffect(() => {
+        // Clear the previous binding before the new Workspace's passive effects
+        // declare their data needs. Account id alone does not identify a role.
+        latestStateRequest.current++;coreVersion.current++;
+        coreWanted.current=false;coreLoaded.current=false;coreIdentity.current="";
+        corePending.current=null;coreLessons.current={identity:"",lessons:[]};
+        loadedScopes.current.clear();wantedScopes.current.clear();scopeRequests.current.clear();
+        revisionRef.current=null;setCoreReady(false);setState(null);setModal(null);
+    }, [identityKey,setModal]);
+    useEffect(() => { if(initialAuth)return;let active = true; request("/api/auth").then(a => { if (active) setAuth(a); }).catch(e => { if (active) setMessage(e.message); }); return () => { active = false; }; }, [initialAuth]);
+    useEffect(() => {
+        // Reporting range changes refresh an already-visible heavy page only.
+        coreLoaded.current=false;
+        if(coreWanted.current&&auth?.account&&auth.account.role!=='parent')void ensureCore();
+    },[selectedMonth,calendarRange.from,calendarRange.to,identityKey,ensureCore]);
     useEffect(() => {
         const account = auth?.account;
         if (!account || account.mustChangePassword || account.requiresAccountSetup || account.requiresStudentPhone || !account.nameConfirmedAt) return;
@@ -414,7 +474,7 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
                         loadedScopes.current.clear();wantedScopes.current.clear();scopeRequests.current.clear();setModal(null);setState(null);
                         setAuth(previous=>previous?.account?{...previous,account:{...previous.account,adminPermissions}}:previous);
                         await refreshState(true);
-                    } else if (active && (revisionRef.current === null || revision !== revisionRef.current)) await refreshState(true);
+                    } else if (active && (revisionRef.current === null || revision !== revisionRef.current)) {revisionRef.current=revision;await refreshState(true);}
                 }
             } catch (error) {
                 const status = (error as Error & { status?: number }).status;
@@ -575,7 +635,9 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
         setBusy(false);
     } }
     const lessons = useMemo(() => [...(state?.lessons || [])].sort((a, b) => a.plannedStart.localeCompare(b.plannedStart)), [state?.lessons]);
-    useLessonWebMcp(auth?.account?.role, lessons, reload);
+    const toolAccount=auth?.account;
+    const toolRole=toolAccount&&!toolAccount.mustChangePassword&&!toolAccount.requiresAccountSetup&&toolAccount.nameConfirmedAt&&!toolAccount.requiresStudentPhone&&!toolAccount.groupUnavailable&&!toolAccount.showGoogleLinkOnboarding?toolAccount.role:undefined;
+    useLessonWebMcp(toolRole, lessons, reload,getToolLessons,identityKey);
     if (!languageReady)return <main className="auth-loading" data-testid="device-language-loading"><p role="status">正在加载… / Loading…</p></main>;
     if (!auth)
         return <main className="auth-loading"><LanguageSwitcher language={language} change={changeLanguage}/><PageState kind={message ? "error" : "loading"} title={message ? "页面加载失败" : "正在加载…"} description={message ? actionFailureMessage(new Error(message)) : undefined} action={message ? "重试" : undefined} onAction={() => { setMessage(""); void request("/api/auth").then(setAuth).catch(error => setMessage(actionFailureMessage(error))); }}/></main>;
@@ -594,28 +656,12 @@ export function Scheduler({initialQuizId}:{initialQuizId?:string}={}) {
     if(account.showGoogleLinkOnboarding)return <GoogleLinkOnboarding name={account.name} clientId={auth.clientId} language={language} changeLanguage={changeLanguage} onCompleted={async()=>setAuth(await request('/api/auth'))} logout={logout}/>;
     if(account.role==='parent')return <Suspense fallback={<p role="status">{t('正在加载…')}</p>}><ParentShell account={account} initialQuizId={linkedQuizId} onLinkedQuizExit={exitLinkedQuiz} language={language} changeLanguage={changeLanguage} logout={logout} refreshIdentity={async()=>setAuth(await request('/api/auth'))}/></Suspense>;
     const admin = account.role === "admin";
-    return <AdminPermissionContext.Provider value={account}><Workspace key={`${account.id}:${account.groupId}:${JSON.stringify(account.adminPermissions)}`} initialQuizId={linkedQuizId} onLinkedQuizExit={exitLinkedQuiz} account={account} state={state} ensureScope={ensureScope} setActiveScopes={setActiveScopes} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} calendarDate={calendarDate} setCalendarDate={setCalendarDate} calendarRange={calendarRange} onCalendarRangeChange={onCalendarRangeChange} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/></AdminPermissionContext.Provider>;
+    return <AdminPermissionContext.Provider value={account}><Workspace key={identityKey} initialQuizId={linkedQuizId} onLinkedQuizExit={exitLinkedQuiz} account={account} state={state} coreReady={coreReady&&coreIdentity.current===identityKey} ensureCore={ensureCore} setCoreNeeded={setCoreNeeded} ensureScope={ensureScope} setActiveScopes={setActiveScopes} lessons={lessons} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} calendarDate={calendarDate} setCalendarDate={setCalendarDate} calendarRange={calendarRange} onCalendarRangeChange={onCalendarRangeChange} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/></AdminPermissionContext.Provider>;
 }
 function BrandLogo({ small = false }: { small?: boolean }) { return <span className={`brand-logo ${small ? "small" : ""}`}><img src="/tickminder-logo.svg" width={small ? 40 : 80} height={small ? 40 : 80} alt={BRAND_NAME} /></span>; }
 function LanguageSwitcher({ language, change }: { language: Language; change: (next: Language) => void }) { return <div className="language-switch" role="group" aria-label={t("语言")}><button type="button" aria-pressed={language === "zh"} onClick={() => change("zh")}>中文</button><span className="language-separator" aria-hidden="true">|</span><button type="button" aria-pressed={language === "en"} onClick={() => change("en")}>EN</button></div>; }
 function SignedInIdentity({ account }: { account: Account }) {
     return <div className="signed-in-identity"><span>{t("当前登录账号")}</span><strong>{account.name}</strong><span className="signed-in-method">{account.username ? `${t("用户名")} · ${account.username}${account.email ? ` · Google: ${account.email}` : ""}` : `Google · ${account.email || "—"}`}</span></div>;
-}
-function LoginForm({ googleButton, clientId, login, busy, message, language, changeLanguage,invitedGroup }: {
-    invitedGroup?:string;
-    googleButton: React.RefObject<HTMLDivElement | null>;
-    clientId: string | null;
-    login: (username: string, password: string) => Promise<void>;
-    busy: boolean;
-    message: string;
-    language: Language;
-    changeLanguage: (next: Language) => void;
-}) {
-    const [username, setUsername] = useState("");
-    const [password, setPassword] = useState("");
-    return <main className="auth-shell auth-login-shell"><div className="auth-layout"><section className="auth-story"><div className="auth-story-brand"><BrandLogo/><strong>{BRAND_NAME}</strong></div><img className="auth-story-illustration" src="/mascots/reading.png" width={512} height={512} alt="" loading="lazy" decoding="async"/><h2>{t("学习与协作")}</h2><p>{t("集中管理课程日程、功课与教学资料。")}</p></section><div className="auth-card"><div className="auth-login-heading"><div className="auth-mobile-brand"><BrandLogo small/><strong>{BRAND_NAME}</strong></div><LanguageSwitcher language={language} change={changeLanguage}/></div><p className="eyebrow">{language === "zh" ? `欢迎使用 ${BRAND_NAME}` : `Welcome to ${BRAND_NAME}`}</p><h1>{t("登录")}</h1>{invitedGroup&&<p className="notice">{t("注册加入")} · {invitedGroup}</p>}<p>{t("使用密码或 Google 账号登录")}</p>
-    <form onSubmit={e => { e.preventDefault(); login(username, password); }}><label>{t("邮箱或用户名")}<input required autoComplete="username" autoCapitalize="none" maxLength={254} value={username} onChange={e => setUsername(e.target.value)}/></label><label>{t("\u5BC6\u7801")}<PasswordInput required type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("登录")}</Button></form>
-    <p className="auth-divider">{t("\u6216\u4F7F\u7528 Google \u767B\u5F55")}</p>{clientId ? <div ref={googleButton} className="google-signin"/> : <div className="notice">{t("Google \u767B\u5F55\u5C1A\u672A\u914D\u7F6E\uFF1B\u53EF\u4EE5\u4F7F\u7528\u7BA1\u7406\u5458\u521B\u5EFA\u7684\u8D26\u53F7\u5BC6\u7801\u3002")}</div>}{busy && <small>{t("\u6B63\u5728\u9A8C\u8BC1\u8D26\u53F7\u2026")}</small>}{message && <div className="error" role="alert">{message}</div>}<PasswordRecoveryButton language={language} initialIdentifier={username} disabled={busy}/><p className="auth-legal-note">{t("登录前，请阅读服务条款与隐私政策。")}</p><LegalLinks language={language} className="auth-legal"/></div></div></main>;
 }
 function PasswordChange({ name, change, logout, busy, message, language, changeLanguage }: {
     name: string;
@@ -701,11 +747,12 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
     ],
 };
 
-function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope, setActiveScopes, lessons, message, setMessage, reload, logout, modal, setModal, mutate, learningMutate, classroomMutate, busy, selectedMonth, setSelectedMonth, language, changeLanguage,calendarDate,setCalendarDate,calendarRange,onCalendarRangeChange }: {
+function Workspace({ initialQuizId,onLinkedQuizExit,account, state, coreReady,ensureCore,setCoreNeeded,ensureScope, setActiveScopes, lessons, message, setMessage, reload, logout, modal, setModal, mutate, learningMutate, classroomMutate, busy, selectedMonth, setSelectedMonth, language, changeLanguage,calendarDate,setCalendarDate,calendarRange,onCalendarRangeChange }: {
     initialQuizId?:string;onLinkedQuizExit?:()=>void;
     calendarDate:string;setCalendarDate:(date:string)=>void;calendarRange:CalendarRange;onCalendarRangeChange:(range:CalendarRange)=>void;
     account: Account;
     state: State | null;
+    coreReady:boolean;ensureCore:()=>Promise<void>;setCoreNeeded:(needed:boolean)=>void;
     ensureScope: (scope: StateScope, force?: boolean) => Promise<void>;
     setActiveScopes: (scopes: StateScope[]) => void;
     lessons: Lesson[];
@@ -734,11 +781,23 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
     const canView=(view:string)=>items.some(item=>item.id===view);
     const [badgeNow,setBadgeNow]=useState(()=>Date.now());
     useEffect(()=>{const timer=window.setInterval(()=>setBadgeNow(Date.now()),30_000);return()=>window.clearInterval(timer);},[]);
-    const rawBadgeCounts=state?.taskCounts||{lessons:0,reschedule:0,overview:0,attention:0,pendingAttendance:0,pendingReview:0,makeupNeeded:0};
+    const badgeIdentity=JSON.stringify([account.id,account.groupId,role,account.adminPermissions]);
+    const [navigationSummary,setNavigationSummary]=useState<{identity:string;counts:CourseTaskCounts|null;error:boolean}>({identity:badgeIdentity,counts:null,error:false});
+    const acceptHomeSummary=useCallback((summary:HomeSummary|null)=>{
+        if(!summary||summary.accountId!==account.id||summary.groupId!==account.groupId)return;
+        setNavigationSummary({identity:badgeIdentity,counts:summary.navigationCounts,error:false});
+    },[account.id,account.groupId,badgeIdentity]);
+    useEffect(()=>{
+        if(coreReady&&state&&state.account.id===account.id&&state.account.groupId===account.groupId&&state.taskCounts)setNavigationSummary({identity:badgeIdentity,counts:state.taskCounts,error:false});
+    },[coreReady,state?.taskCounts,state?.account.id,state?.account.groupId,account.id,account.groupId,badgeIdentity]);
+    const knownBadgeCounts=navigationSummary.identity===badgeIdentity?navigationSummary.counts:null;
+    const rawBadgeCounts=knownBadgeCounts||{lessons:0,reschedule:0,overview:0,attention:0,pendingAttendance:0,pendingReview:0,makeupNeeded:0};
+    const courseBadge=(count:number)=>knownBadgeCounts?<MenuBadge count={count}/>:<span className="menu-count" role="status" aria-label={navigationSummary.error?(language==="zh"?"待办数量暂不可用":"Pending counts unavailable"):(language==="zh"?"正在加载待办数量":"Loading pending counts")}>{navigationSummary.error?"?":"…"}</span>;
+
     const calendarReady=state?.courseRange?.from===calendarRange.from&&state?.courseRange?.to===calendarRange.to;
     const calendarLessons=calendarReady?lessons:[];
     const badgeCounts=role==="admin"&&!canAdminAction(account,"attendance.view")?{...rawBadgeCounts,attention:0,overview:0}:rawBadgeCounts;
-    const [selectedView, setSelectedView] = useState(initialQuizId?'quizzes':'home');
+    const [selectedView, setSelectedView] = useState(() => initialQuizId ? "quizzes" : typeof window !== "undefined" ? legacyWorkspaceView(window.location.search, role) || workspaceViewFromPath(window.location.pathname, role) || "home" : "home");
     const [openInvoiceList,setOpenInvoiceList]=useState(false);
     const [classroomTaskTarget,setClassroomTaskTarget]=useState<{classroomId:string;taskId:string}|null>(null);
     const clearClassroomTaskTarget=useCallback(()=>setClassroomTaskTarget(null),[]);
@@ -746,47 +805,41 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
     const lastCourseView = useRef<string>(defaultCourseView(role) || "calendar");
     const lastManagementViews = useRef({ people: defaultManagementView('people'), settings: defaultManagementView('settings') });
     const currentViewRef=useRef(selectedView);currentViewRef.current=selectedView;
-    useEffect(() => {
-        const home = "home";
-        const normalizedView=(view:unknown):string=>view==='financeHub'&&canView('billing')?'billing':typeof view==='string'?normalizeManagementView(role,normalizeCourseView(role,view)):home;
+    const currentUrlRef=useRef(typeof window!=="undefined"?window.location.pathname+window.location.search:"/");
+    useLayoutEffect(() => {
+        const normalizedView=(view:unknown):string=>view==='financeHub'&&canView('billing')?'billing':view==='billing'&&role==='admin'&&!canView('billing')?'financeHub':typeof view==='string'?normalizeManagementView(role,normalizeCourseView(role,view)):"home";
         const valid = (view: unknown) => typeof view === "string" && available(normalizedView(view));
-        const state = window.history.state || {};
-        const url = new URL(window.location.href);
-        if (initialQuizId) {
-            sessionStorage.removeItem('tickminder-group-view');
-            url.searchParams.delete('view');
-            setSelectedView('quizzes');
-            window.history.replaceState({...state,timelyoRole:role,timelyoGroup:account.groupId,timelyoView:'quizzes',timelyoQuizTab:'bank',timelyoMenu:false},'',url);
-        }
-        else if (sessionStorage.getItem("tickminder-group-view")==="home") {sessionStorage.removeItem("tickminder-group-view");setSelectedView("home");window.history.replaceState({...state,timelyoRole:role,timelyoGroup:account.groupId,timelyoView:"home",timelyoMenu:false},"",url);}
-        else if (url.searchParams.get("view") === "notifications") {
-            url.searchParams.delete("view");
-            setSelectedView("notifications");
-            window.history.replaceState({ ...state, timelyoRole: role,timelyoGroup:account.groupId, timelyoView: "notifications", timelyoMenu: false }, "", url);
-        } else if (['quizzes','quizBank'].includes(url.searchParams.get('view')||'')&&valid('quizzes')) {
-            url.searchParams.delete('view');setSelectedView('quizzes');window.history.replaceState({...state,timelyoRole:role,timelyoGroup:account.groupId,timelyoView:'quizzes',timelyoQuizTab:'bank',timelyoMenu:false},'',url);
-        } else if (state.timelyoGroup === account.groupId && state.timelyoRole === role && valid(state.timelyoView)) {
-            setSelectedView(normalizedView(state.timelyoView));
-            // A fresh mobile entry starts closed. Do not retain a menu-only
-            // history entry which would reopen the overlay after Back.
-            window.history.replaceState({ ...state,timelyoView:normalizedView(state.timelyoView),...(state.timelyoView==='quizBank'?{timelyoQuizTab:'bank'}:{}), timelyoMenu: false }, "");
-        }
-        else {
-            setSelectedView(home);
-            window.history.replaceState({ ...state, timelyoRole: role, timelyoGroup: account.groupId, timelyoView: home, timelyoMenu: false }, "");
-        }
+        const saved = window.history.state || {}, url = new URL(window.location.href);
+        const legacy = legacyWorkspaceView(url.search,role), route = workspaceViewFromPath(url.pathname,role);
+        let target:string;
+        if(initialQuizId){target="quizzes";sessionStorage.removeItem("tickminder-group-view");}
+        else if(sessionStorage.getItem("tickminder-group-view")==="home"){sessionStorage.removeItem("tickminder-group-view");target="home";}
+        else if(legacy)target=legacy;
+        else if(url.pathname==="/"&&saved.timelyoRoute!==1&&saved.timelyoGroup===account.groupId&&saved.timelyoRole===role&&valid(saved.timelyoView))target=normalizedView(saved.timelyoView);
+        else target=route||"home";
+        target=initialQuizId?"quizzes":valid(target)?normalizedView(target):"home";
+        setSelectedView(target);
+        if(initialQuizId)url.searchParams.delete("view");
+        const destination=initialQuizId?url.pathname+url.search:workspaceUrl(target,role,url.search);
+        window.history.replaceState({...saved,timelyoRole:role,timelyoGroup:account.groupId,timelyoView:target,timelyoRoute:1,timelyoMenu:false,...(initialQuizId||legacy==="quizzes"||saved.timelyoView==="quizBank"?{timelyoQuizTab:"bank"}:{})},"",destination);
+        currentUrlRef.current=destination;
         const onPopState = () => {
-            const raw=window.history.state || {};
-            const next = {...raw,timelyoView:normalizedView(raw.timelyoView)};
-            const sameContext=next.timelyoRole === role && next.timelyoGroup === account.groupId;
-            const target=sameContext && valid(next.timelyoView) ? next.timelyoView : home;
-            if(target!==currentViewRef.current&&!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true}))){window.history.pushState({...next,timelyoRole:role,timelyoGroup:account.groupId,timelyoView:currentViewRef.current,timelyoMenu:false},'');return;}
-            if(initialQuizId&&target!=='quizzes')onLinkedQuizExit?.();
+            const raw=window.history.state||{};
+            const sameContext=raw.timelyoRole===role&&raw.timelyoGroup===account.groupId;
+            const pathView=workspaceViewFromPath(window.location.pathname,role);
+            const requested=pathView||raw.timelyoView;
+            const target=sameContext&&valid(requested)?normalizedView(requested):"home";
+            if(target!==currentViewRef.current&&!window.dispatchEvent(new Event("tickminder-navigate",{cancelable:true}))){
+                window.history.pushState({...raw,timelyoRole:role,timelyoGroup:account.groupId,timelyoView:currentViewRef.current,timelyoRoute:1,timelyoMenu:false},"",currentUrlRef.current);return;
+            }
+            if(initialQuizId&&target!=="quizzes")onLinkedQuizExit?.();
+            if(!sameContext||!valid(requested))window.history.replaceState({...raw,timelyoRole:role,timelyoGroup:account.groupId,timelyoView:target,timelyoRoute:1,timelyoMenu:false},"",workspaceUrl(target,role,window.location.search));
+            currentUrlRef.current=window.location.pathname+window.location.search;
             setSelectedView(target);
         };
-        window.addEventListener("popstate", onPopState);
-        return () => window.removeEventListener("popstate", onPopState);
-    }, [role, account.id,account.groupId,permissionSignature,initialQuizId,onLinkedQuizExit]);
+        window.addEventListener("popstate",onPopState);
+        return()=>window.removeEventListener("popstate",onPopState);
+    },[role,account.id,account.groupId,permissionSignature,initialQuizId,onLinkedQuizExit]);
     const activeView = initialQuizId&&selectedView==='quizzes'?'quizzes':available(selectedView) ? selectedView : 'home';
     const activeHub=isPrimaryHub(role,activeView);
     const primaryLabel=entries.find(entry=>entry.id===activeView)?.label[language];
@@ -798,17 +851,48 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
     const requiredScope: StateScope | null = activeView === "classrooms" ? "classrooms" : activeView === "accounts" || activeView === "parentRoster" ? "accounts" : activeView==='homework'&&canAdminAction(account,'homework.view')||role==='student'&&activeView==='calendar' ? "learning" : null;
     const scopeLoaded = !requiredScope || state?.loadedScopes?.includes(requiredScope) || (!state?.loadedScopes && Boolean(requiredScope === "learning" ? state?.learning : requiredScope === "classrooms" ? state?.classrooms : requiredScope === "accounts" ? state?.users : state?.users));
     const scopeError = requiredScope ? state?.scopeErrors?.[requiredScope] : undefined;
+    const needsCore=workspaceNeedsCore(activeView);
+    useEffect(()=>{
+        // Home owns its richer summary request; only shell counts are needed elsewhere.
+        if(activeView==="home"||needsCore)return;
+        let active=true,pending=false;
+        const controller=new AbortController();
+        const load=async()=>{
+            if(!active||pending||document.visibilityState==="hidden")return;
+            pending=true;
+            try{
+                const response=await groupFetch("/api/home-summary?scope=navigation",{cache:"no-store",signal:controller.signal});
+                const value=await readApiJson<{accountId:string;groupId:string;navigationCounts:CourseTaskCounts;error?:string}>(response);
+                if(!response.ok){
+                    if(response.status===401||response.status===403){if(active)setNavigationSummary({identity:badgeIdentity,counts:null,error:true});window.dispatchEvent(new Event("timelyo:auth-refresh"));}
+                    throw new Error(value.error||"Navigation summary unavailable");
+                }
+                if(value.accountId!==account.id||value.groupId!==account.groupId||!value.navigationCounts||Object.values(value.navigationCounts).some(count=>!Number.isSafeInteger(count)||count<0))throw new Error("Invalid navigation summary");
+                if(active)setNavigationSummary({identity:badgeIdentity,counts:value.navigationCounts,error:false});
+            }catch{if(active&&!controller.signal.aborted)setNavigationSummary(previous=>({...previous,error:true}));}
+            finally{pending=false;}
+        };
+        const refresh=()=>{void load();};void load();
+        const timer=window.setInterval(refresh,60_000);
+        window.addEventListener("focus",refresh);window.addEventListener("tickminder:data-changed",refresh);document.addEventListener("visibilitychange",refresh);
+        return()=>{active=false;controller.abort();window.clearInterval(timer);window.removeEventListener("focus",refresh);window.removeEventListener("tickminder:data-changed",refresh);document.removeEventListener("visibilitychange",refresh);};
+    },[activeView,needsCore,badgeIdentity,account.id,account.groupId]);
+
+    useEffect(()=>{
+        setCoreNeeded(needsCore);
+        if(needsCore)void ensureCore();
+        return()=>setCoreNeeded(false);
+    },[needsCore,ensureCore,setCoreNeeded]);
     useEffect(() => {
         // TeachingResources selects its own live scope for the PDF tab only.
         if(activeView === "materials") return;
-        setActiveScopes(activeView === "classrooms" ? ["classrooms", "learning"] : requiredScope ? [requiredScope] : activeView === "home" && role !== "admin" ? ["learning"] : []);
+        setActiveScopes(activeView === "classrooms" ? ["classrooms", "learning"] : requiredScope ? [requiredScope] : []);
         return () => setActiveScopes([]);
     }, [requiredScope, activeView, role, setActiveScopes, state?.account.id,permissionSignature]);
     useEffect(() => {
-        if (!state?.account.id || role === "pending") return;
+        if (!account.id || role === "pending" || needsCore&&!coreReady) return;
         if (requiredScope && !scopeLoaded && !scopeError) void ensureScope(requiredScope);
-        if (activeView === "home" && role !== "admin" && !state.loadedScopes?.includes("learning") && !state.scopeErrors?.learning) void ensureScope("learning");
-    }, [state?.account.id, state?.loadedScopes, state?.scopeErrors?.learning, requiredScope, scopeLoaded, scopeError, activeView, role, ensureScope]);
+    }, [account.id,coreReady,needsCore,state?.loadedScopes,requiredScope,scopeLoaded,scopeError,activeView,role,ensureScope]);
     const learning = state?.learning || { materials: [], homework: [], submissions: [], studyBlocks: [], eligible: [] };
     const learningReady = Boolean(state?.learning && (!state.loadedScopes || state.loadedScopes.includes("learning")));
     const showMonth = (role === "student" && activeView === "list") || (role === "teacher" && ["lessons","attendance"].includes(activeView)) || (role === "admin" && activeView === "list");
@@ -819,18 +903,21 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
         const id = requested === "financeHub"&&canView("billing") ? "billing" : requested === "courses" ? courseTarget : normalizeManagementView(role,normalizeCourseView(role,managementTarget));
         if (!id || !available(id)) return;
         if(id!==activeView&&!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;
-        if(initialQuizId&&id!=='quizzes')onLinkedQuizExit?.();
         if (id !== activeView) {
-            const next = { ...(window.history.state || {}), timelyoRole: role, timelyoGroup: account.groupId, timelyoView: id, timelyoMenu: false };
-            window.history.pushState(next, "");
+            const next = { ...(window.history.state || {}), timelyoRole: role, timelyoGroup: account.groupId, timelyoView: id,timelyoRoute:1, timelyoMenu: false };
+            const url=workspaceUrl(id,role,window.location.search);
+            window.history.pushState(next,"",url);currentUrlRef.current=url;
             setSelectedView(id);
         }
+        // Keep the Quiz URL (including malformed assignment intent) on its old
+        // entry. Exit only after the destination has its own history entry.
+        if(initialQuizId&&id!=='quizzes')onLinkedQuizExit?.();
         window.scrollTo(0, 0);
     };
     const openAttendanceFinance=canAdminAction(account,"invoices.view")?()=>{const next={...(window.history.state||{})};delete next.timelyoOverlay;window.history.replaceState(next,"");setModal(null);setOpenInvoiceList(true);choose("billing");}:undefined;
-    const bottomItems=entries.map(entry=>({value:entry.id,label:entry.label[language],Icon:entryIcons[entry.icon],badge:entry.id===(role==='admin'?'teachingHub':'courses')?<MenuBadge count={courseBadgeCount(role,badgeCounts)}/>:entry.id==='myHub'||entry.id==='manageHub'?<MenuBadge includeUnread/>:undefined}));
+    const bottomItems=entries.map(entry=>({value:entry.id,label:entry.label[language],Icon:entryIcons[entry.icon],badge:entry.id===(role==='admin'?'teachingHub':'courses')?courseBadge(courseBadgeCount(role,badgeCounts)):entry.id==='myHub'||entry.id==='manageHub'?<MenuBadge includeUnread/>:undefined}));
     const bottomActive=primaryArea(role,activeView);
-    const sections:NavigationHubSection[]=hubGroups(role,activeView).map(group=>({id:group.id,title:group.title[language],layout:group.layout,items:group.ids.map(id=>items.find(item=>item.id===id)).filter((item):item is typeof items[number]=>Boolean(item)).map(item=>({id:item.id,label:item.id==='homework'?(language==='zh'?'功课与任务':'Homework & tasks'):t(item.label),Icon:item.Icon,badge:<MenuBadge count={item.id==='courses'?courseBadgeCount(role,badgeCounts):badgeCounts[item.id as keyof typeof badgeCounts]||0} includeUnread={item.id==='notifications'} quizOnly={item.id==='quizzes'}/>}))})).filter(section=>section.items.length>0);
+    const sections:NavigationHubSection[]=hubGroups(role,activeView).map(group=>({id:group.id,title:group.title[language],layout:group.layout,items:group.ids.map(id=>items.find(item=>item.id===id)).filter((item):item is typeof items[number]=>Boolean(item)).map(item=>({id:item.id,label:item.id==='homework'?(language==='zh'?'功课与任务':'Homework & tasks'):t(item.label),Icon:item.Icon,badge:item.id==="courses"?courseBadge(courseBadgeCount(role,badgeCounts)):<MenuBadge count={badgeCounts[item.id as keyof typeof badgeCounts]||0} includeUnread={item.id==='notifications'} quizOnly={item.id==='quizzes'}/>}))})).filter(section=>section.items.length>0);
     let pageContent: React.ReactNode = null;
     if(activeHub){pageContent=<NavigationHub sections={sections} onChoose={choose}>
         {(activeView==='manageHub'||activeView==='myHub')&&<><div className="navigation-hub-actions" data-testid="hub-utility-actions">
@@ -848,7 +935,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
     else if (activeView === "home" && role === "pending") {
         pageContent = <section className="panel pending-home"><h2>{t(account.assignmentStatus === "ACTIVE" ? "账号已启用" : "等待分配")}</h2><p>{t("管理员分配身份后，课程、功课及班级会显示在这里。")}</p>{account.pendingExpiresAt && <p className="notice">{t("待分配期限")} · {new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-GB",{timeZone:"Asia/Kuala_Lumpur",dateStyle:"medium",timeStyle:"short"}).format(new Date(account.pendingExpiresAt))}<br/>{t("新注册账号在 7 天内未启用或绑定，会到期清理。请联系管理员。")}</p>}<Button variant="outline" onClick={()=>choose("myAccount")}>{t("我的账号")}</Button></section>;
     } else if (activeView === "home" && role !== "pending") {
-        pageContent = <HomeDashboard role={role} name={account.name} taskCounts={state?.taskCounts} lessons={lessons} learning={learning} learningReady={learningReady || role === "admin"} learningError={state?.scopeErrors?.learning} onNavigate={destination=>{if(destination==='quizHistory'){if(!canView('quizzes')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;window.history.replaceState({...window.history.state,timelyoQuizTab:'history'},'');choose('quizzes');}else choose(destination);}} onOpenTask={(classroomId,taskId)=>{if(!canView('classrooms')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;setClassroomTaskTarget({classroomId,taskId});choose('classrooms');}}/>;
+        pageContent = <HomeDashboard role={role} name={account.name} accountId={account.id || ""} groupId={account.groupId || null} onSummary={acceptHomeSummary} onNavigate={destination=>{if(destination==='quizHistory'){if(!canView('quizzes')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;window.history.replaceState({...window.history.state,timelyoQuizTab:'history'},'');choose('quizzes');}else choose(destination);}} onOpenTask={(classroomId,taskId)=>{if(!canView('classrooms')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;setClassroomTaskTarget({classroomId,taskId});choose('classrooms');}}/>;
     } else if (activeView === "notifications") {
         pageContent = <NotificationWorkspace key={`${account.groupId}:${role}`} role={role} language={language} learningMutate={learningMutate} courseMutate={mutate} onLesson={lesson=>setModal({type:'edit',lesson})} busy={busy}/>;
     } else if (activeView === "myAccount") {
@@ -915,12 +1002,12 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state, ensureScope,
                 {managementView && <ManagementNavigation area={managementView} activeView={activeView} onChoose={choose} canView={canView}/>}
                 {message && state && !state.error && <div className="notice" role="status">{message}<button onClick={() => setMessage("")} aria-label={t("关闭")}>×</button></div>}
 
-                {role === "teacher" && state && !state.error && !(state.plans || []).length && <div className="notice">{t("暂无负责的学生科目。请联系管理员完成课程分配。")}</div>}
-                <FilterScope.Provider value={`${account.id || "anonymous"}:${account.groupId || "none"}`}>{role !== "pending" && activeView !== "quizzes" && (!state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "页面加载失败" : "正在加载…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : !scopeLoaded && activeView!=="homework" ? <PageState kind={scopeError ? "error" : "loading"} title={scopeError ? "页面加载失败" : "正在加载…"} description={scopeError} action={scopeError ? "重试" : undefined} onAction={() => { if (requiredScope) void ensureScope(requiredScope, true); }}/> : <Suspense fallback={<PageState kind="loading" title="正在加载…"/>}>{courseView ? <div id="course-view-content" data-testid="course-view-content" data-course-leaf={activeView}>{pageContent}</div> : managementView ? <div id="management-view-content" data-testid="management-view-content" data-management-leaf={activeView}>{pageContent}</div> : pageContent}</Suspense>}</FilterScope.Provider>
+                {role === "teacher" && needsCore && coreReady && state && !state.error && !(state.plans || []).length && <div className="notice">{t("暂无负责的学生科目。请联系管理员完成课程分配。")}</div>}
+                <FilterScope.Provider value={`${account.id || "anonymous"}:${account.groupId || "none"}`}>{needsCore && (!coreReady || !state || state.error) ? <PageState kind={message || state?.error ? "error" : "loading"} title={message || state?.error ? "页面加载失败" : "正在加载…"} description={message || state?.error ? actionFailureMessage(new Error(message || state?.error)) : undefined} action={message || state?.error ? "重试" : undefined} onAction={() => { setMessage(""); void reload(); }}/> : !scopeLoaded && activeView!=="homework" ? <PageState kind={scopeError ? "error" : "loading"} title={scopeError ? "页面加载失败" : "正在加载…"} description={scopeError} action={scopeError ? "重试" : undefined} onAction={() => { if (requiredScope) void ensureScope(requiredScope, true); }}/> : <Suspense fallback={<PageState kind="loading" title="正在加载…"/>}>{courseView ? <div id="course-view-content" data-testid="course-view-content" data-course-leaf={activeView}>{pageContent}</div> : managementView ? <div id="management-view-content" data-testid="management-view-content" data-management-leaf={activeView}>{pageContent}</div> : pageContent}</Suspense>}</FilterScope.Provider>
             </main>
         </div>
         <MobileBottomNavigation primary items={bottomItems} active={bottomActive} onNavigate={choose} ariaLabel={language==='zh'?'主要功能':'Primary navigation'} hidden={busy}/>
-        {modal && ["attendance","review"].includes(modal.type)&&modal.lesson.sessionId?<SessionAttendanceLoaderDialog onOpenFinance={openAttendanceFinance} key={modal.lesson.sessionId} sessionId={modal.lesson.sessionId} review={modal.type==="review"} role="admin" close={()=>setModal(null)} mutate={mutate} busy={busy}/>:modal&&<LessonDialog modal={modal} close={() => setModal(null)} mutate={mutate} busy={busy}/>}
+        <Suspense fallback={<PageState kind="loading" title="正在加载…"/>}>{modal && ["attendance","review"].includes(modal.type)&&modal.lesson.sessionId?<SessionAttendanceLoaderDialog onOpenFinance={openAttendanceFinance} key={modal.lesson.sessionId} sessionId={modal.lesson.sessionId} review={modal.type==="review"} role="admin" close={()=>setModal(null)} mutate={mutate} busy={busy}/>:modal&&<LessonDialog modal={modal} close={() => setModal(null)} mutate={mutate} busy={busy}/>}</Suspense>
     </div></NotificationsProvider>;
 }
 function StatsPanel({state}:{state:State|null}) {return <TeachingSummary summary={state?.teachingSummary}/>;}

@@ -1,6 +1,6 @@
 "use client";
 import {useDisplayPreferences} from '@/lib/use-display-preferences';
-import {lazy,Suspense,useEffect,useRef,useState} from 'react';
+import {lazy,Suspense,useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {BarChart3,Bell,BookOpen,CalendarDays,House,LibraryBig,ListChecks,LogOut,NotebookPen,UserRound,Video,WalletCards} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {FloatingBackButton} from '@/components/floating-back-button';
@@ -9,7 +9,8 @@ import {NavigationHub} from '@/components/navigation-hub';
 import {ShellPreferences} from '@/components/shell-preferences';
 import './shell-wave1.css';
 import {LegalLinks} from '@/components/legal-links';
-import {navigationAllowed,usePageHistoryState} from '@/lib/page-history';
+import {navigationAllowed} from '@/lib/page-history';
+import {legacyWorkspaceView,workspaceViewFromPath,workspaceUrl} from '@/lib/workspace-route';
 import {t,type Language} from '@/lib/i18n';
 import {BRAND_NAME} from '@/lib/brand';
 import {PNav} from '@/lib/parent-nav-i18n';
@@ -38,8 +39,40 @@ export default function ParentShell(props:ParentShellProps){
 
 function ParentShellContent({account,language,changeLanguage,logout,refreshIdentity,initialQuizId,onLinkedQuizExit}:ParentShellProps){
   const shellRef=useRef<HTMLDivElement>(null),headerRef=useRef<HTMLElement>(null);
-  const [storedView,setView,replaceView]=usePageHistoryState<ParentShellView>('parent.shell.view',initialQuizId?'quizzes':'home');
-  const view=isParentShellView(storedView)?storedView:'home';
+  const [view,updateView]=useState<ParentShellView>(()=>{
+    const requested=typeof window!=="undefined"?legacyWorkspaceView(window.location.search,"parent")||workspaceViewFromPath(window.location.pathname,"parent"):null;
+    return initialQuizId?"quizzes":isParentShellView(requested)?requested:"home";
+  });
+  const viewRef=useRef(view);viewRef.current=view;
+  const urlRef=useRef(typeof window!=="undefined"?window.location.pathname+window.location.search:"/");
+  const setView=(next:ParentShellView,replace=false)=>{
+    const path=initialQuizId&&next==="quizzes"?window.location.pathname+window.location.search:workspaceUrl(next,"parent",window.location.search);
+    const entry={...window.history.state,timelyoRole:"parent",timelyoGroup:account.groupId,timelyoAccount:account.id,timelyoView:next,timelyoRoute:1,timelyoMenu:false};
+    if(replace||next===viewRef.current)window.history.replaceState(entry,"",path);else window.history.pushState(entry,"",path);
+    urlRef.current=path;updateView(next);
+  };
+  const setViewRef=useRef(setView);setViewRef.current=setView;
+  const replaceView=(next:ParentShellView)=>setViewRef.current(next,true);
+  useLayoutEffect(()=>{
+    const saved=window.history.state||{},params=new URLSearchParams(window.location.search);
+    const notice=params.get('parentNotice');
+    if(params.get('view')==='notifications'&&notice&&/^parent:[A-Za-z0-9_-]{1,100}$/.test(notice))setPendingNotice(notice);
+    let requested=initialQuizId?"quizzes":legacyWorkspaceView(window.location.search,"parent")||workspaceViewFromPath(window.location.pathname,"parent");
+    if(!initialQuizId&&window.location.pathname==="/"&&!params.has("view")&&saved.timelyoRoute!==1&&saved.tickminderNavigation?.context===account.id+":parent:"+account.groupId){
+      const old=Object.entries(saved.tickminderPages||{}).find(([key])=>key.endsWith(":parent.shell.view"))?.[1] as {scalar?:unknown}|undefined;
+      if(isParentShellView(old?.scalar))requested=old.scalar;
+    }
+    setViewRef.current(isParentShellView(requested)?requested:"home",true);
+    const restore=(event:PopStateEvent)=>{
+      const entry=window.history.state||{},same=entry.timelyoRole==="parent"&&entry.timelyoGroup===account.groupId&&(!entry.timelyoAccount||entry.timelyoAccount===account.id);
+      const route=workspaceViewFromPath(window.location.pathname,"parent");
+      const next=same&&isParentShellView(route)?route:"home";
+      if(next!==viewRef.current&&!navigationAllowed(event)){window.history.pushState({...entry,timelyoRole:"parent",timelyoGroup:account.groupId,timelyoAccount:account.id,timelyoView:viewRef.current,timelyoRoute:1},"",urlRef.current);return;}
+      if(!same||!isParentShellView(route)){setViewRef.current("home",true);return;}
+      urlRef.current=window.location.pathname+window.location.search;updateView(next);
+    };
+    window.addEventListener("popstate",restore);return()=>window.removeEventListener("popstate",restore);
+  },[account.id,account.groupId,initialQuizId]);
   const [navigation,setNavigation]=useState<ParentNoticeNavigation|null>(null),[pendingNotice,setPendingNotice]=useState('');
   const [target,setTarget]=useState<ParentWorkspaceTarget|null>(null);
   const activePrimary=parentPrimaryFor(view);
@@ -58,24 +91,24 @@ function ParentShellContent({account,language,changeLanguage,logout,refreshIdent
       if(!navigationAllowed())return;
       const requested=(event as CustomEvent<{id?:string}>|undefined)?.detail?.id;
       setPendingNotice(typeof requested==='string'&&/^parent:[A-Za-z0-9_-]{1,100}$/.test(requested)?requested:'');
-      setView('notifications');
+      setViewRef.current('notifications');
     };
     window.addEventListener('tickminder:open-notifications',open);
     const params=new URLSearchParams(window.location.search);
     if(params.get('view')==='notifications'){
       const id=params.get('parentNotice');
-      setPendingNotice(id&&/^parent:[A-Za-z0-9_-]{1,100}$/.test(id)?id:'');setView('notifications');
+      setPendingNotice(id&&/^parent:[A-Za-z0-9_-]{1,100}$/.test(id)?id:'');setViewRef.current('notifications');
       params.delete('view');params.delete('parentNotice');
       const query=params.toString();
-      window.history.replaceState(window.history.state,'',window.location.pathname+(query?'?'+query:'')+window.location.hash);
+      window.history.replaceState(window.history.state,'',workspaceUrl('notifications','parent',query));
     }
     return()=>window.removeEventListener('tickminder:open-notifications',open);
-  },[setView]);
+  },[]);
 
   useEffect(()=>{
     if(!initialQuizId)return;
     setNavigation(null);setTarget(null);setPendingNotice('');replaceView('quizzes');
-  },[initialQuizId,replaceView]);
+  },[initialQuizId]);
   const linkedViewOpened=useRef(false);
   useEffect(()=>{
     if(!initialQuizId){linkedViewOpened.current=false;return;}
@@ -85,14 +118,14 @@ function ParentShellContent({account,language,changeLanguage,logout,refreshIdent
 
   function choose(next:ParentShellView){
     if(next!==view&&!navigationAllowed())return;
-    if(initialQuizId&&next!=='quizzes')onLinkedQuizExit?.();
     setNavigation(null);setTarget(null);setPendingNotice('');setView(next);
+    if(initialQuizId&&next!=='quizzes')onLinkedQuizExit?.();
     if(next!==view)window.scrollTo(0,0);
   }
   function openWorkspace(next:Omit<ParentWorkspaceTarget,'targetId'>){
     if(!navigationAllowed())return;
-    if(initialQuizId)onLinkedQuizExit?.();
     setNavigation(null);setPendingNotice('');setTarget({...next,targetId:crypto.randomUUID()});setView(next.view);window.scrollTo(0,0);
+    if(initialQuizId)onLinkedQuizExit?.();
   }
   function openNotice(next:ParentNoticeNavigation){
     if(!navigationAllowed())return;

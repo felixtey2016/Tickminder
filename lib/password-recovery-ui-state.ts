@@ -1,4 +1,4 @@
-import { quizLinkIdFromPath } from "./quiz-link";
+import { safeWorkspaceReturnPath } from "./workspace-route";
 import type { Language } from "./i18n";
 
 export const RECOVERY_STORAGE_KEY = "tickminder:password-recovery:v1";
@@ -13,14 +13,7 @@ export type RecoverySnapshot = {
 
 // Preserve assignment presence (even malformed/duplicate), never an external URL.
 export function recoveryReturnPath(pathname: string, search: string, language: Language) {
-  const quizId = quizLinkIdFromPath(pathname), params = new URLSearchParams();
-  if (quizId) {
-    const assignments = new URLSearchParams(search).getAll("assignment");
-    if (assignments.length > 8 || assignments.some(value => value.length > 254)) params.append("assignment", "invalid");
-    else for (const value of assignments) params.append("assignment", value);
-  }
-  params.set("lang", language);
-  return `${quizId ? `/quiz/${quizId}` : "/"}?${params}`;
+  return safeWorkspaceReturnPath(pathname, search, language);
 }
 
 export function clearRecoveryState() {
@@ -42,7 +35,7 @@ export function readRecoveryState(context: RecoverySnapshot["context"], owner: s
     const target = new URL(value.returnTo, window.location.origin), current = new URL(returnTo, window.location.origin);
     if (target.origin !== window.location.origin || !value.returnTo.startsWith("/") || value.returnTo.startsWith("//")) throw new Error("Invalid return path");
     const language = target.searchParams.get("lang") === "en" ? "en" : "zh";
-    if (recoveryReturnPath(target.pathname, target.search, language) !== value.returnTo) throw new Error("Invalid Quiz context");
+    if (recoveryReturnPath(target.pathname, target.search, language) !== value.returnTo) throw new Error("Invalid return context");
     target.searchParams.delete("lang"); current.searchParams.delete("lang");
     if (target.pathname + target.search !== current.pathname + current.search) throw new Error("Different page context");
     if (!["identifier", "code", "password", "unknown"].includes(value.step) || ![null, "request", "verify", "reset"].includes(value.pending)) throw new Error("Invalid step");
