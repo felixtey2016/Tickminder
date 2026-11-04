@@ -29,6 +29,12 @@
 .statement-summary .finance2-badge[data-status=reconciled]{background:var(--ui-success-bg);color:var(--ui-success-text);}
 .statement-summary .finance2-notice{background:var(--ui-warning-bg);color:var(--ui-warning-text);border-color:var(--ui-border);padding:12px 14px;font-size:14px;line-height:1.6;}
 .statement-summary .finance2-actions{margin-top:16px;}
+.statement-summary>summary{cursor:pointer;list-style:none;margin-bottom:0;min-height:44px;}
+.statement-summary>summary::-webkit-details-marker{display:none;}
+.statement-summary>summary>h3::before{content:'›';display:inline-block;margin-right:10px;color:var(--ui-muted);}
+.statement-summary[open]>summary>h3::before{transform:rotate(90deg);}
+.statement-month-details{padding-top:16px;}
+.statement-summary:not([open])>.statement-month-details{display:none;}
 .student-statements-workspace :is(.finance2-muted,.finance2-empty,.finance-layout-help){color:var(--ui-muted);}
 .student-statements-workspace .finance-layout-help>summary{color:var(--ui-accent);}
 .statement-history{display:grid;gap:0;min-width:0;}
@@ -38,7 +44,28 @@
 .statement-history p{margin:0;font-size:13px;line-height:1.5;}
 .statement-history button{justify-self:start;min-height:44px;}
 .statement-review{display:flex;gap:6px 12px;flex-wrap:wrap;color:var(--ui-warning-text);}
+.statement-student-cards{display:grid;gap:12px;min-width:0;}
+.statement-student-cards>article{padding:16px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface);min-width:0;}
+.statement-student-cards>article[data-selected=true]{border-color:var(--ui-accent);}
+.app-shell .statement-student-name{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:48px;height:auto;padding:0;margin-bottom:8px;background:transparent;color:var(--ui-text);text-align:left;white-space:normal;}
+.statement-student-name strong{font-size:17px;min-width:0;overflow-wrap:anywhere;}
+.statement-student-name span{flex:0 0 auto;color:var(--ui-muted);font-size:13px;}
+.statement-student-card-heading{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;margin-bottom:12px;}
+.statement-student-card-heading h3{flex:1 1 10em;min-width:0;font-size:17px;}
+.statement-student-card-heading>div{display:grid;gap:4px;text-align:right;}
+.statement-student-card-heading>div>span{font-size:12px;color:var(--ui-muted);}
+.statement-student-card-heading strong{font-variant-numeric:tabular-nums;}
+.statement-primary-actions{margin-top:16px;}
+.statement-account-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:0;}
+.statement-account-kpis>div{display:grid;gap:10px;min-width:0;}
+.statement-account-kpis dt{color:var(--ui-muted);font-size:14px;}
+.statement-account-kpis dd{margin:0;color:var(--ui-text);font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
+.statement-current-account .finance2-notice{background:var(--ui-warning-bg);color:var(--ui-warning-text);padding:12px;border-radius:6px;line-height:1.6;}
 @media(max-width:600px){
+ .statement-account-kpis{grid-template-columns:minmax(0,1fr);gap:12px;}
+ .statement-account-kpis>div{display:flex;justify-content:space-between;align-items:baseline;gap:16px;}
+ .statement-account-kpis dt{flex:1 1 auto;min-width:0;}
+ .statement-account-kpis dd{text-align:right;font-size:20px;white-space:nowrap;flex:0 0 auto;}
  .statement-filters{grid-template-columns:minmax(0,1fr);gap:16px;margin-bottom:18px;}
  .student-statements-workspace .statement-month{max-width:none;}
  .statement-summary .finance2-section-head{align-items:flex-start;}
@@ -54,4 +81,7 @@
  .statement-student-results>button>strong{font-size:13px;}
  .statement-closing{display:grid;}
  .statement-student{align-items:flex-start;}
+ .statement-account-kpis{grid-template-columns:minmax(0,1fr);gap:12px;}
+ .statement-account-kpis>div{grid-template-columns:1fr 1fr;align-items:baseline;}
+ .statement-account-kpis dd{text-align:right;font-size:20px;}
 }

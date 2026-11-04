@@ -2,18 +2,19 @@ import type {BillingLine} from './billing';
 import type {InvoiceInstitutionSnapshot} from './invoice-settings';
 import type {InvoiceFinanceSummary} from './invoice-finance';
 
+export type InvoiceBillingScope='all'|'monthly'|'hourly';
 export type InvoiceAddition = {id:string;label:string;kind:'charge'|'discount';amountCents:number;reason:string};
-export type InvoicePrintLine = {id:string;subject:string;description:string;lessonCount:number;durationSeconds:number;mode:string|null;unitAmountCents:number|null;amountCents:number;quantity?:number;rateOverride?:boolean};
+export type InvoicePrintLine = {monthlyExtra?:boolean;id:string;subject:string;description:string;lessonCount:number;durationSeconds:number;mode:string|null;unitAmountCents:number|null;amountCents:number;quantity?:number;rateOverride?:boolean};
 export type InvoiceBillTo={name:string;address:string;email?:string;phone?:string;taxId?:string;registrationNumber?:string};
 export type InvoiceStudent = {id:string;name:string;syllabus:string|null;grade:string|null};
 export type InvoiceDocument = {
- id:string;groupId:string;studentId:string;student:InvoiceStudent;month:string;status:'draft'|'issued';revision:number;
+ id:string;groupId:string;studentId:string;student:InvoiceStudent;month:string;billingScope?:InvoiceBillingScope;status:'draft'|'issued';revision:number;
  number:string|null;issuedAt:string|null;createdAt:string;updatedAt:string;dueDate:string;notes:string;currency:'MYR';
  billTo?:InvoiceBillTo;institution:InvoiceInstitutionSnapshot;sourceHash:string;sourceLines:BillingLine[];lines:InvoicePrintLine[];additions:InvoiceAddition[];
  subtotalCents:number;discountCents:number;totalCents:number;lessonCount:number;durationSeconds:number;
  extension:{schemaVersion:1;receiptIds:string[];eInvoice:Record<string,unknown>|null;printVersion?:2};
 };
-export type InvoiceSummary = Pick<InvoiceDocument,'id'|'studentId'|'month'|'status'|'revision'|'number'|'issuedAt'|'createdAt'|'updatedAt'|'dueDate'|'currency'|'totalCents'|'lessonCount'|'durationSeconds'> & {student:string;finance?:InvoiceFinanceSummary};
+export type InvoiceSummary = Pick<InvoiceDocument,'id'|'studentId'|'month'|'billingScope'|'status'|'revision'|'number'|'issuedAt'|'createdAt'|'updatedAt'|'dueDate'|'currency'|'totalCents'|'lessonCount'|'durationSeconds'> & {student:string;finance?:InvoiceFinanceSummary};
 export type InvoiceReview = {blockers:string[];sourceChanged:boolean;pendingCount:number;completedUnbilledCount:number;replacementCount:number;upcomingCount:number};
 export type InvoiceDetail = {invoice:InvoiceDocument;review:InvoiceReview};
 export type InvoiceList = {items:InvoiceSummary[];total:number;page:number;pageSize:number;pages:number};
@@ -58,7 +59,7 @@ export function invoicePrintLines(lines:BillingLine[]):InvoicePrintLine[]{
  const result=new Map<string,InvoicePrintLine>();
  for(const line of lines){
   if(line.status==='pending'||invoiceLessonCancelled(line))continue;
-  const key=JSON.stringify([line.subjectKey,line.mode,line.unitAmountCents,line.rateVersionId]),row=result.get(key)||{id:key,subject:line.subject,description:'',lessonCount:0,durationSeconds:0,mode:line.mode,unitAmountCents:line.unitAmountCents,amountCents:0,quantity:0};
+  const key=JSON.stringify([line.subjectKey,line.mode,line.unitAmountCents,line.rateVersionId,...(line.monthlyExtra?['monthly-extra']:[])]),row=result.get(key)||{id:key,subject:line.subject,description:line.monthlyExtra?'额外课次费用 / Additional lesson charge':'',...(line.monthlyExtra?{monthlyExtra:true}:{}),lessonCount:0,durationSeconds:0,mode:line.mode,unitAmountCents:line.unitAmountCents,amountCents:0,quantity:0};
   // Monthly fees include their lessons once; the monthly charge itself has no lesson ID.
   if(line.lessonId&&line.lessonStatus!=='cancelled'&&line.sessionStatus!=='cancelled'&&!['cancelled','absent','student_absent','teacher_absent','pending','scheduled'].includes(line.attendanceStatus)){
    row.lessonCount++;

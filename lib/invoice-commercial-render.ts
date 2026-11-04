@@ -58,6 +58,7 @@ function quantity(invoice:InvoiceDocument,line:InvoicePrintLine):number|null{
 function quantityLabel(invoice:InvoiceDocument,line:InvoicePrintLine,zh:boolean){
  const value=quantity(invoice,line);if(value===null||!value&&line.amountCents!==0)return'—';
  const short=(n:number)=>n.toLocaleString('en-MY',{maximumFractionDigits:2,useGrouping:false});
+ if(line.monthlyExtra)return short(value)+(zh?' 堂额外课':' extra lesson'+(value===1?'':'s'));
  if(line.mode==='hour'){
   if(Math.abs(value*100-Math.round(value*100))<1e-7)return short(value)+(zh?' 小时':' h');
   return duration(value*3600,zh);
@@ -89,7 +90,7 @@ export function renderCompactInvoiceHtml(invoice:InvoiceDocument,options:Invoice
  const billed=section('bill-row',customer(invoice.billTo,invoice.student,zh)+section('metadata',meta));
  const lines=invoice.lines.filter(line=>line.lessonCount>0||line.amountCents!==0||line.mode==='month');
  const units=lines.some(line=>line.mode!==null||line.unitAmountCents!==null);
- const items=lines.map(line=>'<tr><td>'+e(line.subject)+(line.rateOverride?'<small>'+T('调整金额','Adjusted fee')+'</small>':'')+'</td>'+(units?'<td class="number">'+e(quantityLabel(invoice,line,zh))+'</td><td class="number">'+priceLabel(invoice,line,zh)+'</td>':'')+'<td class="number amount">'+money(line.amountCents)+'</td></tr>').join('');
+ const items=lines.map(line=>'<tr><td>'+e(line.subject)+(line.monthlyExtra?'<small>'+T('额外课次费用','Additional lesson charge')+'</small>':line.rateOverride?'<small>'+T('调整金额','Adjusted fee')+'</small>':'')+'</td>'+(units?'<td class="number">'+e(quantityLabel(invoice,line,zh))+'</td><td class="number">'+priceLabel(invoice,line,zh)+'</td>':'')+'<td class="number amount">'+money(line.amountCents)+'</td></tr>').join('');
  const additions=invoice.additions.filter(line=>line.kind==='charge'&&line.amountCents!==0).map(line=>'<tr><td>'+e(line.label)+'</td>'+(units?'<td class="number">1</td><td class="number">'+money(line.amountCents)+'</td>':'')+'<td class="number amount">'+money(line.amountCents)+'</td></tr>').join('');
  const table='<table class="charges">'+(units?'<colgroup><col style="width:43%"><col style="width:18%"><col style="width:20%"><col style="width:19%"></colgroup>':'<colgroup><col style="width:75%"><col style="width:25%"></colgroup>')+'<thead><tr><th>'+T('项目','Description')+'</th>'+(units?'<th class="number">'+T('数量','Qty')+'</th><th class="number">'+T('单价','Unit price')+'</th>':'')+'<th class="number">'+T('金额（MYR）','Amount (MYR)')+'</th></tr></thead><tbody>'+items+additions+'</tbody></table>';
  const discounts=invoice.additions.filter(line=>line.kind==='discount');

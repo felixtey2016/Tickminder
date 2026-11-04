@@ -35,15 +35,6 @@ assert.equal(detail.invoice.totalCents,6000);
 await invoices.saveInvoice(owner,{action:'issue',invoiceId,revision:detail.invoice.revision,expectedSourceHash:detail.invoice.sourceHash,operationId:op()});
 
 const prep=(await load('lib/prepayments-server.ts')).module,reports=(await load('lib/finance-reporting-server.ts')).module;
-const original=sqlite.prepare('SELECT * FROM invoices WHERE id=?').get(invoiceId),secondId='prepay-second-invoice';
-const secondDoc={...JSON.parse(original.document_json),id:secondId,month:'2032-05',number:'INV-PREPAY-SECOND'};
-sqlite.prepare('UPDATE invoice_sequences SET last_value=last_value+1 WHERE group_id=? AND year=?').run(gid,original.sequence_year);
-const columns=Object.keys(original),second={...original,id:secondId,month:'2032-05',number:secondDoc.number,sequence_value:original.sequence_value+1,document_json:JSON.stringify(secondDoc)};
-sqlite.prepare('INSERT INTO invoices('+columns.join(',')+') VALUES('+columns.map(()=>'?').join(',')+')').run(...columns.map(c=>second[c]));
-const fixtureItemGuard=sqlite.prepare("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='invoice_issued_item_insert'").get().sql;sqlite.exec('DROP TRIGGER invoice_issued_item_insert');
-for(const item of sqlite.prepare('SELECT * FROM invoice_items WHERE invoice_id=?').all(invoiceId)){const row={...item,id:op(),invoice_id:secondId};sqlite.prepare('INSERT INTO invoice_items('+Object.keys(row).join(',')+') VALUES('+Object.keys(row).map(()=>'?').join(',')+')').run(...Object.values(row));}
-sqlite.exec(fixtureItemGuard);
-sqlite.prepare("INSERT INTO invoice_source_locks(group_id,invoice_id,source_type,source_id,student_id,month,created_at) VALUES(?,?,'student_month',?,?,'2032-05',?)").run(gid,secondId,student,student,now);
 let checks=0;const check=(label,fn)=>{fn();checks++;console.log('PASS '+label);};
 await billing.saveBilling(owner,{action:'saveCollectionTiming',studentId:student,subjectKey:settings.context.subjectKey,timing:'advance',revision:0,operationId:op()});
 await billing.saveBilling(owner,{action:'saveCollectionTiming',studentId:student,subjectKey:settings.context.subjectKey,timing:'arrears',revision:1,operationId:op()});
@@ -58,6 +49,17 @@ const invoiceCash=await finance.saveInvoiceFinance(owner,{action:'recordPayment'
 const applied=await money({action:'apply',paymentId:first.paymentId,invoiceId,invoiceRevision:invoiceCash.revision,amountCents:3000});
 await money({action:'release',allocationId:applied.allocationId,invoiceId,invoiceRevision:applied.invoiceRevision,amountCents:500,reason:'Fictional partial release'});
 await money({action:'refund',paymentId:first.paymentId,amountCents:1000,refundedAt:'2032-06-12T02:00:00.000Z',reason:'Fictional unused balance refund',method:'bank_transfer'});
+// This later issued invoice is created after the earlier unused-balance refund;
+// do not simulate refunding money already reserved by both unpaid invoices.
+const original=sqlite.prepare('SELECT * FROM invoices WHERE id=?').get(invoiceId),secondId='prepay-second-invoice';
+const secondDoc={...JSON.parse(original.document_json),id:secondId,month:'2032-05',number:'INV-PREPAY-SECOND'};
+sqlite.prepare('UPDATE invoice_sequences SET last_value=last_value+1 WHERE group_id=? AND year=?').run(gid,original.sequence_year);
+const columns=Object.keys(original),second={...original,id:secondId,month:'2032-05',number:secondDoc.number,sequence_value:original.sequence_value+1,document_json:JSON.stringify(secondDoc)};
+sqlite.prepare('INSERT INTO invoices('+columns.join(',')+') VALUES('+columns.map(()=>'?').join(',')+')').run(...columns.map(c=>second[c]));
+const fixtureItemGuard=sqlite.prepare("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='invoice_issued_item_insert'").get().sql;sqlite.exec('DROP TRIGGER invoice_issued_item_insert');
+for(const item of sqlite.prepare('SELECT * FROM invoice_items WHERE invoice_id=?').all(invoiceId)){const row={...item,id:op(),invoice_id:secondId};sqlite.prepare('INSERT INTO invoice_items('+Object.keys(row).join(',')+') VALUES('+Object.keys(row).map(()=>'?').join(',')+')').run(...Object.values(row));}
+sqlite.exec(fixtureItemGuard);
+sqlite.prepare("INSERT INTO invoice_source_locks(group_id,invoice_id,source_type,source_id,student_id,month,created_at) VALUES(?,?,'student_month',?,?,'2032-05',?)").run(gid,secondId,student,student,now);
 await money({action:'apply',paymentId:first.paymentId,invoiceId:secondId,invoiceRevision:0,amountCents:2000});
 await finance.saveInvoiceFinance(owner,{action:'recordPayment',invoiceId,revision:3,operationId:op(),amountCents:500,paidAt:'2032-06-13T02:00:00.000Z',method:'cash'});
 const frozenRequest=sqlite.prepare('SELECT document_json FROM prepayment_requests WHERE id=?').get(draft.requestId).document_json;
@@ -80,7 +82,7 @@ const csv=await reports.financeCsv(owner,{month},'payments','en');check('cash CS
 check('both invoice and prepayment restore validators reconcile merged revisions',()=>{checkRestoredInvoiceFinance(sqlite);checkRestoredPrepayments(sqlite);});
 const request=()=>new Request('https://fictional.test/api/backup-export',{headers:{authorization:'Bearer '+token}}),response=await route.GET(request()),snapshot=await response.json();
 let secure=fs.readFileSync(path.join(root,'scripts/secure-d1-backup.mjs'),'utf8').replace(/\r\n/g,'\n').split('\ntry {\n')[0];secure=secure.replace("const projectRoot = resolve(import.meta.dirname, '..').toLowerCase();",'const projectRoot = '+JSON.stringify(root.toLowerCase())+';').replace("'./backup-order.mjs'",JSON.stringify(new URL('../scripts/backup-order.mjs',import.meta.url).href));const {restoreInMemory}=await import(dataUrl(secure+'\nexport {restoreInMemory};'));
-check('v39 includes every prepayment table and restores without historical replay',()=>{assert.equal(snapshotVersion(snapshot),39);assert.deepEqual(Object.keys(snapshot.tables).sort(),expectedSnapshotTables(39).sort());const count=restoreInMemory(snapshot);assert.equal(count.prepayment_payments,2);assert.equal(count.prepayment_events,7);assert.equal(count.prepayment_requests,1);});
+check('v42 includes every prepayment table and restores without historical replay',()=>{assert.equal(snapshotVersion(snapshot),42);assert.deepEqual(Object.keys(snapshot.tables).sort(),expectedSnapshotTables(42).sort());const count=restoreInMemory(snapshot);assert.equal(count.prepayment_payments,2);assert.equal(count.prepayment_events,7);assert.equal(count.prepayment_requests,1);});
 check('restore order puts balances and operations before cash and allocations',()=>{const names=orderedSnapshotTables(snapshot.tables).map(([name])=>name);for(const [a,b]of [['billing_students','prepayment_accounts'],['prepayment_accounts','prepayment_payments'],['prepayment_operations','prepayment_payments'],['prepayment_payments','prepayment_receipts'],['invoice_finance_accounts','prepayment_allocations'],['prepayment_allocations','prepayment_events']])assert(names.indexOf(a)<names.indexOf(b));});
 function corrupt(label,edit){check(label,()=>{const bad=structuredClone(snapshot);edit(bad);assert.throws(()=>restoreInMemory(bad),/prepayment|invoice finance|constraint|Incomplete|Schema mismatch/i);});}
 corrupt('cached available balance tampering rejected',s=>s.tables.prepayment_accounts.rows[0].received_cents++);

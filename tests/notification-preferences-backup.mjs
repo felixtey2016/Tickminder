@@ -72,7 +72,7 @@ damaged('duplicate preference owner is rejected',bad=>bad.tables.notification_pr
 damaged('preference column omissions are rejected even with zero rows',bad=>{bad.tables.notification_preferences.rows=[];bad.tables.notification_preferences.columns.pop();});
 for(const [field,value] of [['courses_enabled',2],['homework_enabled','0'],['fees_enabled',null],['courses_since','invalid'],['homework_since','2032-07-02'],['fees_since',null],['updated_at',''],['updated_at','2032-07-01T08:00:00+08:00']])damaged('rejects invalid '+field+' '+JSON.stringify(value),bad=>bad.tables.notification_preferences.rows[0][field]=value);
 const previous=active;active=database(62);active.exec('CREATE TABLE notification_preferences(account_id TEXT PRIMARY KEY)');const partialResponse=await route.GET(request());check('partial preference schema fails export visibly',()=>assert.equal(partialResponse.status,503));active.close();active=previous;
-check('unknown future snapshot versions are rejected',()=>{assert.equal(snapshotVersion({format:'timelyo-d1-v40'}),0);assert.throws(()=>restoreInMemory({...snapshot,format:'timelyo-d1-v40'}));});
+check('unknown future snapshot versions are rejected',()=>{assert.equal(snapshotVersion({format:'timelyo-d1-v43'}),0);assert.throws(()=>restoreInMemory({...snapshot,format:'timelyo-d1-v41'}));});
 check('strict preference validation accepts the complete current schema',()=>assert.doesNotThrow(()=>checkRestoredNotificationPreferences(active)));
 
 // Execute the actual recovery script's local dry run with genuine AES-GCM bytes,

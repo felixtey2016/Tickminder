@@ -1,0 +1,13 @@
+/* Keep the close control available while a long form scrolls. */
+[data-slot="dialog-content"] > [data-pinned-close] {background:var(--ui-surface,var(--background));color:var(--ui-text,var(--foreground));border:1px solid var(--ui-border,var(--border));border-radius:8px;opacity:1}
+[data-slot="dialog-content"] > [data-pinned-close]:disabled {opacity:.5;cursor:wait}
+[data-slot="dialog-content"][data-layout="framed"] {display:flex;flex-direction:column;gap:16px;overflow:hidden;max-height:calc(100dvh - 24px)}
+[data-layout="framed"] > [data-slot="dialog-header"] {flex:none;text-align:left;padding-right:52px;min-height:44px;justify-content:center}
+[data-layout="framed"] > [data-slot="dialog-body"] {min-height:0;min-width:0;overflow:auto;overscroll-behavior:contain;flex:1;padding:2px 4px 4px 0}
+[data-layout="framed"] > [data-slot="dialog-footer"] {flex:none;border-top:1px solid var(--ui-border,var(--border));padding-top:14px}
+[data-layout="framed"] > form.dialog-frame-form {min-height:0;display:flex;flex-direction:column;gap:16px;overflow:hidden}
+.dialog-frame-form > [data-slot="dialog-body"] {min-height:0;overflow:auto;overscroll-behavior:contain;flex:1}
+.dialog-frame-form > [data-slot="dialog-footer"] {flex:none;border-top:1px solid var(--ui-border,var(--border));padding-top:14px}
+@media(max-width:650px) {[data-slot="dialog-content"][data-layout="framed"] {width:calc(100vw - 24px);padding:16px;max-height:calc(100dvh - 24px)}}
+
+[data-slot="dialog-content"][data-layout="default"]:has(> [data-pinned-close]) > [data-slot="dialog-header"],[data-slot="dialog-content"][data-layout="default"]:has(> [data-pinned-close]) > [data-slot="dialog-title"]{padding-right:36px;min-height:28px}

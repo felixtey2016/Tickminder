@@ -46,12 +46,19 @@ export function checkRestoredPrepayments(db){
  for(const r of requests.values()){
   const doc=parse(r.document_json),basis=parse(r.source_basis_json);
   if(!r.id||!db.prepare('SELECT 1 FROM billing_students WHERE group_id=? AND id=?').get(r.group_id,r.student_id)||!month(r.month)||!['draft','issued','void'].includes(r.status)||!int(r.revision,1)||!int(r.total_cents)||!stamp(r.created_at)||!stamp(r.updated_at)||!hash(r.source_hash)||!basis||!doc||doc.id!==r.id||doc.groupId!==r.group_id||doc.studentId!==r.student_id||doc.student?.id!==r.student_id||doc.month!==r.month||doc.subjectKey!==r.subject_key||doc.currency!=='MYR'||doc.totalCents!==r.total_cents||doc.sourceHash!==r.source_hash||doc.createdAt!==r.created_at||!stamp(doc.updatedAt)||!Array.isArray(doc.lessons)||doc.lessons.length>5000||!Array.isArray(doc.lines)||doc.lines.length>5000||doc.lessonCount!==doc.lessons.length||!['/api/prepayments/requests/'+r.id+'/print','/api/prepayments/requests/'+r.id+'/print?groupId='+encodeURIComponent(r.group_id)].includes(doc.printUrl)||!str(doc.notes,2000)||typeof doc.monthlyReviewed!=='boolean')fail();
-  if(createHash('sha256').update(JSON.stringify({basis:r.source_basis_json,subjectKey:r.subject_key||'',monthlyReviewed:doc.monthlyReviewed})).digest('hex')!==r.source_hash)fail();
+  if(doc.requestKind!==undefined&&!['planned','amount'].includes(doc.requestKind)||doc.billingMode!==undefined&&doc.billingMode!=='hour')fail();
+  const requestHashBasis=doc.requestKind==='amount'?{requestKind:'amount',basis:r.source_basis_json,totalCents:r.total_cents}:{basis:r.source_basis_json,subjectKey:r.subject_key||'',monthlyReviewed:doc.monthlyReviewed,...(doc.billingMode?{billingMode:doc.billingMode}:{})};
+  if(createHash('sha256').update(JSON.stringify(requestHashBasis)).digest('hex')!==r.source_hash)fail();
   if(r.status==='draft'?(r.number!==null||r.issued_at!==null||doc.status!=='draft'||doc.revision!==r.revision):(r.number===null||!stamp(r.issued_at)||doc.number!==r.number||doc.issuedAt!==r.issued_at||doc.status!=='issued'||doc.revision!==r.revision-(r.status==='void'?1:0)))fail();
   if(r.status==='void'?(!stamp(r.voided_at)||!r.voided_by||!str(r.void_reason,1000)||!r.void_reason.trim()):(r.voided_at!==null||r.voided_by!==null||r.void_reason!==''))fail();
   if(r.status!=='draft')number(r.group_id,'request',r.number,r.issued_at);
   institution(doc.institution);
   if(doc.institution.logoAssetId&&!db.prepare('SELECT 1 FROM invoice_brand_assets WHERE group_id=? AND id=?').get(r.group_id,doc.institution.logoAssetId))fail();
+  if(doc.requestKind==='amount'){
+   const expectedLine={subjectKey:'',subject:'学生预收款',mode:'amount',unitAmountCents:r.total_cents,amountCents:r.total_cents,lessonCount:0,durationSeconds:0};
+   if(!int(r.total_cents,1)||r.subject_key!==null||doc.subjectKey!==null||doc.dueDate!==''||doc.billingMode!==undefined||doc.monthlyReviewed!==false||doc.lessons.length||doc.lessonCount!==0||JSON.stringify(doc.lines)!==JSON.stringify([expectedLine])||JSON.stringify(doc.warnings)!=='[]'||!basis.student||!Array.isArray(basis.plans)||!Array.isArray(basis.rates))fail();
+   continue;
+  }
   if(!Array.isArray(basis.lessons)||!Array.isArray(basis.subjects)||!Array.isArray(basis.rates)||!Array.isArray(basis.policies))fail();
   const expectedLessons=[],expectedLines=[],expectedWarnings=[];
   for(const lesson of basis.lessons){
@@ -59,6 +66,7 @@ export function checkRestoredPrepayments(db){
    const matches=basis.subjects.filter(subject=>(lesson.subjectId?subject.subjectId===lesson.subjectId:subject.subject.trim().toLowerCase()===lesson.subject.trim().toLowerCase())&&subject.createdAt<=lesson.plannedStart).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)),subject=matches[0];
    if(r.subject_key&&subject?.subjectKey!==r.subject_key)continue;
    const date=malaysiaDate(lesson.plannedStart),rate=subject?rateOnDate(basis.rates.filter(v=>v.subjectKey===subject.subjectKey),date):null,policy=policyOnDate(basis.policies,date),seconds=(Date.parse(lesson.plannedEnd)-Date.parse(lesson.plannedStart))/1000;
+   if(doc.billingMode==='hour'&&rate&&rate.mode!=='hour')continue;
    if(!subject||matches[1]?.createdAt===subject.createdAt||!rate||!policy||!int(seconds,1,86400))fail();
    const amount=rate.mode==='lesson'?rate.amountCents:rate.mode==='hour'?billHourlyCents(rate.amountCents,seconds,policy.hourRounding).amountCents:0;
    expectedLessons.push({lessonId:lesson.lessonId,subjectKey:subject.subjectKey,subject:lesson.subject,teacherName:lesson.teacherName,plannedStart:lesson.plannedStart,plannedEnd:lesson.plannedEnd,status:lesson.status,rateVersionId:rate.id,policyVersionId:policy.id,mode:rate.mode,unitAmountCents:rate.amountCents,durationSeconds:seconds,amountCents:amount,warnings:[]});
@@ -126,6 +134,20 @@ export function checkRestoredPrepayments(db){
  const requestHistory=new Map();
  for(const o of operations.values()){
   const related=events.filter(e=>e.group_id===o.group_id&&e.operation_id===o.operation_id),result=results.get(key(o.group_id,o.operation_id));
+  if(o.action==='settleInvoice'){
+   const invoice=db.prepare('SELECT * FROM invoices WHERE group_id=? AND id=?').get(o.group_id,result.invoiceId),account=accounts.get(key(o.group_id,result.studentId));
+   const children=[...operations.values()].filter(child=>child.group_id===o.group_id&&child.execution_id===o.execution_id&&child.operation_id!==o.operation_id);
+   if(related.length||!invoice||invoice.status!=='issued'||invoice.student_id!==result.studentId||!int(result.initialRevision)||!int(result.initialInvoiceRevision)||!int(result.revision)||!int(result.invoiceRevision)||!int(result.settledCents)||!int(result.remainingHourlyCents)||typeof result.hasMore!=='boolean'||!Array.isArray(result.allocationIds)||result.allocationIds.length>20||new Set(result.allocationIds).size!==result.allocationIds.length||children.length!==result.allocationIds.length||result.revision!==result.initialRevision+children.length||result.invoiceRevision!==result.initialInvoiceRevision+children.length||result.revision>(account?.revision??0))fail();
+   let total=0;
+   for(const [index,allocationId]of result.allocationIds.entries()){
+    const allocation=allocations.get(key(o.group_id,allocationId)),child=operations.get(key(o.group_id,'settle_'+o.execution_id+'_'+index));
+    const childResult=child&&results.get(key(o.group_id,child.operation_id));
+    if(!allocation||!child||child.action!=='apply'||child.execution_id!==o.execution_id||child.request_hash!==o.request_hash||child.actor_id!==o.actor_id||child.created_at!==o.created_at||allocation.invoice_id!==result.invoiceId||allocation.student_id!==result.studentId||allocation.operation_id!==child.operation_id||childResult?.allocationId!==allocationId||childResult.revision!==result.initialRevision+index+1||childResult.invoiceRevision!==result.initialInvoiceRevision+index+1)fail();
+    total+=allocation.amount_cents;
+   }
+   if(total!==result.settledCents)fail();
+   continue;
+  }
   if(['recordPayment','refund','reversePayment','apply','release'].includes(o.action)){if(related.length!==1)fail();}
   else{
    if(!['saveRequest','issueRequest','deleteRequest','voidRequest'].includes(o.action)||!result.requestId||!int(result.revision,1)||related.length)fail();
