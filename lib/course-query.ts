@@ -13,7 +13,7 @@ import type {TeacherStudentPair} from './teacher-student-options';
 
 export class CourseQueryError extends Error {constructor(message:string,readonly status=400){super(message);}}
 export type CourseRange={from:string;to:string;start:string;end:string};
-export type CoursePage<T>={items:T[];page:number;pages:number;total:number;pageSize:20;revision:number;teacherStudentPairs:TeacherStudentPair[]};
+export type CoursePage<T>={items:T[];page:number;pages:number;total:number;pageSize:20;revision:number;teacherStudentPairs?:TeacherStudentPair[]};
 export type CourseTaskCounts={lessons:number;reschedule:number;overview:number;attention:number;pendingAttendance:number;pendingReview:number;makeupNeeded:number;todayLessons:number;todayPendingAttendance:number};
 export type CourseTeachingSummary={month:string;recordedMilliseconds:number;approvedMilliseconds:number;count:number};
 export type CourseTimetableSummary={lessonCount:number;completedCount:number;durationMilliseconds:number};
@@ -139,6 +139,11 @@ export async function courseAggregates(actor:Account,month:string,plans:SummaryP
 
 export async function courseList(actor:Account,params:URLSearchParams){
  const view=text(params.get('view'))||'lessons',mode=text(params.get('mode'))||(view==='reschedules'?'pending':'month'),requestedPage=coursePage(params.get('page')),month=courseMonth(params.get('month')),range=courseRange(params,month),now=new Date().toISOString();
+ const optionFlags=params.getAll('includeOptions');
+ if(optionFlags.length>1||optionFlags.some(value=>!['0','1'].includes(value))||params.get('optionsOnly')==='1'&&optionFlags[0]==='0')throw new CourseQueryError('课程筛选选项请求无效');
+ // This only omits response metadata. Actor, row and post-read authority checks
+ // are identical for every page; existing clients still receive all options.
+ const includeOptions=optionFlags[0]!=='0';
  if(!['lessons','sessions','reschedules'].includes(view)||!['month','pending','review','makeup','originals','records','upcoming','timetable'].includes(mode))throw new CourseQueryError('课程查询无效');
  if(actor.role==='student'&&view==='sessions')throw new CourseQueryError('没有课程考勤查看权限',403);
  const sessionPermission=view==='sessions'&&await hasAdminPermission(actor,'attendance.view')?'attendance.view' as const:'lessons.view' as const;
@@ -168,8 +173,14 @@ export async function courseList(actor:Account,params:URLSearchParams){
  if(mode==='timetable'&&(view!=='lessons'||!['teacher','student'].includes(text(params.get('timetableType')))))throw new CourseQueryError('时间表类型无效');
  // Relation options deliberately ignore both selected people, retaining the
  // rest of the actual query context. DISTINCT is before any page LIMIT.
+ let teacherStudentPairs:TeacherStudentPair[]|undefined;
+ if(includeOptions){
  const pairParts=parts.filter((_,index)=>!peoplePartIndexes.has(index)),pairArgs=args.filter((_,index)=>!peopleArgIndexes.has(index));
- const pairFrom=view==='sessions'?from+' JOIN class_session_participants pair_member ON pair_member.group_id=s.group_id AND pair_member.session_id=s.id':from;
+ // Only join the outer session when a filter actually uses it. An unused
+ // LEFT JOIN can otherwise evaluate historical session visibility per lesson.
+ // The teacher's own group-session authority subquery remains in scope.sql.
+ const pairBase=view!=='sessions'&&!pairParts.some(part=>/\bs\./.test(part))?from.replace(' LEFT JOIN class_sessions s ON s.id=l.session_id AND s.group_id=l.group_id',''):from;
+ const pairFrom=view==='sessions'?pairBase+' JOIN class_session_participants pair_member ON pair_member.group_id=s.group_id AND pair_member.session_id=s.id':pairBase;
  const historicalPairs=await reader.rows<TeacherStudentPair>(`SELECT DISTINCT ${alias}.teacher_name AS teacher,${view==='sessions'?'pair_member.student_name':'l.student'} AS student ${pairFrom} WHERE ${pairParts.join(' AND ')} ORDER BY teacher,student`,...pairArgs);
  // Current assignments remain selectable even before this month's first
  // course is scheduled. This projection contains names only, independent of
@@ -180,7 +191,8 @@ export async function courseList(actor:Account,params:URLSearchParams){
   UNION
   SELECT c.teacher_name AS teacher,cm.student_name AS student FROM classrooms c JOIN classroom_members cm ON cm.group_id=c.group_id AND cm.classroom_id=c.id JOIN teachers roster_teacher ON roster_teacher.group_id=c.group_id AND roster_teacher.name=c.teacher_name AND roster_teacher.active=1 JOIN students roster_student ON roster_student.group_id=cm.group_id AND roster_student.name=cm.student_name AND roster_student.active=1 WHERE c.group_id=? AND c.archived=0${classPersonSql}${subject?' AND c.subject=?':''}${classroom?' AND c.id=?':''} AND ${currentIdentity.sql}
  ) ORDER BY teacher,student`,actor.groupId,...personArgs,...subject?[subject]:[],...classroom?[classroom]:[],...currentIdentity.args,actor.groupId,...personArgs,...subject?[subject]:[],...classroom?[classroom]:[],...currentIdentity.args);
- const teacherStudentPairs=[...new Map([...currentPairs,...historicalPairs].map(pair=>[JSON.stringify([pair.teacher,pair.student]),pair])).values()].sort((a,b)=>a.teacher.localeCompare(b.teacher)||a.student.localeCompare(b.student));
+ teacherStudentPairs=[...new Map([...currentPairs,...historicalPairs].map(pair=>[JSON.stringify([pair.teacher,pair.student]),pair])).values()].sort((a,b)=>a.teacher.localeCompare(b.teacher)||a.student.localeCompare(b.student));
+ }
  if(params.get('optionsOnly')==='1'){
   await assertCourseActor(actor,keys);
   return{items:[],page:1,pages:1,total:0,pageSize:20 as const,revision:await readRevision(actor.groupId),month,courseRange:{from:range.from,to:range.to},teacherStudentPairs,optionsOnly:true};
@@ -188,7 +200,7 @@ export async function courseList(actor:Account,params:URLSearchParams){
  let where=parts.join(' AND '),summary:CourseTimetableSummary|undefined,studentOptions:string[]|undefined;
  if(mode==='timetable'){
   const timetableType=text(params.get('timetableType'));if(view!=='lessons'||!['teacher','student'].includes(timetableType))throw new CourseQueryError('时间表类型无效');
-  if(timetableType==='teacher'){const options=await reader.rows<{student:string}>(`SELECT DISTINCT l.student FROM lessons l WHERE ${scope.sql} AND ${courseOverlap('l')} AND l.status<>'cancelled'${teacher?' AND l.teacher_name=?':''} ORDER BY l.student`,...scope.args,range.end,range.start,...teacher?[teacher]:[]);studentOptions=options.map(item=>item.student);}
+  if(timetableType==='teacher'&&includeOptions){const options=await reader.rows<{student:string}>(`SELECT DISTINCT l.student FROM lessons l WHERE ${scope.sql} AND ${courseOverlap('l')} AND l.status<>'cancelled'${teacher?' AND l.teacher_name=?':''} ORDER BY l.student`,...scope.args,range.end,range.start,...teacher?[teacher]:[]);studentOptions=options.map(item=>item.student);}
   if(timetableType==='teacher'){
    // Choose the representative after applying the selected student filter.
    where+=` AND (coalesce(s.session_type,'one_to_one')<>'group' OR l.id=(SELECT min(rep.id) FROM lessons rep WHERE rep.group_id=l.group_id AND rep.session_id=l.session_id AND rep.status<>'cancelled'${student?' AND rep.student=?':''}))`;if(student)args.push(student);
@@ -218,5 +230,5 @@ export async function courseList(actor:Account,params:URLSearchParams){
    }
  }
  await assertCourseActor(actor,keys);
- return{items,page,pages:Math.max(1,Math.ceil(total/20)),total,pageSize:20 as const,revision:await readRevision(actor.groupId),month,courseRange:{from:range.from,to:range.to},teacherStudentPairs,...summary?{summary}:{},...studentOptions?{studentOptions}:{},...related};
+ return{items,page,pages:Math.max(1,Math.ceil(total/20)),total,pageSize:20 as const,revision:await readRevision(actor.groupId),month,courseRange:{from:range.from,to:range.to},...includeOptions?{teacherStudentPairs}:{},...summary?{summary}:{},...studentOptions?{studentOptions}:{},...related};
 }

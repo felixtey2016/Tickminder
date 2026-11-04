@@ -57,25 +57,39 @@ export async function homeSummary(actor: Account, responseScope: 'home' | 'navig
       WHERE ${scope.sql} AND l.status='scheduled' AND julianday(l.planned_start)>=julianday(?) ORDER BY l.planned_start,l.id LIMIT 1`, ...scope.args, now);
     return { items, total: Number(found[0]?.homeTotal || 0), nextLesson };
   };
-  const navigationWork = async (): Promise<CourseTaskCounts> => {
+  const nextBoundary = (...values: (string | null | undefined)[]) => new Date(Math.min(Date.parse(end), ...values.map(value => value ? Date.parse(value) : NaN).filter(value => Number.isFinite(value) && value > Date.parse(now)))).toISOString();
+  const navigationWork = async (): Promise<{counts: CourseTaskCounts; nextRefreshAt: string}> => {
     const empty = { lessons: 0, reschedule: 0, overview: 0, attention: 0, pendingAttendance: 0, pendingReview: 0, makeupNeeded: 0, todayLessons: 0, todayPendingAttendance: 0 };
-    if (!canLessons && !canAttendance) return empty;
+    if (!canLessons && !canAttendance) return {counts: empty, nextRefreshAt: end};
     const attendance = guardedCoreReader(actor, [canLessons ? 'lessons.view' : 'attendance.view', ...canAttendance ? ['attendance.view'] : []]);
     const countKey = "CASE WHEN s.session_type='group' THEN s.id ELSE l.id END";
-    // Preserve the navigation's historical counters as well as today's cards.
-    // These are aggregate rows, without monthly totals or roster hydration.
-    const row = await attendance.first<{ pending: number; review: number; makeup: number; today: number; todayLessons: number }>(`SELECT
+    // Only group sessions affect counter deduplication. A one-to-one session
+    // must not run its correlated participant-visibility scan for every old
+    // lesson. Keep the scoped session view (including retirement visibility),
+    // but join it only for group sessions and discard irrelevant history first.
+    // No month cutoff: old pending attendance/review/makeup remains included.
+    const row = await attendance.first<{ pending: number; review: number; makeup: number; today: number; todayLessons: number; nextStart: string | null; nextEnd: string | null }>(`SELECT
       count(DISTINCT CASE WHEN l.status='scheduled' AND julianday(l.planned_end)<julianday(?) THEN ${countKey} END) AS pending,
       count(DISTINCT CASE WHEN l.status IN('completed','student_absent','teacher_absent') AND l.reviewed_at IS NULL THEN ${countKey} END) AS review,
-      coalesce(sum(l.status IN('student_absent','teacher_absent') AND coalesce(l.chargeable,0)=0 AND NOT EXISTS(SELECT 1 FROM lessons replacement WHERE replacement.group_id=l.group_id AND replacement.replacement_for=l.id AND replacement.status<>'cancelled')),0) AS makeup,
+      coalesce(sum(CASE WHEN l.status IN('student_absent','teacher_absent') AND coalesce(l.chargeable,0)=0 THEN NOT EXISTS(SELECT 1 FROM lessons replacement WHERE replacement.group_id=l.group_id AND replacement.replacement_for=l.id AND replacement.status<>'cancelled') ELSE 0 END),0) AS makeup,
       count(DISTINCT CASE WHEN l.status='scheduled' AND ${courseOverlap('l')} THEN ${countKey} END) AS today,
-      count(DISTINCT CASE WHEN l.status<>'cancelled' AND ${courseOverlap('l')} THEN ${countKey} END) AS todayLessons
-      ${from} WHERE ${scope.sql}`, now, end, start, end, start, ...scope.args);
+      count(DISTINCT CASE WHEN l.status<>'cancelled' AND ${courseOverlap('l')} THEN ${countKey} END) AS todayLessons,
+      min(CASE WHEN l.status='scheduled' AND julianday(l.planned_start)>julianday(?) THEN strftime('%Y-%m-%dT%H:%M:%fZ',l.planned_start) END) AS nextStart,
+      min(CASE WHEN l.status='scheduled' AND julianday(l.planned_end)>=julianday(?) THEN strftime('%Y-%m-%dT%H:%M:%fZ',l.planned_end) END) AS nextEnd
+      FROM lessons l LEFT JOIN class_sessions s ON s.group_id=l.group_id AND s.id=l.session_id AND s.session_type='group'
+      WHERE ${scope.sql} AND (l.status='scheduled'
+        OR (l.status IN('completed','student_absent','teacher_absent') AND l.reviewed_at IS NULL)
+        OR (l.status IN('student_absent','teacher_absent') AND coalesce(l.chargeable,0)=0)
+        OR (l.status<>'cancelled' AND ${courseOverlap('l')}))`, now, end, start, end, start, now, now, ...scope.args, end, start);
     const incoming = canRequests ? await guardedCoreReader(actor, ['reschedules.view']).first<{total:number}>(`SELECT count(*) AS total FROM reschedule_requests r JOIN lessons l ON l.group_id=r.group_id AND l.id=r.lesson_id WHERE ${scope.sql} AND r.status='pending' AND l.status='scheduled'${actor.role==='admin'?'':' AND r.requested_role<>? AND r.requested_by<>?'}`, ...scope.args, ...actor.role==='admin'?[]:[actor.role,actor.id]) : null;
     const pending=Number(row?.pending||0),review=canAttendance?Number(row?.review||0):0,makeup=canAttendance?Number(row?.makeup||0):0;
-    return { lessons: actor.role==='teacher'?pending:0, reschedule: Number(incoming?.total||0), overview: actor.role==='admin'?review:0,
+    // Pending is strictly planned_end < now; schedule one millisecond after an
+    // equal endpoint. Starts also refresh upcoming/ongoing labels. The day edge
+    // is GMT+8 and is always an upper bound, without a fixed polling interval.
+    const nextRefreshAt = nextBoundary(row?.nextStart, row?.nextEnd ? new Date(Date.parse(row.nextEnd) + 1).toISOString() : null);
+    return { nextRefreshAt, counts: { lessons: actor.role==='teacher'?pending:0, reschedule: Number(incoming?.total||0), overview: actor.role==='admin'?review:0,
       attention: actor.role==='admin'&&canAttendance?pending+review+makeup:0, pendingAttendance: pending, pendingReview: review, makeupNeeded: makeup,
-      todayLessons:canLessons?Number(row?.todayLessons||0):0,todayPendingAttendance:canAttendance?Number(row?.today||0):0 };
+      todayLessons:canLessons?Number(row?.todayLessons||0):0,todayPendingAttendance:canAttendance?Number(row?.today||0):0 } };
   };
   const learningWork = async () => {
     const empty = { homeworkCount: 0, pendingHomeworkCount: 0, nextStudy: null as HomeStudyBlock | null };
@@ -101,9 +115,11 @@ export async function homeSummary(actor: Account, responseScope: 'home' | 'navig
     ]);
     return { homeworkCount: Number(count?.total || 0), pendingHomeworkCount: Number(count?.pending || 0), nextStudy };
   };
-  const [today, navigationCounts, learning] = await Promise.all([
+  const [today, navigation, learning] = await Promise.all([
     responseScope==='home'?todayWork():null, navigationWork(), responseScope==='home'?learningWork():null,
   ]);
+  const {counts: navigationCounts} = navigation;
+  const nextRefreshAt = nextBoundary(navigation.nextRefreshAt, today?.nextLesson?.plannedStart, learning?.nextStudy?.startsAt, learning?.nextStudy?.endsAt);
   await assertHomeActor(actor);
   if (JSON.stringify(access) !== JSON.stringify(await adminPermissionContext(actor))) throw new AdminPermissionDenied();
   // Recheck every grant used by a result, including revocation after the last
@@ -111,7 +127,7 @@ export async function homeSummary(actor: Account, responseScope: 'home' | 'navig
   if (canLessons) await reader.first('SELECT 1');
   if (canAttendance) await guardedCoreReader(actor, ['attendance.view']).first('SELECT 1');
   if ((canLessons || canAttendance) && canRequests) await guardedCoreReader(actor, ['reschedules.view']).first('SELECT 1');
-  if (!today || !learning) return { accountId: actor.id, groupId: requireGroup(actor.groupId), navigationCounts };
+  if (!today || !learning) return { accountId: actor.id, groupId: requireGroup(actor.groupId), navigationCounts, nextRefreshAt };
   return { accountId: actor.id, groupId: requireGroup(actor.groupId), today: { date, total: today.total, items: today.items }, nextLesson: today.nextLesson,
-    taskCounts: { todayLessons: today.total, todayPendingAttendance:navigationCounts.todayPendingAttendance, attention:navigationCounts.attention }, navigationCounts, learning };
+    taskCounts: { todayLessons: today.total, todayPendingAttendance:navigationCounts.todayPendingAttendance, attention:navigationCounts.attention }, navigationCounts, learning, nextRefreshAt };
 }

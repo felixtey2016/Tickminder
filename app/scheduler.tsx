@@ -24,7 +24,8 @@ import '@/lib/parents-i18n';
 import { groupFetch, setClientGroup } from "@/lib/group-client";
 import {readClientAuth,acceptClientAuth} from '@/lib/client-auth-read';
 import {getPrivateReadSnapshot,installPrivateReadEvents,setPrivateReadIdentity,invalidatePrivateReads,subscribePrivateReadLifecycle} from '@/lib/private-read-lifecycle';
-import {privateReadFlight,PrivateReadInvalidatedError} from '@/lib/private-read-flight';
+import {PrivateReadInvalidatedError} from '@/lib/private-read-flight';
+import {useHomeSummary} from '@/lib/use-home-summary';
 import { FilterScope, useFilterPreference } from "@/lib/filter-preferences";
 import { getLanguage, setLanguage, t, type Language } from "@/lib/i18n";
 import { readBrowserLanguagePreference, rememberLanguagePreference } from '@/lib/language-preference';
@@ -82,7 +83,7 @@ const AccountSettings=lazy(()=>import("./account-settings").then(m=>({default:m.
 import { NotificationsProvider, MenuBadge, detachPushOnLogout } from "./notifications";
 const NotificationWorkspace=lazy(()=>import('./notification-workspace').then(module=>({default:module.NotificationWorkspace})));
 import type { CourseTaskCounts } from "@/lib/course-query";
-import type { HomeSummary } from "@/lib/home-summary-types";
+import type { HomeSummary, HomeNavigationSummary } from "@/lib/home-summary-types";
 import { monthCalendarRange, type CalendarRange } from "@/lib/course-calendar-range";
 import { courseBadgeCount, defaultCourseView, isCourseView, normalizeCourseView } from "@/lib/course-navigation";
 import { CourseNavigation } from "@/components/course-navigation";
@@ -330,8 +331,9 @@ export function Scheduler({initialQuizId,initialAuth,onAuthChange}:{initialQuizI
         let active = true;
         let checking = false;
         let lastForegroundCheck = 0;
+        let failures=0,retryAt=0;
         const check = async () => {
-            if (!active || checking || busy || document.visibilityState === "hidden") return;
+            if (!active || checking || busy || document.visibilityState === "hidden" || Date.now()<retryAt) return;
             checking = true;
             try {
                 if (account.role === "pending" || account.role === "parent") {
@@ -349,11 +351,14 @@ export function Scheduler({initialQuizId,initialAuth,onAuthChange}:{initialQuizI
                         await refreshState(true);
                     } else if (active && (revisionRef.current === null || revision !== revisionRef.current)) {revisionRef.current=revision;await refreshState(true);}
                 }
+                failures=0;retryAt=0;
             } catch (error) {
                 const status = (error as Error & { status?: number }).status;
                 if (active && (status === 401 || status === 403)) {
                     try { const next = await request("/api/auth"); if (active) { setAuth(next); setState(null); revisionRef.current = null; } }
                     catch { /* Retry automatically. */ }
+                } else if(!(error instanceof PrivateReadInvalidatedError)) {
+                    failures++;retryAt=Date.now()+Math.min(300_000,15_000*2**Math.min(failures-1,5));
                 }
             } finally { checking = false; }
         };
@@ -653,8 +658,9 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state:legacyState, 
     useEffect(()=>{const timer=window.setInterval(()=>setBadgeNow(Date.now()),30_000);return()=>window.clearInterval(timer);},[]);
     const badgeIdentity=JSON.stringify([account.id,account.groupId,role,account.adminPermissions]);
     const [navigationSummary,setNavigationSummary]=useState<{identity:string;counts:CourseTaskCounts|null;error:boolean}>({identity:badgeIdentity,counts:null,error:false});
-    const acceptHomeSummary=useCallback((summary:HomeSummary|null)=>{
-        if(!summary||summary.accountId!==account.id||summary.groupId!==account.groupId)return;
+    const acceptHomeSummary=useCallback((summary:HomeSummary|null,failed=false)=>{
+        if(!summary){setNavigationSummary({identity:badgeIdentity,counts:null,error:failed});return;}
+        if(summary.accountId!==account.id||summary.groupId!==account.groupId)return;
         setNavigationSummary({identity:badgeIdentity,counts:summary.navigationCounts,error:false});
     },[account.id,account.groupId,badgeIdentity]);
     const knownBadgeCounts=navigationSummary.identity===badgeIdentity?navigationSummary.counts:null;
@@ -728,38 +734,11 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state:legacyState, 
     const calendarReady=projectionView==='calendar'&&Boolean(projection.data)&&state.courseRange?.from===calendarRange.from&&state.courseRange?.to===calendarRange.to;
     const calendarLessons=calendarReady?lessons:[];
     const homeSummaryActive=activeView==='home';
+    const navigation=useHomeSummary<HomeNavigationSummary>({identity:identityKey,accountId:account.id||'',groupId:account.groupId||null,home:false,enabled:!homeSummaryActive});
     useEffect(()=>{
-        // Home owns its richer summary request; only shell counts are needed elsewhere.
         if(homeSummaryActive)return;
-        let active=true,pending=false,queued=false,clearEpoch=getPrivateReadSnapshot().clearEpoch;
-        const controller=new AbortController();
-        const load=async()=>{
-            if(!active||document.visibilityState==="hidden")return;
-            const context=getPrivateReadSnapshot();
-            if(pending||context.blocked||context.identity!==identityKey){queued=true;return;}
-            queued=false;
-            pending=true;
-            try{
-                const value=await privateReadFlight.read({kind:'navigation',identity:identityKey,url:'/api/home-summary?scope=navigation',signal:controller.signal,load:async signal=>{
-                    const response=await groupFetch('/api/home-summary?scope=navigation',{cache:'no-store',signal});
-                    const data=await readApiJson<{accountId:string;groupId:string;navigationCounts:CourseTaskCounts;error?:string}>(response);
-                    if(!response.ok)throw new Error(data.error||'Navigation summary unavailable');return data;
-                },validate:(data:unknown)=>{
-                    const result=data as {accountId:string;groupId:string;navigationCounts:CourseTaskCounts};
-                    if(result.accountId!==account.id||result.groupId!==account.groupId){invalidatePrivateReads('navigation-identity',{auth:true,clear:true});window.dispatchEvent(new Event('timelyo:auth-refresh'));throw new PrivateReadInvalidatedError(true);}
-                    if(!result.navigationCounts||Object.values(result.navigationCounts).some(count=>!Number.isSafeInteger(count)||count<0))throw new Error('Invalid navigation summary');return result;
-                }});
-                if(active&&getPrivateReadSnapshot().epoch===context.epoch)setNavigationSummary({identity:badgeIdentity,counts:value.navigationCounts,error:false});
-            }catch(error){if(active&&!controller.signal.aborted&&!(error instanceof PrivateReadInvalidatedError))setNavigationSummary(previous=>({...previous,error:true}));}
-            finally{pending=false;if(queued&&active)void load();}
-        };
-        const invalidated=()=>{const next=getPrivateReadSnapshot();if(next.clearEpoch!==clearEpoch){clearEpoch=next.clearEpoch;setNavigationSummary({identity:badgeIdentity,counts:null,error:false});}if(next.authError)setNavigationSummary(previous=>({...previous,error:true}));void load();};
-        const unsubscribe=subscribePrivateReadLifecycle(invalidated);
-        const refresh=()=>{void load();};void load();
-        const timer=window.setInterval(refresh,60_000);
-        window.addEventListener("focus",refresh);document.addEventListener("visibilitychange",refresh);
-        return()=>{active=false;unsubscribe();controller.abort();window.clearInterval(timer);window.removeEventListener("focus",refresh);document.removeEventListener("visibilitychange",refresh);};
-    },[homeSummaryActive,badgeIdentity,account.id,account.groupId,identityKey]);
+        setNavigationSummary({identity:badgeIdentity,counts:navigation.error?null:navigation.data?.navigationCounts||null,error:Boolean(navigation.error)});
+    },[homeSummaryActive,badgeIdentity,navigation.data,navigation.error]);
 
     useEffect(() => {
         setActiveScopes(requiredScope ? [requiredScope] : []);
@@ -809,7 +788,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state:legacyState, 
     else if (activeView === "home" && role === "pending") {
         pageContent = <section className="panel pending-home"><h2>{t(account.assignmentStatus === "ACTIVE" ? "账号已启用" : "等待分配")}</h2><p>{t("管理员分配身份后，课程、功课及班级会显示在这里。")}</p>{account.pendingExpiresAt && <p className="notice">{t("待分配期限")} · {new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-GB",{timeZone:"Asia/Kuala_Lumpur",dateStyle:"medium",timeStyle:"short"}).format(new Date(account.pendingExpiresAt))}<br/>{t("新注册账号在 7 天内未启用或绑定，会到期清理。请联系管理员。")}</p>}<Button variant="outline" onClick={()=>choose("myAccount")}>{t("我的账号")}</Button></section>;
     } else if (activeView === "home" && role !== "pending") {
-        pageContent = <HomeDashboard role={role} name={account.name} accountId={account.id || ""} groupId={account.groupId || null} onSummary={acceptHomeSummary} onNavigate={destination=>{if(destination==='quizHistory'){if(!canView('quizzes')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;window.history.replaceState({...window.history.state,timelyoQuizTab:'history'},'');choose('quizzes');}else choose(destination);}} onOpenTask={(classroomId,taskId)=>{if(!canView('classrooms')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;setClassroomTaskTarget({classroomId,taskId});choose('classrooms');}}/>;
+        pageContent = <HomeDashboard identityKey={identityKey} role={role} name={account.name} accountId={account.id || ""} groupId={account.groupId || null} onSummary={acceptHomeSummary} onNavigate={destination=>{if(destination==='quizHistory'){if(!canView('quizzes')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;window.history.replaceState({...window.history.state,timelyoQuizTab:'history'},'');choose('quizzes');}else choose(destination);}} onOpenTask={(classroomId,taskId)=>{if(!canView('classrooms')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;setClassroomTaskTarget({classroomId,taskId});choose('classrooms');}}/>;
     } else if (activeView === "notifications") {
         pageContent = <NotificationWorkspace key={`${account.groupId}:${role}`} role={role} language={language} learningMutate={learningMutate} courseMutate={mutate} onLesson={lesson=>setModal({type:'edit',lesson})} busy={busy}/>;
     } else if (activeView === "myAccount") {

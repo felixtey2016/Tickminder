@@ -1,14 +1,13 @@
 "use client";
 
 import {displayFormatter} from '@/lib/display-preferences';
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { BookOpen, CalendarDays, ChevronRight, ClipboardCheck, Clock3, LibraryBig, NotebookPen, type LucideIcon } from "lucide-react";
 import { sessionLessonTitle } from "@/lib/class-session-display";
 import { getLanguage, t, registerTranslations } from "@/lib/i18n";
 import { canAdminAction, canAdminView } from "@/lib/admin-permission-client";
 import type { HomeLesson, HomeSummary } from "@/lib/home-summary-types";
-import {groupFetch} from '@/lib/group-client';
-import {actionFailureMessage,readApiJson} from '@/lib/action-feedback';
+import {useHomeSummary} from '@/lib/use-home-summary';
 import { Button } from "@/components/ui/button";
 import { Mascot } from "@/components/page-state";
 import { useAdminPermissionAccount } from "./admin-permission-context";
@@ -71,48 +70,19 @@ function HomeToday({ role, data, loading, error, reload, onNavigate }: { role: R
   </section>;
 }
 
-export function HomeDashboard({ role, name, accountId, groupId, onNavigate, onOpenTask, onSummary }: {
-  role: Role; name: string; accountId: string; groupId: string | null;
+export function HomeDashboard({ role, name, accountId, groupId, identityKey, onNavigate, onOpenTask, onSummary }: {
+  role: Role; name: string; accountId: string; groupId: string | null; identityKey:string;
   onNavigate: (destination: string) => void;
   onOpenTask?: (classroomId:string,taskId:string)=>void;
-  onSummary?: (summary:HomeSummary|null)=>void;
+  onSummary?: (summary:HomeSummary|null,failed?:boolean)=>void;
 }) {
   const permissionAccount = useAdminPermissionAccount();
   const [now, setNow] = useState(() => Date.now());
-  const identity = JSON.stringify([accountId,groupId,role,permissionAccount?.adminPermissions]);
-  const [snapshot,setSnapshot] = useState<{identity:string;data:HomeSummary|null;loading:boolean;error:string}>({identity:'',data:null,loading:true,error:''});
-  const reloadRef = useRef<()=>void>(()=>{}), reload = useCallback(()=>reloadRef.current(),[]);
-  useEffect(() => {
-    let alive=true,pending=false,queued=false,lastStarted=0;
-    const controller=new AbortController();
-    setSnapshot({identity,data:null,loading:true,error:''});
-    const load=async(force=false)=>{
-      if(!alive)return;
-      if(pending){if(force)queued=true;return;}
-      if(!force&&Date.now()-lastStarted<300)return;
-      lastStarted=Date.now();
-      pending=true;
-      setSnapshot(previous=>({...previous,loading:true,error:''}));
-      try{
-        const response=await groupFetch('/api/home-summary',{cache:'no-store',signal:controller.signal});
-        const value=await readApiJson<HomeSummary&{error?:string}>(response);
-        if(response.status===401||response.status===403){if(alive)setSnapshot({identity,data:null,loading:false,error:t(value.error||'页面加载失败')});window.dispatchEvent(new Event('timelyo:auth-refresh'));return;}
-        if(!response.ok)throw Error(value.error||t('页面加载失败'));
-        if(value.accountId!==accountId||value.groupId!==groupId){if(alive)setSnapshot({identity,data:null,loading:false,error:t('页面加载失败')});window.dispatchEvent(new Event('timelyo:auth-refresh'));return;}
-        if(!Array.isArray(value.today?.items)||value.today.items.length>3||!Number.isInteger(value.today.total))throw Error(t('页面加载失败'));
-        if(alive)setSnapshot({identity,data:value,loading:false,error:''});
-      }catch(error){if(alive&&!controller.signal.aborted)setSnapshot(previous=>({...previous,loading:false,error:actionFailureMessage(error)}));}
-      finally{pending=false;if(queued&&alive){queued=false;void load(true);}}
-    };
-    const refresh=()=>{if(document.visibilityState!=='hidden'){setNow(Date.now());void load();}};
-    const changed=()=>{if(document.visibilityState!=='hidden'){setNow(Date.now());void load(true);}};
-    reloadRef.current=changed;void load(true);
-    const timer=window.setInterval(refresh,60_000);
-    window.addEventListener('focus',refresh);window.addEventListener('tickminder:data-changed',changed);document.addEventListener('visibilitychange',refresh);
-    return()=>{alive=false;controller.abort();window.clearInterval(timer);window.removeEventListener('focus',refresh);window.removeEventListener('tickminder:data-changed',changed);document.removeEventListener('visibilitychange',refresh);};
-  },[identity,accountId,groupId]);
-  const summary=snapshot.identity===identity?snapshot.data:null,error=snapshot.identity===identity?snapshot.error:'',loading=snapshot.identity!==identity||snapshot.loading;
-  useEffect(()=>{onSummary?.(summary);},[summary,onSummary]);
+  const {data:summary,error,loading,reload,updatedAt}=useHomeSummary<HomeSummary>({identity:identityKey,accountId,groupId,home:true});
+  useEffect(()=>{if(updatedAt!==null)setNow(updatedAt);},[updatedAt]);
+  // The greeting/date clock is local; it does not initiate a database query.
+  useEffect(()=>{const update=()=>setNow(Date.now()),timer=window.setInterval(update,30_000);window.addEventListener('focus',update);return()=>{clearInterval(timer);window.removeEventListener('focus',update);};},[]);
+  useEffect(()=>{onSummary?.(error?null:summary,Boolean(error));},[summary,error,onSummary]);
   const taskCounts=summary?.taskCounts;
   const today = malaysiaDay(new Date(now).toISOString());
   let cards: HomeCard[];
@@ -133,7 +103,7 @@ export function HomeDashboard({ role, name, accountId, groupId, onNavigate, onOp
   const overview = cards.filter(card => canAdminView(permissionAccount, card.destination)).map(card => {
     return !summary ? { ...card, value: "—", detail: t(error ? "资料暂时无法载入，请稍后刷新" : "正在加载…") } : card;
   });
-  return <section className={"home-compact home-compact-"+role} aria-label={t("主页")}>
+  return <section className={"home-compact home-compact-"+role} aria-label={t("主页")} data-summary-checked-at={updatedAt?new Date(updatedAt).toISOString():undefined} data-summary-stale={error?'true':undefined}>
     <header className={`home-compact-intro${role === "student" ? " home-compact-intro-student" : ""}`}>
       {role === "student" ? <div className="home-compact-welcome"><Mascot pose="hello" size={56}/><div><h1>{t("你好")}{name ? (getLanguage() === "zh" ? "，" : ", ") + name : ""}</h1><p>{t("今天也一起进步一点点。")}</p></div></div> : <h1>{t("你好")}{name ? (getLanguage() === "zh" ? "，" : ", ") + name : ""}</h1>}
       <time dateTime={today}>{new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur", month: "long", day: "numeric", weekday: "short" }).format(new Date(now))}</time>

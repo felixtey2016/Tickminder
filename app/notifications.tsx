@@ -1,6 +1,8 @@
 "use client";
 import {displayFormatter} from '@/lib/display-preferences';
 import {groupFetch} from "@/lib/group-client";
+import {getPrivateReadSnapshot,subscribePrivateReadLifecycle} from '@/lib/private-read-lifecycle';
+import {PrivateReadInvalidatedError} from '@/lib/private-read-flight';
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Bell, BellOff, Check, Settings, Smartphone } from "lucide-react";
@@ -71,29 +73,46 @@ export function NotificationsProvider({accountId,groupId,language,children,audie
   // Only explicit notification controls open this guide. Do not restore a
   // legacy automatically opened permission dialog from navigation history.
   const [prompt,setPrompt]=useDialogState<true|null>("notification-help",null);
-  const inFlight=useRef(false),configured=useRef<State|null>(null),latestRefresh=useRef(0);
+  const inFlight=useRef(false),configured=useRef<State|null>(null),latestRefresh=useRef(0),refreshAbort=useRef<AbortController|null>(null);
+  const refreshPending=useRef<{key:string;promise:Promise<void>}|null>(null),refreshHealth=useRef({at:0,retryAt:0,failures:0,dataEpoch:-1,inbox:false,error:null as unknown});
   const inboxVisible=useRef(inboxOpen),lastInboxMode=useRef(inboxOpen);inboxVisible.current=inboxOpen;
-  useEffect(()=>{pushPaused=false;},[accountId]);
-  const refresh=useCallback(async()=>{
-    const requestId=++latestRefresh.current;
-    const response=await groupFetch(inboxVisible.current?"/api/notifications":"/api/notifications?view=summary",{cache:"no-store"});
+  useEffect(()=>{pushPaused=false;latestRefresh.current++;refreshAbort.current?.abort();configured.current=null;refreshPending.current=null;refreshHealth.current={at:0,retryAt:0,failures:0,dataEpoch:-1,inbox:false,error:null};setState(null);setLoadError('');},[accountId,groupId]);
+  const refresh=useCallback((mode:'manual'|'timer'|'foreground'|'change'='manual'):Promise<void>=>{
+    const context=getPrivateReadSnapshot(),health=refreshHealth.current,now=Date.now();
+    if(context.blocked)return Promise.reject(new PrivateReadInvalidatedError());
+    if(mode!=='manual'&&now<health.retryAt)return Promise.reject(health.error);
+    if((mode==='timer'||mode==='foreground')&&health.at&&health.dataEpoch===context.dataEpoch&&health.inbox===inboxVisible.current&&now-health.at<500)return Promise.resolve();
+    const key=JSON.stringify([accountId,groupId,inboxVisible.current,context.epoch]);
+    if(refreshPending.current?.key===key)return refreshPending.current.promise;
+    const requestId=++latestRefresh.current,controller=new AbortController();refreshAbort.current?.abort();refreshAbort.current=controller;
+    const promise=(async()=>{
+    const response=await groupFetch(inboxVisible.current?"/api/notifications":"/api/notifications?view=summary",{cache:"no-store",signal:controller.signal});
+    if(requestId!==latestRefresh.current||context.epoch!==getPrivateReadSnapshot().epoch){controller.abort();throw new PrivateReadInvalidatedError();}
     if([401,403,404].includes(response.status)){configured.current=null;setState(null);throw new Error("登录已过期，请重新登录");}
     const result=await readApiJson<State & {error?:string}>(response);
     if(!response.ok || result.error) throw new Error(result.error||"通知中心暂时无法载入，请稍后重试");
     if((result.accountId && result.accountId!==accountId)||(result.groupId && result.groupId!==groupId))throw new Error("登录已过期，请重新登录");
-    if(requestId!==latestRefresh.current)return;
+    if(requestId!==latestRefresh.current||context.epoch!==getPrivateReadSnapshot().epoch)throw new PrivateReadInvalidatedError();
     configured.current=result;setState(result);setLoadError("");
+    refreshHealth.current={at:Date.now(),retryAt:0,failures:0,dataEpoch:context.dataEpoch,inbox:inboxVisible.current,error:null};
+    })().catch(error=>{
+      if(controller.signal.aborted)throw new PrivateReadInvalidatedError();
+      if(!(error instanceof PrivateReadInvalidatedError)&&requestId===latestRefresh.current){const failures=refreshHealth.current.failures+1;refreshHealth.current={...refreshHealth.current,failures,retryAt:Date.now()+Math.min(300_000,15_000*2**Math.min(failures-1,5)),error};}
+      throw error;
+    }).finally(()=>{if(refreshPending.current?.promise===promise)refreshPending.current=null;if(refreshAbort.current===controller)refreshAbort.current=null;});
+    refreshPending.current={key,promise};return promise;
   },[accountId,groupId]);
   useEffect(()=>{
     if(lastInboxMode.current===inboxOpen)return;lastInboxMode.current=inboxOpen;
-    void refresh().catch(()=>setLoadError(t("通知中心暂时无法载入，请稍后重试")));
+    void refresh().catch(error=>{if(!(error instanceof PrivateReadInvalidatedError))setLoadError(t("通知中心暂时无法载入，请稍后重试"));});
   },[inboxOpen,refresh]);
   useEffect(()=>{
-    let alive=true;
+    let alive=true,needsDeviceSync=true;
     const sync=()=>withDeviceLock(async()=>{
-      if(!alive || pushPaused)return;
+      if(!alive || pushPaused||!needsDeviceSync)return;
       try {
-        await refresh();if(!alive || pushPaused)return;
+        await refresh('foreground');if(!alive || pushPaused)return;
+        needsDeviceSync=false;
         if(supported()) {
           try {
           const registration=await navigator.serviceWorker.register("/notifications-sw.js",{scope:"/"});
@@ -109,17 +128,28 @@ export function NotificationsProvider({accountId,groupId,language,children,audie
         setDeviceId(null);setEnabled(false);
         // A missing subscription is not a reason to interrupt the page. The
         // Notification Centre retains explicit enable/help controls.
-      } catch(error) {if(alive)setLoadError(error instanceof Error?t(error.message):t("通知中心暂时无法载入，请稍后重试"));}
+      } catch(error) {if(alive&&!(error instanceof PrivateReadInvalidatedError))setLoadError(error instanceof Error?t(error.message):t("通知中心暂时无法载入，请稍后重试"));}
     });
     void sync();
-    const visible=()=>{if(document.visibilityState==="visible") void sync();};
-    const returning=(event:PageTransitionEvent)=>{if(event.persisted)void sync();};
-    const changed=()=>{if(alive && document.visibilityState==="visible")void refresh().catch(()=>setLoadError(t("通知中心暂时无法载入，请稍后重试")));};
+    const visible=()=>{if(document.visibilityState==="visible"){needsDeviceSync=true;void sync();}};
+    const returning=(event:PageTransitionEvent)=>{if(event.persisted){needsDeviceSync=true;void sync();}};
+    const update=(mode:'change'|'timer')=>{if(alive && document.visibilityState==="visible")void refresh(mode).catch(error=>{if(!(error instanceof PrivateReadInvalidatedError))setLoadError(t("通知中心暂时无法载入，请稍后重试"));});};
+    let changeTimer:ReturnType<typeof setTimeout>|undefined;
+    // All listeners for the same DOM event finish advancing the read fence
+    // before this request captures it; do not send an obsolete extra GET.
+    const changed=()=>{clearTimeout(changeTimer);changeTimer=setTimeout(()=>{changeTimer=undefined;update('change');},50);};
+    let previous=getPrivateReadSnapshot();
+    const unsubscribe=subscribePrivateReadLifecycle(()=>{
+      const next=getPrivateReadSnapshot(),cleared=next.clearEpoch!==previous.clearEpoch,changedData=next.dataEpoch!==previous.dataEpoch;
+      if(next.epoch!==previous.epoch)refreshAbort.current?.abort();previous=next;
+      if(cleared){latestRefresh.current++;configured.current=null;setState(null);}
+      if(!next.blocked){if(needsDeviceSync)void sync();else if(changedData||!configured.current)changed();}
+    });
     const message=(event:MessageEvent)=>{if(event.data?.type==="tickminder:notifications"){changed();if(event.data.open!==false)window.dispatchEvent(new Event("tickminder:open-notifications"));}};
-    const timer=window.setInterval(changed,30_000);
+    const timer=window.setInterval(()=>update('timer'),30_000);
     document.addEventListener("visibilitychange",visible);window.addEventListener("pageshow",returning);navigator.serviceWorker?.addEventListener("message",message);
     window.addEventListener("tickminder:data-changed",changed);
-    return()=>{alive=false;latestRefresh.current++;clearInterval(timer);document.removeEventListener("visibilitychange",visible);window.removeEventListener("pageshow",returning);window.removeEventListener("tickminder:data-changed",changed);navigator.serviceWorker?.removeEventListener("message",message);};
+    return()=>{alive=false;unsubscribe();latestRefresh.current++;refreshAbort.current?.abort();clearTimeout(changeTimer);clearInterval(timer);document.removeEventListener("visibilitychange",visible);window.removeEventListener("pageshow",returning);window.removeEventListener("tickminder:data-changed",changed);navigator.serviceWorker?.removeEventListener("message",message);};
   },[accountId,language,refresh,setPrompt]);
   const enable=async()=>{
     if(inFlight.current)return;

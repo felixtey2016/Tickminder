@@ -2,6 +2,7 @@ import type {Account} from './auth';
 import {learningDb} from './learning-server';
 import {groupStatement} from './group-data';
 import {adminPermissionsEnforced,requireAdminPermission,adminPermissionStatements,AdminPermissionDenied} from './admin-permission-access';
+import {recordD1ReadUsage} from './d1-read-usage';
 
 // Keep permission guards and writes in the same transaction while preserving
 // the business code's result indexes and existing tenant/ownership predicates.
@@ -28,6 +29,7 @@ export function guardedCoreDb(actor:Account,keys:readonly string[]):D1Database {
   const batch=async <T=unknown>(statements:D1PreparedStatement[]):Promise<D1Result<T>[]>=>{
     const checks=guards();
     const result=await raw.batch<T>([...checks,...statements.map(statement=>unwrapped.get(statement)||statement)]);
+    recordD1ReadUsage(result);
     return result.slice(checks.length);
   };
   const wrap=(statement:D1PreparedStatement):D1PreparedStatement=>{

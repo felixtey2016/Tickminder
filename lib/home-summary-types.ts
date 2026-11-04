@@ -7,11 +7,12 @@ export type HomeLesson = {
   onlineLink: string | null;
 };
 export type HomeStudyBlock = { id: string; title: string; startsAt: string; endsAt: string };
-export type HomeNavigationSummary = { accountId: string; groupId: string; navigationCounts: CourseTaskCounts };
+export type HomeNavigationSummary = { accountId: string; groupId: string; navigationCounts: CourseTaskCounts; nextRefreshAt: string };
 export type HomeSummary = {
   accountId: string; groupId: string; today: { date: string; total: number; items: HomeLesson[] };
   nextLesson: HomeLesson | null;
   taskCounts: { todayLessons: number; todayPendingAttendance: number; attention: number };
   navigationCounts: CourseTaskCounts;
+  nextRefreshAt: string;
   learning: { homeworkCount: number; pendingHomeworkCount: number; nextStudy: HomeStudyBlock | null };
 };

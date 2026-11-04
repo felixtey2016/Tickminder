@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import {createFixtureLoader} from './fixture-loader.mjs';
+const load=createFixtureLoader({runtimeUrl:'data:text/javascript,export{}',environmentUrl:'data:text/javascript,export const env={};'});
+const {recordD1ReadUsage,withD1ReadUsage}=(await load('lib/d1-read-usage.ts')).module;
+const {newDiagnosticContext,withDiagnosticContext}=(await load('lib/diagnostics-context.ts')).module;
+const original=console.info,logs=[];let checks=0;
+const check=(label,fn)=>{fn();checks++;};
+console.info=value=>logs.push(JSON.parse(value));
+const actor={id:'local:fictional-account',groupId:'fictional-group',role:'teacher',name:'PRIVATE_NAME',email:'PRIVATE_EMAIL'};
+try{
+ recordD1ReadUsage([{meta:{rows_read:999}}]);check('outside a metered request emits nothing',()=>assert.equal(logs.length,0));
+ const response={unchanged:true};
+ const context=newDiagnosticContext(new Request('https://fictional.invalid/api/courses?student=PRIVATE_QUERY'),{CF_VERSION_METADATA:{id:'fictional-build'}},()=>{});
+ const result=await withDiagnosticContext(context,()=>withD1ReadUsage(actor,'/api/courses',async()=>{recordD1ReadUsage([{meta:{rows_read:12,rows_written:0,duration:2,sql:'PRIVATE_SQL'}},{meta:{rows_read:7,rows_written:1,duration:3}}]);return response;}));
+ check('business result identity unchanged',()=>assert.equal(result,response));
+ check('only existing result metadata counted',()=>assert.deepEqual([logs[0].queries,logs[0].rowsRead,logs[0].rowsWritten,logs[0].durationMs],[2,19,1,5]));
+ check('bounded coverage and trusted actor attribution',()=>{assert.equal(logs[0].coverage,'guarded-core-batches');assert.equal(logs[0].accountId,actor.id);assert.equal(logs[0].groupId,actor.groupId);assert.equal(logs[0].requestId,context.requestId);});
+ check('no personal or request data serialized',()=>assert(!JSON.stringify(logs).includes('PRIVATE_')));
+ let release;const barrier=new Promise(resolve=>release=resolve);
+ await Promise.all([withD1ReadUsage({...actor,id:'first'},'/api/home-summary',async()=>{recordD1ReadUsage([{meta:{rows_read:11}}]);await barrier;recordD1ReadUsage([{meta:{rows_read:13}}]);}),withD1ReadUsage({...actor,id:'second',groupId:'another-group'},'/api/courses',async()=>{recordD1ReadUsage([{meta:{rows_read:17}}]);release();})]);
+ check('concurrent accounts cannot share usage totals',()=>{assert.equal(logs.find(v=>v.accountId==='first').rowsRead,24);assert.equal(logs.find(v=>v.accountId==='second').rowsRead,17);});
+ const error=new Error('PRIVATE_TOKEN');await assert.rejects(()=>withD1ReadUsage(actor,'/api/courses',async()=>{recordD1ReadUsage([{meta:{rows_read:3}}]);throw error;}),value=>value===error);
+ check('failure preserves the error and only reports safe outcome',()=>{assert.equal(logs.at(-1).outcome,'error');assert(!JSON.stringify(logs).includes('PRIVATE_TOKEN'));});
+ await withD1ReadUsage({...actor,id:'private@email.invalid'},'/api/courses',async()=>{recordD1ReadUsage([{},{meta:{rows_read:NaN,rows_written:-1,duration:Infinity}}]);});
+ check('invalid ids and metrics remain bounded',()=>{assert.equal(logs.at(-1).accountId,null);assert.equal(logs.at(-1).rowsRead,0);assert.equal(logs.at(-1).rowsWritten,0);assert.equal(logs.at(-1).durationMs,0);assert.equal(logs.at(-1).missingMeta,1);});
+ console.info=()=>{throw Error('logger unavailable');};
+ check('sink failure cannot replace success',()=>{});assert.equal(await withD1ReadUsage(actor,'/api/courses',async()=>response),response);
+ await assert.rejects(()=>withD1ReadUsage(actor,'/api/courses',async()=>{throw error;}),value=>value===error);checks++;
+}finally{console.info=original;}
+console.log(JSON.stringify({suite:'d1-read-usage',checks,status:'passed',networkRequests:0,databaseQueries:0}));

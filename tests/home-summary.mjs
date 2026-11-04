@@ -18,7 +18,7 @@ function statement(sql, values = []) {
     beforeRead?.(sql);
     const prepared = sqlite.prepare(sql); if (raw) prepared.setReturnArrays(true);
     const result = prepared.columns().length ? { results: prepared.all(...values), meta: { changes: 0 } } : { results: [], meta: prepared.run(...values) };
-    reads.push({ sql, rows: result.results.length }); return result;
+    reads.push({ sql, values, rows: result.results.length }); return result;
   };
   return { bind: (...args) => statement(sql, args), first: async () => execute().results[0] || null, all: async () => execute(), raw: async () => execute(true).results, run: async () => execute(), execute };
 }
@@ -36,7 +36,7 @@ const hooks = registerHooks({
   load(url, context, next) { return url.startsWith(applicationRoot) && url.endsWith('.ts') ? { format: 'module', source: ts.transpileModule(fs.readFileSync(new URL(url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText, shortCircuit: true } : next(url, context); },
 });
 const OriginalDate = Date, originalFetch = globalThis.fetch;
-const clock = OriginalDate.parse('2026-11-04T04:00:00.000Z');
+let clock = OriginalDate.parse('2026-11-04T04:00:00.000Z');
 globalThis.Date = class extends OriginalDate { constructor(...args) { super(...(args.length ? args : [clock])); } static now() { return clock; } };
 globalThis.fetch = async () => { throw new Error('Network is forbidden in home-summary fixtures'); };
 const load = file => import(new URL('../' + file, import.meta.url));
@@ -110,6 +110,9 @@ async function expected(as) {
   return { actor, items: actor.role === 'student' ? items : display.uniqueSessionLessons(items), aggregates: await courses.courseAggregates(actor, '2026-11', []), learning: await learning.learningState(actor) };
 }
 try {
+  if (process.env.HOME_SUMMARY_D1_BENCHMARK === '1') {
+    await (await import('./home-summary-performance.mjs')).benchmarkHomeSummary({ sqlite, reads, get, auth, group, now, admin, teacher, student, originalFetch });
+  }
   for (const as of [admin, teacher, student, foreign]) {
     const before = await expected(as); reads.length = 0;
     const result = await get(as); check(result.status === 200, as.id + ' summary succeeds');
@@ -136,13 +139,28 @@ try {
     reads.length=0;
     const navigation=await get(as,as.gid,'?scope=navigation');
     check(navigation.status===200&&JSON.stringify(navigation.data.navigationCounts)===JSON.stringify(before.aggregates.taskCounts),as.id+' navigation-only count parity');
-    check(Object.keys(navigation.data).sort().join(',')==='accountId,groupId,navigationCounts'&&!reads.some(read=>/homework|study_blocks|count\(\*\) OVER/.test(read.sql)), 'Navigation scope never reads home courses, homework or study blocks');
+    check(Object.keys(navigation.data).sort().join(',')==='accountId,groupId,navigationCounts,nextRefreshAt'&&!reads.some(read=>/homework|study_blocks|count\(\*\) OVER/.test(read.sql)), 'Navigation scope never reads home courses, homework or study blocks');
   }
   const restricted = await get(limited); check(restricted.status === 200 && restricted.data.today.items.length === 3 && restricted.data.taskCounts.attention === 0, 'Course-only admin gets lessons without attendance count');
   const attendanceOnly = await get(attendance); check(attendanceOnly.status === 200 && attendanceOnly.data.today.items.length === 3 && attendanceOnly.data.taskCounts.attention > 0, 'Attendance profile preserves its required course-view dependency');
   reads.length=0;
   const none = await get(noGrants); check(none.status === 200 && none.data.today.total === 0 && none.data.taskCounts.attention === 0, 'No grant still permits empty home greeting');
   check(!reads.some(read=>/FROM lessons|FROM homework|FROM study_blocks/.test(read.sql)), 'Admin without course grants does not query course/homework/study data');
+  check(none.data.nextRefreshAt==='2026-11-04T16:00:00.000Z','No course grants expose no course clock boundary; next GMT+8 day only');
+  check((await get(teacher,group,'?scope=navigation')).data.nextRefreshAt==='2026-11-04T05:00:00.000Z','Next authorised course start is a refresh boundary');
+  clock=OriginalDate.parse('2026-11-04T05:00:00.000Z');
+  check((await get(student)).data.nextRefreshAt==='2026-11-04T06:00:00.000Z','Full home refreshes when the visible study block expires');
+  check((await get(student,group,'?scope=navigation')).data.nextRefreshAt==='2026-11-04T06:00:00.001Z','Navigation uses strict course-end boundary without querying study blocks');
+  clock=OriginalDate.parse('2026-11-04T06:00:00.000Z');
+  const atEnd=await get(teacher,group,'?scope=navigation');
+  check(atEnd.data.nextRefreshAt==='2026-11-04T06:00:00.001Z','At exact end the scheduled course is not prematurely pending');
+  clock++;
+  const afterEnd=await get(teacher,group,'?scope=navigation');
+  check(afterEnd.data.navigationCounts.pendingAttendance===atEnd.data.navigationCounts.pendingAttendance+1,'Strict end +1ms adds the newly pending course');
+  check(afterEnd.data.nextRefreshAt==='2026-11-04T07:00:00.000Z','Elapsed boundaries do not cause a refresh loop');
+  clock=OriginalDate.parse('2026-11-04T15:59:59.000Z');
+  check((await get(teacher,group,'?scope=navigation')).data.nextRefreshAt==='2026-11-04T16:00:00.000Z','GMT+8 midnight caps future scheduled boundaries');
+  clock=OriginalDate.parse(now);
   check((await get(teacher)).data.navigationCounts.reschedule===1,'Teacher badge excludes own request, same-role requests, resolved/cancelled lessons and other groups');
   check((await get(student)).data.navigationCounts.reschedule===1,'Student badge includes teacher request only');
   check((await get(admin)).data.navigationCounts.reschedule===3,'Admin badge includes all three local pending requests');
@@ -185,6 +203,20 @@ try {
     check((await get(as)).status === 403, mutation + ' revoked during read rejects the whole response');
     profile(limited, ['lessons.view']); sqlite.prepare("UPDATE accounts SET teacher_name='Teacher A' WHERE id=?").run(teacher.id); sqlite.prepare('UPDATE tuition_groups SET active=1 WHERE id=?').run(group);
     sqlite.prepare('INSERT OR IGNORE INTO sessions(token_hash,account_id,expires_at) VALUES(?,?,?)').run(await auth.hashToken(teacher.token), teacher.id, '2099-01-01T00:00:00.000Z');
+  }
+  // Mixed retained/hidden group history must preserve the scoped session view;
+  // skipping irrelevant one-to-one joins must never change group deduplication.
+  for (const [room, retiredStudent] of [['retained-history-room',''], ['offboarded-history-room','Class member 1']]) {
+    sqlite.prepare('INSERT INTO classrooms(id,group_id,title,subject,teacher_name,created_by,created_at,updated_at,archived) VALUES(?,?,?,\'Mathematics\',\'Teacher A\',?,?,?,1)').run(room,group,room,admin.id,now,now);
+    sqlite.prepare('INSERT INTO classroom_retirements(group_id,classroom_id,student_name,retired_at,retired_by) VALUES(?,?,?,?,?)').run(group,room,retiredStudent,now,admin.id);
+    const sessionId=room+'-session',start=room.startsWith('retained')?'2025-01-01T01:00:00Z':'2025-01-02T01:00:00Z';
+    sqlite.prepare("INSERT INTO class_sessions(id,group_id,session_type,classroom_id,classroom_title,teacher_name,subject,planned_start,planned_end,status,created_by,created_at,updated_at) VALUES(?,?,'group',?,?,'Teacher A','Mathematics',?,?,'scheduled',?,?,?)").run(sessionId,group,room,room,start,new Date(Date.parse(start)+3600000).toISOString(),admin.id,now,now);
+    for(const [name,status] of [['Alpha','scheduled'],['Beta','student_absent'],['Class member 1','completed']]) lesson(room+'-'+name,name,start,status,sessionId);
+  }
+  sqlite.prepare("INSERT INTO student_offboarding(group_id,student_name,status,revision,marked_by,marked_at,updated_by,updated_at,cleaned_at) VALUES(?,'Class member 1','cleaned',1,?,?,?,?,?)").run(group,admin.id,now,admin.id,now,now);
+  for (const as of [admin, teacher, student]) {
+    const original=await expected(as),current=await get(as,group,'?scope=navigation');
+    check(current.status===200&&JSON.stringify(current.data.navigationCounts)===JSON.stringify(original.aggregates.taskCounts),as.id+' retains exact mixed-status group counts after whole-class retirement and student offboarding');
   }
   // With no lessons today the next visible course can be outside this month.
   sqlite.prepare("UPDATE lessons SET status='cancelled' WHERE group_id=? AND id<>'replacement'").run(group);

@@ -1,6 +1,6 @@
 /** In-memory request fences only. This module never stores a response or credential. */
-export type PrivateReadSnapshot = Readonly<{identity:string; groupId:string|null; epoch:number; authEpoch:number; clearEpoch:number; blocked:boolean;authError:string;deferredAuth:boolean}>;
-let snapshot:PrivateReadSnapshot=Object.freeze({identity:'',groupId:null,epoch:0,authEpoch:0,clearEpoch:0,blocked:false,authError:'',deferredAuth:false});
+export type PrivateReadSnapshot = Readonly<{identity:string; groupId:string|null; epoch:number; authEpoch:number; clearEpoch:number; dataEpoch:number; blocked:boolean;authError:string;deferredAuth:boolean}>;
+let snapshot:PrivateReadSnapshot=Object.freeze({identity:'',groupId:null,epoch:0,authEpoch:0,clearEpoch:0,dataEpoch:0,blocked:false,authError:'',deferredAuth:false});
 let writes=0,authPending=false;
 const listeners=new Set<()=>void>();
 export function getPrivateReadSnapshot(){return snapshot;}
@@ -9,9 +9,10 @@ function publish(update:Partial<PrivateReadSnapshot>={}){
   snapshot=Object.freeze({...snapshot,...update,blocked:authPending||writes>0});
   for(const listener of [...listeners])listener();
 }
-export function invalidatePrivateReads(_reason:string,{auth=false,clear=false,authFence=false}:{auth?:boolean;clear?:boolean;authFence?:boolean}={}){
+export function invalidatePrivateReads(reason:string,{auth=false,clear=false,authFence=false}:{auth?:boolean;clear?:boolean;authFence?:boolean}={}){
   if(auth)authPending=true;
-  publish({epoch:snapshot.epoch+1,authEpoch:snapshot.authEpoch+(auth||authFence?1:0),clearEpoch:snapshot.clearEpoch+(clear?1:0)});
+  const changed=['data-changed','write-start','write-end','cross-tab-write','manual-refresh'].includes(reason);
+  publish({epoch:snapshot.epoch+1,authEpoch:snapshot.authEpoch+(auth||authFence?1:0),clearEpoch:snapshot.clearEpoch+(clear?1:0),dataEpoch:snapshot.dataEpoch+(changed?1:0)});
 }
 export function setPrivateReadIdentity(identity:string,groupId:string|null|undefined){
   const group=groupId||null;
@@ -56,7 +57,10 @@ export function installPrivateReadEvents(){
   const changed=()=>invalidatePrivateReads('data-changed');
   const auth=()=>{if(!snapshot.deferredAuth)beginPrivateAuthCheck();};
   let lastForeground=0;
-  const foreground=()=>{
+  const foreground=(event:Event)=>{
+    // Capture also receives focus on inputs/buttons. Only the window itself
+    // returning to the foreground requires the cookie/authority check.
+    if(event.type==='focus'&&event.target!==window)return;
     if(snapshot.deferredAuth||document.visibilityState==='hidden'||Date.now()-lastForeground<300)return;
     lastForeground=Date.now();invalidatePrivateReads('foreground',{auth:true});window.dispatchEvent(new Event('timelyo:auth-refresh'));
   };
