@@ -80,7 +80,7 @@ db.prepare('INSERT INTO pdf_files (id,owner_id,kind,object_key,filename,bytes,co
 for (const id of ['hw1','hw2']) db.prepare('INSERT INTO homework (id,owner_id,title,subject,description,starts_at,due_at,attachment_file_id,created_at) VALUES (?,?,?,?,?,?,?,?,?)').run(id,'local:teacher',id,'Science','','2026-01-01','2026-12-01','pdf',now);
 assert.equal((await manage.POST(request({kind:'homework',id:'hw1',confirm:true}))).status,200);
 assert.ok(db.prepare('SELECT id FROM pdf_files WHERE id = ?').get('pdf'));
-assert.equal((await manage.POST(request({kind:'account',id:'local:teacher',confirm:true}))).status,409,'Owned resources must be handled first');
+assert.equal((await manage.POST(request({kind:'account',id:'local:teacher',confirm:true}))).status,200,'Owned resources stay while login is disabled');assert.ok(db.prepare('SELECT disabled_at FROM accounts WHERE id=?').get('local:teacher').disabled_at);assert.ok(db.prepare('SELECT id FROM homework WHERE id=?').get('hw2'),'Owned homework preserved');
 assert.equal((await manage.POST(request({kind:'homework',id:'hw2',confirm:true}))).status,200);
 assert.equal(db.prepare('SELECT id FROM pdf_files WHERE id = ?').get('pdf'),undefined);
 actor={groupId:'next-genn-edu',id:'student',role:'student'};
@@ -139,7 +139,7 @@ assert.equal((await classes.POST(request({action:'createTerm',name:'Rename',id:i
 actor={groupId:'next-genn-edu',id:'unbound',role:'teacher',teacherName:null};assert.equal((await classes.POST(request({action:'createTerm',name:'No'}))).status,403);
 actor={groupId:'next-genn-edu',id:'student',role:'student'};assert.equal((await classes.POST(request({action:'createTerm',name:'No'}))).status,403);
 actor={groupId:'next-genn-edu',id:'admin',role:'admin'};assert.equal((await classes.POST(request({action:'createTerm',name:'2027 Term 3'}))).status,200);
-// Quiz/practice references block account deletion and automatic Google merges
+// Quiz/practice references survive login removal and still block automatic Google merges
 // before either operation constructs destructive statements. Every reference
 // path is exercised through the actual management route and merge helper.
 const historyGroup='next-genn-edu',historyQuiz='history-fixture-quiz',historyVersion='history-fixture-version';
@@ -155,12 +155,13 @@ const references=[
 ];
 const mergingActor={groupId:historyGroup,id:'local:teacher',role:'teacher',teacherName:'Teacher',email:''};
 for(const [table,seed] of references){const target='history-'+table;account(target,'teacher','Teacher');seed(target);actor={groupId:historyGroup,id:'admin',role:'admin',email:''};
- const blockedDelete=await manage.POST(request({kind:'account',id:target,confirm:true}));assert.equal(blockedDelete.status,409,table);assert.equal((await blockedDelete.json()).error,'account.quizHistoryDeleteBlocked',table);
- const preview=await (await manage.POST(request({action:'previewDelete',entries:[{kind:'account',id:target}]}))).json();assert.equal(preview.items.length,0,table);assert.equal(preview.blocked[0].error,'account.quizHistoryDeleteBlocked',table);
  for(const confirmed of [false,true]){const blockedMerge=await merge.module.prepareAccountMerge(mergingActor,target,confirmed);assert.equal(blockedMerge.error,'account.quizHistoryMergeBlocked',table);assert.equal(blockedMerge.statements.length,0,table);assert.equal(blockedMerge.mergeName,undefined,table);}
+ const beforeHistory=JSON.stringify(db.prepare('SELECT * FROM '+table+' ORDER BY rowid').all());
+ const preview=await (await manage.POST(request({action:'previewDelete',entries:[{kind:'account',id:target}]}))).json();assert.equal(preview.items.length,1,table);assert.equal(preview.blocked.length,0,table);
+ const removed=await manage.POST(request({kind:'account',id:target,confirm:true}));assert.equal(removed.status,200,table);assert.ok(db.prepare('SELECT disabled_at FROM accounts WHERE id=?').get(target).disabled_at,table);assert.equal(JSON.stringify(db.prepare('SELECT * FROM '+table+' ORDER BY rowid').all()),beforeHistory,table+' history preserved');
  assert.ok(db.prepare('SELECT id FROM accounts WHERE id=?').get(target),table+' account is retained');
 }
-account('without-quiz-history','teacher','Unused');actor={groupId:historyGroup,id:'admin',role:'admin',email:''};assert.equal((await manage.POST(request({kind:'account',id:'without-quiz-history',confirm:true}))).status,200);assert.equal(db.prepare('SELECT id FROM accounts WHERE id=?').get('without-quiz-history'),undefined);
+account('without-quiz-history','teacher','Unused');actor={groupId:historyGroup,id:'admin',role:'admin',email:''};assert.equal((await manage.POST(request({kind:'account',id:'without-quiz-history',confirm:true}))).status,200);assert.ok(db.prepare('SELECT disabled_at FROM accounts WHERE id=?').get('without-quiz-history').disabled_at);
 for(const table of ['quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations'])assert.ok(harness.GROUP_TABLES.includes(table),table+' is group scoped');
 // Execute the actual deletion route with financial history in two groups.
 // Same names and plan keys elsewhere must not block an unpriced learner.

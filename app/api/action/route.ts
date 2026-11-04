@@ -23,7 +23,7 @@ import { studentNameKey } from "@/lib/student-names";
 import { first, learningDb } from "@/lib/learning-server";
 import { normalizeOnlineLink } from "@/lib/online-link";
 import {classPlanSubjectSql} from "@/lib/academic-subject-match";
-import {ensurePlanClassroom,planClassroomStatements,planSessionClassroomStatements} from "@/lib/student-classrooms";
+import {readPlanClassrooms,planSessionClassroomStatements} from "@/lib/student-classrooms";
 import { adminAuthority, assertParentAccountManagement,parentAccountManagementGuard,adminActorGuard,accountAuthorityGuard,authorityGuard,assertAccountAuthority,AdminAuthorityError,isAdminAuthorityFailure } from "@/lib/admin-authority";
 import {requireCorePermissions,corePermissionKeys,rejectUnknownAdminAction,guardedCoreDb} from '@/lib/admin-core-permissions';
 import {adminPermissionFailure} from '@/lib/admin-permission-access';
@@ -32,11 +32,6 @@ import {AccountProvisioningError,isAccountProvisioningFailure,prepareAccountPers
 type Body = Record<string, unknown>;
 const str = (v: unknown) => typeof v === "string" ? v.trim() : "";
 const bad = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
-async function accountClassroomStatements(groupId:string,actorId:string,studentName:string|null,teacherName:string|null){
-  if(!studentName&&!teacherName)return [];
-  const plans=await groupReader(groupId).rows<{key:string}>(`SELECT key FROM plans WHERE ${studentName?'student':'teacher_name'}=? AND active=1 ORDER BY key`,studentName||teacherName);
-  return plans.flatMap(plan=>[...planClassroomStatements(groupId,plan.key,actorId),...planSessionClassroomStatements(groupId,plan.key)]);
-}
 const conflictReply = (slot: LessonSlot, conflict: LessonSlot, role: string) => NextResponse.json({
   error: "课程时间冲突", conflict: { start: conflict.plannedStart, end: conflict.plannedEnd,
     reason: lessonConflictReason(slot, conflict), ...(role === "admin" ? { student: conflict.student, teacherName: conflict.teacherName } : {}) },
@@ -98,7 +93,7 @@ export async function POST(request: Request) {
       const person=await prepareAccountPerson(actor,data,role,now);permissionKeys.push(...person.permissions);await requireCorePermissions(actor,permissionKeys);
       const id = `local:${crypto.randomUUID()}`;
       const passwordHash = await hashPassword(password);
-      const raw=guardedCoreDb(actor,permissionKeys),after={username,name,role,teacherName:person.teacherName,studentName:person.studentName,identityMode:person.identityMode},classroomStatements=await accountClassroomStatements(groupId,actor.id,person.studentName,person.teacherName);
+      const raw=guardedCoreDb(actor,permissionKeys),after={username,name,role,teacherName:person.teacherName,studentName:person.studentName,identityMode:person.identityMode};
       await raw.batch([
         adminActorGuard(actor,role==='admin'),
         ...(role==='parent'?[parentAccountManagementGuard(actor)]:[]),
@@ -106,7 +101,6 @@ export async function POST(request: Request) {
         raw.prepare("INSERT INTO accounts(group_id,id,email,name,role,teacher_name,student_name,created_at,activated_at,activation_reason,name_confirmed_at) VALUES(?,?,'',?,?,?,?,?,?,'admin-created',?)").bind(groupId,id,name,role,after.teacherName,after.studentName,now,now,now),
         raw.prepare("INSERT INTO local_credentials(account_id,username,password_hash,must_change_password,updated_at) VALUES(?,?,?,1,?)").bind(id,username,passwordHash,now),
         appendAudit(raw,{groupId,lessonId:`account:${id}`,actorId:actor.id,actorName:actor.name,objectName:name,action:'createLocalAccount',after,at:now}),
-        ...classroomStatements,
       ]);
       return NextResponse.json({ ok: true });
     }
@@ -153,13 +147,12 @@ export async function POST(request: Request) {
       const authority={action:action as 'deleteAccount'|'restoreAccount',expected:target};
       await assertAccountAuthority(actor,userId,authority);
       if (action === "restoreAccount" && ["teacher", "student"].includes(target.role) && await first("SELECT 1 AS found FROM accounts WHERE id <> ? AND role = ? AND " + (target.role === "teacher" ? "teacher_name" : "student_name") + " = ? AND disabled_at IS NULL", target.id, target.role, target.role === "teacher" ? target.teacherName : target.studentName)) return bad("此身份已有账号，请使用现有账号连接 Google，避免重复创建", 409);
-      const raw=guardedCoreDb(actor,permissionKeys),classroomStatements=action==='restoreAccount'?await accountClassroomStatements(groupId,actor.id,target.role==='student'?target.studentName:null,target.role==='teacher'?target.teacherName:null):[];
+      const raw=guardedCoreDb(actor,permissionKeys);
       await raw.batch([
         accountAuthorityGuard(actor,userId,authority),
         raw.prepare("UPDATE accounts SET disabled_at=? WHERE id=? AND group_id=?").bind(action==='deleteAccount'?now:null,userId,groupId),
         raw.prepare("DELETE FROM sessions WHERE account_id=?").bind(userId),
         appendAudit(raw,{groupId,lessonId:`account:${userId}`,actorId:actor.id,actorName:actor.name,objectName:target.name,action,before:{id:target.id,name:target.name,disabledAt:target.disabledAt,role:target.role},after:{id:target.id,name:target.name,disabledAt:action==='deleteAccount'?now:null,role:target.role},at:now}),
-        ...classroomStatements,
       ]);
       return NextResponse.json({ ok: true });
     }
@@ -173,7 +166,6 @@ export async function POST(request: Request) {
       await raw.batch([
         before?raw.prepare('UPDATE teachers SET active=? WHERE name=? AND group_id=?').bind(active?1:0,name,groupId):raw.prepare('INSERT INTO teachers(group_id,name,active,created_at) VALUES(?,?,?,?)').bind(groupId,name,active?1:0,now),
         raw.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) VALUES(?,?,?,?,'saveTeacher',?,?,?)").bind(groupId,crypto.randomUUID(),`teacher:${name}`,actor.id,before?auditJson(before):null,auditJson({name,active},{actorName:actor.name,objectName:name}),now),
-        ...(active?await accountClassroomStatements(groupId,actor.id,null,name):[]),
       ]);
       return NextResponse.json({ ok: true });
     }
@@ -188,7 +180,7 @@ export async function POST(request: Request) {
         groupStatement(groupId,'INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) SELECT ?,?,?,?,?,?,?,? WHERE '+guard.sql).bind(groupId,claimId,`student:${name}`,actor.id,'updateStudentProfile',auditJson(before),auditJson(profile,{actorName:actor.name,objectName:name}),now,...guard.args),
         ...remappedPlans,
         groupStatement(groupId,'UPDATE students SET syllabus_id=?,grade=?,age=? WHERE name=? AND group_id=? AND '+claim.sql).bind(profile.syllabusId,profile.grade,profile.age,name,groupId,...claim.args),
-        ...snapshot.flatMap(plan=>[...planClassroomStatements(groupId,plan.key,actor.id,claim),...planSessionClassroomStatements(groupId,plan.key,claim)]),
+        ...snapshot.flatMap(plan=>planSessionClassroomStatements(groupId,plan.key,claim)),
       ]);
       if(!result[0].meta.changes)return bad('学生资料、科目配对或菜单已改变，请刷新后重试',409);
       if(before.syllabusId!==profile.syllabusId||before.grade!==profile.grade)await refreshStudentClassifications(groupId,name,guardedCoreDb(actor,permissionKeys));
@@ -217,7 +209,6 @@ export async function POST(request: Request) {
       await raw.batch([
         raw.prepare('UPDATE students SET active=? WHERE name=? AND group_id=?').bind(active?1:0,name,groupId),
         raw.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,before_json,after_json,at) VALUES(?,?,?,?,'setStudentActive',?,?,?)").bind(groupId,crypto.randomUUID(),`student:${name}`,actor.id,auditJson(before),auditJson({name,active},{actorName:actor.name,objectName:name}),now),
-        ...(active?await accountClassroomStatements(groupId,actor.id,name,null):[]),
       ]);
       return NextResponse.json({ ok: true });
     }
@@ -267,7 +258,7 @@ export async function POST(request: Request) {
         ...reassignmentStatements,
         before?groupStatement(groupId,'UPDATE plans SET teacher_name=?,duration=?,active=?,online_link=?,subject_id=? WHERE key=? AND group_id=? AND '+claim.sql).bind(teacherName,duration,active?1:0,onlineLink,selected.subject.id,key,groupId,...claim.args):groupStatement(groupId,'INSERT INTO plans(group_id,key,student,subject,teacher_name,duration,active,online_link,subject_id,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE '+claim.sql).bind(groupId,key,student,subject,teacherName,duration,active?1:0,onlineLink,selected.subject.id,now,...claim.args),
         groupStatement(groupId,'UPDATE students SET syllabus_id=?,grade=?,age=? WHERE name=? AND group_id=? AND '+claim.sql).bind(profile.syllabusId,profile.grade,profile.age,student,groupId,...claim.args),
-        ...[...new Set([...snapshot.map(plan=>plan.key),key])].flatMap(planKey=>[...planClassroomStatements(groupId,planKey,actor.id,claim),...planSessionClassroomStatements(groupId,planKey,claim)]),
+        ...[...new Set([...snapshot.map(plan=>plan.key),key])].flatMap(planKey=>[...planSessionClassroomStatements(groupId,planKey,claim)]),
       ]);
       if(!result[0].meta.changes)return bad('学生资料、科目配对或菜单已改变，请刷新后重试',409);
       if(!before||before.subjectId!==selected.subject.id||before.teacherName!==teacherName||before.active!==active||registeredStudent.syllabusId!==profile.syllabusId||registeredStudent.grade!==profile.grade)await refreshStudentClassifications(groupId,student,guardedCoreDb(actor,permissionKeys));
@@ -293,7 +284,7 @@ export async function POST(request: Request) {
       const name=data.name===undefined?target.name:str(data.name);if(!name||name.length>80)return bad('请输入不超过 80 个字符的姓名');
       const person=await prepareAccountPerson(actor,{...data,name},role,now,userId);permissionKeys.push(...person.permissions);await requireCorePermissions(actor,permissionKeys);
       const update = {name,role, teacherName:person.teacherName,studentName:person.studentName,nameConfirmedAt:data.name===undefined?target.nameConfirmedAt:now,activatedAt: target.activatedAt || now, activationReason: target.activationReason || "identity-bound", pendingExpiresAt: null };
-      const raw=guardedCoreDb(actor,permissionKeys),classroomStatements=await accountClassroomStatements(groupId,actor.id,person.studentName,person.teacherName);
+      const raw=guardedCoreDb(actor,permissionKeys);
       await raw.batch([
         accountAuthorityGuard(actor,userId,authority),
         authorityGuard({sql:'EXISTS(SELECT 1 FROM accounts WHERE group_id=? AND id=? AND name=? AND name_confirmed_at IS ?)',args:[groupId,userId,target.name,target.nameConfirmedAt]},'account_provisioning_changed'),
@@ -301,7 +292,6 @@ export async function POST(request: Request) {
         raw.prepare("UPDATE accounts SET name=?,name_confirmed_at=?,role=?,teacher_name=?,student_name=?,activated_at=?,activation_reason=?,pending_expires_at=NULL WHERE id=? AND group_id=?").bind(name,update.nameConfirmedAt,role,update.teacherName,update.studentName,update.activatedAt,update.activationReason,userId,groupId),
         raw.prepare("DELETE FROM sessions WHERE account_id=?").bind(userId),
         appendAudit(raw,{groupId,lessonId:`account:${userId}`,actorId:actor.id,actorName:actor.name,objectName:name,action:'bind',before:{name:target.name,role:target.role,teacherName:target.teacherName,studentName:target.studentName},after:{...update,identityMode:person.identityMode},at:now}),
-        ...classroomStatements,
       ]);
       return NextResponse.json({ ok: true });
     }
@@ -332,20 +322,24 @@ export async function POST(request: Request) {
       const existingSlots = await db.select().from(lessons).where(groupWhere(lessons,actor.groupId)).all();
       const newSlots: LessonSlot[] = dates.map(d => ({ student, teacherName, plannedStart: d.start, plannedEnd: d.end }));
       for (const slot of newSlots) { const conflict = findLessonConflict(slot, existingSlots); if (conflict) return conflictReply(slot, conflict, actor.role); }
-      const chosenClass=str(data.classroomId)?await first<{id:string;title:string}>(`SELECT c.id,c.title FROM classrooms c JOIN plans p ON p.key=? JOIN students st ON st.name=p.student AND st.active=1 WHERE c.id=? AND c.archived=0 AND c.teacher_name=p.teacher_name AND ${classPlanSubjectSql('p','c','st')} AND EXISTS(SELECT 1 FROM classroom_members m WHERE m.classroom_id=c.id AND m.student_name=p.student)`,selectedPlan.key,str(data.classroomId)):await ensurePlanClassroom(groupId,selectedPlan.key,actor.id,guardedCoreDb(actor,permissionKeys));
-      if(!chosenClass)return bad("请选择此学生、科目及老师对应的有效班级",409);
+      const matchingClasses=str(data.classroomId)?[]:await readPlanClassrooms(groupId,selectedPlan.key);
+      const chosenClass=str(data.classroomId)?await first<{id:string;title:string}>(`SELECT c.id,c.title FROM classrooms c JOIN plans p ON p.key=? JOIN students st ON st.name=p.student AND st.active=1 WHERE c.id=? AND c.archived=0 AND c.teacher_name=p.teacher_name AND ${classPlanSubjectSql('p','c','st')} AND EXISTS(SELECT 1 FROM classroom_members m WHERE m.classroom_id=c.id AND m.student_name=p.student)`,selectedPlan.key,str(data.classroomId)):matchingClasses.length===1?matchingClasses[0]:null;
+      if(!chosenClass&&(str(data.classroomId)||matchingClasses.length>1))return bad("请选择此学生、科目及老师对应的有效班级",409);
       const records = dates.map(date => ({ groupId:actor.groupId!, id: crypto.randomUUID(), student, subject, teacherName, plannedStart: date.start, plannedEnd: date.end, kind, seriesId, replacementFor, createdBy: actor.id, updatedAt: now }));
       // Preserve the original one-to-one lesson/session/participant IDs. Link the
       // generated session in the same transaction, never copy a lesson into a
       // second timetable or infer that a classroom link makes it a group lesson.
       const rawDb=guardedCoreDb(actor,permissionKeys),mutations=[];
       for(const record of records){
-        mutations.push(rawDb.prepare(`INSERT INTO lessons(group_id,id,student,subject,teacher_name,planned_start,planned_end,kind,series_id,replacement_for,created_by,updated_at)
+        mutations.push(chosenClass?rawDb.prepare(`INSERT INTO lessons(group_id,id,student,subject,teacher_name,planned_start,planned_end,kind,series_id,replacement_for,created_by,updated_at)
           SELECT ?,?,?,?,?,?,?,?,?,?,?,? FROM classrooms c WHERE c.id=? AND c.group_id=? AND c.archived=0 AND c.teacher_name=? AND c.title=?
           AND EXISTS(SELECT 1 FROM classroom_members m WHERE m.classroom_id=c.id AND m.group_id=c.group_id AND m.student_name=?)
-          AND EXISTS(SELECT 1 FROM plans p JOIN students st ON st.name=p.student AND st.group_id=p.group_id JOIN teachers t ON t.name=p.teacher_name AND t.group_id=p.group_id WHERE p.group_id=c.group_id AND p.key=? AND p.student=? AND p.subject=? AND p.teacher_name=c.teacher_name AND p.active=1 AND st.active=1 AND t.active=1 AND ${classPlanSubjectSql('p','c','st')})`).bind(groupId,record.id,student,subject,teacherName,record.plannedStart,record.plannedEnd,kind,seriesId,replacementFor,actor.id,now,chosenClass.id,groupId,teacherName,chosenClass.title,student,selectedPlan.key,student,subject));
-        mutations.push(rawDb.prepare("UPDATE class_sessions SET classroom_id=?,classroom_title=? WHERE id=? AND group_id=? AND session_type='one_to_one' AND EXISTS(SELECT 1 FROM lessons l WHERE l.id=? AND l.group_id=? AND l.session_id=class_sessions.id)").bind(chosenClass.id,chosenClass.title,'one:'+record.id,groupId,record.id,groupId));
-        mutations.push(appendAudit(rawDb,{groupId,lessonId:record.id,actorId:actor.id,actorName:actor.name,objectName:student+' · '+subject,action:'create',after:{...record,classroomId:chosenClass.id},at:now,guard:{sql:'EXISTS(SELECT 1 FROM lessons l WHERE l.id=? AND l.group_id=?)',args:[record.id,groupId]}}));
+          AND EXISTS(SELECT 1 FROM plans p JOIN students st ON st.name=p.student AND st.group_id=p.group_id JOIN teachers t ON t.name=p.teacher_name AND t.group_id=p.group_id WHERE p.group_id=c.group_id AND p.key=? AND p.student=? AND p.subject=? AND p.teacher_name=c.teacher_name AND p.active=1 AND st.active=1 AND t.active=1 AND ${classPlanSubjectSql('p','c','st')})`).bind(groupId,record.id,student,subject,teacherName,record.plannedStart,record.plannedEnd,kind,seriesId,replacementFor,actor.id,now,chosenClass.id,groupId,teacherName,chosenClass.title,student,selectedPlan.key,student,subject):rawDb.prepare(`INSERT INTO lessons(group_id,id,student,subject,teacher_name,planned_start,planned_end,kind,series_id,replacement_for,created_by,updated_at)
+          SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM plans p JOIN students st ON st.group_id=p.group_id AND st.name=p.student JOIN teachers t ON t.group_id=p.group_id AND t.name=p.teacher_name
+          WHERE p.group_id=? AND p.key=? AND p.student=? AND p.subject=? AND p.teacher_name=? AND p.active=1 AND st.active=1 AND t.active=1
+          AND NOT EXISTS(SELECT 1 FROM classrooms c JOIN classroom_members m ON m.group_id=c.group_id AND m.classroom_id=c.id WHERE c.group_id=p.group_id AND c.archived=0 AND c.teacher_name=p.teacher_name AND m.student_name=p.student AND ${classPlanSubjectSql('p','c','st')}))`).bind(groupId,record.id,student,subject,teacherName,record.plannedStart,record.plannedEnd,kind,seriesId,replacementFor,actor.id,now,groupId,selectedPlan.key,student,subject,teacherName));
+        mutations.push(rawDb.prepare("UPDATE class_sessions SET classroom_id=?,classroom_title=? WHERE id=? AND group_id=? AND session_type='one_to_one' AND EXISTS(SELECT 1 FROM lessons l WHERE l.id=? AND l.group_id=? AND l.session_id=class_sessions.id)").bind(chosenClass?.id||null,chosenClass?.title||null,'one:'+record.id,groupId,record.id,groupId));
+        mutations.push(appendAudit(rawDb,{groupId,lessonId:record.id,actorId:actor.id,actorName:actor.name,objectName:student+' · '+subject,action:'create',after:{...record,classroomId:chosenClass?.id||null},at:now,guard:{sql:'EXISTS(SELECT 1 FROM lessons l WHERE l.id=? AND l.group_id=?)',args:[record.id,groupId]}}));
       }
       const created=await rawDb.batch(mutations);
       if(created.some((result,index)=>index%3===0&&!result.meta.changes))return bad("班级或学生科目配对已改变，请刷新后重试",409);

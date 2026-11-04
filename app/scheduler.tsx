@@ -109,7 +109,12 @@ const dayFormatters = {
 const localFormatter = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 const day = (iso: string) => dayFormatters[getLanguage()].format(new Date(iso));
 const local = (iso: string) => localFormatter.format(new Date(iso)).replace(" ", "T");
-function actionSuccessText(action: string) {
+function actionSuccessText(action: string, body?: Record<string, unknown>) {
+    if(action==='permanentDelete'){
+        const entries=Array.isArray(body?.entries)?body.entries:body?.kind?[{kind:body.kind}]:[];
+        const only=(kind:string)=>entries.length>0&&entries.every(entry=>entry&&typeof entry==='object'&&entry.kind===kind);
+        return only('account')?(getLanguage()==='zh'?'账号登录已停用，其余记录保留':'Account login disabled. Other records are retained.') : only('classroom')?(getLanguage()==='zh'?'班级已从使用名单移除，历史记录保留':'Classroom removed from active use. Historical records are retained.') : getLanguage()==='zh'?'所选记录已处理':'Selected records processed.';
+    }
     const labels: Record<string, string> = {adminResetSessionAttendance:"已还原为未登记",saveSessionAttendance:"课次考勤已保存",reviewSessionAttendance:"课次考勤已复核", createClassSession:"整班课程已安排",editClassSession:"整班时间已更新",cancelClassSession:"整班课次已取消",proposeClassReschedule:"整班改期申请已发送",respondClassReschedule:"整班改期结果已保存",updateClassSessionLink:"课堂链接已保存",activateAccount: "账号已启用", createTerm: "学期已保存", saveTerm: "学期已保存", permanentDelete: "记录已永久删除", restoreAccount: "账号已恢复", attendance: "出席记录已保存", proposeReschedule: "改期申请已发送", respondReschedule: "改期处理结果已保存", edit: "课程时间已更新", cancel: "课程已取消", create: "课程已安排", saveMaterial: "教学资料已保存", deleteMaterial: "教学资料已删除", publishHomework: "功课已发布", submitHomework: "功课已提交", setHomeworkScore: "分数已保存", saveStudyBlock: "学习计划已保存", deleteStudyBlock: "学习计划已删除", saveClassroom: "班级已保存", archiveClassroom: "班级状态已更新", saveAnnouncement: "公告已发布", deleteAnnouncement: "公告已删除", savePlan: "科目配对已保存", saveStudent: "学生已保存", setStudentActive: "学生名单已更新", saveTeacher: "老师已保存", bind: "身份分配已保存", deleteAccount: "账号已停用", updateOnlineLink: "课堂链接已保存", review: "复核结果已保存", createLocalAccount: "账号已创建", resetLocalPassword: "密码已重置" };
     return t(labels[action] || "操作已完成");
 }
@@ -405,7 +410,7 @@ export function Scheduler({initialQuizId,initialAuth,onAuthChange}:{initialQuizI
         setMessage("");
         const result = await request(body.action === "permanentDelete" ? "/api/manage" : "/api/action", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
         channelRef.current?.postMessage({ type: "changed" });
-        showActionToast("success", result.deletedCount ? t("记录已永久删除") + ` · ${result.deletedCount}` : result.count ? (language === "zh" ? `已更新 ${result.count} 堂课` : `Updated ${result.count} lessons`) : actionSuccessText(String(body.action || "")));
+        showActionToast("success", body.action==='permanentDelete' ? actionSuccessText('permanentDelete',body)+(result.deletedCount?` · ${result.deletedCount}`:'') : result.count ? (language === "zh" ? `已更新 ${result.count} 堂课` : `Updated ${result.count} lessons`) : actionSuccessText(String(body.action || ""),body));
         setModal(null);
         await reload();
         if (result.warning) showActionToast(body.action==='permanentDelete'?"success":"error", result.warning);
@@ -437,7 +442,7 @@ export function Scheduler({initialQuizId,initialAuth,onAuthChange}:{initialQuizI
             }
             if (!response.ok) throw new Error(t(result.error || "保存失败，请重试"));
             channelRef.current?.postMessage({ type: "changed" });
-            showActionToast("success", actionSuccessText(String(body.action || "")));
+            showActionToast("success", actionSuccessText(String(body.action || ""),body));
             await reload();
             if (result.warning) alertActionFailure(new Error(t(result.warning)));
             return true;
@@ -456,7 +461,7 @@ export function Scheduler({initialQuizId,initialAuth,onAuthChange}:{initialQuizI
             const result = await readApiJson<{ error?: string; id?: string; warning?: string }>(response);
             if (!response.ok) throw new Error(t(result.error || "保存失败，请重试"));
             channelRef.current?.postMessage({ type: "changed" });
-            showActionToast("success", actionSuccessText(String(body.action || ""))); await reload();
+            showActionToast("success", actionSuccessText(String(body.action || ""),body)); await reload();
             if (result.warning) showActionToast("error", result.warning);
             return { ok: true, id: result.id };
         } catch (error) { alertActionFailure(error); return { ok: false }; }

@@ -167,7 +167,7 @@ await section('chief administrator lifecycle and global credential identity',asy
   await ok('action',{action:'restoreAccount',userId:created.id});assert.equal(row(created.id).disabled_at,null);assert.equal(sessionCount(created.id),0);
   await ok('action',{action:'bind',userId:'pending-a',role:'admin'});assert.equal(row('pending-a').role,'admin');
   await addSession('pending-a');await ok('action',{action:'bind',userId:'pending-a',role:'student',studentName:'Unused Student'});assert.equal(row('pending-a').role,'student');assert.equal(sessionCount('pending-a'),0,'administrator privilege loss revokes all sessions');
-  await addSession(created.id);await ok('manage',{kind:'account',id:created.id,confirm:true});assert.equal(row(created.id),undefined);assert.equal(sessionCount(created.id),0);assert.equal(sqlite.prepare('SELECT account_id FROM local_credentials WHERE account_id=?').get(created.id),undefined);
+  await addSession(created.id);await ok('manage',{kind:'account',id:created.id,confirm:true});assert.ok(row(created.id).disabled_at);assert.equal(sessionCount(created.id),0);assert.ok(sqlite.prepare('SELECT account_id FROM local_credentials WHERE account_id=?').get(created.id),'Login identity retained');
 });
 
 await section('temporary passwords gate chief powers and rotate sessions',async()=>{
@@ -221,9 +221,9 @@ await section('bulk deletion enforces hierarchy and all-or-nothing review',async
   await login('admin-a');const entries=[{kind:'account',id:'bulk-normal-admin'},{kind:'account',id:'bulk-normal-student'}],preview=await ok('manage',{action:'previewDelete',entries});assert.equal(preview.blocked.length,0);assert.equal(preview.items.length,2);await addSession('bulk-normal-admin');
   // Session state participates in deletion proof: obtain a fresh preview after
   // adding another device, then delete both entries in one real transaction.
-  const fresh=await ok('manage',{action:'previewDelete',entries});await ok('manage',{entries,confirm:true,fingerprint:fresh.fingerprint,previewAt:fresh.previewAt});assert.equal(row('bulk-normal-admin'),undefined);assert.equal(row('bulk-normal-student'),undefined);assert.equal(sessionCount('bulk-normal-admin'),0);
+  const fresh=await ok('manage',{action:'previewDelete',entries});await ok('manage',{entries,confirm:true,fingerprint:fresh.fingerprint,previewAt:fresh.previewAt});assert.ok(row('bulk-normal-admin').disabled_at);assert.ok(row('bulk-normal-student').disabled_at);assert.equal(sessionCount('bulk-normal-admin'),0);
   account('bulk-rollback-a');account('bulk-rollback-b');const rollbackEntries=[{kind:'account',id:'bulk-rollback-a'},{kind:'account',id:'bulk-rollback-b'}],rollbackPreview=await ok('manage',{action:'previewDelete',entries:rollbackEntries});
-  beforeBatch=()=>sqlite.exec("CREATE TEMP TRIGGER hierarchy_injected_delete_failure BEFORE DELETE ON accounts WHEN OLD.id='bulk-rollback-b' BEGIN SELECT RAISE(ABORT,'Fictional injected write failure'); END");
+  beforeBatch=()=>sqlite.exec("CREATE TEMP TRIGGER hierarchy_injected_delete_failure BEFORE UPDATE OF disabled_at ON accounts WHEN OLD.id='bulk-rollback-b' BEGIN SELECT RAISE(ABORT,'Fictional injected write failure'); END");
   await unchanged('bulk transaction rolls back on database failure',()=>denied('manage',{entries:rollbackEntries,confirm:true,fingerprint:rollbackPreview.fingerprint,previewAt:rollbackPreview.previewAt},[409,503]));sqlite.exec('DROP TRIGGER hierarchy_injected_delete_failure');
   beforeBatch=()=>sqlite.exec("CREATE TEMP TRIGGER hierarchy_injected_audit_failure BEFORE INSERT ON audit WHEN NEW.action='createLocalAccount' BEGIN SELECT RAISE(ABORT,'Fictional injected audit failure'); END");
   await unchanged('account and credentials roll back with failed audit',()=>denied('action',{action:'createLocalAccount',username:'failed-audit-admin',password,name:'Atomic creation failure',role:'admin'},[503]));sqlite.exec('DROP TRIGGER hierarchy_injected_audit_failure');
@@ -268,8 +268,10 @@ await section('Google merge rechecks pending identity before removing accounts',
   const audits=auditCount();await ok('account-link',{password,credential:await googleCredential('merge-valid-google','merge-valid@example.test'),confirmMerge:true});assert.equal(row('merge-valid-pending'),undefined);assert.ok(row('merge-actor'));assert.equal(sqlite.prepare('SELECT account_id FROM google_identities WHERE subject=?').get('merge-valid-google').account_id,'merge-actor');assert.equal(sqlite.prepare('SELECT account_id FROM study_blocks WHERE id=?').get('merge-valid-plan').account_id,'merge-actor');assert.equal(auditCount(),audits+2,'one merge event and one Google link event');
 });
 
-await section('chief financial access remains Owner-only',async()=>{
-  await login('admin-a');const result=await call('billing',undefined,'?month=2032-01');assert.equal(result.status,403);await unchanged('chief cannot save Owner financial settings',()=>denied('billing',{action:'saveRate'},[403]));
+await section('current chief fee authority and ordinary administrator write boundary',async()=>{
+  await login('admin-a');const result=await call('billing',undefined,'?month=2032-01');assert.equal(result.status,200,'Existing fees.view contract permits chief read');
+  const billing=await load('lib/billing-server.ts');assert.equal(await billing.requireBillingManager(await auth.currentBusinessAccount()),groups.a,'Existing fee manager includes chief');
+  account('finance-boundary-admin');await login('finance-boundary-admin');await unchanged('ordinary administrator cannot save fee settings',()=>denied('billing',{action:'saveRate'},[403]));
   assert.equal(sqlite.prepare('PRAGMA integrity_check').get().integrity_check,'ok');
 });
 console.log(JSON.stringify({suite:'admin-hierarchy',sections,database:'isolated SQLite',productionWrites:false}));

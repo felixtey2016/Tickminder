@@ -119,15 +119,15 @@ export async function createSession(accountId: string, request?: Request, expect
   const expiresAt = new Date(Date.now() + 30 * 86400000).toISOString();
   const tokenHash=await hashToken(token),device=sessionDeviceLabel(request?.headers.get("user-agent")||"");
   const database=env.DB;if(!database)throw new Error("Database is not configured");
-  // A password login may have started before a concurrent password reset.
-  // Bind issuance to the credential actually verified, inside the D1 batch.
-  const insertSession = expectedPasswordHash === undefined
-    ? database.prepare("INSERT INTO sessions(token_hash,account_id,expires_at) VALUES(?,?,?)").bind(tokenHash,accountId,expiresAt)
-    : database.prepare(`INSERT INTO sessions(token_hash,account_id,expires_at) SELECT ?,?,? WHERE EXISTS(
-      SELECT 1 FROM local_credentials c JOIN accounts a ON a.id=c.account_id WHERE c.account_id=? AND c.password_hash=? AND a.disabled_at IS NULL
-      AND NOT(a.role='pending' AND COALESCE(a.activated_at,'')='' AND COALESCE(a.teacher_name,'')='' AND COALESCE(a.student_name,'')='' AND COALESCE(a.pending_expires_at,'')<>'' AND a.pending_expires_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    )`).bind(tokenHash,accountId,expiresAt,accountId,expectedPasswordHash);
+  // Google and password login may start before a concurrent suspension. Check
+  // live eligibility in the issuance batch; password login also binds the hash
+  // that was actually verified, so a concurrent reset cannot issue a session.
+  const insertSession = database.prepare(`INSERT INTO sessions(token_hash,account_id,expires_at) SELECT ?,?,? WHERE EXISTS(
+    SELECT 1 FROM accounts a WHERE a.id=? AND a.disabled_at IS NULL
+    AND NOT(a.role='pending' AND COALESCE(a.activated_at,'')='' AND COALESCE(a.teacher_name,'')='' AND COALESCE(a.student_name,'')='' AND COALESCE(a.pending_expires_at,'')<>'' AND a.pending_expires_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ${expectedPasswordHash === undefined ? '' : 'AND EXISTS(SELECT 1 FROM local_credentials c WHERE c.account_id=a.id AND c.password_hash=?)'}
+  )`).bind(tokenHash,accountId,expiresAt,accountId,...(expectedPasswordHash===undefined?[]:[expectedPasswordHash]));
   const result = await database.batch([insertSession,database.prepare("INSERT INTO session_devices(id,token_hash,created_at,browser,os) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM sessions WHERE token_hash=?)").bind(crypto.randomUUID(),tokenHash,new Date().toISOString(),device.browser,device.os,tokenHash)]);
-  if (expectedPasswordHash !== undefined && result[0].meta.changes !== 1) throw new StaleSessionCredentialError();
+  if (result[0].meta.changes !== 1) throw new StaleSessionCredentialError();
   return { token, expiresAt };
 }

@@ -2,25 +2,17 @@
 
 This document describes the implemented source behavior. It is not a deployment confirmation.
 
-## Choose the appropriate flow
+## Current classroom removal (2026-11-04)
 
 | Classroom state | Result |
 | --- | --- |
-| No protected financial associations | The deletion preview can include the classroom and its scheduled, completed and cancelled courses. Confirming removes the listed operational records. |
-| Empty classroom with immutable payroll associations | An administrator can remove it from operational classroom lists. Its financial identity remains stored, with a `classroom_retirements` record and archived status. |
-| Protected classroom still containing students or courses | Direct deletion is blocked. Use student departure and cleanup after resolving teaching and financial items. |
-| Shared classroom with remaining students | Cleaning one departing student preserves the other students, classroom and shared courses. |
+| No course, teaching, Task or payroll history | Remove the classroom and membership links; accounts and subject pairings remain. |
+| Any course, teaching, Task or payroll history | Archive and retire from operational classroom lists; retain all source records and existing lessons. |
+| Shared classroom | Removing the classroom preserves everyone's accounts and pairings. Separate student-departure cleanup remains a different flow. |
 
-Removing a protected empty classroom from the lists is **operational retirement**, not physical deletion of its financial identity. The preview identifies this explicitly as keeping financial history.
+Classroom removal never disables a subject pairing, deletes a lesson, or cascades teaching and financial history. Teachers may remove only their own classrooms through existing classroom permissions. Administrators still need the existing classroom-delete grant; no lesson-delete or pairing-disable grant is needed because those records are not changed.
 
-## Ordinary deletion
-
-- The preview lists classroom content, sessions, lessons, attendance, notifications and resource placements affected by the selection.
-- Where no financial protection applies, scheduled, completed and cancelled courses belonging to the selected classroom can be removed together. Student and teacher accounts are not deleted by classroom deletion.
-- A subject pairing is disabled only if the selected classrooms provide its last active classroom coverage. Its student profile and financial history remain.
-- Administrators need `classrooms.delete`, plus `lessons.delete` for existing courses and `plans.disable` for affected pairings. Teachers cannot cascade existing courses or disable student pairings.
-- Invoice source locks, protected payroll associations and replacement lessons belonging to other classrooms can block direct deletion. The response identifies the blocking category.
-- The five-minute preview proof and transaction guards reject stale membership, content, courses, coverage or financial associations. A failed bulk operation rolls back the whole selection.
+The preview lists retained records. Its five-minute proof and transaction guards reject stale membership, content, Task, course and payroll changes; a failed bulk operation rolls back the complete selection. A retained classroom's sessions remain visible through the existing authorized course history. Ordinary archive/restore and student offboarding are distinct from deletion retirement.
 
 ## Protected student departure
 
@@ -35,7 +27,7 @@ Cleanup removes the student's teaching allocations and login methods, hides thei
 
 ## Files and financial boundaries
 
-- Unreferenced teaching files are removed only after the transaction succeeds. Shared files remain while another reference exists.
+- Classroom removal preserves teaching files and references. Separate authorized teaching-content cleanup may remove an unreferenced file after its transaction succeeds.
 - Recording cleanup removes stored links and allocations; it does not delete Google Drive videos.
 - Financial documents, rate versions, receipts, payments, refunds, ledger events and required source facts remain stored.
 - The additive offboarding migration does not rebuild financial tables or change financial foreign keys or immutability triggers. The previously proposed payroll foreign-key migration is not part of this implementation.

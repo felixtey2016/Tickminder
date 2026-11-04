@@ -7,11 +7,12 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 import { cn } from "@/lib/utils"
 import { t } from "@/lib/i18n"
 import { Button } from "@/components/ui/button"
+import { ModalLayer, useModalLayer } from "@/components/ui/modal-layer"
 
 function Dialog({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+  return <ModalLayer><DialogPrimitive.Root data-slot="dialog" {...props} /></ModalLayer>
 }
 
 function DialogTrigger({
@@ -34,11 +35,14 @@ function DialogClose({
 
 function DialogOverlay({
   className,
+  style,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
+  const layer = useModalLayer()
   return (
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
+      style={{ ...style, zIndex: layer }}
       className={cn(
         "fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
         className
@@ -50,6 +54,7 @@ function DialogOverlay({
 
 function DialogContent({
   className,
+  style,
   overlayClassName,
   children,
   showCloseButton = true,
@@ -63,11 +68,13 @@ function DialogContent({
   layout?: "default" | "framed"
   overlayClassName?: string
 }) {
+  const layer = useModalLayer()
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        style={{ ...style, zIndex: layer }}
         data-layout={layout}
         onScroll={event => {
           event.currentTarget.style.setProperty("--dialog-scroll-top", event.currentTarget.scrollTop + "px")

@@ -30,7 +30,10 @@ export function operationalRowVisible(table:string,alias:string):string{
   if(table==='classrooms')return operationalClassroomVisible(group,`${alias}.id`);
   if(table==='class_sessions'){
     const retained=`cleanup_lesson.group_id=${group} AND cleanup_lesson.session_id=${alias}.id`,visible=operationalStudentVisible('cleanup_lesson.group_id','cleanup_lesson.student');
-    return `(${operationalClassroomVisible(group,`${alias}.classroom_id`)} AND (NOT EXISTS(SELECT 1 FROM main.lessons cleanup_lesson WHERE ${retained} AND NOT (${visible})) OR EXISTS(SELECT 1 FROM main.lessons cleanup_lesson WHERE ${retained} AND ${visible})))`;
+    // Removing a classroom preserves its courses. Student offboarding still
+    // hides retired solo sessions through its nonempty student marker.
+    const classVisible=`NOT EXISTS(SELECT 1 FROM main.classroom_retirements cleanup_class WHERE cleanup_class.group_id=${group} AND cleanup_class.classroom_id=${alias}.classroom_id AND cleanup_class.student_name<>'')`;
+    return `(${classVisible} AND (NOT EXISTS(SELECT 1 FROM main.lessons cleanup_lesson WHERE ${retained} AND NOT (${visible})) OR EXISTS(SELECT 1 FROM main.lessons cleanup_lesson WHERE ${retained} AND ${visible})))`;
   }
   if(table==='reschedule_requests')return `NOT EXISTS(SELECT 1 FROM main.lessons cleanup_lesson WHERE cleanup_lesson.group_id=${group} AND cleanup_lesson.id=${alias}.lesson_id AND NOT (${operationalStudentVisible('cleanup_lesson.group_id','cleanup_lesson.student')}))`;
   if(['classroom_folders','classroom_content_state','classroom_announcements','class_recordings','resource_assignments','quiz_practice_assignments','teaching_materials','homework'].includes(table))return operationalClassroomVisible(group,`${alias}.classroom_id`);

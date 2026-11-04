@@ -1,7 +1,9 @@
 // This predicate is checked inside the same D1 batch as every deletion. It does
 // not trust the candidate snapshot, a browser status, or a caller-supplied ID.
+// Disabled identities stay reserved: expiry must not let a suspended Google
+// subject register again through an invitation after its account is removed.
 export const expiryPredicate = `a.pending_expires_at IS NOT NULL AND a.pending_expires_at <= ?
- AND a.activated_at IS NULL AND a.role = 'pending'
+ AND a.disabled_at IS NULL AND a.activated_at IS NULL AND a.role = 'pending'
  AND a.teacher_name IS NULL AND a.student_name IS NULL
  AND NOT EXISTS (SELECT 1 FROM assignments WHERE account_id = a.id)
  AND NOT EXISTS (SELECT 1 FROM pdf_files WHERE owner_id = a.id)

@@ -14,23 +14,6 @@ const activePlan=`p.active=1 AND s.active=1 AND t.active=1`;
 const planJoins=`FROM plans p JOIN students s ON s.name=p.student AND s.group_id=p.group_id JOIN teachers t ON t.name=p.teacher_name AND t.group_id=p.group_id`;
 const roomMatch=`c.group_id=p.group_id AND c.archived=0 AND c.teacher_name=p.teacher_name AND ${classPlanSubjectSql('p','c','s')} AND EXISTS(SELECT 1 FROM classroom_members cm WHERE cm.group_id=c.group_id AND cm.classroom_id=c.id AND cm.student_name=p.student)`;
 
-// Append these statements after the plan/profile writes in their transaction.
-// A class belongs to a real active student/subject/teacher pairing. A registered
-// name without a subject or teacher never creates a guessed placeholder class.
-export function planClassroomStatements(groupId:string,planKey:string,actorId:string,guard:Guard=allow){
- requireGroup(groupId);
- const classId=crypto.randomUUID(),memberId=crypto.randomUUID(),now=new Date().toISOString();
- return [
-  groupStatement(groupId,`INSERT INTO classrooms(group_id,id,title,description,subject,teacher_name,created_by,archived,created_at,updated_at,term_id,syllabus_id,subject_id,grade)
-   SELECT p.group_id,?,substr(p.student||' · '||p.subject||' · '||p.teacher_name,1,100),NULL,p.subject,p.teacher_name,?,0,?,?,NULL,s.syllabus_id,p.subject_id,s.grade ${planJoins}
-   WHERE p.key=? AND ${activePlan} AND ${guard.sql} AND NOT EXISTS(SELECT 1 FROM classrooms c WHERE ${roomMatch})`).bind(classId,actorId,now,now,planKey,...guard.args),
-  groupStatement(groupId,`INSERT INTO classroom_members(group_id,id,classroom_id,student_name,created_at)
-   SELECT p.group_id,?,c.id,p.student,? ${planJoins} JOIN classrooms c ON c.id=? AND c.group_id=p.group_id
-   WHERE p.key=? AND ${activePlan} AND ${guard.sql}
-   AND c.teacher_name=p.teacher_name AND NOT EXISTS(SELECT 1 FROM classroom_members cm WHERE cm.classroom_id=c.id AND cm.student_name=p.student)`).bind(memberId,now,classId,planKey,...guard.args),
- ];
-}
-
 // Keep upcoming one-to-one sessions associated when an administrator changes a
 // pairing's teacher. Historical participants, results and times remain intact.
 export function planSessionClassroomStatements(groupId:string,planKey:string,guard:Guard=allow){
@@ -38,27 +21,17 @@ export function planSessionClassroomStatements(groupId:string,planKey:string,gua
  return [groupStatement(groupId,`UPDATE class_sessions SET classroom_id=(${matched}),classroom_title=(SELECT title FROM classrooms WHERE id=(${matched})) WHERE group_id=? AND session_type='one_to_one' AND status='scheduled' AND ${guard.sql} AND (SELECT count(*) FROM (${matched}))=1`).bind(planKey,planKey,groupId,...guard.args,planKey)];
 }
 
+export async function readPlanClassrooms(groupId:string,planKey:string):Promise<PlanClassroom[]>{
+ return groupReader(groupId).rows<PlanClassroom>(`SELECT DISTINCT c.id,c.title ${planJoins} JOIN classrooms c ON ${roomMatch} WHERE p.key=? AND ${activePlan} ORDER BY c.id`,planKey);
+}
 export async function readPlanClassroom(groupId:string,planKey:string):Promise<PlanClassroom|null>{
- const rooms=await groupReader(groupId).rows<PlanClassroom>(`SELECT DISTINCT c.id,c.title ${planJoins} JOIN classrooms c ON ${roomMatch} WHERE p.key=? AND ${activePlan} ORDER BY c.id`,planKey);
+ const rooms=await readPlanClassrooms(groupId,planKey);
  return rooms.length===1?rooms[0]:null;
 }
 export async function readLessonClassroom(groupId:string,lesson:LessonIdentity):Promise<PlanClassroom|null>{
  const rooms=await groupReader(groupId).rows<PlanClassroom>(`SELECT DISTINCT c.id,c.title ${planJoins} CROSS JOIN (SELECT ? AS subject) requested JOIN classrooms c ON ${roomMatch} WHERE p.student=? AND p.teacher_name=? AND ${planSubjectLabelSql()} AND ${activePlan} ORDER BY c.id`,lesson.subject,lesson.student,lesson.teacherName);
  return rooms.length===1?rooms[0]:null;
 }
-export async function ensurePlanClassroom(groupId:string,planKey:string,actorId:string,mutationDb:D1Database=learningDb()){
- await mutationDb.batch(planClassroomStatements(groupId,planKey,actorId));
- return readPlanClassroom(groupId,planKey);
-}
-export async function ensureStudentClassrooms(groupId:string,studentName:string,actorId:string,mutationDb:D1Database=learningDb()){
- const plans=await groupReader(groupId).rows<{key:string}>('SELECT key FROM plans WHERE student=? AND active=1 ORDER BY key',studentName);
- if(plans.length)await mutationDb.batch(plans.flatMap(plan=>[...planClassroomStatements(groupId,plan.key,actorId),...planSessionClassroomStatements(groupId,plan.key)]));
-}
-export async function ensureTeacherClassrooms(groupId:string,teacherName:string,actorId:string,mutationDb:D1Database=learningDb()){
- const plans=await groupReader(groupId).rows<{key:string}>('SELECT key FROM plans WHERE teacher_name=? AND active=1 ORDER BY key',teacherName);
- if(plans.length)await mutationDb.batch(plans.flatMap(plan=>[...planClassroomStatements(groupId,plan.key,actorId),...planSessionClassroomStatements(groupId,plan.key)]));
-}
-
 export type ClassroomContentLink={kind:'material'|'homework';id:string;ownerId:string;ownerRole:string;revision:number;classroomId:string;student:string;subject:string;teacherName:string};
 export type ClassroomSessionLink={id:string;classroomId:string;classroomTitle:string;student:string;subject:string;teacherName:string;status:string};
 type HistoricalEvidence={kind:'material'|'homework'|'session';id:string;student:string;subject:string;teacherName:string;ownerId?:string;ownerRole?:string;revision?:number;status?:string};

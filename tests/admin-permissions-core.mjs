@@ -168,7 +168,9 @@ await section('teacher creation and restore are independently guarded with trans
 await section('pairing creation avoids profile access while profile edits require student edit',async()=>{
   grant(adminId,['plans.create']);await login(adminId);
   await ok('action',{action:'savePlan',student,teacherName:teacher,subjectId:'mathematics',duration:1.5,syllabusId:'spm',grade:'Form 3'});
-  const plan=sqlite.prepare('SELECT * FROM plans WHERE group_id=? AND student=?').get(groups.a,student);roomId=sqlite.prepare('SELECT classroom_id FROM classroom_members WHERE group_id=? AND student_name=?').get(groups.a,student).classroom_id;
+  const plan=sqlite.prepare('SELECT * FROM plans WHERE group_id=? AND student=?').get(groups.a,student);
+  assert.equal(sqlite.prepare('SELECT classroom_id FROM classroom_members WHERE group_id=? AND student_name=?').get(groups.a,student),undefined,'Pairing permission must not implicitly create a classroom');
+  grant(adminId,['classrooms.create']);const explicitClass=await ok('classrooms',{action:'saveClassroom',title:'Explicit permission fixture',teacherName:teacher,syllabusId:'spm',subjectId:'mathematics',grade:'Form 3',students:[student]});roomId=explicitClass.id;
   assert.ok(roomId);assert.equal(plan.duration,1.5);
   grant(adminId,['plans.edit']);await unchanged('cannot change profile under pairing edit',()=>denied('action',{action:'savePlan',editingKey:plan.key,student,teacherName:teacher,subjectId:'mathematics',duration:2,grade:'Form 4'},'',[403]));
   await ok('action',{action:'savePlan',editingKey:plan.key,student,teacherName:teacher,subjectId:'mathematics',duration:2});
