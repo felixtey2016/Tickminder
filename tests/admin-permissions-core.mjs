@@ -141,7 +141,7 @@ await section('deny all grants rejects every owned route before business writes'
   for(const action of actions)await unchanged(action,()=>denied('action',{action},'',[403]));
   for(const action of ['createTerm','saveTerm','saveClassroom','archiveClassroom','saveAnnouncement','deleteAnnouncement','futureAction'])await unchanged('classrooms '+action,()=>denied('classrooms',{action},'',[403]));
   for(const action of ['create','rename','move','placeContent','previewDelete','delete','futureAction'])await unchanged('folders '+action,()=>denied('folders',{action},'',[403]));
-  for(const [name,body,query]of [['attendance',undefined,'?sessionId=missing'],['class-sessions',undefined,''],['lesson-history',undefined,'?lessonId=missing'],['student-promotions',undefined,'?cycle=2027'],['student-promotions',{cycle:2027,students:[]},''],['conflicts',{action:'create'},''],['sheet-sync',{action:'preview',mode:'billable'},'']])await unchanged(name,()=>denied(name,body,query,[403]));
+  for(const [name,body,query]of [['attendance',undefined,'?sessionId=missing'],['class-sessions',undefined,''],['lesson-history',undefined,'?lessonId=missing'],['student-promotions',undefined,'?cycle=2027'],['student-promotions',{cycle:2027,students:[]},''],['conflicts',{action:'create'},'']])await unchanged(name,()=>denied(name,body,query,[403]));
   const preview=await ok('manage',{action:'previewDelete',kind:'teacher',id:teacher});assert.equal(preview.items.length,0);assert.equal(preview.blocked.length,1);
   await unchanged('unknown delete action',()=>denied('manage',{action:'futureAction',kind:'teacher',id:teacher,confirm:true},'',[403]));
   await unchanged('actual permanent delete',()=>denied('manage',{kind:'teacher',id:teacher,confirm:true},'',[403]));
@@ -235,12 +235,34 @@ await section('promotion preview and confirmed writes require explicit promotion
   await ok('student-promotions',{cycle:2027,students:[item]});assert.equal(sqlite.prepare('SELECT grade FROM students WHERE name=?').get(student).grade,'Form 4');
 });
 
-await section('sheet preview does not require statistics and cannot commit without commit grant',async()=>{
+await section('retired Sheet denies preview and commit without any external dispatch',async()=>{
   runtime.env.SHEET_SYNC_URL='https://script.google.com/macros/s/fictional-test/exec';runtime.env.SHEET_SYNC_SECRET='fixture-only-secret';
-  globalThis.fetch=async(url,options)=>{networkRequests++;const envelope=JSON.parse(options.body),data=JSON.parse(envelope.body);assert.ok(data.signature===undefined);return Response.json(data.action==='month'?{ok:true,month:'2026-10',displayMonth:'Oct 2026'}:{ok:true,changes:[],previewToken:'fixture-preview'});};
-  grant(adminId,['sheetSync.preview']);await login(adminId);await ok('sheet-sync',{action:'preview',mode:'billable'});assert.equal(networkRequests,2);
-  await unchanged('preview cannot commit',()=>denied('sheet-sync',{action:'commit',mode:'billable',month:'2026-10',previewToken:'fixture-preview'},'',[403]));assert.equal(networkRequests,2);
-  grant(adminId,[]);await denied('sheet-sync',{action:'preview',mode:'billable'},'',[403]);assert.equal(networkRequests,2);
+  globalThis.fetch=async()=>{networkRequests++;throw Error('Retired integration must never dispatch');};
+  grant(adminId,[]);await login(adminId);
+  for(const action of ['preview','commit'])await unchanged('retired '+action,()=>denied('sheet-sync',{action,mode:'billable',month:'2026-10',previewToken:'fixture-preview'},'',[410]));
+  assert.equal(networkRequests,0);
+});
+
+await section('stored retired Sheet grants preserve supported access and reject all other corruption',async()=>{
+  const access=await load('lib/admin-permission-access.ts'),supported=permission.normalizeAdminGrants(['students.view','teachers.create']);
+  const previous=profileRow(adminId),stored=[...supported,...permission.RETIRED_ADMIN_GRANTS];
+  sqlite.prepare('UPDATE admin_permission_profiles SET grants_json=?,draft_grants_json=? WHERE account_id=?').run(JSON.stringify(stored),JSON.stringify(['students.view',...permission.RETIRED_ADMIN_GRANTS]),adminId);
+  await login(adminId);const account=await auth.currentBusinessAccount();
+  await unchanged('stored grant read',async()=>{
+   assert.deepEqual((await access.adminPermissionContext(account)).grants,supported);
+   assert.equal(await access.hasAdminPermission(account,'teachers.create'),true);
+   assert.equal(await access.hasAdminPermission(account,'students.edit'),false);
+   for(const key of permission.RETIRED_ADMIN_GRANTS)assert.equal(await access.hasAdminPermission(account,key),false);
+   const core=await ok('state',undefined,'?scope=core');assert(core.students.includes(student));
+  });
+  await login('chief-a');const profile=await readProfile(adminId);assert.deepEqual(profile.profile.grants,supported);assert.deepEqual(profile.profile.draftGrants,['students.view']);
+  for(const key of permission.RETIRED_ADMIN_GRANTS)await unchanged('retired new write',()=>denied('admin-permissions',{accountId:adminId,expectedRevision:profile.profile.revision,grants:[key]},'',[400]));
+  for(const bad of [[...stored,'futureWidget.view'],[...stored,'students.view'],[...stored,'sheetSync.view'],['teachers.create',...permission.RETIRED_ADMIN_GRANTS],[...stored,'sheetSync.future']]){
+   sqlite.prepare('UPDATE admin_permission_profiles SET grants_json=? WHERE account_id=?').run(JSON.stringify(bad),adminId);
+   assert.deepEqual((await access.adminPermissionContext(account)).grants,[]);assert.equal(await access.hasAdminPermission(account,'teachers.create'),false);
+   await unchanged('corrupt historical profile',()=>denied('admin-permissions',undefined,query(adminId),[503]));
+  }
+  sqlite.prepare('UPDATE admin_permission_profiles SET grants_json=?,draft_grants_json=? WHERE account_id=?').run(previous.grants_json,previous.draft_grants_json,adminId);
 });
 
 await section('chief and owner retain existing scope while teacher access stays unchanged',async()=>{

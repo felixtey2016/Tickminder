@@ -23,7 +23,7 @@ const viewGrants: Record<string, AdminGrantKey[]> = {
   overview: ["statistics.view"], attention: ["attendance.view"], schedule: ["lessons.create"],
   calendar: ["lessons.view"], list: ["lessons.view"], students: ["lessons.view"], teachers: ["lessons.view"],
   subjects: ["plans.view"], teacherRoster: ["teachers.view"], studentRoster: ["students.view"],
-  parentRoster: ["accounts.view"], accounts: ["accounts.view"], sheet: ["sheetSync.view"], activity: ["audit.view"],
+  parentRoster: ["accounts.view"], accounts: ["accounts.view"], activity: ["audit.view"],
   courses: ["lessons.view", "lessons.create", "attendance.view", "statistics.view"],
   people: ["students.view", "teachers.view", "accounts.view"],
 };

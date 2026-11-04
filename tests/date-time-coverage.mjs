@@ -9,7 +9,9 @@ import ts from 'typescript';
 const root = path.resolve(import.meta.dirname, '..');
 const expected = new Map([['date', 'DateInput'], ['datetime-local', 'DateTimeInput'], ['time', 'TimeInput'], ['month', 'MonthInput']]);
 const backingFiles = new Set(['components/date-time-input.tsx', 'components/time-input.tsx', 'components/month-input.tsx']);
-const counts = {}, dynamicNativeControls = [], violations = [];
+const counts = {}, dynamicNativeControls = [], violations = [], rangeUses = [], rangeAdapters = [];
+const defaultTypes = new Map([...expected].map(([type, component]) => [component, type]));
+const importFile = (from, file) => path.resolve(from.startsWith('@/') ? root : path.dirname(file), from.startsWith('@/') ? from.slice(2) : from).replace(/\.[jt]sx?$/, '');
 let scanned = 0;
 function values(node) {
   if (!node) return [];
@@ -35,8 +37,13 @@ function walk(directory) {
       if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
         const tag = node.tagName.getText(source), attrs = node.attributes.properties.filter(ts.isJsxAttribute);
         const type = attrs.find(attribute => attribute.name.getText(source) === 'type')?.initializer;
-        const declared = values(type), temporal = declared.filter(value => expected.has(value));
+        const imported = imports.get(tag), declared = values(type), temporal = declared.filter(value => expected.has(value));
+        if (!type && defaultTypes.has(imported?.name)) temporal.push(defaultTypes.get(imported.name));
         const location = relative + ':' + (source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1);
+        if (imported?.name === 'LessonTimeRange') {
+          if (importFile(imported.from, file) !== path.join(root, 'components', 'lesson-time-range')) violations.push(location + ' must use the shared LessonTimeRange');
+          else rangeUses.push(relative);
+        }
         const backingControl = tag === 'input' && backingFiles.has(relative) && (temporal.length > 0 || Boolean(type && !declared.length));
         if (backingControl) {
           const hidden = attrs.find(attribute => attribute.name.getText(source) === 'aria-hidden')?.initializer;
@@ -46,10 +53,10 @@ function walk(directory) {
           if (backingControl) continue;
           // The public adapters delegate to their shared implementation only here.
           if (relative === 'components/date-time-input.tsx' && tag === 'DateTimeField' && ['date', 'datetime-local'].includes(value)) continue;
-          const imported = imports.get(tag), component = expected.get(value);
+          const component = expected.get(value);
           const module = value === 'date' || value === 'datetime-local' ? '@/components/date-time-input' : '@/components/' + value + '-input';
-          if (imported?.name !== component || imported.from !== module) violations.push(location + ' uses ' + tag + ' for ' + value + ', expected ' + component);
-          else counts[component] = (counts[component] || 0) + 1;
+          if (imported?.name !== component || importFile(imported.from, file) !== importFile(module, file)) violations.push(location + ' uses ' + tag + ' for ' + value + ', expected ' + component);
+          else { counts[component] = (counts[component] || 0) + 1; if (relative === 'components/lesson-time-range.tsx') rangeAdapters.push(component); }
         }
       }
       ts.forEachChild(node, visit);
@@ -60,4 +67,6 @@ function walk(directory) {
 walk(path.join(root, 'app')); walk(path.join(root, 'components'));
 assert.deepEqual(violations, [], 'Temporal form fields must use the shared site adapters');
 assert.ok(counts.DateInput > 0 && counts.DateTimeInput > 0, 'Both date adapters must be used by real app forms');
-console.log(JSON.stringify({passed: true, scanned, counts, nativeBusinessPickers: 0, dynamicNativeControls, note: 'Generic dynamic input types need call-site review; this scan does not execute UI.'}));
+assert.deepEqual(rangeAdapters, ['DateInput', 'TimeInput', 'TimeInput'], 'Shared lesson range must retain custom date/start/end controls, including implicit input types');
+for (const file of ['app/scheduler-course-pages.tsx', 'app/class-session-schedule.tsx', 'app/scheduler-lesson-dialog.tsx', 'app/reschedule-panel.tsx']) assert(rangeUses.includes(file), file + ' must use the shared lesson date/time range');
+console.log(JSON.stringify({passed: true, scanned, counts, rangeUses, nativeBusinessPickers: 0, dynamicNativeControls, note: 'Generic dynamic input types need call-site review; this scan does not execute UI.'}));

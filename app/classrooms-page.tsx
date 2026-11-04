@@ -18,8 +18,10 @@ import { BookOpen, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, FileTex
 import {RecordingsWorkspace} from "./recordings-workspace";
 import {ClassroomSchedule} from "./classroom-schedule";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import "./classrooms-compact.css";
+import "./classroom-create-dialog.css";
+import {classroomDraftOptions} from '@/lib/classroom-draft-options';
 import { t } from "@/lib/i18n";
 import { StudentLearning, TeacherLearning, type LearningMutate, type LearningState } from "./learning-portal";
 import { AdminLearning } from "./admin-learning";
@@ -146,6 +148,9 @@ export function ClassroomsPage({ role, account, classes, terms, teacherName, mut
   const [teacher, setTeacher] = useState(teacherName || "");
   const [subject, setSubject] = useState("");
   const [members, setMembers] = useState<string[]>([]);
+  const [courseKey,setCourseKey]=useState('');
+  const classFormId=useId();
+  const classFormTrigger=useRef<HTMLElement|null>(null);
   const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [announcementId, setAnnouncementId] = useState("");
   const [announcementTitle, setAnnouncementTitle] = useState("");
@@ -155,8 +160,12 @@ export function ClassroomsPage({ role, account, classes, terms, teacherName, mut
 
   const eligiblePlans = useMemo(() => plans.filter(plan => plan.active && (role !== "teacher" || plan.teacherName === teacherName)), [plans, role, teacherName]);
   const syllabus=catalogue?.syllabuses.find(item=>item.id===syllabusId);
-  const subjects=(syllabus?.subjects||[]).filter(item=>item.active&&eligiblePlans.some(plan=>plan.teacherName===teacher&&plan.syllabusId===syllabusId&&plan.subjectId===item.id));
   const eligibleStudents = [...new Set([...eligiblePlans.filter(plan => plan.teacherName === teacher && (editingId?((selected?.subjectId&&plan.subjectId===selected.subjectId)||plan.subject===subject):plan.subjectId===subject)&&(!syllabusId||plan.syllabusId===syllabusId)&&(!grade||!plan.grade||plan.grade===grade)).map(plan => plan.student), ...(editingId ? members : [])])].sort();
+  const draftOptions=classroomDraftOptions((options.data?.plans||[]).map(plan=>({...plan,teacherName:plan.teacher,active:true})),teacher,members,catalogue);
+  const courseChoicesKey=JSON.stringify(draftOptions.choices.map(choice=>choice.key));
+  useEffect(()=>{if(!editingId)setCourseKey(current=>draftOptions.choices.some(choice=>choice.key===current)?current:draftOptions.choices.length===1?draftOptions.choices[0].key:'');},[editingId,courseChoicesKey]);
+  const draftCourse=draftOptions.choices.find(choice=>choice.key===courseKey);
+  const draftStudents=editingId?eligibleStudents:draftOptions.students;
   const shownClassId = selected?.id || "";
   const classLearning: LearningState = selected ? {
     ...learning,
@@ -168,16 +177,18 @@ export function ClassroomsPage({ role, account, classes, terms, teacherName, mut
   classLearning.submissions = learning.submissions.filter(item => classHomeworkIds.has(item.homeworkId));
 
   function startCreate() {
-    setTermId(currentTerm?.id || ""); setCreating(true); setEditingId(""); setTitle(""); setDescription(""); setTeacher(teacherName || ""); setSubject("");setSyllabusId('');setGrade(''); setMembers([]);
+    classFormTrigger.current=document.activeElement instanceof HTMLElement?document.activeElement:null;
+    setTermId(currentTerm?.id || ""); setCreating(true); setEditingId(""); setTitle(""); setDescription(""); setTeacher(teacherName || ""); setSubject("");setSyllabusId('');setGrade(''); setMembers([]);setCourseKey('');
   }
   function startEdit(item: Classroom) {
+    classFormTrigger.current=document.activeElement instanceof HTMLElement?document.activeElement:null;
     setTermId(item.termId || ""); setCreating(true); setEditingId(item.id); setTitle(item.title); setDescription(item.description || "");
     setTeacher(item.teacherName); setSubject(item.subjectId||item.subject);setSyllabusId(item.syllabusId||'');setGrade(item.grade||''); setMembers(item.members || []);
   }
   async function saveClassroom(event: React.FormEvent) {
     event.preventDefault();
-    if (busy || !options.data || options.loading || options.error || !members.length) return;
-    const result = await mutate({ action: "saveClassroom", id: editingId, title, description, termId, teacherName: teacher, subject,subjectId:subject,syllabusId,grade, students: members });
+    if (busy || !can(editingId?'classrooms.edit':'classrooms.create') || !options.data || options.loading || options.error || !members.length || (!editingId&&!draftCourse)) return;
+    const result = await mutate({ action: "saveClassroom", id: editingId, title, description, termId, teacherName: teacher, subject:editingId?subject:draftCourse!.subjectId,subjectId:editingId?subject:draftCourse!.subjectId,syllabusId:editingId?syllabusId:draftCourse!.syllabusId,grade:editingId?grade:draftCourse!.grade, students: members });
     if (result.ok) { setSearch(""); setFilterTerm(termId || "unassigned"); setCreating(false); setDirectoryOpen(false); if (result.id) setSelectedId(result.id); setTab("announcements"); focusClassroomContent(); }
   }
   async function saveAnnouncement(event: React.FormEvent) {
@@ -213,21 +224,27 @@ export function ClassroomsPage({ role, account, classes, terms, teacherName, mut
       {!visibleClasses.length && <PageState kind="empty" title={classes.length ? "没有符合筛选条件的班级" : "暂无班级"} action={canManage&&can("classrooms.create") ? "新建班级" : undefined} onAction={canManage&&can("classrooms.create") ? startCreate : undefined}/>}
     </details>
 
-    {creating && canManage && can(editingId?"classrooms.edit":"classrooms.create") && <section className="panel classroom-form-panel"><h2>{editingId ? t("编辑班级") : t("新建班级")}</h2>
-      {(options.loading||options.error)&&<PageState kind={options.error?'error':'loading'} title={options.error?'页面加载失败':'正在加载…'} description={options.error} action={options.error?'重试':undefined} onAction={options.reload}/>}
-      <form className="learning-form" onSubmit={saveClassroom}>
-        {catalogueError&&<p role="alert">{catalogueError} <Button type="button" variant="outline" onClick={()=>void reloadCatalogue()}>{t('重试')}</Button></p>}
-        <label>{t("班级名称")}<input required maxLength={100} value={title} onChange={event => setTitle(event.target.value)} placeholder={t("例如：Form 4 Science 小班")}/></label>
-        <TermSelect terms={terms} value={termId} onChange={setTermId} mutate={mutate} busy={busy}/>
-        <label>{t("班级说明（可选）")}<textarea maxLength={1000} value={description} onChange={event => setDescription(event.target.value)}/></label>
-        <label>{t("负责老师")}<select required disabled={role === "teacher" || Boolean(editingId)} value={teacher} onChange={event => { setTeacher(event.target.value); setSubject(""); setMembers([]); }}><option value="">{t("请选择")}</option>{teachers.map(name => <option key={name}>{name}</option>)}</select></label>
-        <label>{t('课程体系')}<select required={!editingId} disabled={Boolean(editingId)||!catalogue} value={syllabusId} onChange={event=>{setSyllabusId(event.target.value);setGrade('');setSubject('');setMembers([]);}}><option value="">{t('请选择')}</option>{catalogue?.syllabuses.filter(item=>item.active||item.id===syllabusId).map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <label>{t(syllabusId==='stpm'?'学期':syllabusId==='a-level'?'阶段':'年级')}<select required={!editingId} disabled={Boolean(editingId)||!syllabus} value={grade} onChange={event=>{setGrade(event.target.value);setMembers([]);}}><option value="">{t('请选择')}</option>{syllabus?.grades.map(item=><option key={item}>{item}</option>)}</select></label>
-        <label>{t("科目")}<select required disabled={Boolean(editingId)||!syllabus} value={subject} onChange={event => { setSubject(event.target.value); setMembers([]); }}><option value="">{t("请选择")}</option>{subjects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}{editingId&&!subjects.some(item=>item.id===subject)&&<option value={subject}>{selected?.subject||subject}</option>}</select></label>
-        <fieldset className="learning-checks"><legend>{t("班级成员")} · {members.length}</legend>{eligibleStudents.map(student => <label key={student}><input type="checkbox" checked={members.includes(student)} onChange={event => setMembers(current => event.target.checked ? [...current, student] : current.filter(name => name !== student))}/>{student}</label>)}{!eligibleStudents.length && <p className="muted">{t("请选择已分配学生的老师与科目")}</p>}</fieldset>
-        <div className="learning-card-actions"><Button adminGrant={editingId?"classrooms.edit":"classrooms.create"} disabled={busy || !members.length || !options.data || options.loading || Boolean(options.error)}>{t("保存班级")}</Button><Button type="button" variant="outline" onClick={() => setCreating(false)}>{t("取消")}</Button></div>
-      </form>
-    </section>}
+    <Dialog open={creating&&canManage&&can(editingId?'classrooms.edit':'classrooms.create')} onOpenChange={open=>{if(!open&&!busy)setCreating(false);}}>
+      <DialogContent layout="framed" closeDisabled={busy} className="classroom-create-dialog" data-testid="classroom-create-dialog" onCloseAutoFocus={event=>{event.preventDefault();const target=classFormTrigger.current?.isConnected?classFormTrigger.current:directorySummaryRef.current;target?.focus({preventScroll:true});}}>
+        <DialogHeader><DialogTitle>{t(editingId ? "编辑班级" : "新建班级")}</DialogTitle><DialogDescription>{getLanguage()==='zh'?'选择老师和学生后，使用他们共同适用的课程设置。':'Choose a teacher and students, then use a course they share.'}</DialogDescription></DialogHeader>
+        <DialogBody>
+          {(options.loading||options.error)&&<PageState kind={options.error?'error':'loading'} title={options.error?'页面加载失败':'正在加载…'} description={options.error} action={options.error?'重试':undefined} onAction={options.reload}/>}
+          <form id={classFormId} className="learning-form classroom-create-form" onSubmit={saveClassroom}>
+            {catalogueError&&<p role="alert">{catalogueError} <Button type="button" variant="outline" onClick={()=>void reloadCatalogue()}>{t('重试')}</Button></p>}
+            <label>{t("班级名称")}<input required maxLength={100} name="classroom-title" value={title} onChange={event=>setTitle(event.target.value)} placeholder={t("例如：Form 4 Science 小班")}/></label>
+            <TermSelect terms={terms} value={termId} onChange={setTermId} mutate={mutate} busy={busy}/>
+            <label>{t("负责老师")}<select required name="classroom-teacher" disabled={role==='teacher'||Boolean(editingId)||!options.data} value={teacher} onChange={event=>{setTeacher(event.target.value);setSubject('');setMembers([]);setCourseKey('');}}><option value="">{t("请选择")}</option>{teachers.map(name=><option key={name}>{name}</option>)}</select></label>
+            <fieldset className="learning-checks classroom-create-members"><legend>{t("班级成员")} · {members.length}</legend>{draftStudents.map(student=><label key={student}><input type="checkbox" name="classroom-students" value={student} checked={members.includes(student)} onChange={event=>setMembers(current=>event.target.checked?[...current,student]:current.filter(name=>name!==student))}/>{student}</label>)}{!draftStudents.length&&<p className="muted">{getLanguage()==='zh'?(teacher?'这位老师暂无有效课程配对的学生。':'请先选择老师。'):(teacher?'This teacher has no students with an active course pairing.':'Choose a teacher first.')}</p>}</fieldset>
+            {editingId?<><label>{t('科目')}<input readOnly value={selected?.subject||subject}/></label><p className="field-hint">{[syllabus?.name||syllabusId,grade].filter(Boolean).join(' · ')}</p></>:<>
+              <label>{t('科目')}<select name="classroom-course" required disabled={!members.length||!catalogue||!draftOptions.choices.length} value={courseKey} onChange={event=>setCourseKey(event.target.value)}><option value="">{t('请选择')}</option>{draftOptions.choices.map(choice=><option key={choice.key} value={choice.key}>{choice.subjectName} · {choice.syllabusName} · {choice.grade}</option>)}</select></label>
+              {draftCourse?<p className="field-hint" data-testid="classroom-classification">{t('课程体系')}：{draftCourse.syllabusName} · {t(draftCourse.syllabusId==='stpm'?'学期':draftCourse.syllabusId==='a-level'?'阶段':'年级')}：{draftCourse.grade}</p>:<p className="field-hint" role={members.length&&!draftOptions.choices.length?'status':undefined}>{getLanguage()==='zh'?(!members.length?'请选择学生，科目将从他们现有课程设置中带入。':draftOptions.incompleteStudents.length?'所选学生缺少有效的课程体系、年级或科目设置，请先补齐现有资料。':draftOptions.choices.length?'请选择本班适用的科目组合。':'所选学生没有共同适用的课程组合，请调整成员或现有课程设置。'):(!members.length?'Select students to use their existing course settings.':draftOptions.incompleteStudents.length?'Some selected students need valid syllabus, grade or subject settings before this class can be created.':draftOptions.choices.length?'Choose the course combination for this class.':'These students share no applicable course combination. Adjust the members or existing course settings.')}</p>}
+            </>}
+            <details className="classroom-create-description"><summary>{t('班级说明（可选）')}</summary><label><span className="sr-only">{t('班级说明（可选）')}</span><textarea maxLength={1000} value={description} onChange={event=>setDescription(event.target.value)}/></label></details>
+          </form>
+        </DialogBody>
+        <DialogFooter><Button type="button" variant="outline" disabled={busy} onClick={()=>setCreating(false)}>{t('取消')}</Button><Button type="submit" form={classFormId} adminGrant={editingId?'classrooms.edit':'classrooms.create'} disabled={busy||!members.length||!options.data||options.loading||Boolean(options.error)||(!editingId&&!draftCourse)}>{t('保存班级')}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
 
     {!creating && selected && <>
       <section className="panel classroom-intro"><div className="classroom-intro-copy"><p className="eyebrow">{selected.subject} · {selected.teacherName}</p><h2>{selected.title}</h2><p className="classroom-context-meta">{[catalogue?.syllabuses.find(item=>item.id===selected.syllabusId)?.name||selected.syllabusId,selected.grade,terms.find(term=>term.id===selected.termId)?.name||t("未指定学期")].filter(Boolean).join(" · ")}</p>{selected.description && <details className="round1-class-description"><summary>{getLanguage() === "zh" ? "班级说明" : "Class description"}</summary><p className="classroom-description">{selected.description}</p></details>}</div>{canManage && (can("classrooms.edit")||can("classrooms.archive")||can("classrooms.restore")||can("classrooms.delete")) && <details key={selected.id} ref={managementRef} className="classroom-management"><summary><Settings2 size={16}/><span>{t("班级管理")}</span><ChevronDown size={15}/></summary><div className="learning-card-actions classroom-management-actions" role="group" aria-label={t("班级管理")}><Button adminGrant="classrooms.edit" type="button" size="sm" variant="outline" onClick={() => startEdit(selected)} disabled={Boolean(selected.archived)}>{t("编辑班级")}</Button><Button adminGrant={selected.archived?"classrooms.restore":"classrooms.archive"} type="button" size="sm" variant="outline" disabled={busy} onClick={() => { if (window.confirm(t(selected.archived ? "确定重新开放这个班级？" : "确定封存这个班级？学生仍能查看已发布内容。"))) void mutate({ action: "archiveClassroom", id: selected.id, archived: !selected.archived }); }}>{t(selected.archived ? "恢复班级" : "封存班级")}</Button><DeleteButton kind="classroom" id={selected.id} busy={busy} mutate={async body => (await mutate(body)).ok} message="永久删除这个班级、全部排课与出勤，以及班级公告、资料、功课和课堂录影链接？学生账号、共用 PDF 和 Google Drive 影片保留，此操作无法恢复。"/></div></details>}</section>
@@ -253,7 +270,7 @@ export function ClassroomsPage({ role, account, classes, terms, teacherName, mut
       {tab === "announcements" && can("announcements.view") && <section className="panel classroom-announcements-panel">
         <div className="round1-section-head"><h2>{t("班级公告")} <span className="learning-record-count">{selected.announcements.length}</span></h2>{canManage && !selected.archived && can("announcements.create") && <Button adminGrant="announcements.create" type="button" size="sm" onClick={() => { setAnnouncementId(""); setAnnouncementTitle(""); setAnnouncementBody(""); setPinned(false); setAnnouncementOpen(true); }}><Plus size={16}/>{t("发布公告")}</Button>}</div>
         <div className="classroom-announcement-columns" aria-hidden="true"><span>{getLanguage()==="zh"?"公告":"Announcement"}</span><span>{getLanguage()==="zh"?"发布人 / 时间":"Published by / date"}</span><span>{getLanguage()==="zh"?"操作":"Action"}</span></div><div className="learning-list round1-announcement-list">{selected.announcements.map(item => <article key={item.id} className="learning-card classroom-announcement"><details className="round1-announcement-detail"><summary className="classroom-announcement-row"><span className="round1-announcement-heading"><strong>{item.title}</strong>{Boolean(item.pinned) && <span className="classroom-pinned">{t("置顶")}</span>}</span><span className="classroom-announcement-meta">{item.authorName} · {dateLabel(item.createdAt)}</span><span className="classroom-announcement-action">{getLanguage() === "zh" ? "查看公告" : "Read announcement"}<ChevronDown size={15}/></span></summary><p>{item.body}</p>{canManage && !selected.archived && <div className="learning-card-actions"><Button adminGrant="announcements.edit" size="sm" variant="outline" onClick={() => { setAnnouncementId(item.id); setAnnouncementTitle(item.title); setAnnouncementBody(item.body); setPinned(Boolean(item.pinned)); setAnnouncementOpen(true); }}>{t("编辑")}</Button><Button adminGrant="announcements.delete" size="sm" variant="outline" disabled={busy} onClick={() => { if (window.confirm(t("确定删除这则公告？"))) void mutate({ action: "deleteAnnouncement", classroomId: selected.id, id: item.id }); }}>{t("删除公告")}</Button></div>}</details></article>)}{!selected.announcements.length && <p className="muted">{t("尚无公告")}</p>}</div>
-        {announcementOpen && canManage && !selected.archived && can(announcementId ? "announcements.edit" : "announcements.create") && <Dialog open onOpenChange={open => { if (!busy) setAnnouncementOpen(open); }}><DialogContent className="content-edit-dialog round1-announcement-dialog" overlayClassName="content-edit-overlay" showCloseButton={!busy}><DialogTitle>{announcementId ? t("编辑") + " · " + t("班级公告") : t("发布公告")}</DialogTitle><DialogDescription>{selected.title}</DialogDescription><form className="learning-form" onSubmit={saveAnnouncement}><label>{t("公告标题")}<input autoFocus required maxLength={120} disabled={busy} value={announcementTitle} onChange={event => setAnnouncementTitle(event.target.value)}/></label><label>{t("公告内容")}<textarea required rows={6} maxLength={4000} disabled={busy} value={announcementBody} onChange={event => setAnnouncementBody(event.target.value)}/></label><label className="round1-announcement-pin"><input type="checkbox" disabled={busy} checked={pinned} onChange={event => setPinned(event.target.checked)}/>{t("置顶公告")}</label><div className="learning-card-actions"><Button type="button" variant="outline" disabled={busy} onClick={() => setAnnouncementOpen(false)}>{t("取消")}</Button><Button adminGrant={announcementId ? "announcements.edit" : "announcements.create"} disabled={busy}>{announcementId ? t("保存修改") : t("发布公告")}</Button></div></form></DialogContent></Dialog>}
+        {announcementOpen && canManage && !selected.archived && can(announcementId ? "announcements.edit" : "announcements.create") && <Dialog open onOpenChange={open => { if (!busy) setAnnouncementOpen(open); }}><DialogContent className="content-edit-dialog round1-announcement-dialog" overlayClassName="content-edit-overlay" closeDisabled={busy}><DialogTitle>{announcementId ? t("编辑") + " · " + t("班级公告") : t("发布公告")}</DialogTitle><DialogDescription>{selected.title}</DialogDescription><form className="learning-form" onSubmit={saveAnnouncement}><label>{t("公告标题")}<input autoFocus required maxLength={120} disabled={busy} value={announcementTitle} onChange={event => setAnnouncementTitle(event.target.value)}/></label><label>{t("公告内容")}<textarea required rows={6} maxLength={4000} disabled={busy} value={announcementBody} onChange={event => setAnnouncementBody(event.target.value)}/></label><label className="round1-announcement-pin"><input type="checkbox" disabled={busy} checked={pinned} onChange={event => setPinned(event.target.checked)}/>{t("置顶公告")}</label><div className="learning-card-actions"><Button type="button" variant="outline" disabled={busy} onClick={() => setAnnouncementOpen(false)}>{t("取消")}</Button><Button adminGrant={announcementId ? "announcements.edit" : "announcements.create"} disabled={busy}>{announcementId ? t("保存修改") : t("发布公告")}</Button></div></form></DialogContent></Dialog>}
       </section>}
       {tab === "schedule" && can("lessons.view") && <ClassroomSchedule key={selected.id} classroomId={selected.id} onCalendar={onCalendar} canAddRecording={canManage&&!selected.archived&&can("recordings.create")}/>}
       {tab === "recordings" && can("recordings.view") && <RecordingsWorkspace key={selected.id} classroomId={selected.id}/>}

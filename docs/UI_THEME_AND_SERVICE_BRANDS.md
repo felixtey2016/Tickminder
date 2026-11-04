@@ -16,7 +16,7 @@ Baseline: `e4880ebb80edffe99f03425664b5af2668435f3d`. Target: `tuition.tickminde
 
 ## External-service marks
 
-- Google Drive import actions and panel heading, WhatsApp menu/connection actions and standalone heading, and the Google Sheets sync heading use recognizable official marks.
+- Google Drive import actions and panel heading, and WhatsApp menu/connection actions and standalone heading use recognizable official marks.
 - Assets are served locally, without adding third-party image requests. Source attribution is in `public/brands/README.md`.
 - Logos retain original colors and proportions; adjacent action labels remain accessible. The existing Google-rendered sign-in/link buttons already supply Google's identity and are unchanged.
 - Uploads, account linking, WhatsApp verification, Sheet writing and role permissions are unchanged. A logo does not enable an unconfigured integration on the test site.

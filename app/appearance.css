@@ -1,3 +1,4 @@
+@import "./dialog-usability.css";
 /* R15 shared appearance: light is the default; an explicit choice persists. */
 :root {
   color-scheme: light;

@@ -53,9 +53,14 @@ function DialogContent({
   overlayClassName,
   children,
   showCloseButton = true,
+  closeDisabled = false,
+  layout = "default",
+  onScroll,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
+  closeDisabled?: boolean
+  layout?: "default" | "framed"
   overlayClassName?: string
 }) {
   return (
@@ -63,6 +68,11 @@ function DialogContent({
       <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        data-layout={layout}
+        onScroll={event => {
+          event.currentTarget.style.setProperty("--dialog-scroll-top", event.currentTarget.scrollTop + "px")
+          onScroll?.(event)
+        }}
         className={cn(
           "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
           className
@@ -73,15 +83,23 @@ function DialogContent({
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
+            data-pinned-close
+            disabled={closeDisabled}
+            aria-label={t("关闭")}
+            style={{ top: "calc(var(--dialog-scroll-top, 0px) + 8px)", right: 8, width: 44, height: 44, zIndex: 20 }}
             className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
-            <XIcon />
+            <XIcon style={{width:22,height:22}} aria-hidden="true"/>
             <span className="sr-only">{t("关闭")}</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Content>
     </DialogPortal>
   )
+}
+
+function DialogBody({ className, ...props }: React.ComponentProps<"div">) {
+  return <div data-slot="dialog-body" className={cn("dialog-scroll-body", className)} {...props}/>
 }
 
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
@@ -150,6 +168,7 @@ function DialogDescription({
 export {
   Dialog,
   DialogClose,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,

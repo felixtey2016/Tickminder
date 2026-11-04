@@ -1,4 +1,6 @@
 "use client";
+import {LessonTimeRange} from "@/components/lesson-time-range";
+import {validLessonRange} from "@/lib/lesson-time-range";
 import { DateInput } from '@/components/date-time-input';
 import { displayFormatter } from '@/lib/display-preferences';
 import { TimeInput } from '@/components/time-input';
@@ -105,9 +107,8 @@ export function Schedule({ state, lessons, mutate, open, busy, view,calendarDate
     const schedulePairs=plans.map(plan=>({teacher:plan.teacher,student:plan.student}));
     const [key, setKey] = useState("");
     const [kind, setKind] = useState("regular");
-    const [startDate, setStartDate] = useState("");
-    const [startTime, setStartTime] = useState("");
-    const [endTime, setEndTime] = useState("");
+    const [start,setStart]=useState(""),[end,setEnd]=useState("");
+    const [startDate="",startTime=""]=start.split("T"),endTime=end.split("T")[1]||"";
     const [until, setUntil] = useState("");
     const scheduleOptionsRef=useRef<HTMLDetailsElement>(null);
     const [replacementFor, setReplacementFor] = useState("");
@@ -120,14 +121,14 @@ export function Schedule({ state, lessons, mutate, open, busy, view,calendarDate
     const eligibleClasses=chosen?(classOptions||[]).filter(item=>item.teacherName===chosen.teacher&&item.members.includes(student)&&item.planKeys.includes(chosen.key)):[];
     const selectedClassId=eligibleClasses.length===1?eligibleClasses[0].id:eligibleClasses.some(item=>item.id===classroomId)?classroomId:"";
     const originals = lessons.filter(l => l.student === student && l.subject === chosen?.subject && ["student_absent", "teacher_absent", "cancelled"].includes(l.status));
-    const scheduleSummary=chosen&&student&&startDate&&startTime&&endTime?[student,chosen.subject,`${startDate} ${startTime}–${endTime}`,kind==='regular'?'':t(kind==='makeup'?'补课':'临时加课'),until?`${getLanguage()==='zh'?'重复至':'Repeat until'} ${until}`:''].filter(Boolean).join(' · '):getLanguage()==='zh'?'填写课程和时间后，在这里核对排课。':'Choose a lesson and time to review the schedule here.';
+    const scheduleSummary=chosen&&student&&startDate&&startTime&&endTime?[student,chosen.subject,`${start.replace("T"," ")}–${end.replace("T"," ")}`,kind==='regular'?'':t(kind==='makeup'?'补课':'临时加课'),until?`${getLanguage()==='zh'?'重复至':'Repeat until'} ${until}`:''].filter(Boolean).join(' · '):getLanguage()==='zh'?'填写课程和时间后，在这里核对排课。':'Choose a lesson and time to review the schedule here.';
     async function submit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault();
-        if (!chosen||!selectedClassId) return;
+        if (!chosen||!selectedClassId||!validLessonRange(start,end)) return;
         if (await mutate({ action: "create", student, subject: chosen.subject, teacherName: chosen.teacher, classroomId:selectedClassId, kind,
-            start: `${startDate}T${startTime}`, end: `${startDate}T${endTime}`, until, replacementFor })) {
-            setStudent("");setScheduleTeacher(""); setKey(""); setKind("regular"); setStartDate(""); setStartTime("");
-            setEndTime(""); setUntil(""); setReplacementFor("");setClassroomId("");
+            start, end, until, replacementFor })) {
+            setStudent("");setScheduleTeacher(""); setKey(""); setKind("regular"); setStart("");
+            setEnd(""); setUntil(""); setReplacementFor("");setClassroomId("");
             if(scheduleOptionsRef.current)scheduleOptionsRef.current.open=false;
         }else if(scheduleOptionsRef.current&&(until||kind!=='regular'))scheduleOptionsRef.current.open=true;
     }
@@ -139,9 +140,8 @@ export function Schedule({ state, lessons, mutate, open, busy, view,calendarDate
             {(student&&!subjects.length||!plans.length)&&<p className="muted">{t('请先设置学生课程，再安排老师与学生的课程。')}</p>}
             {chosen && <p className="assigned-teacher">{t("负责老师")}：<strong>{chosen.teacher}</strong></p>}
             {chosen&&<div className="schedule-classroom-field"><div className="field-heading"><label htmlFor="lesson-classroom">{t("所属班级")}</label><Button type="button" variant="ghost" size="sm" aria-label={t("刷新班级名单")} disabled={classOptions===null&&!classError} onClick={()=>void loadClasses()}><RefreshCw size={16} aria-hidden="true"/>{t("刷新")}</Button></div><select id="lesson-classroom" required data-testid="lesson-classroom-select" value={selectedClassId} disabled={classOptions===null||busy} onChange={event=>setClassroomId(event.target.value)}>{eligibleClasses.length!==1&&<option value="">{t("请选择有效班级")}</option>}{eligibleClasses.map(item=><option key={item.id} value={item.id}>{item.title}</option>)}</select>{classOptions===null&&!classError?<p role="status" className="muted">{t("正在加载班级…")}</p>:classError?<p role="alert" className="notice">{classError} <Button type="button" variant="outline" onClick={()=>void loadClasses()}>{t("重试")}</Button></p>:<p className="muted">{t(!eligibleClasses.length?"此学生科目配对暂无有效班级，请刷新名单并检查班级成员。":eligibleClasses.length===1?"已自动选择对应班级。":"请选择本次课程的班级。")}</p>}</div>}
-            <div className="schedule-time-fields"><label>{t("上课日期")}<DateInput required type="date" value={startDate} onChange={e => setStartDate(e.target.value)}/></label><label>{t("开始时间")}<TimeInput required type="time" value={startTime} onChange={e => setStartTime(e.target.value)}/></label><label>{t("结束时间")}<TimeInput required type="time" value={endTime} onChange={e => setEndTime(e.target.value)}/></label></div>
-            <p className="muted schedule-date-note">{t("开始和结束时间使用同一天日期。")}</p>
-            <ConflictPreview enabled={Boolean(chosen && selectedClassId && startDate && startTime && endTime && startTime < endTime)} value={{ action: "create", student, subject: chosen?.subject, teacherName: chosen?.teacher,classroomId:selectedClassId, start: `${startDate}T${startTime}`, end: `${startDate}T${endTime}`, until }}/>
+            <LessonTimeRange start={start} end={end} disabled={busy} onChange={(a,b)=>{setStart(a);setEnd(b);}}/>
+            <ConflictPreview enabled={Boolean(chosen && selectedClassId && validLessonRange(start,end))} value={{ action: "create", student, subject: chosen?.subject, teacherName: chosen?.teacher,classroomId:selectedClassId, start, end, until }}/>
             <details ref={scheduleOptionsRef} className="schedule-extra-options" data-testid="schedule-extra-options"><summary>{getLanguage()==='zh'?'重复与其他设置':'Repeat and other options'}{(until||kind!=='regular')&&<span>{getLanguage()==='zh'?'已设置':'Set'}</span>}</summary><div>
               <label>{t("课程类型")}<select value={kind} onChange={e => setKind(e.target.value)}><option value="regular">{t("常规课程")}</option><option value="extra">{t("临时加课")}</option><option value="makeup">{t("补课")}</option></select></label>
               {kind === "makeup" && student&&chosen&&selectedClassId&&<MakeupOriginalPicker key={student+chosen.key+selectedClassId} student={student} subject={chosen.subject} value={replacementFor} onChange={setReplacementFor}/>}

@@ -139,7 +139,7 @@ If restoration is interrupted after cloud writes, inspect and verify the recover
 This checklist records the initial recovery prerequisites. Their completed checks and remaining follow-ups are recorded in the final cutover section.
 
 1. Google client configuration and the owner's real Google sign-in are verified below. Preserve the existing OAuth client and authorized production origin at cutover.
-2. Recover `SHEET_SYNC_URL` and `SHEET_SYNC_SECRET` without putting them in Git or chat. The owner confirms that Sheet import is still in use. Verify the selected month and a read-only preview before cutover; do not commit a test preview to the operational sheet.
+2. Spreadsheet writing was retired on 2026-11-04. Do not restore its old runtime credentials; retain CSV downloads, Google sign-in and Google Drive import.
 3. The existing VAPID keys are configured. Keep `NOTIFICATIONS_CRON_TOKEN` and `PENDING_CLEANUP_TOKEN` absent during recovery testing to avoid duplicate reminders or deleting copied accounts. Preserve the original scheduled service credentials and reconcile delivery state at cutover.
 4. A new recovery-only `BACKUP_EXPORT_TOKEN` and complete encrypted recovery backup are verified below. The original scheduled backup still uses its original protected token: align this at cutover and verify the scheduled job separately. Keep backup tokens and recovery keys separate from database snapshots.
 5. Role isolation and private PDF reads/rejected uploads are verified below. A successful browser upload and homework submission remain to be checked using isolated test records.
@@ -186,25 +186,9 @@ Live application checks are recorded separately below. Domain cutover has not oc
 - Evidence and mobile screenshots are outside Git in `outputs/recovery-verification/`. The local scheduled backup status and an offsite Drive copy have not been repaired or verified by these checks.
 - Sheet runtime configuration, final source-data reconciliation, background service cutover, Git Builds connection and domain switch remain outstanding. The original production site is still authoritative for subsequent business writes.
 
-## Reconnect the existing Google Sheet integration
+## Spreadsheet integration retired (2026-11-04)
 
-In the original operational spreadsheet, open Extensions → Apps Script. Copy the existing `/exec` Web App URL from Deploy → Manage deployments. In Project Settings → Script Properties, find the existing `SHEET_SYNC_SECRET` value. Add the URL and secret directly to the recovery Worker's Settings → Variables and Secrets as runtime secrets named `SHEET_SYNC_URL` and `SHEET_SYNC_SECRET`, then deploy the settings. Do not send either credential in chat or store it in source/build environment files.
-
-The current signed-request integration is `integrations/GoogleSheetLessonSync.gs`; it reads `SHEET_SYNC_SECRET`. The old prototype in the parent `work/apps-script-sync.js` reads `SYNC_SECRET` and uses a different protocol. If only that older property is present, identify the actual deployed script before changing anything. Do not rotate the secret, overwrite the original script, initialize months or create a replacement deployment just to reconnect the host.
-
-After configuration, verify a month read and a preview only. Preserve exact student/subject matching, the existing mode, and the spreadsheet's current selected month. Commit import is an operational write and is not part of the connectivity check.
-
-## Sheet reconnection verified (2026-10-10)
-
-- The owner supplied the existing deployment configuration and added both runtime secrets. Because the credential appeared in chat, rotate it in both Apps Script and the new host during the coordinated cutover; rotating only the script now would break the original production host, whose settings cannot be updated.
-- The existing deployment accepted a signed month read and an empty preview. A preview containing the recovery database's actual multilingual names failed signature validation. An otherwise identical preview with ASCII JSON escapes succeeded. This establishes a transport/signature encoding incompatibility; the exact Google-side default encoding was not assumed.
-- Recovery application source `1edec1e236fef0a261c3f48451586caa0a398fce` serializes the signed payload as ASCII JSON text. `JSON.parse` restores exact names and subject text. HMAC, timestamp/nonce checking, permissions, matching, lesson calculations and import confirmation are retained.
-- Regression tests exercise the actual Apps Script verifier with Chinese, accented text, supplementary Unicode, quotes, newlines and literal escape sequences, and reject a tampered hours value. Existing Sheet matching tests, TypeScript checking and the guarded recovery build passed.
-- Deployed recovery Worker version: `37288605-22c7-436a-bf0b-1cc6849ad064`.
-- Deployed administrator API previews passed for both `billable` and `all_completed`: HTTP 200, selected month `2026-09`, 5 matching rows and 2 `not_found` rows safely skipped. Confirmation tokens were returned. No spreadsheet commit was sent.
-- The temporary verification administrator and its login/session records were removed; cleanup verification passed. Existing operational accounts and records were not edited. Evidence is outside Git in `outputs/recovery-verification/sheet-preview-report.json`.
-- Both connection settings have a DPAPI-protected local copy outside source control. No plaintext credentials or spreadsheet contents are in these verification reports.
-- The proposed extra temporary cloud diagnostic Worker was rejected by automatic approval review and was not created. Existing recovery resources and local checks were sufficient to resolve the issue.
+The website no longer contains the spreadsheet write panel, bridge code or permission grants. The former endpoint returns HTTP 410 without database or network access. CSV exports and Google sign-in/Drive continue to work. Existing spreadsheet data is retained. Any separately deployed Apps Script web app or spreadsheet trigger must be retired in its own Google project; deleting website source does not remove that external deployment. Historical cutover notes below describe earlier deployments, not current setup instructions.
 
 ## Domain readiness (2026-10-10)
 
@@ -223,7 +207,7 @@ After configuration, verify a month read and a preview only. Preserve exact stud
 - Recovery source commit `3f445c2` adds only the two existing production custom domains and a build guard for those targets. The guarded build passed. Worker version `5055f5c3-ed5f-43b7-ac94-7d2a1bc6d095` was uploaded and deployed, preserving runtime settings.
 - Initial domain attachment failed with Cloudflare code `100117`: externally managed legacy DNS records could not be replaced by the Worker domain API. At that preparation checkpoint, the Worker had no production custom domains and original Sites still served the canonical website. The completed attachment is recorded below.
 - The owner must remove exactly the two legacy apex A records (`162.159.143.30`, `172.66.3.26`) and the `www` CNAME (`custom-domains.chatgpt.site`) in the new Cloudflare zone. Preserve all TXT, MX, `mail` and `ftp` records. Then attach both authorized hostnames to `tickminder-recovery`, verify canonical HTTPS/routing/data and the next real reminder-clock invocation, and run the repaired backup job. Do not treat a changeset with zero conflicts as evidence that these legacy records are absent; public authoritative DNS still returned them.
-- The Sheet shared credential was exposed in chat earlier. Coordinated rotation in Apps Script and the owner Worker remains necessary; a Sheet preview does not perform that rotation.
+- Historical Sheet credentials are no longer used by the website. Retire any remaining external deployment and its credential separately.
 - Cutover evidence, encrypted snapshots and protected credentials remain outside Git. User `docs/ui-research/` is not part of this release.
 
 ## Production cutover completed and verified (2026-10-11)

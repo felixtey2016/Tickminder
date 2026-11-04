@@ -1,7 +1,7 @@
 import type { NavigationRole } from './course-navigation';
 
 export type ManagementArea = 'people' | 'settings';
-export type ManagementView = 'studentRoster' | 'teacherRoster' | 'parentRoster' | 'accounts' | 'groupInfo' | 'myAccount' | 'sheet' | 'activity';
+export type ManagementView = 'studentRoster' | 'teacherRoster' | 'parentRoster' | 'accounts' | 'groupInfo' | 'myAccount' | 'activity';
 type ManagementTab = { view: ManagementView; label: string };
 
 const TABS: Record<ManagementArea, readonly ManagementTab[]> = {
@@ -14,7 +14,6 @@ const TABS: Record<ManagementArea, readonly ManagementTab[]> = {
  settings: [
   { view: 'groupInfo', label: '集团信息' },
   { view: 'myAccount', label: '我的账号' },
-  { view: 'sheet', label: '课时写入表格' },
   { view: 'activity', label: '操作日志' },
  ],
 };

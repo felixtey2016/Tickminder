@@ -10,7 +10,7 @@ The current group is visible in the desktop header and the mobile workspace. `ä¸
 
 New groups start with empty rosters, accounts, classes, lessons and learning content. The owner can enter a new group and create its first ordinary administrator through the existing Account management form. Password usernames and verified Google identities remain globally unique. New Google users opening `/?group=<join-code>` enter that group as pending users; existing Google identities always retain their original group. An invitation grants registration access only, not an administrator role or course access. Default registration without an invitation retains Next Genn Edu for compatibility.
 
-This version has no branches, multi-group memberships, account transfers between groups, group deletion, billing or custom group domains. The existing Google Sheet connection is restricted to Next Genn Edu. Other groups receive an unconfigured response and cannot write to the existing operational spreadsheet; separate per-group connector configuration is a subsequent feature.
+This version has no branches, multi-group memberships, account transfers between groups, group deletion, billing or custom group domains. Spreadsheet writing has been retired for all groups. Existing CSV downloads remain available.
 
 ## Backend boundaries
 
@@ -52,4 +52,4 @@ Complete local gates, coordinate a short pause in business writes, take a fresh 
 4. Copy the group's invitation link for new Google users. They still complete account setup and wait for assignment/approval before accessing courses.
 5. Ordinary administrators see their group's information and records only. To manage another group, the platform owner returns to Platform console and enters that group.
 
-Next Genn Edu retains the existing Google Sheet connection. A newly created group has no Sheet connection in this version; configure separate per-group connectors in a later change before offering Sheet import to it.
+All groups use the existing CSV downloads; there is no spreadsheet-write connector to configure.

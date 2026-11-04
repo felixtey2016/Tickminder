@@ -1,7 +1,7 @@
 # Personnel and settings: round 5
 
 Administrator navigation groups existing destinations under Personnel & accounts
-and Settings. The original student, teacher, account, group, profile, sheet-sync
+and Settings. The original student, teacher, account, group, profile
 and activity leaf destinations remain stable for history, shortcuts and data scopes.
 Each group remembers its last view. Non-admin roles keep direct account access.
 

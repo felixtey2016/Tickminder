@@ -25,7 +25,7 @@ export function primaryArea(role:NavigationRole,view:string):PrimaryArea{
  if(isPrimaryHub(role,view))return view as PrimaryArea;
  if(role==='admin'){
   if(view==='billing')return 'financeHub';
-  if(['groups','people','settings','studentRoster','teacherRoster','parentRoster','accounts','groupInfo','myAccount','sheet','activity','notifications'].includes(view))return 'manageHub';
+  if(['groups','people','settings','studentRoster','teacherRoster','parentRoster','accounts','groupInfo','myAccount','activity','notifications'].includes(view))return 'manageHub';
   return 'teachingHub';
  }
  if(['myAccount','notifications'].includes(view)||role==='pending')return 'myHub';
@@ -41,7 +41,7 @@ export function hubGroups(role:NavigationRole,hub:string):HubGroup[]{
  ];
  if(hub==='manageHub')return [
   group('people','人员与账号','People & accounts',['studentRoster','teacherRoster','parentRoster','accounts']),
-  group('settings','集团与设置','Group & settings',['groupInfo','sheet','activity'],'list'),
+  group('settings','集团与设置','Group & settings',['groupInfo','activity'],'list'),
   group('account','我的账号','My account',['myAccount','notifications'],'list'),
   ...(role==='admin'?[group('platform','平台管理','Platform',['groups'],'list')]:[]),
  ];

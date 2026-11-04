@@ -6,7 +6,7 @@ import {useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, use
 import {getLanguage} from '@/lib/i18n';
 import './time-input.css';
 
-type Props = Omit<ComponentProps<'input'>, 'type'> & {type?: 'time'};
+type Props = Omit<ComponentProps<'input'>, 'type'> & {type?: 'time';validationError?:string};
 const ROW_HEIGHT = 44;
 const pad = (value: number) => String(value).padStart(2, '0');
 const timeValue = (hour: number, minute: number) => `${pad(hour)}:${pad(minute)}`;
@@ -33,7 +33,7 @@ function allowedTime(input: HTMLInputElement, value: string) {
 }
 
 /** Preserve the real form control while displaying a themed, minute-precision wheel. */
-export function TimeInput({value, defaultValue, onChange, onClick, onKeyDown, onFocus, onBlur, onInvalid, className = '', disabled, readOnly, ref, ...props}: Props) {
+export function TimeInput({value, defaultValue, onChange, onClick, onKeyDown, onFocus, onBlur, onInvalid, validationError, className = '', disabled, readOnly, ref, ...props}: Props) {
   const [localValue, setLocalValue] = useState(defaultValue);
   const [session, setSession] = useState<{input: HTMLInputElement; trigger: HTMLButtonElement | null; title: string} | null>(null);
   const [name, setName] = useState(''), [error, setError] = useState('');
@@ -43,6 +43,13 @@ export function TimeInput({value, defaultValue, onChange, onClick, onKeyDown, on
   const ariaLabel = props['aria-label'], ariaLabelledBy = props['aria-labelledby'];
   const attachInput = useCallback((element: HTMLInputElement | null) => {input.current = element; if (element) setName(fieldName(element));}, []);
   useImperativeHandle(ref, () => input.current!, []);
+  // Cross-field constraints can change without changing this clock's value.
+  // Only explicit callers own custom validity; standalone time inputs retain their native behavior.
+  useLayoutEffect(()=>{
+    if(validationError===undefined)return;
+    input.current?.setCustomValidity(validationError);
+    setError(previous=>validationError&&previous?validationError:'');
+  },[validationError]);
   useEffect(() => {const frame = requestAnimationFrame(() => {if (input.current) setName(fieldName(input.current));}); return () => cancelAnimationFrame(frame);}, [language, ariaLabel, ariaLabelledBy, props.title]);
   useEffect(() => {
     const form = input.current?.form; let frame = 0;

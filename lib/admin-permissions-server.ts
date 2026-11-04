@@ -3,7 +3,7 @@ import { adminActorGuard, adminAuthority, authorityGuard, isAdminAuthorityFailur
 import { learningDb } from "@/lib/learning-server";
 import { requireGroup } from "@/lib/group-data";
 import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
-import { ADMIN_PERMISSION_CATALOG, ADMIN_PERMISSION_TEMPLATES, ADMIN_PERMISSIONS_ROLLOUT, SUPPORTED_ADMIN_GRANTS, AdminPermissionValidationError, hasAdminGrant, normalizeAdminGrants, type AdminGrantKey, type AdminPermissionProfile, type AdminPermissionsResponse } from "@/lib/admin-permissions";
+import { ADMIN_PERMISSION_CATALOG, ADMIN_PERMISSION_TEMPLATES, ADMIN_PERMISSIONS_ROLLOUT, SUPPORTED_ADMIN_GRANTS, RETIRED_ADMIN_GRANTS, readStoredAdminGrants, AdminPermissionValidationError, hasAdminGrant, normalizeAdminGrants, type AdminGrantKey, type AdminPermissionProfile, type AdminPermissionsResponse } from "@/lib/admin-permissions";
 import { adminPermissionContext,adminPermissionsEnforced } from "@/lib/admin-permission-access";
 import {accountSessionPredicate} from '@/lib/account-session';
 import {appendAudit} from './audit-log';
@@ -45,7 +45,7 @@ function targetPredicate(actor: Account, accountId: string): Predicate {
 export function configuredAdminGrantPredicate(actor: Account, key: string): Predicate {
   if (!hasAdminGrant(SUPPORTED_ADMIN_GRANTS, key)) return {sql: "0", args: []};
   const actions = ADMIN_PERMISSION_CATALOG.flatMap(module => module.actions);
-  const known = actions.map(action => action.key);
+  const known = [...actions.map(action => action.key),...RETIRED_ADMIN_GRANTS];
   const dependencies = actions.flatMap(action=>action.requires.map(dependency=>({key:action.key,dependency})));
   const required = normalizeAdminGrants([key]);
   const session=accountSessionPredicate(actor);
@@ -86,9 +86,7 @@ async function managedTarget(actor: Account, accountId: string): Promise<Managed
 
 function parsedGrants(value: string): AdminGrantKey[] {
   try {
-    const stored:unknown=JSON.parse(value),normalized=normalizeAdminGrants(stored);
-    if(!Array.isArray(stored)||new Set(stored).size!==stored.length||stored.length!==normalized.length||stored.some(key=>!normalized.includes(key)))throw new Error('Invalid stored grants');
-    return normalized;
+    return readStoredAdminGrants(JSON.parse(value));
   }
   catch { throw new AdminPermissionsError("permissions.profileInvalid", 503); }
 }

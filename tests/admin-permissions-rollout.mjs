@@ -97,6 +97,8 @@ const snapshotTables=names=>JSON.stringify(names.map(name=>[name,sqlite.prepare(
 const oldTables=tableNames(),beforeMigration=snapshotTables(oldTables);
 migrate(preparationMigration);
 const afterMigration=snapshotTables(oldTables);
+assert.equal(afterMigration,beforeMigration,'0032 preserves every pre-existing business row');
+for(const name of migrations.filter(name=>name>preparationMigration))migrate(name);
 const snapshot=()=>snapshotTables(tableNames());
 const profileRow=id=>sqlite.prepare('SELECT * FROM admin_permission_profiles WHERE account_id=?').get(id);
 const auditCount=()=>sqlite.prepare('SELECT count(*) AS n FROM audit').get().n;
@@ -208,24 +210,16 @@ await section('failed late upload cannot remove a concurrently ready image reser
  changedAccounts();grant(accountId,['quizzes.import']);const bytes=Buffer.from(png);bytes[bytes.length-1]^=1;let published;
  putHook=()=>{const row=sqlite.prepare("SELECT id FROM quiz_images WHERE owner_id=? AND status='uploading' ORDER BY created_at DESC LIMIT 1").get(accountId);published=row.id;sqlite.prepare("UPDATE quiz_images SET status='ready' WHERE id=?").run(row.id);grant(accountId,[]);};const result=await uploadImage(accountId,bytes);assert.equal(result.status,403,JSON.stringify(result));assert.equal(sqlite.prepare('SELECT status FROM quiz_images WHERE id=?').get(published).status,'ready');assert(objects.has(sqlite.prepare('SELECT object_key AS key FROM quiz_images WHERE id=?').get(published).key));
 });
-await section('cross-group admin cannot dispatch to the default organisation Sheet',async()=>{
+await section('retired Sheet never reads D1 or dispatches for any group or privileged identity',async()=>{
  runtime.env.SHEET_SYNC_URL='https://script.google.com/macros/s/fictional-rollout/exec';runtime.env.SHEET_SYNC_SECRET='fixture-only-secret';
- network=[];globalThis.fetch=async(url,options)=>{network.push(JSON.parse(JSON.parse(options.body).body));return Response.json({ok:true,month:'2026-10',displayMonth:'October 2026',changes:[]});};
- grant('admin-b',['sheetSync.commit']);await login('admin-b',groups.b);await denied('sheet-sync',{action:'preview',mode:'billable'},'',[503]);assert.equal(network.length,0);
-});
-await section('Sheet preflight revocation sends neither private pairs nor a commit',async()=>{
- network=[];globalThis.fetch=async(url,options)=>{const body=JSON.parse(JSON.parse(options.body).body);network.push(body);grant(accountId,[]);return Response.json({ok:true,month:'2026-10',displayMonth:'October 2026',changes:[]});};
- changedAccounts();grant(accountId,['sheetSync.commit']);await login(accountId);await denied('sheet-sync',{action:'commit',mode:'billable',month:'2026-10',previewToken:'fixture-preview'},'',[403]);assert.deepEqual(network.map(x=>x.action),['month']);assert.equal(network[0].pairs,undefined);
-});
-await section('Sheet checks live authority immediately before final external dispatch',async()=>{
- network=[];let signCalls=0;const sign=crypto.subtle.sign.bind(crypto.subtle);
- crypto.subtle.sign=async(...args)=>{const result=await sign(...args);if(++signCalls===2)grant(accountId,[]);return result;};
- globalThis.fetch=async(url,options)=>{const body=JSON.parse(JSON.parse(options.body).body);network.push(body);return Response.json({ok:true,month:'2026-10',displayMonth:'October 2026',changes:[]});};
- changedAccounts();grant(accountId,['sheetSync.commit']);await login(accountId);try{await denied('sheet-sync',{action:'commit',mode:'billable',month:'2026-10',previewToken:'fixture-preview'},'',[403]);assert.deepEqual(network.map(x=>x.action),['month']);}finally{crypto.subtle.sign=sign;}
-});
-await section('an already dispatched Sheet commit reports its acknowledgement honestly',async()=>{
- network=[];globalThis.fetch=async(url,options)=>{const body=JSON.parse(JSON.parse(options.body).body);network.push(body);if(body.action==='commit')grant(accountId,[]);return Response.json({ok:true,month:'2026-10',displayMonth:'October 2026',changes:[],written:body.action==='commit'?1:0});};
- changedAccounts();grant(accountId,['sheetSync.commit']);await login(accountId);const result=await ok('sheet-sync',{action:'commit',mode:'billable',month:'2026-10',previewToken:'fixture-preview'});assert.equal(result.written,1);assert.deepEqual(network.map(x=>x.action),['month','commit']);
+ network=[];globalThis.fetch=async()=>{network.push('forbidden');throw Error('Retired integration must never dispatch');};
+ for(const id of ['admin-b',accountId,'chief-a','owner']){
+  await login(id,id==='admin-b'?groups.b:groups.a);const before=businessSnapshot(),prepare=d1.prepare;let reads=0;
+  d1.prepare=()=>{reads++;throw Error('Retired integration must never access D1');};
+  try{for(const action of ['preview','commit'])await denied('sheet-sync',{action,mode:'billable',month:'2026-10',previewToken:'fixture-preview'},'',[410]);await denied('sheet-sync',undefined,'',[410]);}finally{d1.prepare=prepare;}
+  assert.equal(reads,0);assert.equal(businessSnapshot(),before);
+ }
+ assert.equal(network.length,0);
 });
 }finally{
  globalThis.fetch=originalFetch;hooks.deregister();delete globalThis.__adminPermissions;

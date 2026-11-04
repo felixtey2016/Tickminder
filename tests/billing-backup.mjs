@@ -54,7 +54,7 @@ function replay(snapshot,max=31){
  }catch(error){db.exec('ROLLBACK');db.close();throw error;}
 }
 let checks=0;const check=fn=>{fn();checks++;};
-let secureSource=fs.readFileSync(path.join(root,'scripts/secure-d1-backup.mjs'),'utf8').split('\ntry {\n')[0];
+let secureSource=fs.readFileSync(path.join(root,'scripts/secure-d1-backup.mjs'),'utf8').split(/\r?\ntry \{\r?\n/)[0];
 secureSource=secureSource.replace("const projectRoot = resolve(import.meta.dirname, '..').toLowerCase();",'const projectRoot = '+JSON.stringify(path.resolve(root).toLowerCase())+';').replace("'./backup-order.mjs'",JSON.stringify(new URL('../scripts/backup-order.mjs',import.meta.url).href));
 const {restoreInMemory}=await import('data:text/javascript;base64,'+Buffer.from(secureSource+'\nexport {restoreInMemory};').toString('base64'));
 const old=database(30);fixture(old);const legacy={format:'timelyo-d1-v19',tables:exportTables(old,19)};

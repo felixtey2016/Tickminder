@@ -15,7 +15,7 @@ export const WORKSPACE_PATHS: Readonly<Record<string, string>> = {
   classrooms: "/classrooms", homework: "/homework", materials: "/materials", quizzes: "/quizzes",
   subjects: "/teaching/subjects", studentRoster: "/manage/students", teacherRoster: "/manage/teachers",
   parentRoster: "/manage/parents", accounts: "/manage/accounts", groupInfo: "/manage/group",
-  sheet: "/manage/sheet-sync", activity: "/manage/activity", groups: "/platform/groups",
+  activity: "/manage/activity", groups: "/platform/groups",
 };
 const PARENT_PATHS: Readonly<Record<string, string>> = {
   home: "/", learnHub: "/learning", mineHub: "/account", finance: "/finance",
@@ -55,7 +55,7 @@ export function workspaceUrl(view: string, role: WorkspaceRole, search = ""): st
   return path + (params.size ? "?" + params : "");
 }
 export function workspaceNeedsCore(view: string): boolean {
-  return !["home", "myAccount", "notifications", "quizzes", "sheet", "groups", "teachingHub", "learningHub", "manageHub", "myHub", "financeHub"].includes(view);
+  return !["home", "myAccount", "notifications", "quizzes", "groups", "teachingHub", "learningHub", "manageHub", "myHub", "financeHub"].includes(view);
 }
 
 // One same-origin allow-list for login/recovery return paths. Invalid assignment

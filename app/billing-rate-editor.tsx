@@ -4,24 +4,42 @@ import {useEffect,useRef,useState} from 'react';
 import {Button} from '@/components/ui/button';
 import {groupFetch} from '@/lib/group-client';
 import {readApiJson,showActionToast,alertActionFailure} from '@/lib/action-feedback';
-import {t} from '@/lib/i18n';
+import {getLanguage,t} from '@/lib/i18n';
 import type {BillingMode,BillingRateResponse} from '@/lib/billing';
 
 export const billingModeLabel:Record<BillingMode,string>={hour:'按小时',lesson:'按堂',month:'固定月费'};
 export function billingMoney(cents:number|null|undefined){return cents==null?'—':`RM ${(cents/100).toLocaleString('en-MY',{minimumFractionDigits:2,maximumFractionDigits:2})}`;}
 function localDate(offset=0){return new Date(Date.now()+8*3600000+offset*86400000).toISOString().slice(0,10);}
-export function BillingRateEditor({planKey,onPreview}:{planKey:string;onPreview?:()=>void}){
+export function BillingRateEditor({planKey,onPreview,onSaved,onBusyChange,onDirtyChange}:{planKey:string;onPreview?:()=>void;onSaved?:()=>void;onBusyChange?:(busy:boolean)=>void;onDirtyChange?:(dirty:boolean)=>void}){
  const [data,setData]=useState<BillingRateResponse|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[reload,setReload]=useState(0);
  const operation=useRef<{key:string;id:string}|null>(null),inFlight=useRef(false);
+ const committedRate=useRef<string|null>(null),timingOperation=useRef<{key:string;id:string}|null>(null);
+ const [timingUnconfirmed,setTimingUnconfirmed]=useState(false);
+ useEffect(()=>{onBusyChange?.(busy);},[busy,onBusyChange]);
  const [timing,setTiming]=useState<'advance'|'arrears'>('arrears');
  const [mode,setMode]=useState<BillingMode>('hour'),[amount,setAmount]=useState(''),[date,setDate]=useState(localDate().slice(0,7)+'-01');
- useEffect(()=>{const controller=new AbortController();operation.current=null;setLoading(true);setData(null);setError('');void(async()=>{try{const response=await groupFetch('/api/billing?view=rates&planKey='+encodeURIComponent(planKey),{cache:'no-store',signal:controller.signal});const result=await readApiJson<BillingRateResponse&{error?:string}>(response);if(!response.ok)throw Error(t(result.error||'收费设置暂时无法载入'));if(controller.signal.aborted)return;setData(result);setTiming(result.context.collectionTiming);const latest=result.context.history[0]||result.context.currentRate;setMode(latest?.mode||'hour');setAmount(latest?String((latest.amountCents/100).toFixed(2)):'');const nextDate=latest?localDate(1):localDate().slice(0,7)+'-01';setDate(latest&&latest.effectiveFrom>=nextDate?new Date(Date.parse(latest.effectiveFrom+'T00:00:00Z')+86400000).toISOString().slice(0,10):nextDate);}catch(e){if(!controller.signal.aborted)setError(alertActionFailure(e));}finally{if(!controller.signal.aborted)setLoading(false);}})();return()=>controller.abort();},[planKey,reload]);
+ useEffect(()=>{const controller=new AbortController();operation.current=null;committedRate.current=null;timingOperation.current=null;setTimingUnconfirmed(false);onDirtyChange?.(false);setLoading(true);setData(null);setError('');void(async()=>{try{const response=await groupFetch('/api/billing?view=rates&planKey='+encodeURIComponent(planKey),{cache:'no-store',signal:controller.signal});const result=await readApiJson<BillingRateResponse&{error?:string}>(response);if(!response.ok)throw Error(t(result.error||'收费设置暂时无法载入'));if(controller.signal.aborted)return;setData(result);setTiming(result.context.collectionTiming);const latest=result.context.history[0]||result.context.currentRate;setMode(latest?.mode||'hour');setAmount(latest?String((latest.amountCents/100).toFixed(2)):'');const nextDate=latest?localDate(1):localDate().slice(0,7)+'-01';setDate(latest&&latest.effectiveFrom>=nextDate?new Date(Date.parse(latest.effectiveFrom+'T00:00:00Z')+86400000).toISOString().slice(0,10):nextDate);}catch(e){if(!controller.signal.aborted)setError(alertActionFailure(e));}finally{if(!controller.signal.aborted)setLoading(false);}})();return()=>controller.abort();},[planKey,reload]);
  async function save(event:React.FormEvent){
   event.preventDefault();if(!data?.context.active||inFlight.current)return;
   const body={action:'saveRate',studentId:data.context.studentId,subjectKey:data.context.subjectKey,revision:data.context.revision,mode,amount,effectiveFrom:date},key=JSON.stringify(body);
   if(operation.current?.key!==key)operation.current={key,id:crypto.randomUUID()};
   inFlight.current=true;setBusy(true);setError('');
-  try{const response=await groupFetch('/api/billing',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...body,operationId:operation.current.id})});const result=await readApiJson<{error?:string}>(response);if(!response.ok)throw Error(t(result.error||'收费设置未能保存'));operation.current=null;showActionToast('success','收费设置已保存');setReload(x=>x+1);}catch(e){setError(alertActionFailure(e));}finally{inFlight.current=false;setBusy(false);}
+  const signature=JSON.stringify({mode,amount,effectiveFrom:date});
+  try{
+   if(!onSaved||committedRate.current!==signature){
+    const response=await groupFetch("/api/billing",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...body,operationId:operation.current.id})});
+    const result=await readApiJson<{error?:string;revision?:number}>(response);if(!response.ok)throw Error(t(result.error||"收费设置未能保存"));
+    committedRate.current=signature;operation.current=null;if(result.revision)setData(value=>value?{...value,context:{...value.context,revision:result.revision!}}:value);
+   }
+   if(onSaved&&(timingOperation.current||timing!==data.context.collectionTiming)){
+    const timingBody={action:"saveCollectionTiming",studentId:data.context.studentId,subjectKey:data.context.subjectKey,revision:data.context.collectionRevision,timing},timingKey=JSON.stringify(timingBody);
+    if(timingOperation.current?.key!==timingKey)timingOperation.current={key:timingKey,id:crypto.randomUUID()};
+    setTimingUnconfirmed(true);
+    const response=await groupFetch("/api/billing",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...timingBody,operationId:timingOperation.current.id})});
+    const result=await readApiJson<{error?:string}>(response);if(!response.ok)throw Error(t(result.error||"收款时点未能保存"));timingOperation.current=null;setTimingUnconfirmed(false);
+   }
+   onDirtyChange?.(false);showActionToast("success","收费设置已保存");if(onSaved)onSaved();else setReload(x=>x+1);
+  }catch(e){const message=alertActionFailure(e);setError(onSaved&&committedRate.current===signature?(getLanguage()==="zh"?"费率已保存；收款时点尚未确认。请重试完成保存。 ":"Rate saved; collection timing is not confirmed. Retry to finish. ")+message:message);}finally{inFlight.current=false;setBusy(false);}
  }
  async function saveTiming(){
   if(!data?.context.active||inFlight.current)return;
@@ -39,11 +57,12 @@ export function BillingRateEditor({planKey,onPreview}:{planKey:string;onPreview?
   {!data.context.active&&<p className="notice" role="status">{t('该学生或课程已停用，收费设置为只读。费率历史保留。')}</p>}
   {data.context.active&&<form className="billing-form" onSubmit={save}>
    <h3>{t(data.context.revision?'新增费率版本':'设置收费')}</h3>
-   <div className="billing-form-grid"><label>{t('计费方式')}<select disabled={busy} value={mode} onChange={e=>setMode(e.target.value as BillingMode)}><option value="hour">{t('按小时')}</option><option value="lesson">{t('按堂')}</option><option value="month">{t('固定月费')}</option></select></label><label>{t('收费金额')} · MYR<input aria-label={t('收费金额')} inputMode="decimal" type="text" required disabled={busy} maxLength={11} value={amount} placeholder="0.00" onChange={e=>setAmount(e.target.value)}/></label><label>{t('生效日期')}<DateInput type="date" required disabled={busy} value={date} onChange={e=>setDate(e.target.value)}/></label></div>
+   <div className="billing-form-grid"><label>{t('计费方式')}<select disabled={busy||timingUnconfirmed} value={mode} onChange={e=>{setMode(e.target.value as BillingMode);onDirtyChange?.(true);}}><option value="hour">{t('按小时')}</option><option value="lesson">{t('按堂')}</option><option value="month">{t('固定月费')}</option></select></label><label>{t('收费金额')} · MYR<input aria-label={t('收费金额')} inputMode="decimal" type="text" required disabled={busy||timingUnconfirmed} maxLength={11} value={amount} placeholder="0.00" onChange={e=>{setAmount(e.target.value);onDirtyChange?.(true);}}/></label><label>{t('生效日期')}<DateInput type="date" required disabled={busy||timingUnconfirmed} value={date} onChange={e=>{setDate(e.target.value);onDirtyChange?.(true);}}/></label></div>
    <p className="muted">{t('修改收费会新增历史版本。已生效版本保留；之后的变更从新的生效日期开始。')}</p>
-   {error&&<p role="alert" className="error">{error}</p>}<div className="billing-actions"><Button disabled={busy}>{t(busy?'正在保存…':'保存收费设置')}</Button>{error&&<Button type="button" variant="outline" disabled={busy} onClick={()=>setReload(x=>x+1)}>{t('重新载入收费设置')}</Button>}</div>
+   {onSaved&&<label>{t('收款安排')}<select aria-label={t('收款安排')} disabled={busy||timingUnconfirmed} value={timing} onChange={e=>{setTiming(e.target.value as 'advance'|'arrears');onDirtyChange?.(true);}}><option value="arrears">{t('课后结算')}</option><option value="advance">{t('课前预收')}</option></select></label>}
+   {timingUnconfirmed&&<p role="status" className="notice">{getLanguage()==='zh'?'上次收款安排尚未确认。请重试同一保存，或重新载入后再修改。':'The last collection timing change is not confirmed. Retry the same save, or reload before making changes.'}</p>}{error&&<p role="alert" className="error">{error}</p>}<div className="billing-actions"><Button disabled={busy}>{busy?t('正在保存…'):onSaved?(getLanguage()==='zh'?'保存并完成':'Save and finish'):t('保存收费设置')}</Button>{error&&<Button type="button" variant="outline" disabled={busy} onClick={()=>setReload(x=>x+1)}>{t('重新载入收费设置')}</Button>}</div>
   </form>}
-  <section className="billing-form"><h3>{t('收款时点')}</h3><label>{t('收款安排')}<select aria-label={t('收款安排')} disabled={busy||!data.context.active} value={timing} onChange={e=>setTiming(e.target.value as 'advance'|'arrears')}><option value="arrears">{t('课后结算')}</option><option value="advance">{t('课前预收')}</option></select></label><p className="muted">{t('课前预收先发预收费单，收款保留为学生余额；完成课程后用余额抵扣正式账单。收款时点不改变费率、课程日期或原账单。')}</p>{data.context.active&&<div className="billing-actions"><Button type="button" disabled={busy||timing===data.context.collectionTiming} onClick={()=>void saveTiming()}>{t('保存收款时点')}</Button></div>}</section>
+  {!onSaved&&<section className="billing-form"><h3>{t('收款时点')}</h3><label>{t('收款安排')}<select aria-label={t('收款安排')} disabled={busy||!data.context.active} value={timing} onChange={e=>setTiming(e.target.value as 'advance'|'arrears')}><option value="arrears">{t('课后结算')}</option><option value="advance">{t('课前预收')}</option></select></label><p className="muted">{t('课前预收先发预收费单，收款保留为学生余额；完成课程后用余额抵扣正式账单。收款时点不改变费率、课程日期或原账单。')}</p>{data.context.active&&<div className="billing-actions"><Button type="button" disabled={busy||timing===data.context.collectionTiming} onClick={()=>void saveTiming()}>{t('保存收款时点')}</Button></div>}</section>}
   <section className="billing-rate-history"><h3>{t('费率历史')}</h3>{data.context.history.length?<ol>{data.context.history.map(rate=><li key={rate.id}><div><strong>{billingMoney(rate.amountCents)} · {t(billingModeLabel[rate.mode])}</strong><span>{t('生效日期')} {rate.effectiveFrom}</span></div><small>{t('版本')} {rate.revision}</small></li>)}</ol>:<p className="muted">{t('暂无费率记录')}</p>}</section>
  </div>;
 }

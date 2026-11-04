@@ -13,8 +13,6 @@ declare namespace Cloudflare {
     GOOGLE_PICKER_API_KEY?: string;
     GOOGLE_DRIVE_APP_ID?: string;
     ADMIN_EMAIL?: string;
-    SHEET_SYNC_URL?: string;
-    SHEET_SYNC_SECRET?: string;
     BACKUP_EXPORT_TOKEN?: string;
     PENDING_CLEANUP_TOKEN?: string;
     NOTIFICATIONS_CRON_TOKEN?: string;

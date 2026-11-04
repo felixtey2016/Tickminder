@@ -96,6 +96,10 @@ const snapshotTables=names=>JSON.stringify(names.map(name=>[name,sqlite.prepare(
 const oldTables=tableNames(),beforeMigration=snapshotTables(oldTables);
 migrate(preparationMigration);
 const afterMigration=snapshotTables(oldTables);
+assert.equal(afterMigration,beforeMigration,'0032 preserves every pre-existing business row');
+// Current authentication needs the current schema; keep the historical 0032
+// preservation assertion separate from these subsequent additive migrations.
+for(const name of migrations.filter(name=>name>preparationMigration))migrate(name);
 const snapshot=()=>snapshotTables(tableNames());
 const profileRow=id=>sqlite.prepare('SELECT * FROM admin_permission_profiles WHERE account_id=?').get(id);
 const auditCount=()=>sqlite.prepare('SELECT count(*) AS n FROM audit').get().n;
@@ -235,7 +239,7 @@ await section('profile mutation and lifecycle audit are one rollback unit',async
 await section('malformed stored grants cannot be normalized into a silently broader profile',async()=>{
   await login('chief-a');const before=profileFor(adminId);for(const keys of [['students.edit'],['students.view','students.view'],['students.view','finance.view'],['*']]){sqlite.prepare('UPDATE admin_permission_profiles SET grants_json=? WHERE account_id=?').run(JSON.stringify(keys),adminId);await denied('admin-permissions',undefined,query(adminId),[503]);const revision=profileFor(adminId).revision;await denied('admin-permissions',{action:'saveDraft',accountId:adminId,expectedRevision:revision,grants:[]},'',[503]);}
   sqlite.prepare('UPDATE admin_permission_profiles SET grants_json=?,draft_grants_json=? WHERE account_id=?').run(before.grants_json,before.draft_grants_json,adminId);
-  for(const keys of [['lessons.*'],['homework.grade'],['finance.view'],['futureModule.view']])await unchanged('unknown future grant remains disabled',()=>denied('admin-permissions',{action:'saveDraft',accountId:adminId,expectedRevision:before.revision,grants:keys},'',[400]));
+  for(const keys of [['lessons.*'],['homework.grade'],['finance.edit'],['futureModule.view'],...permission.RETIRED_ADMIN_GRANTS.map(key=>[key])])await unchanged('unknown or retired grant remains disabled',()=>denied('admin-permissions',{action:'saveDraft',accountId:adminId,expectedRevision:before.revision,grants:keys},'',[400]));
 });
 
 await section('lifecycle snapshots contain no credentials and maintain database integrity',async()=>{

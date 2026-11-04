@@ -184,7 +184,7 @@ export function AdminPermissionEditor({accountId, accountName, groupId, onClose,
   const reviewing = step === "review" || step === "apply";
   const reviewAdditions = step === "apply" ? applyAdditions : additions, reviewRemovals = step === "apply" ? applyRemovals : removals;
   const titleKey = step === "review" ? "permissions.reviewTitle" : step === "apply" ? "permissions.applyTitle" : step === "removeDraft" ? "permissions.removeDraftTitle" : step === "discard" ? "permissions.discardTitle" : step === "reload" ? "permissions.reloadTitle" : "permissions.title";
-  return <Dialog open onOpenChange={open => { if (!open) requestClose(); }}><DialogContent className="admin-permission-dialog" overlayClassName="admin-permission-overlay" showCloseButton={!saving} onEscapeKeyDown={event => { event.preventDefault(); requestClose(); }}>
+  return <Dialog open onOpenChange={open => { if (!open) requestClose(); }}><DialogContent className="admin-permission-dialog" overlayClassName="admin-permission-overlay" closeDisabled={saving} onEscapeKeyDown={event => { event.preventDefault(); requestClose(); }}>
     <DialogHeader><DialogTitle>{t(titleKey)}</DialogTitle><DialogDescription>{accountName} · {t("admin.regularAdministrator")} · {t(data?.runtimeEnforcement?"permissions.activeStage":"permissions.preparation")}</DialogDescription></DialogHeader>
     <div className="admin-permission-body" aria-busy={loading || saving}>
       <p className="permission-stage-badge">{t(data?.runtimeEnforcement?"permissions.activeStage":"permissions.preparation")}</p>

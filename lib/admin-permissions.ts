@@ -12,7 +12,7 @@ const currentModules = [
   { id: "attendance", actions: ["view", "edit", "review"] },
   { id: "reschedules", actions: ["view", "create", "respond"] },
   { id: "classrooms", actions: ["view", "create", "edit", "archive", "restore", "delete"] },
-  { id: "tasks", actions: ["view", "create", "review", "archive"] },
+  { id: "tasks", actions: ["view", "create", "review", "archive", "delete"] },
   { id: "terms", actions: ["view", "create", "edit"] },
   { id: "announcements", actions: ["view", "create", "edit", "delete"] },
   { id: "folders", actions: ["view", "create", "edit", "delete", "placeContent"] },
@@ -25,7 +25,6 @@ const currentModules = [
   { id: "quizzes", actions: ["view", "create", "edit", "delete", "import", "share", "duplicate"] },
   { id: "quizAssignments", actions: ["view", "assign", "grade", "withdraw", "release", "accommodate"] },
   { id: "statistics", actions: ["view"] },
-  { id: "sheetSync", actions: ["view", "preview", "commit"] },
   { id: "audit", actions: ["view"] },
   { id: "fees", actions: ["view"] },
   { id: "invoices", actions: ["view", "create", "edit", "issue", "adjust", "void"] },
@@ -58,7 +57,6 @@ const extraDependencies: Partial<Record<AdminGrantKey, AdminGrantKey[]>> = {
   // assigning work must not grant the complete student profile, and placing
   // one content kind must not expose the other kind's learning records.
   "quizAssignments.assign": ["quizzes.view"],
-  "sheetSync.commit": ["sheetSync.preview"],
   "invoices.issue": ["invoices.view"],
   "invoices.adjust": ["payments.view"],
   "invoices.void": ["payments.view"],
@@ -105,6 +103,18 @@ export function normalizeAdminGrants(input: unknown): AdminGrantKey[] {
   return actions.filter(action => selected.has(action.key)).map(action => action.key);
 }
 
+// Historical profiles are not rewritten by a deployment. These exact retired
+// capabilities are ignored only when reading stored data, never accepted by a
+// new configuration write. All other validation remains fail-closed.
+export const RETIRED_ADMIN_GRANTS = ['sheetSync.view','sheetSync.preview','sheetSync.commit'] as const;
+export function readStoredAdminGrants(input:unknown):AdminGrantKey[]{
+  if(!Array.isArray(input)||new Set(input).size!==input.length)throw new AdminPermissionValidationError();
+  const current=input.filter(key=>!(RETIRED_ADMIN_GRANTS as readonly unknown[]).includes(key));
+  const normalized=normalizeAdminGrants(current);
+  if(current.length!==normalized.length||current.some(key=>!normalized.includes(key)))throw new AdminPermissionValidationError();
+  return normalized;
+}
+
 export function hasAdminGrant(grants: readonly AdminGrantKey[], key: string): key is AdminGrantKey {
   return supported.has(key as AdminGrantKey) && grants.includes(key as AdminGrantKey);
 }
@@ -124,7 +134,7 @@ export const LEGACY_ADMIN_GRANTS: AdminGrantKey[] = [
   "folders.view", "folders.create", "folders.edit", "folders.delete", "folders.placeContent", "materials.view", "homework.view", "homework.delete",
   "quizzes.view", "quizzes.create", "quizzes.edit", "quizzes.delete", "quizzes.import", "quizzes.share", "quizzes.duplicate",
   "quizAssignments.view", "quizAssignments.assign", "quizAssignments.grade", "quizAssignments.withdraw", "quizAssignments.release", "quizAssignments.accommodate",
-  "statistics.view", "sheetSync.view", "sheetSync.preview", "sheetSync.commit", "audit.view",
+  "statistics.view", "audit.view",
 ];
 
 const template = (id: AdminPermissionTemplate["id"], grants: AdminGrantKey[]): AdminPermissionTemplate => ({id, labelKey: `permissions.template.${id}`, descriptionKey: `permissions.templateDescription.${id}`, grants: normalizeAdminGrants(grants)});

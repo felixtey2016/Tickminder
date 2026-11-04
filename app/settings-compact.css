@@ -26,10 +26,6 @@
 .settings-compact .group-entry-primary{margin-top:16px}
 .settings-compact .settings-disclosure>summary{font-size:14px}
 .settings-compact .settings-tools{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px}
-.sheet-sync-compact>h2{font-size:18px;margin:0}
-.sheet-sync-compact>.muted{font-size:14px;margin:0;line-height:1.6}
-.sheet-sync-compact>.settings-disclosure{font-size:13px}
-.sheet-sync-compact>.settings-disclosure p{margin:8px 0;line-height:1.7}
 @media(max-width:700px){
  .management-switcher .management-navigation{display:none}
  .management-mobile{display:flex;align-items:center;gap:12px;font-size:13px;min-width:0}
@@ -90,18 +86,6 @@
 .account-setup-existing{border-top:1px solid var(--ui-border,#e4e2ea);margin-top:24px;padding-top:16px;text-align:left}
 .account-setup-existing>p{font-size:14px;line-height:1.6;margin:0 0 12px;color:var(--ui-muted,#626575)}
 .account-setup-existing>button{min-height:44px}
-.sheet-sync-compact :is(.sheet-sync-mode,.sheet-sync-skipped summary){color:var(--ui-text)}
-.sheet-sync-compact .sheet-sync-mode{max-width:100%;min-width:0}
-.sheet-sync-compact .sheet-sync-mode select{background:var(--ui-surface);color:var(--ui-text);border-color:var(--ui-border);max-width:100%;font-size:16px}
-.sheet-sync-compact .sheet-sync-preview{min-width:0;border-color:var(--ui-border)}
-.sheet-sync-compact .sheet-sync-preview h3{font-size:18px;overflow-wrap:anywhere}
-.sheet-sync-compact .sheet-sync-preview h3 small{color:var(--ui-muted)}
-.sheet-sync-compact .sheet-sync-table :is(th,td){border-color:var(--ui-border);overflow-wrap:anywhere;max-width:24em}
-.sheet-sync-compact .sheet-sync-table th{background:var(--ui-surface-muted);color:var(--ui-text)}
-.sheet-sync-compact .sheet-sync-table-wrap{min-width:0;border:1px solid var(--ui-border);border-radius:6px}
-.sheet-sync-compact .sheet-sync-table-wrap:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
-.sheet-sync-compact .sheet-sync-skipped{min-width:0;overflow-wrap:anywhere}
-.sheet-sync-compact .sheet-sync-skipped summary{min-height:44px;padding-block:10px}
 @media(min-width:1100px){
  .account-settings-compact:has(.account-contact-panel){grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}
  .account-settings-compact .account-whatsapp{grid-column:1/-1}

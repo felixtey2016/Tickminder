@@ -3,6 +3,8 @@ const entries:Record<string,[string,string]>={
  'action.accountSessions.revoke':['退出其他设备','Sign out other devices'],
  'action.accountUsername.update':['修改登录用户名','Change login username'],
  'action.classTask.create':['创建课堂任务','Create classroom task'],'action.classTask.complete':['完成课堂任务','Complete classroom task'],'action.classTask.archive':['封存课堂任务','Archive classroom task'],
+ 'action.classTask.selfComplete':['自行确认课堂任务完成','Self-report classroom task completion'],'action.classTask.delete':['删除课堂任务（保留记录）','Delete classroom task (history retained)'],'action.classTask.submit':['申请课堂任务确认','Request classroom task review'],'action.classTask.approve':['确认课堂任务完成','Confirm classroom task completion'],'action.classTask.return':['课堂任务要求重做','Request another classroom task attempt'],
+ 'action.billing.deleteUnusedPlanConfiguration':['删除未使用的收费配置','Delete unused billing configuration'],
  allRecords:['全部记录','All records'],eventCode:['原始事件','Event code'],
  'action.studentDeparture.mark':['标记待退课','Mark student departure'],'action.studentDeparture.cancel':['取消待退课标记','Cancel student departure'],'action.studentDeparture.clean':['清理离班学生资料','Clean departed student data'],
  'field.lastLessonDate':['预计最后上课日期','Planned last lesson date'],'field.financialHistoryRetained':['财务历史已保留','Financial history retained'],'field.sourceFactsRetained':['计费与薪资依据已保留','Billing and payroll sources retained'],'value.marked':['待退课／待清理','Leaving / pending cleanup'],'value.cleaned':['已清理','Cleaned'],

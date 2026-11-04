@@ -27,8 +27,10 @@ for(const [view,path] of Object.entries(route.WORKSPACE_PATHS)){
 equal(route.workspacePath("settings","admin"),null,"settings alias cannot become group info implicitly");
 equal(route.workspacePath("groupInfo","admin"),"/manage/group","group settings separate");
 equal(route.workspacePath("financeHub","admin"),"/finance","finance primary resolves to existing leaf");
-for(const view of ["home","myAccount","notifications","quizzes","sheet","groups","teachingHub","learningHub","manageHub","myHub"])equal(route.workspaceNeedsCore(view),false,"light page "+view);
+for(const view of ["home","myAccount","notifications","quizzes","groups","teachingHub","learningHub","manageHub","myHub"])equal(route.workspaceNeedsCore(view),false,"light page "+view);
 for(const view of ["calendar","list","schedule","attendance","studentRoster","teacherRoster","parentRoster","accounts","classrooms","groupInfo","billing"])equal(route.workspaceNeedsCore(view),true,"heavy page "+view);
+equal(route.workspacePath("sheet","admin"),null,"retired Sheet has no workspace path");
+equal(route.legacyWorkspaceView("?view=sheet","admin"),null,"retired Sheet legacy entry is ignored");
 const quiz="abcdefghijklmnop",assignment="qrstuvwxyz123456";
 equal(route.workspaceViewFromPath("/quiz/"+quiz,"student"),"quizzes","deep Quiz entry");
 equal(route.workspaceViewFromPath("/quiz/short","student"),null,"invalid Quiz id");

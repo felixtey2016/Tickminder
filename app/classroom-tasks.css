@@ -2,7 +2,7 @@
 .classroom-task-filters,.classroom-task-counts,.classroom-task-review-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .classroom-task-filters:empty{display:none}
 .classroom-task-counts{font-size:13px;color:var(--muted-foreground,#6b6479)}
-.classroom-task-badge[data-status=completed]{background:var(--ui-success-bg);color:var(--ui-success-text)}
+.classroom-task-badge[data-status=completed],.classroom-task-badge[data-status=self_completed]{background:var(--ui-success-bg);color:var(--ui-success-text)}
 .classroom-task-badge[data-status=needs_redo]{background:var(--ui-warning-bg);color:var(--ui-warning-text)}
 .classroom-task-badge[data-status=legacy_completed],.classroom-task-badge[data-status=closed]{background:var(--ui-surface-muted);color:var(--ui-muted)}
 .classroom-task-progress li.classroom-task-student{display:grid;gap:10px;padding:14px 0}
@@ -62,3 +62,4 @@
 .classroom-task-pagination{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;min-width:0}
 .classroom-task-pagination p{margin:0;color:var(--muted-foreground,#6b6479);font-size:13px}
 @media(max-width:650px){.classroom-task-heading{flex-direction:column;gap:12px}.classroom-task-heading-actions{width:100%;flex-shrink:1}.classroom-task-heading-actions>button{flex:1;min-height:44px}.classroom-task-card,.classroom-task-form{padding:14px}.classroom-task-form-actions>button{flex:1;min-height:44px}.classroom-task-card-actions>button{min-height:44px}.classroom-task-progress li{gap:10px}.classroom-task-progress>summary{min-height:44px}}
+.classroom-task-completion-mode{display:grid;gap:10px;min-width:0;border:1px solid var(--ui-border);border-radius:12px;padding:12px}.classroom-task-completion-mode>label{display:flex;align-items:center;gap:10px}.classroom-task-completion-mode input[type=radio]{width:18px;height:18px;min-height:18px;flex:0 0 auto}.classroom-task-delete-preview{display:grid;gap:16px;min-width:0}.classroom-task-delete-preview dl{display:grid;gap:10px;margin:0}.classroom-task-delete-preview dl>div{display:flex;justify-content:space-between;gap:16px}.classroom-task-delete-preview dt{overflow-wrap:anywhere}.classroom-task-delete-preview dd{margin:0;font-weight:700}

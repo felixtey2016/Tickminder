@@ -34,7 +34,7 @@ Authenticated administrator requests retain a private, non-serialised session bi
 
 Uploads recheck authority after file storage. PDF failures clean their own reservation and object. A revoked Quiz upload removes only its unpublished, unreferenced reservation when its owner has lost every legal upload identity or grant; revoking one session does not delete an upload another valid session may be resuming. Database and object storage are separate services: a storage deletion failure can leave an inaccessible object that needs a later orphan-cleanup retry.
 
-Google Sheet requests recheck authority after signing, immediately before dispatch. A request already sent to Google cannot be recalled by revoking access. Its acknowledgement is returned honestly so an administrator can inspect the sheet before retrying. Likewise, access revocation cannot erase a response already delivered to a browser.
+The retired spreadsheet bridge returns HTTP 410 without reading the database or dispatching network requests. Access revocation cannot erase a response already delivered to a browser.
 
 ## Formal rollout and recovery
 

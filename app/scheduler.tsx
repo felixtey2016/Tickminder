@@ -77,7 +77,6 @@ const FinanceWorkspace=lazy(()=>import('./finance-workspace'));
 const ClassroomsPage = lazy(() => import("./classrooms-page").then(module => ({default: module.ClassroomsPage})));
 const Timetable=lazy(()=>import("./timetables").then(m=>({default:m.Timetable})));
 const SubjectAdmin=lazy(()=>import("./roster-forms").then(m=>({default:m.SubjectAdmin})));
-const SheetSyncPanel = lazy(() => import("./sheet-sync-panel").then(module => ({default: module.SheetSyncPanel})));
 const TermManager = lazy(() => import("./term-manager").then(module => ({default: module.TermManager})));
 const AccountSettings=lazy(()=>import("./account-settings").then(m=>({default:m.AccountSettings})));
 import { NotificationsProvider, MenuBadge, detachPushOnLogout } from "./notifications";
@@ -584,9 +583,7 @@ const NAV_ITEMS: Record<NavigationRole, NavigationItem[]> = {
         { id: "teacherRoster", label: "老师名单", Icon: UserRound },
         { id: "studentRoster", label: "学生名单", Icon: UsersRound },
         { id: "parentRoster", label: "parents.parentRoster", Icon: UsersRound },
-        { id: "accounts", label: "账号管理", Icon: Users },
-        { id: "sheet", label: "课时写入表格", Icon: FileSpreadsheet },
-        { id: "activity", label: "操作日志", Icon: History },
+        { id: "accounts", label: "账号管理", Icon: Users },        { id: "activity", label: "操作日志", Icon: History },
     ],
     teacher: [
         { id: "home", label: "主页", Icon: LayoutDashboard },
@@ -800,7 +797,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state:legacyState, 
         {activeView==='financeHub'&&<PageState kind="empty" title={language==='zh'?'暂无财务权限':'Finance access unavailable'} description={language==='zh'?'请联系集团管理员开通。':'Contact your group administrator for access.'}/>}
         {activeView!=='financeHub'&&!sections.length&&<PageState kind="empty" title={language==='zh'?'暂无可用功能':'No available features'}/>}
     </NavigationHub>;}
-    else if((activeView==="groups"&&account.isOwner)||(activeView==="groupInfo"&&role==="admin")){pageContent=<div className="settings-compact"><GroupConsole isOwner={activeView==="groups"&&Boolean(account.isOwner)} currentGroupId={account.groupId}/>{activeView==="groupInfo"&&canAdminAction(account,"terms.view")&&<div className="settings-tools">{projection.loading&&!projection.data?<PageState kind="loading" title="正在加载…"/>:projection.data&&<TermManager terms={state.terms||[]} mutate={classroomMutate} busy={busy}/>}</div>}</div>;}
+    else if((activeView==="groups"&&account.isOwner)||(activeView==="groupInfo"&&role==="admin")){pageContent=<div className="settings-compact"><GroupConsole isOwner={Boolean(account.isOwner)} mode={activeView==="groupInfo"?"information":"platform"} currentGroupId={account.groupId}/>{activeView==="groupInfo"&&canAdminAction(account,"terms.view")&&<div className="settings-tools">{projection.loading&&!projection.data?<PageState kind="loading" title="正在加载…"/>:projection.data&&<TermManager terms={state.terms||[]} mutate={classroomMutate} busy={busy}/>}</div>}</div>;}
     else if (activeView==='quizzes'&&(role==='teacher'||role==='admin'||role==='student')) {
         pageContent=<QuizWorkspace key={`${account.groupId}:${activeView}`} view={activeView} language={language} role={role} initialQuizId={initialQuizId} onLinkedQuizExit={onLinkedQuizExit}/>;
     }
@@ -834,8 +831,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state:legacyState, 
         } else if (["teacherRoster", "studentRoster", "parentRoster", "accounts"].includes(activeView)) {
             const view = activeView === "teacherRoster" ? "teachers" : activeView === "studentRoster" ? "students" : activeView === "parentRoster" ? "parents" : activeView as "binding" | "accounts";
             pageContent = <RosterAdmin account={account} state={state} mutate={mutate} busy={busy} view={view} onOpenAccounts={()=>choose("accounts")} onAccountsChanged={()=>void ensureScope("accounts",true)}/>;
-        } else if (activeView === "sheet") {
-            pageContent = <SheetSyncPanel/>;
+
         }
     } else if (role === "student") {
         if(activeView==="homework"||activeView==="materials")pageContent=<StudentLearningDashboard account={account} identityKey={identityKey} calendarRange={calendarRange} lessons={[]} proposals={[]} mutate={learningMutate} busy={busy} view={activeView} onCalendar={()=>choose("calendar")}/>;

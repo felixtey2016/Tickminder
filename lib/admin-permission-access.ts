@@ -5,7 +5,7 @@ import { learningDb } from "@/lib/learning-server";
 import { requireGroup } from "@/lib/group-data";
 import { OWNER_EMAIL } from "@/lib/owner";
 import { configuredAdminGrantGuard, configuredAdminGrantPredicate } from "@/lib/admin-permissions-server";
-import { LEGACY_ADMIN_GRANTS, SUPPORTED_ADMIN_GRANTS, hasAdminGrant, normalizeAdminGrants, type AdminGrantKey } from "@/lib/admin-permissions";
+import { LEGACY_ADMIN_GRANTS, SUPPORTED_ADMIN_GRANTS, hasAdminGrant, readStoredAdminGrants, type AdminGrantKey } from "@/lib/admin-permissions";
 import { accountSessionPredicate } from "@/lib/account-session";
 
 export type AdminPermissionContext = { enforced: boolean; grants: AdminGrantKey[]; privileged: boolean };
@@ -38,8 +38,7 @@ export async function adminPermissionContext(account: Pick<Account,"id"|"role"|"
   if (row.privileged) return {enforced,grants:[...SUPPORTED_ADMIN_GRANTS],privileged:true};
   let grants: AdminGrantKey[] = [];
   try {
-    const stored: unknown = JSON.parse(row.grantsJson || "[]"), normalized = normalizeAdminGrants(stored);
-    if (Array.isArray(stored) && new Set(stored).size === stored.length && stored.length === normalized.length && stored.every(key=>normalized.includes(key))) grants = normalized;
+    grants = readStoredAdminGrants(JSON.parse(row.grantsJson || "[]"));
   } catch { /* Invalid, missing or incomplete stored profiles deny access. */ }
   return {enforced,grants,privileged:false};
 }

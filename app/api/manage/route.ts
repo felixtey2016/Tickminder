@@ -16,6 +16,7 @@ import {adminPermissionFailure,AdminPermissionDenied,adminPermissionsEnforced} f
 import {cancelledStudentDeletion,CancelledStudentDeletionError} from '@/lib/cancelled-student-deletion';
 import {classroomDeletion,ClassroomDeletionError} from '@/lib/classroom-deletion';
 import {d1ReadBatch,type D1BatchRead} from '@/lib/d1-read-batch';
+import {unusedPlanBillingCleanup,UnusedPlanBillingError} from '@/lib/unused-plan-billing';
 
 
 class DeleteError extends Error { constructor(message: string, public status = 409) { super(message); } }
@@ -93,7 +94,9 @@ async function planDeletion(actor: NonNullable<Awaited<ReturnType<typeof current
     } else if (kind === "plan") {
       const plan = await first<{ student: string; subject: string }>("SELECT student,subject FROM plans WHERE key = ?", id);
       if (!plan) throw new DeleteError("记录不存在", 404);
-      if(await raw.prepare(planFinancialHistory).bind(groupId,id).first())throw new DeleteError(financialHistoryMessage);
+      const unusedBilling=await unusedPlanBillingCleanup(actor,id,(sql,...params)=>db.prepare(sql).bind(...params));
+      if(!unusedBilling&&await raw.prepare(planFinancialHistory).bind(groupId,id).first())throw new DeleteError(financialHistoryMessage);
+      if(unusedBilling){statements.push(...unusedBilling.statements);checks.push(...unusedBilling.guards);watches.push(...unusedBilling.watches);}
       if (await first(`SELECT 1 AS found FROM lessons l JOIN plans p ON p.student=l.student JOIN students s ON s.name=p.student WHERE p.key=? AND l.status='scheduled' AND ${planSubjectLabelSql('p','s','l.subject')}`,id)) throw new DeleteError("仍有已安排的课程，请先取消或删除这些课程");
       if (await first(`SELECT 1 AS found FROM classroom_members m JOIN classrooms c ON c.id=m.classroom_id JOIN plans p ON p.student=m.student_name JOIN students s ON s.name=p.student WHERE p.key=? AND ${classPlanSubjectSql()}`,id)) throw new DeleteError("此科目仍用于班级，请先移出班级");
       statements.push(db.prepare("DELETE FROM assignments WHERE (plan_key = ?) AND group_id = ?").bind(id,groupId));
@@ -197,7 +200,7 @@ export async function POST(request: Request) {
     for(let start=0;start<entries.length;start+=4){
       const wave=entries.slice(start,start+4),results=await Promise.allSettled(wave.map(entry=>planDeletion(actor,entry.kind,entry.id,selectedClasses,read)));
       for(let i=0;i<results.length;i++){const result=results[i],entry=wave[i];if(result.status==='fulfilled'){plans.push(result.value);continue;}
-       const e=result.reason;if(!preview)throw e;if(!(e instanceof DeleteError)&&!(e instanceof ClassroomDeletionError)&&!(e instanceof CancelledStudentDeletionError)&&!(e instanceof AdminAuthorityError)&&!(e instanceof AdminPermissionDenied))throw e;blocked.push({...entry,error:e.message});
+       const e=result.reason;if(!preview)throw e;if(!(e instanceof DeleteError)&&!(e instanceof UnusedPlanBillingError)&&!(e instanceof ClassroomDeletionError)&&!(e instanceof CancelledStudentDeletionError)&&!(e instanceof AdminAuthorityError)&&!(e instanceof AdminPermissionDenied))throw e;blocked.push({...entry,error:e.message});
       }
     }
     const previewAt = preview ? new Date().toISOString() : String(data.previewAt || '');
@@ -218,5 +221,5 @@ export async function POST(request: Request) {
     const files=[...new Set(plans.flatMap(p=>p.files))];let cleanupPending=files.length>1;
     for (const file of files.slice(0,1)) {try {await deleteUnreferencedFile(file);} catch(error) {reportUnexpectedError(error,{operation:'file-cleanup',source:'background'});cleanupPending=true;}}
     return NextResponse.json({ok:true,deletedCount:entries.length,warning:cleanupPending?"记录已删除，部分文件清理尚未完成，请联系管理员":undefined});
-  } catch (e) {if(e instanceof ClassroomDeletionError||e instanceof CancelledStudentDeletionError)return NextResponse.json({error:e.message},{status:e.status});if(e instanceof Error&&/student_delete_changed|classroom_delete_changed/.test(e.message))return NextResponse.json({error:'记录已更新，请重新预览后确认删除',status:409},{status:409});if(isInvoiceLocked(e))return NextResponse.json({error:invoiceLockedMessage},{status:409});const permissionFailure=adminPermissionFailure(e);if(permissionFailure)return NextResponse.json({error:permissionFailure.error},{status:permissionFailure.status});if(e instanceof AdminAuthorityError)return NextResponse.json({error:e.message},{status:e.status});if(isAdminAuthorityFailure(e))return NextResponse.json({error:'admin.authorityChanged'},{status:409});if(isClassroomCoverageFailure(e))return NextResponse.json({error:classroomRequiredMessage},{status:409});if(e instanceof Error&&/financial history/i.test(e.message))return NextResponse.json({error:financialHistoryMessage},{status:409});if(!(e instanceof DeleteError))reportUnexpectedError(e,{operation:'api-manage'});return NextResponse.json({error:e instanceof DeleteError?e.message:"删除未能确认，请刷新列表后再试"},{status:e instanceof DeleteError?e.status:503});}
+  } catch (e) {if(e instanceof UnusedPlanBillingError||e instanceof ClassroomDeletionError||e instanceof CancelledStudentDeletionError)return NextResponse.json({error:e.message},{status:e.status});if(e instanceof Error&&/unused_plan_billing_changed|student_delete_changed|classroom_delete_changed/.test(e.message))return NextResponse.json({error:'记录已更新，请重新预览后确认删除',status:409},{status:409});if(isInvoiceLocked(e))return NextResponse.json({error:invoiceLockedMessage},{status:409});const permissionFailure=adminPermissionFailure(e);if(permissionFailure)return NextResponse.json({error:permissionFailure.error},{status:permissionFailure.status});if(e instanceof AdminAuthorityError)return NextResponse.json({error:e.message},{status:e.status});if(isAdminAuthorityFailure(e))return NextResponse.json({error:'admin.authorityChanged'},{status:409});if(isClassroomCoverageFailure(e))return NextResponse.json({error:classroomRequiredMessage},{status:409});if(e instanceof Error&&/financial history/i.test(e.message))return NextResponse.json({error:financialHistoryMessage},{status:409});if(!(e instanceof DeleteError))reportUnexpectedError(e,{operation:'api-manage'});return NextResponse.json({error:e instanceof DeleteError?e.message:"删除未能确认，请刷新列表后再试"},{status:e instanceof DeleteError?e.status:503});}
 }

@@ -75,7 +75,7 @@ function IssueDialog({invoice,busy,onClose,onConfirm}:{invoice:InvoiceDocument;b
   const ref=useRef<HTMLDialogElement>(null);
   useEffect(()=>{ref.current?.showModal();return()=>{ref.current?.close();};},[]);
   return <dialog ref={ref} className="invoice-dialog" aria-labelledby="invoice-issue-heading" onCancel={event=>{if(busy)event.preventDefault();else onClose();}}>
-    <div className="invoice-dialog-body"><h3 id="invoice-issue-heading">{t('invoice.issue.heading')}</h3><p>{t('invoice.issue.description')}</p>
+    <div className="invoice-dialog-body"><header className="persistent-dialog-heading"><h3 id="invoice-issue-heading">{t('invoice.issue.heading')}</h3><Button type="button" variant="outline" className="native-dialog-close" aria-label={t("关闭")} disabled={busy} onClick={onClose}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></Button></header><p>{t('invoice.issue.description')}</p>
       <dl className="invoice-confirm-details"><div><dt>{t('invoice.student')}</dt><dd>{invoice.student.name}</dd></div><div><dt>{t('invoice.month')}</dt><dd>{invoice.month}</dd></div><div><dt>{t('invoice.dueDate')}</dt><dd>{date(invoice.dueDate)}</dd></div></dl>
       <AmountSummary invoice={invoice}/><p className="invoice-notice">{t('invoice.issue.lock')}</p>
       <div className="invoice-actions"><Button type="button" variant="outline" autoFocus disabled={busy} onClick={onClose}>{t('invoice.cancel')}</Button><Button type="button" disabled={busy} onClick={onConfirm}>{t(busy?'invoice.issuing':'invoice.issue.confirm')}</Button></div>

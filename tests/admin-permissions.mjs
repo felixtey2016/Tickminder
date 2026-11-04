@@ -139,9 +139,10 @@ await section('migration preserves all existing business rows and legacy access'
   assert.equal(afterMigration,beforeMigration,'additive migration cannot alter identity, chief, lessons, financial or business rows');
   const admins=sqlite.prepare("SELECT id FROM accounts WHERE role='admin' AND group_id IS NOT NULL").all();
   assert.equal(sqlite.prepare('SELECT count(*) AS n FROM admin_permission_profiles').get().n,admins.length);
-  for(const {id}of admins){const row=profileRow(id);assert.equal(row.origin,'legacy');assert.equal(row.revision,1);assert.deepEqual(JSON.parse(row.grants_json),permission.LEGACY_ADMIN_GRANTS);assert.equal(row.draft_grants_json,null);}
+  for(const {id}of admins){const row=profileRow(id),stored=JSON.parse(row.grants_json);assert.equal(row.origin,'legacy');assert.equal(row.revision,1);assert.deepEqual(stored.filter(key=>!permission.RETIRED_ADMIN_GRANTS.includes(key)),permission.LEGACY_ADMIN_GRANTS);for(const key of permission.RETIRED_ADMIN_GRANTS)assert(stored.includes(key),'Historical migration preserves retired key '+key);assert.equal(row.draft_grants_json,null);}
   await login('chief-a');const data=await readProfile('admin-a');pendingState(data);assert.equal(data.profile.origin,'legacy');assert.deepEqual(data.configuredGrants,permission.LEGACY_ADMIN_GRANTS);assert.equal(data.profile.draftGrants,null);
-  for(const key of ['accounts.assign','accounts.resetPassword','lessons.create','attendance.review','students.promote','sheetSync.commit','materials.view','homework.view','quizzes.share','quizAssignments.grade'])contains(data.profile.grants,key);
+  for(const key of ['accounts.assign','accounts.resetPassword','lessons.create','attendance.review','students.promote','materials.view','homework.view','quizzes.share','quizAssignments.grade'])contains(data.profile.grants,key);
+  assert(!data.profile.grants.some(key=>key.startsWith('sheetSync.')));assert(!data.catalog.some(module=>module.id==='sheetSync'));
 });
 
 await section('catalog exposes implemented finance actions and denies reserved or unsupported powers',async()=>{
@@ -181,7 +182,7 @@ await section('catalog exposes implemented finance actions and denies reserved o
 await section('write grants require their view and cross-module prerequisites',async()=>{
   assert.deepEqual(canonical(permission.normalizeAdminGrants(['students.edit','students.edit'])),['students.edit','students.view']);
   assert.deepEqual(canonical(permission.normalizeAdminGrants(['attendance.review'])),['attendance.review','attendance.view','lessons.view']);
-  assert.deepEqual(canonical(permission.normalizeAdminGrants(['sheetSync.commit'])),['sheetSync.commit','sheetSync.preview','sheetSync.view']);
+  for(const key of permission.RETIRED_ADMIN_GRANTS){assert.throws(()=>permission.normalizeAdminGrants([key]),permission.AdminPermissionValidationError);assert.equal(permission.hasAdminGrant([key],key),false);}
   assert.deepEqual(canonical(permission.normalizeAdminGrants(['quizAssignments.assign'])),['quizAssignments.assign','quizAssignments.view','quizzes.view']);
   await login('chief-a');const before=await readProfile('draft-admin'),audits=auditCount();
   const saved=await save('draft-admin',before.profile.revision,['attendance.review','students.edit','students.edit']);pendingState(saved);

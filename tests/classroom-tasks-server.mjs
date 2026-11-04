@@ -248,6 +248,93 @@ check('inbox bounds pages and filters older status before limit',()=>{assert.equ
 expect(await get(student,room,{view:'inbox',status:'needs_redo',cursor:inbox.nextCursor}),400,'inbox cursor is status-bound');
 denied(await get(reader,room,{view:'inbox'}),'review inbox requires explicit review permission');
 const teacherInbox=expect(await get(teacher,room,{view:'inbox'}),200,'teacher cross-class review inbox');check('teacher inbox contains only pending reviews',()=>assert(teacherInbox.items.every(item=>item.status==='awaiting_review'&&item.awaitingReview>0)));
+// Completion mode is a creation property, never a student-controlled action.
+for(const requiresReview of['false',0,null,{}])expect(await post(teacher,create({requiresReview})),400,'completion mode requires an actual boolean');
+const defaultBody=create({title:'Explicit default review replay'}),defaultId=expect(await post(teacher,defaultBody),200,'omitted mode keeps existing default').id;
+expect(await post(teacher,{...defaultBody,requiresReview:true}),200,'explicit true preserves the historical default request hash');
+expect(await post(teacher,{...defaultBody,requiresReview:false}),409,'same nonce cannot silently change completion mode');
+expect(await post(student,complete(defaultId,{requiresReview:false})),200,'student cannot bypass review with a forged mode');
+check('server applies the published review mode',()=>assert.equal(JSON.parse(taskEvents().find(e=>e.lesson_id==='class-task:'+defaultId&&e.action==='classTask.submit').after_json).studentName,'Alpha'));
+const selfBody=create({title:'Student confirms this task',requiresReview:false}),selfId=expect(await post(teacher,selfBody),200,'teacher publishes self-completion Task').id;
+expect(await post(teacher,selfBody),200,'self-completion creation retry is idempotent');
+expect(await post(teacher,{...selfBody,requiresReview:true}),409,'self-completion nonce cannot become review mode');
+let selfTask=expect(await get(student),200,'student reads completion mode').tasks.find(t=>t.id===selfId);
+check('new self-completion starts pending and is explicit',()=>{assert.equal(selfTask.requiresReview,false);assert.equal(selfTask.studentState.status,'pending');});
+expect(await post(student,{...complete(selfId),action:'selfComplete'}),400,'clients cannot invoke the internal self-completion action');
+expect(await post(student,{...complete(selfId),action:'complete'}),409,'legacy complete is still rejected rather than reinterpreted');
+const selfSubmit=complete(selfId),selfResult=expect(await post(student,selfSubmit),200,'submit resolves to self-completion on the server');
+expect(await post(student,selfSubmit),200,'lost self-completion response replays safely');
+selfTask=expect(await get(student),200,'student reads self-completed Task').tasks.find(t=>t.id===selfId);
+check('self-completion is separate from approval and legacy records',()=>{assert.equal(selfResult.status,'self_completed');assert.equal(selfTask.studentState.status,'self_completed');assert.equal(selfTask.studentState.history[0].action,'selfComplete');assert(selfTask.studentState.completedAt);assert.equal(eventCount('selfComplete',selfId),1);assert.equal(eventCount('approve',selfId),0);assert.equal(eventCount('submit',selfId),0);});
+const selfProgress=expect(await get(teacher),200,'teacher reads self-completion totals').tasks.find(t=>t.id===selfId).progress;
+check('self-completed totals never claim teacher approval',()=>{assert.equal(selfProgress.selfCompleted,1);assert.equal(selfProgress.completed,0);assert.equal(selfProgress.awaitingReview,0);assert.equal(selfProgress.legacyCompleted,0);});
+expect(await post(student,complete(selfId,{expectedEventId:selfTask.studentState.stateVersion})),409,'new self-completion nonce cannot append a second completion');
+for(const action of['approve','return'])expect(await post(teacher,{action,classroomId:room,id:selfId,studentName:'Alpha',expectedEventId:selfTask.studentState.stateVersion,reason:'No review needed',operationId:op()}),409,'review actions cannot reinterpret self-completion');
+const selfStudentInbox=expect(await get(student,room,{view:'inbox'}),200,'read student inbox after self-completion'),selfStaffInbox=expect(await get(teacher,room,{view:'inbox'}),200,'read teacher inbox after self-completion');
+check('self-completed Tasks leave both actionable inboxes',()=>{assert(!selfStudentInbox.items.some(t=>t.taskId===selfId));assert(!selfStaffInbox.items.some(t=>t.taskId===selfId));});
+const selfConcurrentId=expect(await post(teacher,create({title:'Self completion concurrency',requiresReview:false})),200,'create self-completion race fixture').id;
+const selfConcurrent=await Promise.allSettled([service.mutateClassroomTask(student,complete(selfConcurrentId)),service.mutateClassroomTask(student,complete(selfConcurrentId))]);
+check('concurrent self-completions append exactly one canonical event',()=>{assert.equal(selfConcurrent.filter(r=>r.status==='fulfilled').length,1);assert.equal(selfConcurrent.filter(r=>r.status==='rejected'&&r.reason.status===409).length,1);assert.equal(eventCount('selfComplete',selfConcurrentId),1);});
+
+const preview=(id,extra={})=>({action:'previewDelete',classroomId:room,id,...extra});
+const deleteBody=p=>({action:'delete',classroomId:room,id:p.id,previewAt:p.previewAt,fingerprint:p.fingerprint,confirm:true,operationId:op()});
+check('delete grant is explicit and does not expand frozen legacy staff',()=>{assert.deepEqual(catalog.normalizeAdminGrants(['tasks.delete']),['classrooms.view','tasks.view','tasks.delete']);assert(!catalog.LEGACY_ADMIN_GRANTS.includes('tasks.delete'));});
+const deletionHistory=taskEvents().filter(e=>e.lesson_id==='class-task:'+selfId),beforePreview=JSON.stringify(taskEvents());
+const selfPreview=expect(await post(teacher,preview(selfId)),200,'publisher can preview deletion');
+check('deletion preview is read-only and includes explicit impact',()=>{assert.equal(JSON.stringify(taskEvents()),beforePreview);assert.equal(selfPreview.history.events,2);assert.equal(selfPreview.history.students,1);assert.equal(selfPreview.history.selfCompletions,1);assert.match(selfPreview.fingerprint,/^[a-f0-9]{64}$/);});
+for(const who of[student,parent,pending,teacher2,otherTeacher,foreignTeacher,foreignAdmin,reader,admin])denied(await post(who,preview(selfId)),'only publisher or explicitly authorized staff can preview deletion');
+const secondTeacherList=expect(await get(teacher2),200,'second account bound to same teacher can read');
+check('delete capability belongs to publishing account rather than shared teacher name',()=>assert.equal(secondTeacherList.tasks.find(t=>t.id===selfId).canDelete,false));
+expect(await post(teacher,{action:'delete',classroomId:room,id:selfId,operationId:op()}),409,'deletion needs preview and confirmation');
+expect(await post(teacher,{...deleteBody(selfPreview),confirm:false}),409,'deletion requires explicit confirmation');
+expect(await post(teacher,{...deleteBody(selfPreview),fingerprint:'0'.repeat(64)}),409,'tampered deletion preview is rejected');
+expect(await post(teacher,{...deleteBody(selfPreview),previewAt:new Date(Date.now()-301000).toISOString()}),409,'expired deletion preview is rejected');
+expect(await post(teacher,{...deleteBody(selfPreview),previewAt:new Date(Date.now()+60000).toISOString()}),409,'future deletion preview is rejected');
+const stalePreview=expect(await post(teacher,preview(selfConcurrentId)),200,'preview before another student completes');
+expect(await post(beta,complete(selfConcurrentId)),200,'another student completes after preview');
+expect(await post(teacher,deleteBody(stalePreview)),409,'changed historical impact requires a fresh deletion preview');
+// A departed student is deliberately absent from current progress, but their
+// history must remain visible in deletion impact and survive the tombstone.
+sqlite.prepare('DELETE FROM classroom_members WHERE id=?').run(alphaMember.id);
+try{
+ const departed=expect(await post(teacher,preview(selfId)),200,'preview includes departed student history');
+ check('departed student is counted without restoring their access',()=>{assert.equal(departed.history.students,1);assert.equal(departed.history.selfCompletions,1);});
+ denied(await get(student,room,{taskId:selfId}),'departed student cannot use retained history to read task');
+}finally{sqlite.prepare('INSERT INTO classroom_members(id,group_id,classroom_id,student_name,created_at) VALUES(?,?,?,?,?)').run(alphaMember.id,alphaMember.group_id,alphaMember.classroom_id,alphaMember.student_name,alphaMember.created_at);}
+const freshDelete=deleteBody(expect(await post(teacher,preview(selfId)),200,'refresh deletion preview'));
+for(const who of[student,teacher2,foreignTeacher,reader])denied(await post(who,freshDelete),'preview cannot authorize another actor to delete');
+expect(await post(teacher,freshDelete),200,'publisher deletes task with a tombstone');
+expect(await post(teacher,freshDelete),200,'lost successful deletion response is replayable');
+check('deletion retains exact previous events and appends one distinct tombstone',()=>{assert.deepEqual(taskEvents().filter(e=>e.lesson_id==='class-task:'+selfId&&e.action!=='classTask.delete'),deletionHistory);assert.equal(eventCount('delete',selfId),1);assert.equal(JSON.parse(taskEvents().find(e=>e.lesson_id==='class-task:'+selfId&&e.action==='classTask.delete').after_json).deleted,true);});
+for(const who of[teacher,student]){
+ const remaining=expect(await get(who),200,'list excludes deleted task');check('deleted task is absent from list',()=>assert(!remaining.tasks.some(t=>t.id===selfId)));
+ expect(await get(who,room,{taskId:selfId}),404,'direct lookup of deleted task is unavailable');
+ const remainingInbox=expect(await get(who,room,{view:'inbox'}),200,'inbox excludes deleted task');check('deleted task absent from inbox',()=>assert(!remainingInbox.items.some(t=>t.taskId===selfId)));
+}
+denied(await post(beta,complete(selfId)),'deleted task rejects new completion');denied(await post(teacher,archive(selfId)),'deleted task cannot be closed again');
+expect(await post(teacher,{...freshDelete,fingerprint:'0'.repeat(64)}),409,'replayed deletion nonce still binds the original proof');
+// Archive remains a separate retained-list behavior; deleting a closed Task
+// must still preserve historical approvals and redo requests.
+const closedPreview=expect(await post(teacher,preview(id)),200,'publisher can delete an already closed task');
+check('delete preview counts full review history',()=>{assert.equal(closedPreview.history.approvals,1);assert.equal(closedPreview.history.returns,1);assert.equal(closedPreview.history.submissions,2);});
+expect(await post(teacher,deleteBody(closedPreview)),200,'closed task can be deleted without erasing history');
+grants(admin,['tasks.delete']);
+const adminPreview=expect(await post(admin,preview(legacyId)),200,'explicitly authorized administrator may delete another publisher task');
+check('legacy completion remains distinct in deletion impact',()=>{assert.equal(adminPreview.history.legacyCompletions,1);assert.equal(adminPreview.history.approvals,0);});
+await race('delete grant revoked at insertion boundary is rejected',admin,deleteBody(adminPreview),()=>grants(admin,['tasks.view']),()=>grants(admin,['tasks.delete']));
+expect(await post(admin,deleteBody(adminPreview)),200,'administrator with live delete grant deletes task');
+grants(admin,['tasks.create','tasks.review','tasks.archive']);
+const guardedDeleteId=expect(await post(teacher,create({title:'Deletion authority race'})),200,'create deletion race fixture').id;
+const guardedDelete=deleteBody(expect(await post(teacher,preview(guardedDeleteId)),200,'preview deletion race fixture'));
+await race('delete session revoked at insertion boundary is rejected',teacher,guardedDelete,()=>sqlite.prepare('DELETE FROM sessions WHERE account_id=?').run(teacher.id),()=>sqlite.prepare('INSERT INTO sessions(token_hash,account_id,expires_at) VALUES(?,?,?)').run(teacherSession.token_hash,teacher.id,teacherSession.expires_at));
+await race('delete teacher reassignment at insertion boundary is rejected',teacher,guardedDelete,()=>sqlite.prepare("UPDATE classrooms SET teacher_name='Teacher B' WHERE id=?").run(room),()=>sqlite.prepare("UPDATE classrooms SET teacher_name='Teacher A' WHERE id=?").run(room));
+let deleteRaceFired=false;
+beforeStatement=(sql,values)=>{if(!isTaskWrite(sql,values))return false;deleteRaceFired=true;sqlite.prepare('INSERT INTO audit(group_id,id,lesson_id,actor_id,action,after_json,at) VALUES(?,?,?,?,?,?,?)').run(group,'delete-race-student-event','class-task:'+guardedDeleteId,student.id,'classTask.submit',JSON.stringify({schemaVersion:1,revision:1,groupId:group,classroomId:room,taskId:guardedDeleteId,studentName:'Alpha'}),now);return true;};
+try{expect(await post(teacher,guardedDelete),409,'append after preview recomputation is caught by insertion CAS');check('CAS preserves the new student record and never tombstones',()=>{assert(deleteRaceFired);assert.equal(eventCount('submit',guardedDeleteId),1);assert.equal(eventCount('delete',guardedDeleteId),0);});}finally{beforeStatement=null;}
+const deleteConcurrent=deleteBody(expect(await post(teacher,preview(guardedDeleteId)),200,'fresh preview for duplicate deletion race'));
+const deletions=await Promise.allSettled([service.mutateClassroomTask(teacher,deleteConcurrent),service.mutateClassroomTask(teacher,{...deleteConcurrent,operationId:op()})]);
+check('concurrent different deletion operations append only one tombstone',()=>{assert.equal(deletions.filter(r=>r.status==='fulfilled').length,1);assert.equal(eventCount('delete',guardedDeleteId),1);});
+
 check('Task writes leave existing PDF/homework/material/quota records byte-for-byte unchanged',()=>assert.equal(JSON.stringify(oldTables.map(table=>[table,rows(table)])),oldBusiness));
 check('Task feature performs no schema changes',()=>assert.equal(JSON.stringify(rows('sqlite_master',"name NOT LIKE 'sqlite_%'").map(({type,name,tbl_name,sql})=>({type,name,tbl_name,sql}))),schema));
 check('Task fixture has no broken foreign keys',()=>assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[]));

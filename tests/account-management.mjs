@@ -176,8 +176,11 @@ db.prepare('INSERT INTO billing_rates(id,group_id,student_id,subject_key,revisio
 db.prepare('INSERT INTO billing_rate_versions(id,group_id,rate_id,revision,mode,amount_cents,currency,effective_from,subject_snapshot,actor_id,created_at) VALUES(?,?,?,1,?,?,?,?,?,?,?)').run('management-financial-version',financialGroup,'management-financial-rate','hour',3500,'MYR','2032-06-01','Mathematics','owner',now);
 actor={groupId:financialGroup,id:'admin',role:'admin',email:''};
 for(const entry of [{kind:'student',id:financialStudent},{kind:'plan',id:'financial-shared-plan'}]){
- const blockedResponse=await manage.POST(request({...entry,confirm:true}));assert.equal(blockedResponse.status,409);assert.match((await blockedResponse.json()).error,/收费或费用调整历史/);
- const preview=await(await manage.POST(request({action:'previewDelete',entries:[entry]}))).json();assert.equal(preview.items.length,0);assert.equal(preview.blocked.length,1);assert.match(preview.blocked[0].error,/收费或费用调整历史/);
+ // Student deletion stays protected. Cleaning an unused plan's price also
+ // requires live billing-manager authority, which this ordinary admin lacks.
+ const expectedStatus=entry.kind==='plan'?403:409,message=entry.kind==='plan'?/收费设置仅对/:/收费或费用调整历史/;
+ const blockedResponse=await manage.POST(request({...entry,confirm:true}));assert.equal(blockedResponse.status,expectedStatus);assert.match((await blockedResponse.json()).error,message);
+ const preview=await(await manage.POST(request({action:'previewDelete',entries:[entry]}))).json();assert.equal(preview.items.length,0);assert.equal(preview.blocked.length,1);assert.match(preview.blocked[0].error,message);
 }
 assert.ok(db.prepare('SELECT name FROM students WHERE group_id=? AND name=?').get(financialGroup,financialStudent));
 assert.ok(db.prepare('SELECT key FROM plans WHERE group_id=? AND key=?').get(financialGroup,'financial-shared-plan'));

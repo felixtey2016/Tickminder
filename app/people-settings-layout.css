@@ -107,8 +107,6 @@
 .catalogue-addition .catalogue-controls { border: 0; padding: 0; }
 .catalogue-addition :is(fieldset,form) { min-width: 0; }
 .catalogue-addition form { gap: 16px; }
-.sheet-sync-panel { min-width: 0; gap: 20px; }
-.sheet-sync-preview { gap: 20px; }
 .activity-item summary { display: flex; flex-wrap: wrap; gap: 8px 16px; min-height: 44px; }
 .activity-item summary > * { min-width: 0; overflow-wrap: anywhere; }
 [data-slot=dialog-content] > [data-slot=dialog-close] { display: inline-flex; align-items: center; justify-content: center; top: 12px; right: 12px; width: 44px; height: 44px; }

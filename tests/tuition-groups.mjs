@@ -23,13 +23,13 @@ const runtime={env:{DB:d1,BUCKET:bucket,GOOGLE_CLIENT_ID:'fixture-client'},cooki
 globalThis.__groups=runtime;
 const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'tickminder-groups-')),stubPath=path.join(temporary,'runtime.mjs');
 process.once('exit',()=>{const resolved=path.resolve(temporary);if(path.dirname(resolved)===path.resolve(os.tmpdir())&&path.basename(resolved).startsWith('tickminder-groups-'))fs.rmSync(resolved,{recursive:true,force:true});});
-fs.writeFileSync(stubPath,'export const {env,cookies,headers,NextResponse}=globalThis.__groups;'+['getDb','currentAccount','currentIdentity','currentBusinessAccount','createSession','hashToken','verifyGoogleCredential'].map(name=>`export const ${name}=(...args)=>globalThis.__groups.${name}(...args);`).join(''));
+fs.writeFileSync(stubPath,'export const {env,cookies,headers,NextResponse}=globalThis.__groups;export let StaleSessionCredentialError;export function connectFixtureAuth(){StaleSessionCredentialError=globalThis.__groups.StaleSessionCredentialError;}'+['getDb','currentAccount','currentIdentity','currentBusinessAccount','createSession','hashToken','verifyGoogleCredential'].map(name=>`export const ${name}=(...args)=>globalThis.__groups.${name}(...args);`).join(''));
 const stub=pathToFileURL(stubPath).href,cache=new Map();
 function compile(file){if(cache.has(file))return cache.get(file);const output=path.join(temporary,file.replace(/\.ts$/,'.mjs')),url=pathToFileURL(output).href;cache.set(file,url);let source=fs.readFileSync(new URL('../'+file,import.meta.url),'utf8');for(const [,spec]of [...source.matchAll(/from ["']([^"']+)["']/g)]){const replacement=['cloudflare:workers','next/headers','next/server','@/db','@/lib/auth'].includes(spec)?stub:spec.startsWith('@/')?compile(spec.slice(2)+'.ts'):spec.startsWith('.')?compile(path.posix.normalize(path.posix.join(path.posix.dirname(file),spec))+(spec.endsWith('.ts')?'':'.ts')):import.meta.resolve(spec);source=source.replaceAll('"'+spec+'"','"'+replacement+'"').replaceAll("'"+spec+"'","'"+replacement+"'");}fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText);return url;}
 async function load(file){const url=compile(file);return{url,module:await import(url)};}
 
 const schema=(await load('db/schema.ts')).module;runtime.getDb=()=>drizzle(d1,{schema});
-const auth=(await load('lib/auth.ts')).module;Object.assign(runtime,auth);runtime.verifyGoogleCredential=async()=>{if(!googleProfile)throw Error('No verified fixture identity');return googleProfile;};
+const auth=(await load('lib/auth.ts')).module;Object.assign(runtime,auth);(await import(stub)).connectFixtureAuth();runtime.verifyGoogleCredential=async()=>{if(!googleProfile)throw Error('No verified fixture identity');return googleProfile;};
 const pw=(await load('lib/password.ts')).module;
 const now=new Date().toISOString(),password='Fixture-pass-123',passwordHash=await pw.hashPassword(password);
 sqlite.prepare("INSERT INTO tuition_groups(id,name,join_code,created_at,updated_at) VALUES('school-b','Test School B','school-b',?,?)").run(now,now);
@@ -142,7 +142,7 @@ googleProfile={id:'new-google',name:'New Google',email:'new-google@example.test'
 let registered=await ok('auth',{credential:'fixture-verified-provider',groupCode:'school-b'});assert.equal(registered.account.groupId,'school-b');
 registered=await ok('auth',{credential:'fixture-verified-provider',groupCode:'next-genn-edu'});assert.equal(registered.account.groupId,'school-b');
 googleProfile={id:'invalid-google',name:'Invalid',email:'invalid@example.test'};await deny('auth',{credential:'fixture-verified-provider',groupCode:'not-an-invitation'});assert.equal(sqlite.prepare("SELECT count(*) n FROM accounts WHERE id='invalid-google'").get().n,0);
-await login('school-b-admin');assert.equal((await call('sheet-sync',{action:'preview',mode:'billable'})).status,503,'Foreign groups cannot use Next Genn Sheet');
+await login('school-b-admin');assert.equal((await call('sheet-sync',{action:'preview',mode:'billable'})).status,410,'Retired Sheet integration is unavailable in every group');
 await login('owner');await ok('groups',{action:'update',id:'school-b',name:'Test School B',active:false});await login('school-b-admin');assert.equal(await auth.currentBusinessAccount(),null);assert.equal((await ok('auth')).account.groupUnavailable,true);assert.equal((await call('state',null,'?scope=core')).status,401);
 await login('owner','school-b');assert.equal((await auth.currentBusinessAccount()).groupId,'school-b');await ok('groups',{action:'update',id:'school-b',name:'Test School B',active:true});
 // SQLite statement views cannot be bypassed by a caller-supplied ID or nested join.

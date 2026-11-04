@@ -40,13 +40,13 @@ const classes=['a','b'].map((suffix,index)=>({id:'class-'+suffix,title:'Fictiona
 function App(){
  const [classId,setClassId]=useState('class-a'),[role,setRole]=useState(initialRole);
  const classroom=classes.find(item=>item.id===classId);
- const denied=params.get('grants')==='denied',account=role==='admin'?{role,adminPermissions:{enforced:true,privileged:false,grants:denied?['classrooms.view','announcements.view','tasks.view']:['classrooms.view','announcements.view','tasks.view','tasks.create','tasks.review','tasks.archive']}}:{role};
- const content=view==='classrooms'?<ClassroomsPage role={role} classes={classes} terms={[]} learning={learning} learningReady teacherName='Fictional Teacher' teachers={['Fictional Teacher']} plans={[{student:'Fictional Student A',subject:'Mathematics',teacherName:'Fictional Teacher',active:true}]} mutate={async()=>({ok:true})} learningMutate={async()=>true} busy={false} onCalendar={()=>{}}/>:<ClassroomTasks classroom={classroom} role={role}/>;
+ const denied=params.get('grants')==='denied',account=role==='admin'?{role,adminPermissions:{enforced:true,privileged:false,grants:denied?['classrooms.view','announcements.view','tasks.view']:['classrooms.view','announcements.view','tasks.view','tasks.create','tasks.review','tasks.archive','tasks.delete']}}:{role};
+ const content=view==='classrooms'?<ClassroomsPage role={role} account={{...account,id:'fictional-task-ui-'+role,groupId:'fictional-task-ui-group',teacherName:role==='teacher'?'Fictional Teacher':null,studentName:role==='student'?'Fictional Student A':null}} classes={classes} terms={[]} teacherName='Fictional Teacher' mutate={async()=>({ok:true})} learningMutate={async()=>true} busy={false} onCalendar={()=>{}}/>:<ClassroomTasks classroom={classroom} role={role}/>;
  return <AdminPermissionContext.Provider value={account}><div className='app-shell'><div className='app-body'><main className='workspace workspace-compact'><div className='fixture-controls'><button data-testid='fixture-switch-class' onClick={()=>setClassId(value=>value==='class-a'?'class-b':'class-a')}>Switch fictional class</button><button data-testid='fixture-switch-role' onClick={()=>setRole(value=>value==='student'?'teacher':'student')}>Switch fictional role</button></div>{content}</main></div></div></AdminPermissionContext.Provider>;
 }
 createRoot(document.getElementById('root')).render(<App/>);`;
 
-function task(id,title){return {id,title,description:'Practise this fictional activity without uploading a file.',revision:1,archived:false,createdAt,studentState:{studentName:'Fictional Student A',status:'pending',stateVersion:null,completedAt:null,submittedAt:null,reviewedAt:null,reason:'',history:[]}};}
+function task(id,title){return {id,title,description:'Practise this fictional activity without uploading a file.',revision:1,requiresReview:true,canDelete:true,archived:false,createdAt,studentState:{studentName:'Fictional Student A',status:'pending',stateVersion:null,completedAt:null,submittedAt:null,reviewedAt:null,reason:'',history:[]}};}
 async function openFixture({width=390,language='en',role='student',view='tasks',scenario='',archived=false,grants='allowed',wait=true,theme='light'}={}){
  const context=await browser.newContext({viewport:{width,height:900},reducedMotion:'reduce'}),page=await context.newPage();
  const api=[],external=[],errors=[],unexpected=[],routeErrors=[],operations=new Map(),gates=[];
@@ -55,6 +55,7 @@ async function openFixture({width=390,language='en',role='student',view='tasks',
   'class-b':[task('task-b','Read a fictional poem')]
  };
  if(scenario==='pagination')tasks['class-a'].push(task('task-next','Read two pages'));
+ if(scenario==='self-complete')tasks['class-a'][0].requiresReview=false;
  const controls={failReads:scenario==='initial-read-failure'?1:0,readFailureStatus:503,failWriteOnce:scenario==='complete-failure',loseCreateOnce:scenario==='lost-create-response',holdComplete:scenario==='held-complete',holdRead:scenario==='held-read',heldReadFinished:false,postRefreshFailure:scenario==='refresh-failure',holdWrite:scenario==='held-write',heldWriteFinished:false};
  let currentRole=role,closed=false,holdReadUsed=false,createSequence=0;
  const completeGate=deferred(),readGate=deferred(),writeGate=deferred();gates.push(completeGate,readGate,writeGate);
@@ -71,7 +72,7 @@ async function openFixture({width=390,language='en',role='student',view='tasks',
   return {classroomId,readOnly,canCreate:scenario==='overgrant'||currentRole!=='student',canArchive:scenario==='overgrant'||currentRole!=='student',canReview:currentRole!=='student',canComplete:currentRole==='student',tasks:rows.map(item=>{
    const {studentState:own,...rest}=item;
    const legacy={studentName:'Fictional Student B',status:'legacy_completed',stateVersion:'legacy-b',completedAt,submittedAt:null,reviewedAt:null,reason:'',history:[{eventId:'legacy-b',action:'complete',at:completedAt,actorName:'Fictional Student B',reason:''}]};
-   return currentRole==='student'?{...rest,completedAt:own.completedAt,studentState:own}:{...rest,progress:{completed:own.status==='completed'?1:0,awaitingReview:own.status==='awaiting_review'?1:0,needsRedo:own.status==='needs_redo'?1:0,legacyCompleted:1,total:2,students:[own,legacy]}};
+   return currentRole==='student'?{...rest,completedAt:own.completedAt,studentState:own}:{...rest,progress:{completed:own.status==='completed'?1:0,selfCompleted:own.status==='self_completed'?1:0,awaitingReview:own.status==='awaiting_review'?1:0,needsRedo:own.status==='needs_redo'?1:0,legacyCompleted:1,total:2,students:[own,legacy]}};
   }),nextCursor};
  };
  await page.route('**/*',async route=>{
@@ -95,11 +96,18 @@ async function openFixture({width=390,language='en',role='student',view='tasks',
     return fulfill(snapshot);
    }
    if(method!=='POST')return fulfill({error:'Unsupported fictional operation'},405);
-   if(!body||!['create','submit','approve','return','archive'].includes(body.action)||typeof body.operationId!=='string'||!body.operationId){routeErrors.push('Invalid operation payload');return fulfill({error:'Invalid fictional operation'},400);}
+   if(body?.action==='previewDelete'){
+    if(controls.previewDenied){controls.previewDenied=false;return fulfill({error:'Fictional permission revoked'},403);}
+    const item=tasks[body.classroomId]?.find(row=>row.id===body.id);
+    if(!item)return fulfill({error:'Fictional task not found'},404);
+    return fulfill({ok:true,id:item.id,title:item.title,previewAt:new Date().toISOString(),fingerprint:'a'.repeat(64),lastEventId:'fictional-last-event',history:{events:12,students:4,submissions:4,approvals:2,selfCompletions:1,legacyCompletions:1,returns:2}});
+   }
+   if(!body||!['create','submit','approve','return','archive','delete'].includes(body.action)||typeof body.operationId!=='string'||!body.operationId){routeErrors.push('Invalid operation payload');return fulfill({error:'Invalid fictional operation'},400);}
    if(body.action==='submit'&&['studentName','accountId','student','groupId'].some(key=>Object.hasOwn(body,key))){routeErrors.push('Client supplied a completion identity');return fulfill({error:'No client-selected student'},400);}
    if(controls.holdComplete&&body.action==='submit')await completeGate.promise;
    if(controls.holdWrite)await writeGate.promise;
    if(controls.failWriteOnce){controls.failWriteOnce=false;return fulfill({error:'Fictional write failure'},503);}
+   if(body.action==='delete'&&controls.deleteConflictOnce){controls.deleteConflictOnce=false;return fulfill({error:'Fictional deletion impact changed'},409);}
    const previous=operations.get(body.operationId);
    if(previous){
     if(previous.signature!==JSON.stringify(body)){routeErrors.push('Operation ID reused for different contents');return fulfill({error:'Fictional operation conflict'},409);}
@@ -108,20 +116,25 @@ async function openFixture({width=390,language='en',role='student',view='tasks',
    let id=body.id;
    if(body.action==='create'){
     id='created-task-'+(++createSequence);
-    tasks[body.classroomId].unshift({...task(id,body.title),description:body.description});
+    tasks[body.classroomId].unshift({...task(id,body.title),description:body.description,requiresReview:body.requiresReview!==false});
    }else{
     const item=tasks[body.classroomId]?.find(row=>row.id===id);
     if(!item)return fulfill({error:'Fictional task not found'},404);
-    if(body.action==='archive')item.archived=true;else{
+    if(body.action==='delete'){
+     if(body.confirm!==true||body.fingerprint!=='a'.repeat(64)){routeErrors.push('Missing deletion confirmation proof');return fulfill({error:'Missing deletion confirmation proof'},409);}
+     tasks[body.classroomId]=tasks[body.classroomId].filter(row=>row.id!==id);
+    }else if(body.action==='archive')item.archived=true;else{
      const previous=item.studentState;if(body.expectedEventId!==previous.stateVersion)return fulfill({error:'Task state changed'},409);
-     const event={eventId:body.operationId,action:body.action,at:completedAt,actorName:currentRole==='student'?'Fictional Student A':'Fictional Teacher',reason:body.reason||''};
-     item.studentState={...previous,stateVersion:event.eventId,status:body.action==='submit'?'awaiting_review':body.action==='return'?'needs_redo':'completed',completedAt:body.action==='approve'?completedAt:null,submittedAt:body.action==='submit'?completedAt:previous.submittedAt,reviewedAt:body.action==='submit'?null:completedAt,reason:body.action==='return'?body.reason:'',history:[event,...previous.history]};
+     const self=body.action==='submit'&&item.requiresReview===false;
+     const event={eventId:body.operationId,action:self?'selfComplete':body.action,at:completedAt,actorName:currentRole==='student'?'Fictional Student A':'Fictional Teacher',reason:body.reason||''};
+     item.studentState={...previous,stateVersion:event.eventId,status:self?'self_completed':body.action==='submit'?'awaiting_review':body.action==='return'?'needs_redo':'completed',completedAt:self||body.action==='approve'?completedAt:null,submittedAt:body.action==='submit'&&!self?completedAt:previous.submittedAt,reviewedAt:body.action==='submit'?null:completedAt,reason:body.action==='return'?body.reason:'',history:[event,...previous.history]};
     }
    }
    operations.set(body.operationId,{signature:JSON.stringify(body),id});
    if(controls.postRefreshFailure){controls.postRefreshFailure=false;controls.failReads++;}
    if(body.action==='create'&&controls.loseCreateOnce){controls.loseCreateOnce=false;await route.abort('failed');return;}
-   return await fulfill({ok:true,id,replayed:false});
+   if(body.action==='delete'&&controls.loseDeleteOnce){controls.loseDeleteOnce=false;await route.abort('failed');return;}
+   return await fulfill({ok:true,id,replayed:false,...(body.action==='submit'?{status:tasks[body.classroomId].find(row=>row.id===id).studentState.status}:{})});
   }catch(error){
    if(!closed&&!request.failure()){routeErrors.push(error.message);try{await route.abort('failed');}catch{}}
   }finally{
@@ -213,6 +226,56 @@ try{
  const revoked=await openFixture({role:'teacher'});revoked.controls.failReads=1;revoked.controls.readFailureStatus=403;await revoked.page.getByRole('button',{name:'Refresh',exact:true}).click();await revoked.page.locator('.classroom-task-load-error').waitFor();check(await revoked.page.locator('article[data-task-id]').count()===0,'revoked permission clears old records');await revoked.close();
  for(const scenario of ['held-read','held-write']){const f=await openFixture({scenario,wait:scenario!=='held-read'});if(scenario==='held-write'){await complete(f);await eventually(()=>posts(f).length===1,'write not started');}else await eventually(()=>f.api.length>0,'read not started');await f.page.getByTestId('fixture-switch-class').click();await card(f,'task-b').waitFor();f.releaseRead();f.releaseWrite();await settleUi(f);check(await card(f).count()===0&&await card(f,'task-b').count()===1,'late '+scenario+' cannot replace new class');await f.close();}
  for(const width of [320,390,1280])for(const language of ['en','zh']){const f=await openFixture({width,language,view:'classrooms'}),tabs=f.page.getByRole('tablist');await tabs.waitFor();check(await tabs.getByRole('tab',{name:text(language,'功课','Homework'),exact:true}).count()===1,'Homework remains separate');await tabs.getByRole('tab',{name:text(language,'任务','Tasks'),exact:true}).click();await f.page.getByRole('tabpanel').getByTestId('classroom-tasks').waitFor();await f.page.locator('.classroom-task-list[aria-busy=false]').waitFor();await assertFit(f,'classroom Tasks');check(posts(f).length===0,'viewing tasks never writes Homework');await f.close();}
+ for(const [width,language] of [[320,'en'],[390,'zh'],[1280,'en']]){
+  const f=await openFixture({width,language,role:'teacher'}),label=width+'/'+language;
+  await openForm(f,'Self-reported fictional practice');
+  check(await f.page.getByRole('radio',{name:text(language,'学生提交后由老师确认','Teacher confirms after the student submits'),exact:true}).isChecked(),'creation defaults to teacher confirmation '+label);
+  await f.page.getByRole('radio',{name:text(language,'学生自行标记完成','Students mark complete themselves'),exact:true}).check();
+  await publish(f);await card(f,'created-task-1').waitFor();
+  check(posts(f).find(p=>p.body.action==='create').body.requiresReview===false,'creation sends the selected completion mode '+label);
+  await f.switchRole();await card(f,'created-task-1').getByRole('button',{name:text(language,'标记完成','Mark complete'),exact:true}).click();
+  await card(f,'created-task-1').locator('[data-status=self_completed]').waitFor();
+  check(await card(f,'created-task-1').getByRole('button').count()===0,'self-completed student task has no repeat action '+label);
+  check(!(await f.page.locator('.classroom-task-success').innerText()).includes(language==='zh'?'等待':'Waiting'),'self-completion success does not claim pending review '+label);
+  check(posts(f).find(p=>p.body.action==='submit').body.action==='submit','self-completion still uses server-authoritative submit '+label);
+  await f.switchRole();const selfCard=card(f,'created-task-1');await selfCard.locator('.classroom-task-progress > summary').click();
+  check((await selfCard.locator('.classroom-task-progress > summary').innerText()).includes('1 / 2'),'teacher sees self-completion total '+label);
+  check(await selfCard.getByRole('button',{name:text(language,'确认完成','Confirm completion'),exact:true}).count()===0,'self-completion has no teacher approval action '+label);
+  await selfCard.getByRole('button',{name:text(language,'删除任务','Delete task'),exact:true}).click();
+  let dialog=f.page.getByRole('dialog');await dialog.locator('dl').waitFor();
+  check((await dialog.innerText()).includes(text(language,'已离班或停用','former and inactive')),'deletion impact explicitly includes former students '+label);
+  check(await dialog.locator('dd').allTextContents().then(values=>values.join(',')==='4,4,2,2,2'),'deletion shows all historical impact counts '+label);
+  check(posts(f).filter(p=>p.body.action==='delete').length===0,'preview alone never deletes '+label);
+  await dialog.locator('[data-pinned-close]').click();await dialog.waitFor({state:'hidden'});
+  check(await selfCard.count()===1,'closing preview preserves task '+label);
+  await selfCard.getByRole('button',{name:text(language,'删除任务','Delete task'),exact:true}).click();dialog=f.page.getByRole('dialog');await dialog.locator('dl').waitFor();
+  const fit=await dialog.evaluate(node=>{const r=node.getBoundingClientRect();return r.left>=-1&&r.right<=innerWidth+1&&r.top>=-1&&r.bottom<=innerHeight+1;});check(fit,'deletion confirmation fits viewport '+label);
+  await screenshot(f,'delete-task-preview-'+width+'-'+language);
+  f.controls.holdWrite=true;await dialog.getByRole('button',{name:text(language,'确认删除任务','Confirm task deletion'),exact:true}).click();
+  await eventually(()=>posts(f).some(p=>p.body.action==='delete'),'deletion did not start');
+  check(await dialog.locator('[data-pinned-close]').isVisible()&&await dialog.locator('[data-pinned-close]').isDisabled(),'close remains visible and disabled while delete is pending '+label);
+  await f.page.keyboard.press('Escape');check(await dialog.isVisible(),'pending deletion cannot be dismissed with Escape '+label);
+  f.releaseWrite();await dialog.waitFor({state:'hidden'});await selfCard.waitFor({state:'detached'});
+  check(posts(f).filter(p=>p.body.action==='delete').length===1,'explicit confirmation issues one deletion '+label);
+  check((await f.page.locator('.classroom-task-success').innerText()).includes(text(language,'历史完成记录已保留','Completion history is retained')),'deletion success communicates retained audit history '+label);
+  await f.close();
+ }
+ for(const scenario of ['stale-delete','lost-delete']){
+  const f=await openFixture({role:'teacher'});f.controls.deleteConflictOnce=scenario==='stale-delete';f.controls.loseDeleteOnce=scenario==='lost-delete';
+  await card(f).getByRole('button',{name:'Delete task',exact:true}).click();const dialog=f.page.getByRole('dialog');await dialog.locator('dl').waitFor();
+  await dialog.getByRole('button',{name:'Confirm task deletion',exact:true}).click();await dialog.getByRole('alert').waitFor();
+  if(scenario==='stale-delete'){
+   check(await dialog.getByRole('button',{name:'Confirm task deletion',exact:true}).isDisabled(),'stale impact disables deletion until a new preview');
+   await dialog.getByRole('button',{name:'Preview again',exact:true}).click();await dialog.locator('dl').waitFor();
+  }else check(await dialog.getByRole('button',{name:'Confirm task deletion',exact:true}).isEnabled(),'unknown deletion result retains safe retry');
+  await dialog.getByRole('button',{name:'Confirm task deletion',exact:true}).click();await dialog.waitFor({state:'hidden'});await card(f).waitFor({state:'detached'});
+  const attempts=posts(f).filter(p=>p.body.action==='delete');
+  check(attempts.length===2&&(scenario==='lost-delete'?attempts[0].body.operationId===attempts[1].body.operationId:attempts[0].body.operationId!==attempts[1].body.operationId),scenario+' retry has the appropriate operation identity');
+  check(f.operations.size===1,scenario+' commits only one actual deletion');await f.close();
+ }
+ const previewDenied=await openFixture({role:'teacher'});previewDenied.controls.previewDenied=true;
+ await card(previewDenied).getByRole('button',{name:'Delete task',exact:true}).click();await previewDenied.page.locator('.classroom-task-load-error').waitFor();await previewDenied.page.getByRole('dialog').waitFor({state:'detached'});
+ check(await previewDenied.page.getByRole('dialog').count()===0&&await card(previewDenied).count()===0,'denied deletion preview clears both private dialog and old task list');await previewDenied.close();
  console.log(JSON.stringify({suite:'classroom-tasks-ui',checks,screenshots,widths:[320,390,1280],languages:['en','zh'],fictionalApis:true,productionWrites:0}));
 }finally{
  for(const fixture of activeFixtures){fixture.releaseComplete();fixture.releaseRead();fixture.releaseWrite();await fixture.context.close().catch(()=>{});}

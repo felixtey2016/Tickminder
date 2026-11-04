@@ -20,7 +20,7 @@
 
 - Teacher hours = actual session teaching end minus start, counted once for a taught session. A ten-student one-hour session contributes **1 teacher hour** and ten independent student records. Non-taught/teacher-absent sessions contribute zero. Reporting month uses actual teaching start; non-taught records use planned date for display.
 - Student attendance hours use that student's arrival/departure, which may be shorter for lateness/early departure. Absent students have no presence interval. An absence billable flag is a retained administrative reference, not an inferred presence duration or monetary calculation.
-- Existing Google Sheet bridge remains an administrator-only, preview/commit, student-subject hour transfer. Per-student presence intervals and review/billable flags are mirrored atomically into the existing lesson fields used by `monthlySheetPairs`; teacher totals are not substituted into the student sheet. Both sync modes and existing signed payload shape remain compatible.
+- Per-student presence intervals and review/billable flags are mirrored atomically into existing lesson fields. Spreadsheet writing is retired; CSV exports and website totals remain available.
 - No live Sheet write was performed as a test. Existing configuration was retained; local actual-data calculations verified the source and the unauthenticated production boundary was checked.
 - Part 22 monetary billing is outside this release. No fee amounts, salary rates or new payroll policy were introduced.
 

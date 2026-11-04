@@ -2,8 +2,8 @@ export const CLASSROOM_TASK_TITLE_MAX = 120;
 export const CLASSROOM_TASK_DESCRIPTION_MAX = 2000;
 export const CLASSROOM_TASK_PAGE_SIZE = 50;
 export const CLASSROOM_TASK_REASON_MAX = 1000;
-export type ClassroomTaskStatus = 'pending' | 'awaiting_review' | 'needs_redo' | 'completed' | 'legacy_completed';
-export type ClassroomTaskHistory = {eventId:string;action:'submit'|'approve'|'return'|'complete';at:string;actorName:string;reason:string};
+export type ClassroomTaskStatus = 'pending' | 'awaiting_review' | 'needs_redo' | 'completed' | 'self_completed' | 'legacy_completed';
+export type ClassroomTaskHistory = {eventId:string;action:'submit'|'approve'|'return'|'complete'|'selfComplete';at:string;actorName:string;reason:string};
 export type ClassroomTaskStudent = {
   studentName:string;status:ClassroomTaskStatus;stateVersion:string|null;completedAt:string|null;
   submittedAt:string|null;reviewedAt:string|null;reason:string;history:ClassroomTaskHistory[];
@@ -11,6 +11,7 @@ export type ClassroomTaskStudent = {
 
 export type ClassroomTaskProgress = {
   completed: number;
+  selfCompleted: number;
   awaitingReview: number;
   needsRedo: number;
   legacyCompleted: number;
@@ -25,6 +26,8 @@ export type ClassroomTask = {
   revision: 1;
   archived: boolean;
   createdAt: string;
+  requiresReview: boolean;
+  canDelete: boolean;
   completedAt?: string | null;
   studentState?: ClassroomTaskStudent;
   progress?: ClassroomTaskProgress;
@@ -41,7 +44,8 @@ export type ClassroomTasksState = {
   nextCursor: string | null;
 };
 
-export type ClassroomTaskMutationResult = {ok: true; id: string; replayed?: boolean};
+export type ClassroomTaskMutationResult = {ok: true; id: string; replayed?: boolean; status?:ClassroomTaskStatus};
+export type ClassroomTaskDeletePreview = {ok:true;id:string;title:string;previewAt:string;fingerprint:string;lastEventId:string;history:{events:number;students:number;submissions:number;approvals:number;selfCompletions:number;legacyCompletions:number;returns:number}};
 export type ClassroomTaskInboxItem = {taskId:string;classroomId:string;classroomTitle:string;title:string;status:ClassroomTaskStatus;awaitingReview:number;at:string};
 export type ClassroomTaskInbox = {items:ClassroomTaskInboxItem[];nextCursor:string|null};
 
