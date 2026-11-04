@@ -22,6 +22,9 @@ import '@/lib/finance-round2-i18n';
 import '@/lib/parents-i18n';
 
 import { groupFetch, setClientGroup } from "@/lib/group-client";
+import {readClientAuth,acceptClientAuth} from '@/lib/client-auth-read';
+import {getPrivateReadSnapshot,installPrivateReadEvents,setPrivateReadIdentity,invalidatePrivateReads,subscribePrivateReadLifecycle} from '@/lib/private-read-lifecycle';
+import {privateReadFlight,PrivateReadInvalidatedError} from '@/lib/private-read-flight';
 import { FilterScope, useFilterPreference } from "@/lib/filter-preferences";
 import { getLanguage, setLanguage, t, type Language } from "@/lib/i18n";
 import { readBrowserLanguagePreference, rememberLanguagePreference } from '@/lib/language-preference';
@@ -111,8 +114,8 @@ function actionSuccessText(action: string) {
     const labels: Record<string, string> = {adminResetSessionAttendance:"已还原为未登记",saveSessionAttendance:"课次考勤已保存",reviewSessionAttendance:"课次考勤已复核", createClassSession:"整班课程已安排",editClassSession:"整班时间已更新",cancelClassSession:"整班课次已取消",proposeClassReschedule:"整班改期申请已发送",respondClassReschedule:"整班改期结果已保存",updateClassSessionLink:"课堂链接已保存",activateAccount: "账号已启用", createTerm: "学期已保存", saveTerm: "学期已保存", permanentDelete: "记录已永久删除", restoreAccount: "账号已恢复", attendance: "出席记录已保存", proposeReschedule: "改期申请已发送", respondReschedule: "改期处理结果已保存", edit: "课程时间已更新", cancel: "课程已取消", create: "课程已安排", saveMaterial: "教学资料已保存", deleteMaterial: "教学资料已删除", publishHomework: "功课已发布", submitHomework: "功课已提交", setHomeworkScore: "分数已保存", saveStudyBlock: "学习计划已保存", deleteStudyBlock: "学习计划已删除", saveClassroom: "班级已保存", archiveClassroom: "班级状态已更新", saveAnnouncement: "公告已发布", deleteAnnouncement: "公告已删除", savePlan: "科目配对已保存", saveStudent: "学生已保存", setStudentActive: "学生名单已更新", saveTeacher: "老师已保存", bind: "身份分配已保存", deleteAccount: "账号已停用", updateOnlineLink: "课堂链接已保存", review: "复核结果已保存", createLocalAccount: "账号已创建", resetLocalPassword: "密码已重置" };
     return t(labels[action] || "操作已完成");
 }
-async function request(url: string, options?: RequestInit): Promise<any> { const r = await groupFetch(url, { ...options, cache: "no-store" }); const v = await readApiJson<{ error?: string; [key: string]: any }>(r); if (!r.ok)
-    throw Object.assign(new Error(v.conflict ? conflictDescription(v.conflict as ConflictDetail) : t(r.status === 401 && url !== "/api/auth" ? "登录已过期，请重新登录" : v.error || "请求失败")), { status: r.status }); return v; }
+async function request(url: string, options?: RequestInit): Promise<any> { if(url==='/api/auth'&&(!options?.method||options.method==='GET'))return readClientAuth(options?.signal||undefined);const r = await groupFetch(url, { ...options, cache: "no-store" }),responseEpoch=getPrivateReadSnapshot().authEpoch; const v = await readApiJson<{ error?: string; [key: string]: any }>(r); if (!r.ok)
+    throw Object.assign(new Error(v.conflict ? conflictDescription(v.conflict as ConflictDetail) : t(r.status === 401 && url !== "/api/auth" ? "登录已过期，请重新登录" : v.error || "请求失败")), { status: r.status });if(url==='/api/auth'&&'account'in v&&'clientId'in v&&!acceptClientAuth(v as SchedulerAuth,responseEpoch))return readClientAuth(); return v; }
 export type SchedulerAuth = {account: Account | null; clientId: string | null};
 export function Scheduler({initialQuizId,initialAuth,onAuthChange}:{initialQuizId?:string;initialAuth?:SchedulerAuth;onAuthChange?:(auth:SchedulerAuth)=>void}={}) {
  useDisplayPreferences();
@@ -137,7 +140,6 @@ export function Scheduler({initialQuizId,initialAuth,onAuthChange}:{initialQuizI
     const [auth, setAuth] = useState<SchedulerAuth | null>(initialAuth || null);
     const authChange=useRef(onAuthChange);authChange.current=onAuthChange;
     useEffect(()=>{if(auth)authChange.current?.(auth);},[auth]);
-    setClientGroup(auth?.account?.groupId);
     const [invitedGroup,setInvitedGroup]=useState("");
     useEffect(()=>{const code=new URLSearchParams(location.search).get("group");if(code)void request(`/api/groups?code=${encodeURIComponent(code)}`).then(r=>setInvitedGroup(r.group.name)).catch(e=>setMessage(e.message));},[]);
     const [state, setState] = useState<State | null>(null);
@@ -162,6 +164,8 @@ export function Scheduler({initialQuizId,initialAuth,onAuthChange}:{initialQuizI
     const corePending=useRef<{key:string;promise:Promise<void>}|null>(null);
     const coreLessons=useRef<{identity:string;lessons:Lesson[]}>({identity:'',lessons:[]});
     const identityKey=auth?.account?workspaceIdentityKey(auth.account):'anonymous';
+    useLayoutEffect(()=>{setClientGroup(auth?.account?.groupId);setPrivateReadIdentity(identityKey,auth?.account?.groupId);},[identityKey]);
+    useEffect(installPrivateReadEvents,[]);
     const activeIdentity=useRef(identityKey);activeIdentity.current=identityKey;
     const channelRef = useRef<BroadcastChannel | null>(null);
     const loadedScopes = useRef(new Set<StateScope>());
@@ -272,7 +276,7 @@ export function Scheduler({initialQuizId,initialAuth,onAuthChange}:{initialQuizI
             } else {setState(previous=>previous?{...previous,coreError:actionFailureMessage(error)}:previous);if(!silent){coreFailureMessage.current=(error as Error).message;setMessage(coreFailureMessage.current);}}
         }
     }, [selectedMonth, calendarRange.from,calendarRange.to,identityKey, ensureScope]);
-    useEffect(() => { const refreshAuth = () => { void request("/api/auth").then(setAuth).catch(alertActionFailure); }; window.addEventListener("timelyo:auth-refresh", refreshAuth); return () => window.removeEventListener("timelyo:auth-refresh", refreshAuth); }, []);
+    useEffect(() => { let active=true;const refreshAuth = () => { void request("/api/auth").then(value=>{if(active)setAuth(value);}).catch(error=>{if(active&&!(error instanceof PrivateReadInvalidatedError))alertActionFailure(error);}); }; window.addEventListener("timelyo:auth-refresh", refreshAuth); return () => {active=false;window.removeEventListener("timelyo:auth-refresh", refreshAuth);}; }, []);
     const reload = useCallback(() => refreshState(false), [refreshState]);
     const ensureCore=useCallback(async(force=false)=>{
         const key=activeIdentity.current+":"+JSON.stringify(coreQueryRef.current)+":"+coreVersion.current;
@@ -311,7 +315,7 @@ export function Scheduler({initialQuizId,initialAuth,onAuthChange}:{initialQuizI
         loadedScopes.current.clear();wantedScopes.current.clear();scopeRequests.current.clear();
         revisionRef.current=null;setState(null);setModal(null);
     }, [identityKey,setModal]);
-    useEffect(() => { if(initialAuth)return;let active = true; request("/api/auth").then(a => { if (active) setAuth(a); }).catch(e => { if (active) setMessage(e.message); }); return () => { active = false; }; }, [initialAuth]);
+    useEffect(() => { if(initialAuth)return;let active = true; request("/api/auth").then(a => { if (active) setAuth(a); }).catch(e => { if (active&&!(e instanceof PrivateReadInvalidatedError)) setMessage(e.message); }); return () => { active = false; }; }, [initialAuth]);
     useEffect(() => {
         // UI pages own their reads; only the next explicit tool call needs a new core.
         coreLoaded.current=false;
@@ -459,7 +463,7 @@ export function Scheduler({initialQuizId,initialAuth,onAuthChange}:{initialQuizI
         } catch (error) { alertActionFailure(error); return { ok: false }; }
         finally { mutationInFlight.current = false; setBusy(false); }
     }
-    async function logout() { try { if(!auth?.account?.groupUnavailable) await detachPushOnLogout(); await request("/api/auth", { method: "DELETE" }); clearDialogHistory(); setModal(null); showActionToast("success", "已退出登录"); latestStateRequest.current++; revisionRef.current = null; setAuth({ account: null, clientId: auth?.clientId || null }); setState(null); loadedScopes.current.clear(); wantedScopes.current.clear(); scopeRequests.current.clear(); } catch (error) { setMessage(alertActionFailure(error)); } }
+    async function logout() { invalidatePrivateReads('logout',{auth:true,clear:true});try { if(!auth?.account?.groupUnavailable) await detachPushOnLogout(); await request("/api/auth", { method: "DELETE" }); clearDialogHistory(); setModal(null); showActionToast("success", "已退出登录"); latestStateRequest.current++; revisionRef.current = null;const next={account:null,clientId:auth?.clientId||null};acceptClientAuth(next);setAuth(next); setState(null); loadedScopes.current.clear(); wantedScopes.current.clear(); scopeRequests.current.clear(); } catch (error) { setMessage(alertActionFailure(error));window.dispatchEvent(new Event('timelyo:auth-refresh')); } }
     async function localLogin(username: string, password: string) { if (busy) return; try {
         setBusy(true);
         setMessage("");
@@ -721,31 +725,39 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state:legacyState, 
     const lessons=useMemo(()=>[...(state.lessons||[])].sort((a,b)=>a.plannedStart.localeCompare(b.plannedStart)),[state.lessons]);
     const calendarReady=projectionView==='calendar'&&Boolean(projection.data)&&state.courseRange?.from===calendarRange.from&&state.courseRange?.to===calendarRange.to;
     const calendarLessons=calendarReady?lessons:[];
+    const homeSummaryActive=activeView==='home';
     useEffect(()=>{
         // Home owns its richer summary request; only shell counts are needed elsewhere.
-        if(activeView==="home")return;
-        let active=true,pending=false;
+        if(homeSummaryActive)return;
+        let active=true,pending=false,queued=false,clearEpoch=getPrivateReadSnapshot().clearEpoch;
         const controller=new AbortController();
         const load=async()=>{
-            if(!active||pending||document.visibilityState==="hidden")return;
+            if(!active||document.visibilityState==="hidden")return;
+            const context=getPrivateReadSnapshot();
+            if(pending||context.blocked||context.identity!==identityKey){queued=true;return;}
+            queued=false;
             pending=true;
             try{
-                const response=await groupFetch("/api/home-summary?scope=navigation",{cache:"no-store",signal:controller.signal});
-                const value=await readApiJson<{accountId:string;groupId:string;navigationCounts:CourseTaskCounts;error?:string}>(response);
-                if(!response.ok){
-                    if(response.status===401||response.status===403){if(active)setNavigationSummary({identity:badgeIdentity,counts:null,error:true});window.dispatchEvent(new Event("timelyo:auth-refresh"));}
-                    throw new Error(value.error||"Navigation summary unavailable");
-                }
-                if(value.accountId!==account.id||value.groupId!==account.groupId||!value.navigationCounts||Object.values(value.navigationCounts).some(count=>!Number.isSafeInteger(count)||count<0))throw new Error("Invalid navigation summary");
-                if(active)setNavigationSummary({identity:badgeIdentity,counts:value.navigationCounts,error:false});
-            }catch{if(active&&!controller.signal.aborted)setNavigationSummary(previous=>({...previous,error:true}));}
-            finally{pending=false;}
+                const value=await privateReadFlight.read({kind:'navigation',identity:identityKey,url:'/api/home-summary?scope=navigation',signal:controller.signal,load:async signal=>{
+                    const response=await groupFetch('/api/home-summary?scope=navigation',{cache:'no-store',signal});
+                    const data=await readApiJson<{accountId:string;groupId:string;navigationCounts:CourseTaskCounts;error?:string}>(response);
+                    if(!response.ok)throw new Error(data.error||'Navigation summary unavailable');return data;
+                },validate:(data:unknown)=>{
+                    const result=data as {accountId:string;groupId:string;navigationCounts:CourseTaskCounts};
+                    if(result.accountId!==account.id||result.groupId!==account.groupId){invalidatePrivateReads('navigation-identity',{auth:true,clear:true});window.dispatchEvent(new Event('timelyo:auth-refresh'));throw new PrivateReadInvalidatedError(true);}
+                    if(!result.navigationCounts||Object.values(result.navigationCounts).some(count=>!Number.isSafeInteger(count)||count<0))throw new Error('Invalid navigation summary');return result;
+                }});
+                if(active&&getPrivateReadSnapshot().epoch===context.epoch)setNavigationSummary({identity:badgeIdentity,counts:value.navigationCounts,error:false});
+            }catch(error){if(active&&!controller.signal.aborted&&!(error instanceof PrivateReadInvalidatedError))setNavigationSummary(previous=>({...previous,error:true}));}
+            finally{pending=false;if(queued&&active)void load();}
         };
+        const invalidated=()=>{const next=getPrivateReadSnapshot();if(next.clearEpoch!==clearEpoch){clearEpoch=next.clearEpoch;setNavigationSummary({identity:badgeIdentity,counts:null,error:false});}if(next.authError)setNavigationSummary(previous=>({...previous,error:true}));void load();};
+        const unsubscribe=subscribePrivateReadLifecycle(invalidated);
         const refresh=()=>{void load();};void load();
         const timer=window.setInterval(refresh,60_000);
-        window.addEventListener("focus",refresh);window.addEventListener("tickminder:data-changed",refresh);document.addEventListener("visibilitychange",refresh);
-        return()=>{active=false;controller.abort();window.clearInterval(timer);window.removeEventListener("focus",refresh);window.removeEventListener("tickminder:data-changed",refresh);document.removeEventListener("visibilitychange",refresh);};
-    },[activeView,badgeIdentity,account.id,account.groupId]);
+        window.addEventListener("focus",refresh);document.addEventListener("visibilitychange",refresh);
+        return()=>{active=false;unsubscribe();controller.abort();window.clearInterval(timer);window.removeEventListener("focus",refresh);document.removeEventListener("visibilitychange",refresh);};
+    },[homeSummaryActive,badgeIdentity,account.id,account.groupId,identityKey]);
 
     useEffect(() => {
         setActiveScopes(requiredScope ? [requiredScope] : []);

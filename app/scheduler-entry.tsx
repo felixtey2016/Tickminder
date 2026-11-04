@@ -10,6 +10,9 @@ import {groupFetch,setClientGroup} from "@/lib/group-client";
 import {alertActionFailure,readApiJson,showActionToast} from "@/lib/action-feedback";
 import {LoginForm,AuthLanguageSwitcher} from "./login-form";
 import type {SchedulerAuth} from "./scheduler";
+import {readClientAuth,acceptClientAuth} from '@/lib/client-auth-read';
+import {installPrivateReadEvents,getPrivateReadSnapshot} from '@/lib/private-read-lifecycle';
+import {PrivateReadInvalidatedError} from '@/lib/private-read-flight';
 
 // Authentication is deliberately outside the management bundle. An anonymous
 // visitor only downloads the login/recovery UI; the workspace starts after auth.
@@ -30,10 +33,13 @@ type GoogleWindow = Window & {google?:{accounts:{id:{
   renderButton:(element:HTMLElement,options:Record<string,unknown>)=>void;
 }}}};
 async function authRequest(body?:Record<string,unknown>,signal?:AbortSignal):Promise<SchedulerAuth>{
+  if(!body)return readClientAuth(signal);
   const response=await groupFetch("/api/auth",{cache:"no-store",signal,...(body?{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}:{})});
+  const responseEpoch=getPrivateReadSnapshot().authEpoch;
   const value=await readApiJson<SchedulerAuth & {error?:string}>(response);
   if(!response.ok)throw new Error(t(value?.error||"请求失败"));
   if(!value||typeof value!=="object"||!("account" in value)||!("clientId" in value))throw new Error(t("服务器未返回有效响应，请稍后重试"));
+  if(!acceptClientAuth(value,responseEpoch))return readClientAuth(signal);
   return value;
 }
 export function SchedulerEntry({initialQuizId}:{initialQuizId?:string}={}){
@@ -47,10 +53,13 @@ export function SchedulerEntry({initialQuizId}:{initialQuizId?:string}={}){
     setAuth(next);
   },[]);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
+  useEffect(installPrivateReadEvents,[]);
+  const authRef=useRef(auth);authRef.current=auth;
+  useEffect(()=>{const refresh=()=>{if(authRef.current?.account)return;void readClientAuth().then(next=>{if(alive.current)acceptAuth(next);}).catch(error=>{if(alive.current&&!(error instanceof PrivateReadInvalidatedError))setMessage(alertActionFailure(error));});};window.addEventListener('timelyo:auth-refresh',refresh);return()=>window.removeEventListener('timelyo:auth-refresh',refresh);},[acceptAuth]);
   useEffect(()=>{const next=readBrowserLanguagePreference();setLanguage(next);setLanguageState(next);setReady(true);},[]);
   useEffect(()=>{
     const controller=new AbortController();setMessage("");
-    void authRequest(undefined,controller.signal).then(next=>{if(!controller.signal.aborted)acceptAuth(next);}).catch(error=>{if(!controller.signal.aborted)setMessage(alertActionFailure(error));});
+    void authRequest(undefined,controller.signal).then(next=>{if(!controller.signal.aborted)acceptAuth(next);}).catch(error=>{if(!controller.signal.aborted&&!(error instanceof PrivateReadInvalidatedError))setMessage(alertActionFailure(error));});
     return()=>controller.abort();
   },[retry,acceptAuth]);
   useEffect(()=>{
@@ -67,7 +76,7 @@ export function SchedulerEntry({initialQuizId}:{initialQuizId?:string}={}){
   const signIn=useCallback(async(body:Record<string,unknown>)=>{
     if(inFlight.current)return;inFlight.current=true;setBusy(true);setMessage("");
     try{const result=await authRequest(body),next=result.account?result:await authRequest();if(alive.current){acceptAuth(next);showActionToast("success","登录成功");}}
-    catch(error){if(alive.current)setMessage(alertActionFailure(error));}
+    catch(error){if(alive.current&&!(error instanceof PrivateReadInvalidatedError))setMessage(alertActionFailure(error));}
     finally{inFlight.current=false;if(alive.current)setBusy(false);}
   },[acceptAuth]);
   useEffect(()=>{

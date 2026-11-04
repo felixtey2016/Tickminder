@@ -13,9 +13,60 @@ const evidence=process.env.RECOVERY_UI_EVIDENCE_DIR,client=path.resolve(process.
 if(evidence)fs.mkdirSync(evidence,{recursive:true});
 const cssDirectory=path.join(client,'_next/static/css');
 assert(fs.existsSync(cssDirectory),'Build the actual Worker/client before this test; raw source CSS is deliberately unsupported.');
-const order=['index','app-select-host','password-recovery','service-brand-icon','notifications','directory-tools','people-compact','learning-list-detail','learning-portal','homework-tasks-workspace','quiz-layout','person-identity-fields','course-query-ui','course-wave2','task-inbox','horizontal-menu','shell-wave1','account-settings','scheduler'];
-const names=fs.readdirSync(cssDirectory),styles=order.map(base=>{const name=names.find(name=>name.startsWith(base+'.')&&name.endsWith('.css'));assert(name,'Missing compiled '+base+' stylesheet');return name;});
+// Resolve the final build's actual dependency order, not chunk filename prefixes:
+// recovery/roster CSS can be merged into a differently named shared chunk.
+const serverAssets=path.join(path.dirname(client),'server');
+function readAssetManifest(file){
+ const source=fs.readFileSync(file,'utf8'),match=/^\s*export default\s+([\s\S]*?);?\s*$/.exec(source);
+ assert(match,'Unsupported generated asset manifest: '+file);return JSON.parse(match[1]);
+}
+const manifest=JSON.parse(fs.readFileSync(path.join(client,'.vite/manifest.json'),'utf8'));
+const assets=readAssetManifest(path.join(serverAssets,'vinext-client-assets.js'));
+const resources=readAssetManifest(path.join(serverAssets,'__vite_rsc_assets_manifest.js')).serverResources;
+const registered=new Set([...Object.values(manifest).flatMap(entry=>[...(entry.css||[]),...(entry.file?.endsWith('.css')?[entry.file]:[])]),...Object.values(resources).flatMap(entry=>entry.css||[])].map(file=>file.replace(/^\//,'')));
+const realClient=fs.realpathSync(client),realCss=fs.realpathSync(cssDirectory);
+assert(realCss.startsWith(realClient+path.sep),'Compiled CSS directory must remain inside the selected client build');
+function compiledPath(file){
+ const relative=file.replace(/^\//,'');assert(/^_next\/static\/css\/[A-Za-z0-9_.-]+\.css$/.test(relative)&&registered.has(relative),'Unregistered or unsafe compiled CSS path: '+file);
+ const resolved=fs.realpathSync(path.join(client,relative));assert(resolved.startsWith(realCss+path.sep)&&fs.statSync(resolved).isFile(),'Compiled CSS escapes the selected client build: '+file);return resolved;
+}
+const selected=new Set(),styles=[];
+function addCss(file){const resolved=compiledPath(file);if(selected.has(resolved))return;selected.add(resolved);styles.push(path.basename(resolved));}
+function moduleCss(key){
+ assert(manifest[key],'Missing compiled module: '+key);
+ if(assets.dynamicPreloads[key]){for(const file of assets.dynamicPreloads[key])if(file.endsWith('.css'))addCss(file);return;}
+ // Static shared modules need the same own-then-import order used by the
+ // generated dynamicPreloads closure, without traversing unrelated lazy pages.
+ const visited=new Set();function visit(current){if(visited.has(current))return;visited.add(current);const entry=manifest[current];assert(entry,'Missing compiled dependency: '+current);for(const file of entry.css||[])addCss(file);for(const dependency of entry.imports||[])visit(dependency);}visit(key);
+}
+assert(resources['app/layout.tsx']?.css?.length,'Missing compiled global layout CSS');
+for(const file of resources['app/layout.tsx'].css)addCss(file);
+for(const key of ['components/app-select-host.tsx','app/scheduler-entry.tsx','app/scheduler.tsx'])moduleCss(key);
+// Keep the previous collision modules: a user can visit these before settings,
+// so their styles remain loaded even though settings itself does not import them.
+for(const name of ['directory-tools','learning-list-detail','learning-portal','homework-tasks-workspace','person-identity-fields','course-query-ui']){
+ const keys=Object.keys(manifest).filter(key=>manifest[key].name===name);
+ assert(keys.length<=1,'Ambiguous compiled collision module: '+name);if(keys.length)moduleCss(keys[0]);
+}
+moduleCss('app/account-settings.tsx');
+const signatures={
+ index:['.auth-shell'],appSelect:['.app-select-overlay','.app-select-panel'],recovery:['.password-recovery-trigger-login','.password-recovery-dialog'],
+ serviceBrand:['.service-brand-icon','.service-brand-heading'],notifications:['.notification-page','.notification-inbox'],directory:['.directory-section-head','.directory-filters'],people:['.people-name-line','.people-row-details'],
+ learningList:['.learning-homework-workspace','.learning-browser'],learningPortal:['.resource-folder-list','.resource-folder-cards'],homework:['.homework-tasks-workspace','.homework-tasks-tabs'],
+ quiz:['.quiz-workspace','.quiz-editor'],person:['.account-person-fields','.account-provisioning-form'],courseQuery:['.course-query-stack','.course-query-pagination'],courseWave:['.course-wave2','.course-query-filterbar'],
+ tasks:['.task-inbox','.task-inbox-filters'],horizontalMenu:['.horizontal-menu'],shell:['.shell-wave1','.mobile-bottom-nav'],accountSettings:['.account-preference-panel','.preference-content'],scheduler:['.account-settings-compact','.management-navigation']
+};
+const compiled=new Map([...registered].map(file=>[file,fs.readFileSync(compiledPath(file),'utf8')]));
+for(const [role,selectors] of Object.entries(signatures)){
+ const loaded=styles.map(name=>fs.readFileSync(path.join(cssDirectory,name),'utf8')).join('\n');
+ if(selectors.every(selector=>loaded.includes(selector)))continue;
+ // A future merge may remove a shared module entry entirely. Accept only one
+ // manifest-registered compiled owner containing all required semantic rules.
+ const matches=[...compiled].filter(([,text])=>selectors.every(selector=>text.includes(selector))).map(([file])=>file);
+ assert.equal(matches.length,1,'Missing or ambiguous compiled '+role+' collision rules');addCss(matches[0]);
+}
 const css=styles.map(name=>fs.readFileSync(path.join(cssDirectory,name),'utf8')).join('\n');
+for(const [role,selectors] of Object.entries(signatures))assert(selectors.every(selector=>css.includes(selector)),'Missing compiled '+role+' coverage');
 assert(css.includes('.password-recovery-dialog'),'Recovery styles must come from the real compiled assets. Module CSS is included to check collision regressions.');
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE_URL||'file:///opt/codex/cua_node/lib/node_modules/playwright-core/index.mjs');
 const entry=`import React from'react';import{createRoot}from'react-dom/client';import{PasswordRecoveryButton,recoveryReturnPath}from'./app/password-recovery';import{readRecoveryState}from'./lib/password-recovery-ui-state';import{AccountSettings}from'./app/account-settings';import{MobileBottomNavigation}from'./components/mobile-bottom-navigation';import{ShellPreferences}from'./components/shell-preferences';import{House,BookOpen,WalletCards,UserRound}from'lucide-react';import{setLanguage}from'./lib/i18n';const q=new URLSearchParams(location.search),language=q.get('lang')==='en'?'en':'zh';setLanguage(language);window.__recoveryReturnPath=recoveryReturnPath;window.__readRecoveryState=readRecoveryState;document.documentElement.classList.toggle('dark',q.get('dark')==='1');createRoot(document.getElementById('root')).render(q.get('settings')==='1'?<div className="app-shell shell-wave1 four-entry-shell"><header className="topbar"><strong>Tickminder</strong><ShellPreferences language={language} onLanguageChange={()=>{}}/></header><main className="workspace"><AccountSettings/></main><MobileBottomNavigation primary items={[{value:'home',label:'Home',Icon:House},{value:'teaching',label:'Teaching',Icon:BookOpen},{value:'finance',label:'Finance',Icon:WalletCards},{value:'account',label:'Account',Icon:UserRound}]} active="account" onNavigate={()=>{}}/></div>:<main className="auth-shell auth-login-shell"><div className="auth-layout"><section className="auth-story"><strong>Tickminder</strong><h2>Learning & collaboration</h2></section><div className="auth-card"><h1>{language==='zh'?'登录':'Sign in'}</h1><label>{language==='zh'?'账号':'Account'}<input autoComplete="username"/></label><PasswordRecoveryButton language={language} initialIdentifier="must-not-prefill-login" previewOnly={q.get('preview')==='1'}/></div></div></main>);`;

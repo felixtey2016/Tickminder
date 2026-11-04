@@ -6,13 +6,15 @@ import http from 'node:http';
 import {build} from 'esbuild';
 const root=path.resolve(import.meta.dirname,'..'),temp=fs.mkdtempSync(path.join(os.tmpdir(),'tickminder-page-data-'));
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE_URL||'file:///C:/Users/felix/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
-const entry=`import React,{useState}from'react';import{createRoot}from'react-dom/client';import{useWorkspaceData}from'./lib/use-workspace-data';import{setClientGroup}from'./lib/group-client';
-window.calls=[];window.authRefreshes=0;window.addEventListener('timelyo:auth-refresh',()=>window.authRefreshes++);
+const entry=`import React,{useLayoutEffect,useState}from'react';import{createRoot}from'react-dom/client';import{useWorkspaceData}from'./lib/use-workspace-data';import{setClientGroup}from'./lib/group-client';import{setPrivateReadIdentity,completePrivateAuthCheck,invalidatePrivateReads,getPrivateReadSnapshot}from'./lib/private-read-lifecycle';import{workspaceIdentityKey}from'./lib/workspace-page-data';
+window.calls=[];window.authRefreshes=0;window.snapshot=getPrivateReadSnapshot;window.addEventListener('timelyo:auth-refresh',()=>window.authRefreshes++);window.addEventListener('tickminder:data-changed',()=>invalidatePrivateReads('fixture-data-changed'),true);
 window.fetch=(url,init)=>new Promise(resolve=>{window.calls.push({url:String(url),signal:init.signal,account:structuredClone(window.actor),resolve});});
 window.respond=(index,token,status=200,override={})=>{const call=window.calls[index];call.resolve(new Response(JSON.stringify({view:new URL(call.url,location.href).searchParams.get('view'),account:call.account,revision:1,data:{lessons:[{id:token}],students:[token],teachers:[]},...override}),{status,headers:{'content-type':'application/json'}}));};
-function App(){const[view,setView]=useState(null),[account,setAccount]=useState({id:'fictional-admin',groupId:'fictional-a',role:'admin',teacherName:null,studentName:null,adminPermissions:{enforced:false}}),[params,setParams]=useState({from:'2026-11-01',to:'2026-12-01'});
+function Twin({view,account,params}){window.twinResult=useWorkspaceData(view,account,params);return null;}
+function App(){const[view,setView]=useState(null),[account,setAccount]=useState({id:'fictional-admin',groupId:'fictional-a',role:'admin',teacherName:null,studentName:null,adminPermissions:{enforced:false}}),[params,setParams]=useState({from:'2026-11-01',to:'2026-12-01'}),[twin,setTwin]=useState(true);
+useLayoutEffect(()=>{setPrivateReadIdentity(workspaceIdentityKey(account),account.groupId);},[account]);window.setTwin=setTwin;window.completeAuth=()=>completePrivateAuthCheck(workspaceIdentityKey(account),account.groupId);
 window.actor=account;window.setView=setView;window.setAccount=setAccount;window.setParams=setParams;setClientGroup(account.groupId);
-const result=useWorkspaceData(view,account,params);window.result=result;window.reload=result.reload;return <><pre id='state'>{JSON.stringify(result)}</pre>{result.data&&<textarea id='draft' defaultValue='original'/>}</>;}
+const result=useWorkspaceData(view,account,params);window.result=result;window.reload=result.reload;return <><pre id='state'>{JSON.stringify(result)}</pre>{twin&&<Twin view={view} account={account} params={params}/>}{result.data&&<textarea id='draft' defaultValue='original'/>}</>;}
 createRoot(document.getElementById('root')).render(<App/>);`;
 await build({absWorkingDir:root,stdin:{contents:entry,resolveDir:root,sourcefile:'page-data-test.tsx',loader:'tsx'},bundle:true,platform:'browser',format:'esm',jsx:'automatic',outfile:path.join(temp,'ui.js'),alias:{'@':root},logLevel:'silent'});
 const server=http.createServer((req,res)=>{if(req.url==='/ui.js'){res.setHeader('content-type','application/javascript');res.end(fs.readFileSync(path.join(temp,'ui.js')));}else{res.setHeader('content-type','text/html');res.end('<!doctype html><div id="root"></div><script type="module" src="/ui.js"></script>');}});
@@ -25,6 +27,9 @@ try{
   await page.evaluate(()=>window.setView('calendar'));await page.waitForFunction(()=>window.calls.length===1);
   check(await page.evaluate(()=>window.result.loading&&window.result.data===null),'initial loading differs from empty data');
   await page.evaluate(()=>window.respond(0,'first'));await page.waitForFunction(()=>window.result.data?.lessons[0].id==='first');checks++;
+  await page.waitForFunction(()=>window.twinResult.data?.lessons[0].id==='first');
+  check(await page.evaluate(()=>window.calls.length===1&&window.result.data!==window.twinResult.data),'two real React consumers share one transport and receive independent data');
+  await page.evaluate(()=>window.setTwin(false));
   await page.evaluate(()=>window.setParams({from:'2026-12-01',to:'2027-01-01'}));await page.waitForFunction(()=>window.calls.length===2);
   check(await page.evaluate(()=>window.result.data===null&&window.result.loading),'new calendar range hides old data immediately');
   await page.evaluate(()=>window.setParams({from:'2027-01-01',to:'2027-02-01'}));await page.waitForFunction(()=>window.calls.length===3);
@@ -50,10 +55,10 @@ try{
   check(await page.locator('#draft').inputValue()==='unsaved fictional draft','background refresh and failure do not unmount an unsaved form');
   await page.evaluate(()=>window.reload());await page.waitForFunction(()=>window.result.loading);await page.evaluate(()=>window.respond(window.calls.length-1,'retry'));await page.waitForFunction(()=>window.result.data?.lessons[0].id==='retry');checks++;
   await page.evaluate(()=>window.reload());await page.waitForFunction(()=>window.result.loading);await page.evaluate(()=>window.respond(window.calls.length-1,'wrong-account',200,{account:{...window.actor,id:'another-account'}}));await page.waitForFunction(()=>window.authRefreshes===1);
-  check(await page.evaluate(()=>window.result.data===null&&Boolean(window.result.error)),'mismatched account is discarded and requires live auth');
-  await page.evaluate(()=>window.reload());await page.waitForFunction(()=>window.result.loading);await page.evaluate(()=>window.respond(window.calls.length-1,'denied',403,{error:'Denied'}));await page.waitForFunction(()=>window.authRefreshes===2);
-  check(await page.evaluate(()=>window.result.data===null&&Boolean(window.result.error)),'403 clears private data and refreshes auth');
-  await page.evaluate(()=>window.reload());await page.waitForFunction(()=>window.result.loading);const closing=await page.evaluate(()=>window.calls.length-1);await page.evaluate(()=>window.setView(null));await page.waitForFunction(()=>!window.result.loading);await page.evaluate(index=>window.respond(index,'closed'),closing);await page.waitForTimeout(20);
+  check(await page.evaluate(()=>window.result.data===null&&window.snapshot().blocked),'mismatched account is discarded and waits for live auth');
+  const beforeDenied=await page.evaluate(()=>window.calls.length);await page.evaluate(()=>window.completeAuth());await page.waitForFunction(previous=>window.calls.length>previous,beforeDenied);await page.evaluate(()=>window.respond(window.calls.length-1,'denied',403,{error:'Denied'}));await page.waitForFunction(()=>window.authRefreshes===2);
+  check(await page.evaluate(()=>window.result.data===null&&window.snapshot().blocked),'403 clears private data and refreshes auth');
+  const beforeClose=await page.evaluate(()=>window.calls.length);await page.evaluate(()=>window.completeAuth());await page.waitForFunction(previous=>window.calls.length>previous,beforeClose);const closing=await page.evaluate(()=>window.calls.length-1);await page.evaluate(()=>window.setView(null));await page.waitForFunction(()=>!window.result.loading);await page.evaluate(index=>window.respond(index,'closed'),closing);await page.waitForTimeout(20);
   check(await page.evaluate(()=>window.result.data===null&&!window.result.loading),'closed page cannot be refilled by a late request');
   check(await page.evaluate(()=>window.calls.every(call=>call.url.startsWith('/api/workspace-data?'))),'hook never requests legacy core or full learning');
   check(errors.length===0,'no React/browser errors');console.log(JSON.stringify({passed:true,checks,realReact:true,remoteRequests:0}));

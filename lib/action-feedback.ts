@@ -1,6 +1,7 @@
 "use client";
 
 import { t } from "@/lib/i18n";
+import {PrivateReadInvalidatedError} from './private-read-flight';
 import {observeInvalidApiResponse} from "./diagnostics-client";
 
 export type ActionToast = { kind: "success" | "error"; message: string; id: number };
@@ -42,5 +43,5 @@ export async function readApiJson<T>(response: Response): Promise<T> {
     throw new Error(reason);
   }
   try { return await response.json() as T; }
-  catch (error) { observeInvalidApiResponse(response,error); throw new Error(t("服务器未返回有效响应，请稍后重试")); }
+  catch (error) { if(error instanceof PrivateReadInvalidatedError||(error instanceof Error&&error.name==='AbortError'))throw error;observeInvalidApiResponse(response,error); throw new Error(t("服务器未返回有效响应，请稍后重试")); }
 }

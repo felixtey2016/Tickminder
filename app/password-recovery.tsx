@@ -1,4 +1,5 @@
 "use client";
+import {beginPrivateMutation} from '@/lib/private-read-lifecycle';
 
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { Check, Mail, ShieldCheck, X } from "lucide-react";
@@ -250,6 +251,8 @@ function RecoveryForm({ language, initialIdentifier, restored, context = "login"
     activeRequest.current?.abort(); activeRequest.current = controller;
     let timedOut = false;
     const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); }, 30_000);
+    const finishPrivateMutation=action==='reset'?beginPrivateMutation({auth:true,deferAuth:true}):undefined;
+    let resetRejected=false;
     try {
       const body = action === "request" ? { action, identifier: normalized, language } : action === "verify" ? { action, challenge, code } : { action, resetToken, newPassword: password };
       const response = await fetch("/api/password-recovery", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), cache: "no-store", signal: controller.signal });
@@ -257,6 +260,7 @@ function RecoveryForm({ language, initialIdentifier, restored, context = "login"
       if (current !== generation.current) return;
       if (!response.ok) {
         if (action === "reset" && response.status >= 500) { unknownReset(); return; }
+        if(action==='reset')resetRejected=true;
         if (response.status === 429 && typeof data.retryAfter === "number") setRetryAt(Date.now() + Math.min(600, Math.max(1, data.retryAfter)) * 1000);
         if (data.code === "NOT_CONFIGURED") setAvailability("unavailable");
         setError(errorText(data, response.status)); return;
@@ -275,7 +279,7 @@ function RecoveryForm({ language, initialIdentifier, restored, context = "login"
         if (action === "reset") unknownReset();
         else setError(action === "verify" ? text.verifyUnknown : text.requestUnknown);
       }
-    } finally { window.clearTimeout(timeout); if (current === generation.current) { inFlight.current = false; setBusy(false); onBusyChange(false); setPendingAction(null); } }
+    } finally { finishPrivateMutation?.({resumeAuth:resetRejected});window.clearTimeout(timeout); if (current === generation.current) { inFlight.current = false; setBusy(false); onBusyChange(false); setPendingAction(null); } }
   }
   function changeIdentifier() {
     if (inFlight.current) return;

@@ -5,7 +5,10 @@ import {PasswordRecoveryButton} from './password-recovery';
 import {WhatsAppBinding} from "./whatsapp-binding";
 import {groupFetch} from "@/lib/group-client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {readClientAuth} from '@/lib/client-auth-read';
+import {getPrivateReadSnapshot} from '@/lib/private-read-lifecycle';
+import {PrivateReadInvalidatedError} from '@/lib/private-read-flight';
 import {normalizeUsername, validUsername} from "@/lib/password";
 import "@/lib/account-username-i18n";
 import { actionFailureMessage, alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
@@ -33,12 +36,25 @@ export function AccountSettings() {
     }catch(error){alertActionFailure(error);}finally{passwordInFlight.current=false;setBusy(false);}
   }
   const [auth, setAuth] = useState<Auth | null>(null), [busy, setBusy] = useState(false), [googleOpen, setGoogleOpen] = useState(false), [loadError,setLoadError]=useState("");
-  async function refresh() {
-    setLoadError("");
-    try { const response = await groupFetch("/api/auth", { cache: "no-store" }); const data = await readApiJson<Auth>(response); if (!response.ok || !data.account) throw new Error(t(response.ok||response.status===401?"登录已过期，请重新登录":"页面加载失败")); setAuth(data); }
-    catch(error){setLoadError(actionFailureMessage(error));throw error;}
-  }
-  useEffect(() => { void refresh().catch(alertActionFailure); }, []);
+  const mounted=useRef(false),authRead=useRef<{epoch:number;controller:AbortController;promise:Promise<void>}|null>(null);
+  const refresh=useCallback(()=>{
+    const existing=authRead.current;
+    if(existing&&existing.epoch===getPrivateReadSnapshot().authEpoch)return existing.promise;
+    existing?.controller.abort();setLoadError('');
+    const identityBefore=getPrivateReadSnapshot().identity;
+    const controller=new AbortController(),pending=readClientAuth(controller.signal),epoch=getPrivateReadSnapshot().authEpoch;
+    const promise=pending.then(data=>{
+      if(!mounted.current||controller.signal.aborted||getPrivateReadSnapshot().authEpoch!==epoch)return;
+      if(!data.account){setAuth(null);if(identityBefore&&identityBefore!=='anonymous')window.dispatchEvent(new Event('timelyo:auth-refresh'));throw new Error(t('登录已过期，请重新登录'));}
+      setAuth(data as Auth);
+      if(identityBefore&&identityBefore!=='anonymous'&&identityBefore!==getPrivateReadSnapshot().identity)window.dispatchEvent(new Event('timelyo:auth-refresh'));
+    }).catch(error=>{
+      if(controller.signal.aborted||!mounted.current||error instanceof PrivateReadInvalidatedError)return;
+      setLoadError(actionFailureMessage(error));throw error;
+    }).finally(()=>{if(authRead.current?.controller===controller)authRead.current=null;});
+    authRead.current={epoch,controller,promise};return promise;
+  },[]);
+  useEffect(()=>{mounted.current=true;const changed=()=>{void refresh().catch(alertActionFailure);};changed();window.addEventListener('timelyo:auth-refresh',changed);return()=>{mounted.current=false;authRead.current?.controller.abort();authRead.current=null;window.removeEventListener('timelyo:auth-refresh',changed);};},[refresh]);
   const [usernameEditing,setUsernameEditing]=useState(false),[usernameDraft,setUsernameDraft]=useState("");
   const [usernameSaving,setUsernameSaving]=useState(false),[usernameError,setUsernameError]=useState("");
   const [usernameStatus,setUsernameStatus]=useState<""|"saved"|"refreshFailed">("");
