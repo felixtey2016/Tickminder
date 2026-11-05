@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import ts from 'typescript';
+const js=ts.transpileModule(fs.readFileSync(new URL('../lib/course-setup-flow.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const {coursePayTargets,studentRateModes,existingCoursePair}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+let checks=0;const check=fn=>{fn();checks++;};
+const pair={key:'Student|Mathematics',student:'Student',subject:'Mathematics',subjectId:'math',syllabusId:'spm',grade:'Form 4',teacherName:'Teacher',active:true};
+const room={id:'correct',title:'Correct class',subject:'Mathematics',subjectId:'math',syllabusId:'spm',grade:'Form 4',teacherName:'Teacher',archived:0,members:['Student','Peer']};
+for(const delta of [{teacherName:'Other'},{subjectId:'science'},{syllabusId:'igcse'},{grade:'Form 5'},{members:['Other']},{archived:1}])check(()=>assert.deepEqual(coursePayTargets(pair,[{...room,...delta}]),[]));
+check(()=>assert.deepEqual(coursePayTargets(pair,[room]),[room]));check(()=>assert.equal(coursePayTargets(pair,[room,{...room,id:'second'}]).length,2));check(()=>assert.deepEqual(coursePayTargets({...pair,active:false},[room]),[]));
+check(()=>assert.equal(coursePayTargets(pair,[{...room,subjectId:null,subject:' mathematics '}]).length,1));check(()=>assert.deepEqual(coursePayTargets(pair,[{...room,subjectId:null,subject:'Science'}]),[]));
+check(()=>assert.deepEqual(studentRateModes([]),['hour','month']));check(()=>assert.deepEqual(studentRateModes([{mode:'month'}]),['hour','month']));check(()=>assert.deepEqual(studentRateModes([{mode:'lesson'}]),['hour','lesson','month']));
+check(()=>assert.equal(existingCoursePair([pair],'Student','Renamed subject','math'),pair));check(()=>assert.equal(existingCoursePair([pair],'Student','mathematics'),pair));check(()=>assert.equal(existingCoursePair([pair],'Other','Mathematics','math'),undefined));
+console.log(JSON.stringify({ok:true,checks,scope:'Pure authorized-target narrowing, duplicate pairing and legacy student-rate choice rules',productionRequests:0}));

@@ -1,4 +1,5 @@
 import {validInvoiceIssuerIdentity,validInvoiceBillTo} from './invoice-identity-backup.mjs';
+import {checkRestoredMonthlyExtras} from './monthly-extra-backup.mjs';
 export const INVOICE_FINANCE_TABLES=['invoice_finance_accounts','invoice_finance_operations','invoice_payments','invoice_receipt_sequences','invoice_receipts','invoice_finance_events','invoice_attendance_corrections'];
 export const INVOICE_FINANCE_REPLAY_TRIGGERS=['invoice_finance_account_insert','invoice_finance_event_guard','invoice_finance_event_apply','invoice_correction_open'];
 
@@ -19,7 +20,7 @@ export function checkRestoredInvoiceFinance(db){
  const receiptBalances=new Map();
  const operations=new Map(db.prepare('SELECT * FROM invoice_finance_operations').all().map(o=>{
   const result=json(o.result_json);
-  if(!text(o.actor_id,200)||!o.actor_id||!text(o.action,100)||!o.action||!/^[a-f0-9]{64}$/.test(o.request_hash)||!text(o.execution_id,100)||!o.execution_id||!timestamp(o.created_at)||!result||result.ok!==true||typeof result.invoiceId!=='string'||!integer(result.revision,1))fail();
+  if(!text(o.actor_id,200)||!o.actor_id||!text(o.action,100)||!o.action||!/^[a-f0-9]{64}$/.test(o.request_hash)||!text(o.execution_id,100)||!o.execution_id||!timestamp(o.created_at)||!result||result.ok!==true||typeof result.invoiceId!=='string'||!(o.action==='confirmMonthlyExtra'?integer(result.invoiceRevision):integer(result.revision,1)))fail();
   return[identity(o.group_id,o.operation_id),o];
  }));
  for(const payment of payments){
@@ -64,6 +65,13 @@ export function checkRestoredInvoiceFinance(db){
  for(const event of events)if(!accountMap.has(identity(event.group_id,event.invoice_id)))fail();
  for(const [key,operation]of operations){
   const related=events.filter(e=>identity(e.group_id,e.operation_id)===key).sort((a,b)=>a.expected_revision-b.expected_revision),result=json(operation.result_json);
+  if(operation.action==='confirmMonthlyExtra'){
+   const decision=db.prepare('SELECT * FROM invoice_monthly_extra_decisions WHERE group_id=? AND operation_id=?').get(operation.group_id,operation.operation_id);
+   const account=accountMap.get(identity(operation.group_id,result.invoiceId));
+   if(!decision||!account||result.invoiceRevision>account.revision||result.decisionId!==decision.id||result.eventId!==decision.event_id||result.approvedAmountCents!==decision.amount_cents||result.confirmedExcessCount!==decision.confirmed_excess_count)fail();
+   if(decision.amount_cents===0?(related.length!==0||result.eventId!==null):(related.length!==1||related[0].kind!=='charge'||related[0].id!==result.eventId||result.invoiceRevision!==related[0].expected_revision+1))fail();
+   continue;
+  }
   if(!related.length||result.revision!==related.at(-1).expected_revision+1||result.eventId!==related[0].id||related.some(e=>e.invoice_id!==result.invoiceId))fail();
   const allowed={recordPayment:['payment'],reversePayment:['reverse'],refund:['refund','credit'],adjust:['charge','credit'],void:['void'],correctAttendance:['attendance_correction','charge','credit']}[operation.action];
   if(!allowed||related.some(e=>!allowed.includes(e.kind)))fail();
@@ -108,5 +116,6 @@ export function checkRestoredInvoiceFinance(db){
   }
  }
  for(const event of events.filter(e=>e.kind==='attendance_correction'))if(corrections.filter(c=>c.group_id===event.group_id&&c.event_id===event.id).length!==1)fail();
+ checkRestoredMonthlyExtras(db);
  if(db.prepare('PRAGMA foreign_key_check').all().length)fail();
 }

@@ -1,0 +1,29 @@
+.finance-area-navigation{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:6px;background:var(--ui-surface);border:1px solid var(--ui-border);border-radius:10px;min-width:0;}
+.app-shell .finance-area-navigation>button{min-height:48px;min-width:0;padding:10px 8px;white-space:normal;background:transparent;color:var(--ui-muted);border-radius:6px;line-height:1.4;}
+.app-shell .finance-area-navigation>button[aria-current=page]{background:var(--ui-accent-soft);color:var(--ui-accent);font-weight:700;}
+.finance-secondary-navigation{display:flex;gap:8px;min-width:0;flex-wrap:nowrap;overflow-x:auto;border-bottom:1px solid var(--ui-border);padding:0 0 4px;}
+.app-shell .finance-secondary-navigation>button{flex:0 0 auto;min-height:44px;background:transparent;color:var(--ui-muted);border-radius:0;border-bottom:2px solid transparent;white-space:nowrap;}
+.app-shell .finance-secondary-navigation>button[aria-current=page]{color:var(--ui-accent);border-bottom-color:var(--ui-accent);}
+.finance-access-notice{margin:0;color:var(--ui-muted);font-size:14px;line-height:1.6;}
+/* Native finance dialogs retain their own top-layer surface and sticky footer. */
+:root dialog.finance2-dialog{background:var(--ui-surface);color:var(--ui-text);border-color:var(--ui-border);color-scheme:light;}
+:root.dark dialog.finance2-dialog{color-scheme:dark;}
+:root dialog.finance2-dialog .persistent-dialog-heading{background:var(--ui-surface);color:var(--ui-text);border-color:var(--ui-border);}
+:root dialog.finance2-dialog .finance2-notice{background:var(--ui-surface-muted);color:var(--ui-text);border-color:var(--ui-border);}
+:root dialog.finance2-dialog.form-action-dialog .finance2-dialog-body>form>.finance2-actions:last-child,
+:root dialog.finance2-dialog.form-action-dialog .finance2-dialog-body>.finance2-actions:last-child{background:var(--ui-surface);color:var(--ui-text);border-color:var(--ui-border);}
+.student-advance-form{display:grid;gap:16px;min-width:0;}
+.student-advance-form fieldset{display:grid;gap:16px;border:0;padding:0;margin:0;min-width:0;}
+.student-advance-form label{display:grid;gap:8px;min-width:0;}
+.student-advance-form :is(input,select,textarea){min-width:0;width:100%;min-height:44px;padding:10px 12px;background:var(--ui-surface);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:6px;font:inherit;font-size:16px;}
+.student-advance-form textarea{min-height:76px;resize:vertical;}
+.student-advance-student{margin:0;font-size:18px;overflow-wrap:anywhere;}
+.student-advance-hint{margin:0;color:var(--ui-muted);font-size:14px;line-height:1.6;}
+.student-advance-result{display:grid;gap:12px;min-width:0;}
+.student-advance-result>strong{font-size:24px;font-variant-numeric:tabular-nums;}
+.student-planned-summary{display:grid;gap:10px;padding:14px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-accent-soft);}
+.student-planned-summary p{margin:0;line-height:1.5;}.student-planned-summary>strong{font-size:24px;font-variant-numeric:tabular-nums;}
+.student-advance-secondary>summary{cursor:pointer;min-height:44px;display:flex;align-items:center;color:var(--ui-muted);font-size:14px;}
+.monthly-extra-review{display:grid;gap:16px;}.monthly-extra-decision{border-top:1px solid var(--ui-border);padding-top:16px;}.monthly-extra-decision h4{margin:0;font-size:16px;}.monthly-extra-decision p{line-height:1.6;}
+.monthly-extra-form,.monthly-extra-form fieldset{display:grid;gap:14px;margin:0;padding:0;border:0;min-width:0;}.monthly-extra-form label{display:grid;gap:8px;}.monthly-extra-form :is(input,select){width:100%;min-width:0;min-height:44px;background:var(--ui-surface);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:6px;padding:10px 12px;font:inherit;font-size:16px;}
+@media(max-width:480px){.finance-area-navigation{gap:4px;padding:4px;}.app-shell .finance-area-navigation>button{font-size:14px;padding:10px 4px;}.student-advance-form .finance2-actions>button{flex:1 1 auto;}}

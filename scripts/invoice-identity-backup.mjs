@@ -13,14 +13,21 @@ export function validInvoiceBillTo(value){
 }
 export function validInvoicePrintMetadata(doc){
  if(doc.extension?.printVersion!==undefined&&doc.extension.printVersion!==2)return false;
+ for(const source of doc.sourceLines||[]){
+  if(source.monthlyExtra!==undefined&&typeof source.monthlyExtra!=='boolean')return false;
+  if(source.monthlyExtra&&(source.mode!=='month'||source.lessonId!==null||source.unitAmountCents!==null))return false;
+ }
  for(const row of doc.lines||[]){
   if(row.rateOverride!==undefined&&typeof row.rateOverride!=='boolean')return false;
+  if(row.monthlyExtra!==undefined&&typeof row.monthlyExtra!=='boolean')return false;
+  if(row.monthlyExtra&&(row.mode!=='month'||row.unitAmountCents!==null||row.quantity===undefined))return false;
   if(row.quantity===undefined)continue;
   if(typeof row.quantity!=='number'||!Number.isFinite(row.quantity)||row.quantity<0||row.quantity>Number.MAX_SAFE_INTEGER)return false;
   let quantity=0,amount=0,found=false;
   for(const source of doc.sourceLines||[]){
    if(source.status==='pending'||source.lessonStatus==='cancelled'||source.sessionStatus==='cancelled'||source.attendanceStatus==='cancelled')continue;
-   if(JSON.stringify([source.subjectKey,source.mode,source.unitAmountCents,source.rateVersionId])!==row.id)continue;
+   if(JSON.stringify([source.subjectKey,source.mode,source.unitAmountCents,source.rateVersionId,...(source.monthlyExtra?['monthly-extra']:[])])!==row.id)continue;
+   if(Boolean(source.monthlyExtra)!==Boolean(row.monthlyExtra))return false;
    found=true;const value=source.mode==='month'?(source.lessonId?0:source.quantity):source.mode==='hour'?source.billableSeconds/3600:source.mode==='lesson'?source.quantity:0;
    if(typeof value!=='number'||!Number.isFinite(value)||value<0)return false;
    quantity+=value;amount+=source.amountCents??0;
