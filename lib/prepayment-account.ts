@@ -66,6 +66,8 @@ export async function prepaymentAccountState(actor:Account,studentIdValue:string
  if((await source(actor,studentId,key)).basis!==before.basis||(await amountRequestSource(actor,studentId,key)).basis!==amountSource.basis)throw new PrepaymentError('账户费用或余额已改变，请刷新重试',409);
  const heldHourlyCents=Math.min(balance.balanceCents,integer(confirmedHourlyUnbilledCents+hourlyInvoiceDueCents));
  const summary:PrepaymentAccountSummary={studentId,revision:balance.revision,cashBalanceCents:balance.balanceCents,heldHourlyCents,availableBalanceCents:reviewRequired?null:balance.balanceCents-heldHourlyCents,confirmedHourlyUnbilledCents,hourlyInvoiceDueCents,pendingCount,reviewRequired,...modes,advanceEligible:modes.advanceEligible||confirmedHourlyUnbilledCents>0||hourlyInvoiceDueCents>0,asOf:now};
+ summary.invoiceDueCents=integer(invoices.reduce((sum,row)=>sum+row.remainingCents,0));
+ summary.nextBoundary=future[0]?.nextBoundary||null;
  return{summary,invoices,basis:before.basis,basisArgs:before.args,nextBoundary:future[0]?.nextBoundary||null};
 }
 export async function prepaymentAccount(actor:Account,studentId:string):Promise<PrepaymentAccountSummary>{return(await prepaymentAccountState(actor,studentId)).summary;}

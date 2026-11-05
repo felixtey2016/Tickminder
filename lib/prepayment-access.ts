@@ -1,7 +1,7 @@
 import type {Account} from './auth';
 import {learningDb} from './learning-server';
 import {configuredAdminGrantPredicate} from './admin-permissions-server';
-import {accountSessionPredicate} from './account-session';
+import {accountSessionPredicate,transferAccountSession} from './account-session';
 import {OWNER_EMAIL} from './owner';
 import {PrepaymentError,type PrepaymentBalance} from './prepayments';
 import type {InvoiceStudent} from './invoice';
@@ -9,9 +9,14 @@ import {billingDate} from './billing';
 import {defaultInvoiceSettings,parseInvoiceSettings,type InvoiceInstitutionSnapshot} from './invoice-settings';
 export type PrepaymentGuard={sql:string;args:unknown[]};
 export const str=(v:unknown)=>typeof v==='string'?v.trim():'';
+const feeForecastReaders=new WeakSet<object>();
+/** Narrow, temporary capability for the existing schedule estimator. It does
+ * not grant wallet reads or any mutation; those still require prepayments.view. */
+export async function withFeeForecastReader<T>(actor:Account,read:(scoped:Account)=>Promise<T>):Promise<T>{const scoped=transferAccountSession(actor,{...actor});feeForecastReaders.add(scoped);try{return await read(scoped);}finally{feeForecastReaders.delete(scoped);}}
 export function prepaymentAuthority(actor:Account,key='prepayments.view'):PrepaymentGuard{
  if(actor.role!=='admin'||!actor.groupId||!/^[a-z0-9-]{1,64}$/.test(actor.groupId))throw new PrepaymentError('没有权限查看或修改预收记录',403);
- const grants=[...new Set(['prepayments.view',key,...(key==='prepayments.apply'?['invoices.view']:[])])].map(k=>configuredAdminGrantPredicate(actor,k)),session=accountSessionPredicate(actor);
+ const required=key==='fees.view'&&feeForecastReaders.has(actor)?['fees.view']:['prepayments.view',key,...(key==='prepayments.apply'?['invoices.view']:[])];
+ const grants=[...new Set(required)].map(k=>configuredAdminGrantPredicate(actor,k)),session=accountSessionPredicate(actor);
  return{sql:`EXISTS(SELECT 1 FROM accounts a JOIN tuition_groups g ON g.id=? AND g.active=1 WHERE a.id=? AND a.role='admin' AND a.disabled_at IS NULL AND (a.group_id=g.id OR lower(trim(a.email))=? AND substr(a.id,1,6)<>'local:') AND NOT EXISTS(SELECT 1 FROM local_credentials c WHERE c.account_id=a.id AND c.must_change_password=1)) AND (${grants.map(g=>g.sql).join(') AND (')}) AND (${session.sql})`,args:[actor.groupId,actor.id,OWNER_EMAIL,...grants.flatMap(g=>g.args),...session.args]};
 }
 export async function requirePrepaymentPermission(actor:Account,key='prepayments.view'){const a=prepaymentAuthority(actor,key);if(!await learningDb().prepare(`SELECT 1 WHERE ${a.sql}`).bind(...a.args).first())throw new PrepaymentError('没有权限查看或修改预收记录',403);return actor.groupId!;}

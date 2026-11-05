@@ -2,7 +2,7 @@ export type FinanceView='overview'|'tuition'|'invoices'|'payroll'|'expenses'|'pr
 export type FinanceArea='students'|'teachers'|'organisation';
 export const financeAreas:readonly FinanceArea[]=['students','teachers','organisation'];
 export const financeAreaViews:Record<FinanceArea,readonly FinanceView[]>={
- students:['accounts','tuition','invoices','prepayments','settings'],
+ students:['tuition','invoices','prepayments','settings'],
  teachers:['payroll'],
  organisation:['overview','expenses'],
 };

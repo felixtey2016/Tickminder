@@ -11,10 +11,11 @@ import {PrepaymentLoadState,usePrepaymentResource} from './prepayments-ui-shared
 import {FinanceHelp,financeLabel as L} from './finance-layout-tools';
 import './student-statements.css';
 
-function StatementStudentPicker({value,onChange,monthControl,refreshVersion,onAdvance}:{value:PrepaymentStudent|null;onChange:(student:PrepaymentStudent)=>void;monthControl:ReactNode;refreshVersion:number;onAdvance?:(student:PrepaymentStudent)=>void}){
+type StatementStudent=Pick<PrepaymentStudent,'studentId'|'student'>;
+function StatementStudentPicker({value,onChange,monthControl,refreshVersion,onAdvance}:{value:StatementStudent|null;onChange:(student:StatementStudent)=>void;monthControl:ReactNode;refreshVersion:number;onAdvance?:(student:StatementStudent)=>void}){
  const [query,setQuery]=useState(''),[search,setSearch]=useState(''),[page,setPage]=useState(1),[version,setVersion]=useState(0);
  useEffect(()=>{const timer=setTimeout(()=>{setSearch(query.trim());setPage(1);},250);return()=>clearTimeout(timer);},[query]);
- const {data,loading,failed}=usePrepaymentResource<PrepaymentList<PrepaymentStudent>>({view:'students',q:search,page:String(page)},version+refreshVersion);
+ const {data,loading,failed}=usePrepaymentResource<PrepaymentList<StatementStudent>>({view:'students',q:search,page:String(page)},version+refreshVersion);
  return <div className="statement-student-picker">
   <div className="statement-filters">{monthControl}<label>{L('搜索学生姓名','Search student name')}<input type="search" value={query} onChange={event=>setQuery(event.target.value)}/></label></div>
   <PrepaymentLoadState loading={loading} failed={failed} onRetry={()=>setVersion(n=>n+1)}>{data&&<>
@@ -26,15 +27,15 @@ function StatementStudentPicker({value,onChange,monthControl,refreshVersion,onAd
  </div>;
 }
 
-type Props={scopeKey:string;canCreateInvoice?:boolean;canRecordInvoice?:boolean;prepaymentPermissions:StudentAdvancePermissions;onInvoice:(studentId:string,month:string,studentName:string,action?:'create'|'list',billingScope?:'monthly'|'hourly')=>void;onTuition:()=>void};
-export default function StudentStatementsWorkspace({scopeKey,canCreateInvoice=false,canRecordInvoice=false,prepaymentPermissions,onInvoice,onTuition}:Props){
- const [student,setStudent]=useState<PrepaymentStudent|null>(null),[choosing,setChoosing]=useState(true),[month,setMonth]=useState(financeMonth),[version,setVersion]=useState(0);
- const [advance,setAdvance]=useState<{student:PrepaymentStudent;kind?:'request'|'received'}|null>(null),[recordStudent,setRecordStudent]=useState<PrepaymentStudent|null>(null);
+type Props={scopeKey:string;initialStudent?:StatementStudent;initialMonth?:string;embedded?:boolean;canCreateInvoice?:boolean;canRecordInvoice?:boolean;prepaymentPermissions:StudentAdvancePermissions;onInvoice:(studentId:string,month:string,studentName:string,action?:'create'|'list',billingScope?:'monthly'|'hourly')=>void;onTuition:()=>void};
+export default function StudentStatementsWorkspace({scopeKey,initialStudent,initialMonth,embedded=false,canCreateInvoice=false,canRecordInvoice=false,prepaymentPermissions,onInvoice,onTuition}:Props){
+ const [student,setStudent]=useState<StatementStudent|null>(initialStudent||null),[choosing,setChoosing]=useState(!initialStudent),[month,setMonth]=useState(initialMonth||financeMonth),[version,setVersion]=useState(0);
+ const [advance,setAdvance]=useState<{student:StatementStudent;kind?:'request'|'received'}|null>(null),[recordStudent,setRecordStudent]=useState<StatementStudent|null>(null);
  const [result,setResult]=useState<{key:string;statement:StudentStatement}|null>(null),[loading,setLoading]=useState(false),[failed,setFailed]=useState(false),[checked,setChecked]=useState(0);
  const studentId=student?.studentId||'',key=JSON.stringify([scopeKey,studentId,month,version]);
  const account=usePrepaymentResource<PrepaymentAccountSummary>(studentId?{view:'account',studentId}:null,version);
  const canAdvance=prepaymentPermissions.view&&(prepaymentPermissions.manage||prepaymentPermissions.record);
- const invoiceFor=(item:PrepaymentStudent,action:'create'|'list'='list')=>onInvoice(item.studentId,month,item.student,action,action==='create'?(account.data?.hasMonthly?'monthly':'hourly'):undefined);
+ const invoiceFor=(item:StatementStudent,action:'create'|'list'='list')=>onInvoice(item.studentId,month,item.student,action,action==='create'?(account.data?.hasMonthly?'monthly':'hourly'):undefined);
  useEffect(()=>{
   setResult(null);setFailed(false);setChecked(0);
   if(!studentId){setLoading(false);return;}
@@ -59,11 +60,11 @@ export default function StudentStatementsWorkspace({scopeKey,canCreateInvoice=fa
  const signed=(value:number)=>value<0?L('欠款 ','Owing ')+financeMoney(-value):value>0?L('结余 ','Credit ')+financeMoney(value):financeMoney(0);
  const monthControl=<label className="statement-month">{L('结算月份','Statement month')}<MonthInput type="month" value={month} min="2000-01" max={financeMonth()} onChange={event=>{if(/^20\d\d-(0[1-9]|1[0-2])$/.test(event.target.value)&&event.target.value<=financeMonth())setMonth(event.target.value);}}/></label>;
  return <div className="finance2-workspace student-statements-workspace" data-testid="student-statements-workspace">
-  <section className="panel statement-selection">
+  {!embedded&&<section className="panel statement-selection">
    <div className="finance2-section-head"><h2>{L('学生学费','Student tuition')}</h2><Button type="button" variant="outline" disabled={loading} onClick={()=>setVersion(n=>n+1)}>{L('刷新','Refresh')}</Button></div>
    {student&&<div className="statement-student"><strong>{student.student}</strong><Button type="button" variant="outline" aria-expanded={choosing} onClick={()=>setChoosing(value=>!value)}>{L('选择学生','Choose student')}</Button></div>}
    {(choosing||!student)?<StatementStudentPicker value={student} onChange={value=>{setStudent(value);setChoosing(false);}} monthControl={monthControl} refreshVersion={version} onAdvance={canAdvance?value=>setAdvance({student:value}):undefined}/>:<>{monthControl}<div className="finance2-actions statement-primary-actions">{canCreateInvoice&&<Button type="button" variant="outline" onClick={()=>invoiceFor(student,'create')}>{L('开单','Create invoice')}</Button>}{(canRecordInvoice||prepaymentPermissions.record&&account.data?.advanceEligible)&&<Button type="button" variant="outline" onClick={()=>setRecordStudent(student)}>{L('登记收款','Record payment')}</Button>}{canAdvance&&<Button type="button" onClick={()=>setAdvance({student})}>{L('提前收款','Advance payment')}</Button>}</div></>}
-  </section>
+  </section>}
   {studentId&&<section className="panel statement-current-account" aria-label={L('当前学生账户','Current student account')}><PrepaymentLoadState loading={account.loading} failed={account.failed} onRetry={()=>setVersion(value=>value+1)}>{account.data&&<><dl className="statement-account-kpis"><div><dt>{L('可用余额','Available balance')}</dt><dd>{account.data.availableBalanceCents===null?L('待核对','Needs review'):financeMoney(account.data.availableBalanceCents)}</dd></div><div><dt>{L('账单待缴','Invoices due')}</dt><dd>{data?financeMoney(data.invoiceDueCents):'—'}</dd></div><div><dt>{L('待核对','Needs review')}</dt><dd>{Math.max(account.data.pendingCount,(data?.pendingCount||0)+(data?.changedInvoiceCount||0))}{L(' 项',' records')}</dd></div></dl><p className="finance2-muted">{L('已确认小时学费占用','Confirmed hourly tuition held')} · {financeMoney(account.data.heldHourlyCents)}</p>{account.data.reviewRequired&&<p className="finance2-notice" role="status">{L('有未核对费用，暂不显示可用余额；先核对课程与收费记录。','Some charges need review. The available balance is withheld until the lessons and fee records are checked.')}</p>}<p className="statement-selection-hint">{L('可用余额用于小时学费。固定月费直接在账单收款；月结净额仅供核对，不作为钱包余额。','Available balance is for hourly tuition. Monthly tuition is paid directly against invoices. The statement net is for reconciliation and is not the wallet balance.')}</p></>}</PrepaymentLoadState></section>}
   {studentId&&(loading||!data&&!failed)&&<section className="panel" role="status" aria-live="polite"><p>{L('正在核对收款与课程…','Checking payments and lessons…')}{checked>0&&<> · {checked} {L('个月','months')}</>}</p></section>}
   {failed&&!loading&&<section className="panel"><p>{L('暂时无法完成核对，请刷新重试。','The statement could not be completed. Please refresh and try again.')}</p><Button type="button" variant="outline" onClick={()=>setVersion(n=>n+1)}>{L('重试','Retry')}</Button></section>}
