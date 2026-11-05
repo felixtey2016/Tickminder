@@ -70,4 +70,13 @@ export async function prepaymentAccountState(actor:Account,studentIdValue:string
  summary.nextBoundary=future[0]?.nextBoundary||null;
  return{summary,invoices,basis:before.basis,basisArgs:before.args,nextBoundary:future[0]?.nextBoundary||null};
 }
-export async function prepaymentAccount(actor:Account,studentId:string):Promise<PrepaymentAccountSummary>{return(await prepaymentAccountState(actor,studentId)).summary;}
+export async function prepaymentAccount(actor:Account,studentId:string):Promise<PrepaymentAccountSummary>{
+ const {summary}=await prepaymentAccountState(actor,studentId);
+ // Wallet viewing does not by itself grant monthly invoice/cash visibility.
+ // The optional combined-card field uses the existing payment-view grant,
+ // whose configured dependencies include invoice viewing.
+ const invoiceViewer=await prepaymentRead<{allowed:number}>(actor,'payments.view','SELECT 1 AS allowed');
+ if(invoiceViewer.length)await requirePrepaymentPermission(actor,'payments.view');
+ else{delete summary.invoiceDueCents;await requirePrepaymentPermission(actor);}
+ return summary;
+}
