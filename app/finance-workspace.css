@@ -17,3 +17,10 @@
  .finance-wave4>.finance-mobile-navigation select{flex:1 1 12em;}
 }
 @media(max-width:700px){.finance-workspace.finance-wave4>.horizontal-menu>.finance-navigation{display:none;}}
+
+/* Keep field values in the shared UI typeface without inheriting bold labels. */
+:root :is(.finance-workspace,.finance2-dialog,.billing-rate-editor,.invoice-dialog,.invoice-finance-dialog,.parents-finance)
+ :is(input,select,textarea,.date-time-input-trigger,.native-month-input,.native-time-input,.person-search-trigger){
+ font-family:inherit;
+ font-weight:400;
+}
