@@ -27,3 +27,14 @@
 .monthly-extra-review{display:grid;gap:16px;}.monthly-extra-decision{border-top:1px solid var(--ui-border);padding-top:16px;}.monthly-extra-decision h4{margin:0;font-size:16px;}.monthly-extra-decision p{line-height:1.6;}
 .monthly-extra-form,.monthly-extra-form fieldset{display:grid;gap:14px;margin:0;padding:0;border:0;min-width:0;}.monthly-extra-form label{display:grid;gap:8px;}.monthly-extra-form :is(input,select){width:100%;min-width:0;min-height:44px;background:var(--ui-surface);color:var(--ui-text);border:1px solid var(--ui-border);border-radius:6px;padding:10px 12px;font:inherit;font-size:16px;}
 @media(max-width:480px){.finance-area-navigation{gap:4px;padding:4px;}.app-shell .finance-area-navigation>button{font-size:14px;padding:10px 4px;}.student-advance-form .finance2-actions>button{flex:1 1 auto;}}
+
+/* Navigation labels override the shared ghost button's accent text only. */
+.app-shell .finance-workspace :is(.finance-area-navigation,.finance-secondary-navigation)>button{
+ color:var(--ui-muted);
+}
+.app-shell .finance-workspace :is(.finance-area-navigation,.finance-secondary-navigation)>button[aria-current=page]{
+ color:var(--ui-tab-active,var(--ui-accent));
+}
+.app-shell .finance-workspace .finance-secondary-navigation>button[aria-current=page]{
+ border-bottom-color:var(--ui-tab-line,var(--ui-accent));
+}
