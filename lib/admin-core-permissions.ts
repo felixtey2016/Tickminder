@@ -16,7 +16,7 @@ export function corePermissionKeys(action:string):string[] {
     saveStudent:'students.create',updateStudentProfile:'students.edit',create:'lessons.create',edit:'lessons.edit',cancel:'lessons.cancel',
     attendance:'attendance.edit',review:'attendance.review',saveSessionAttendance:'attendance.edit',reviewSessionAttendance:'attendance.review',lockSessionAttendance:'attendance.review',unlockSessionAttendance:'attendance.review',adminResetSessionAttendance:'attendance.edit',
     proposeReschedule:'reschedules.create',respondReschedule:'reschedules.respond',
-    createClassSession:'lessons.create',editClassSession:'lessons.edit',cancelClassSession:'lessons.cancel',proposeClassReschedule:'reschedules.create',respondClassReschedule:'reschedules.respond',updateClassSessionLink:'lessons.edit',
+    createClassSession:'lessons.create',scheduleMakeupSession:'lessons.create',editClassSession:'lessons.edit',cancelClassSession:'lessons.cancel',proposeClassReschedule:'reschedules.create',respondClassReschedule:'reschedules.respond',updateClassSessionLink:'lessons.edit',
   };
   return keys[action]?[keys[action]]:[];
 }

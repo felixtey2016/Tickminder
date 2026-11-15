@@ -31,6 +31,8 @@ const LessonCalendar=lazy(()=>import("./week-calendar").then(m=>({default:m.Less
 
 const ActivityLog=lazy(()=>import("./activity-log").then(m=>({default:m.ActivityLog})));
 
+const PendingMakeupBoard=lazy(()=>import('./attendance-actions').then(m=>({default:m.PendingMakeupBoard})));
+
 const PagedAttendanceBoard=lazy(()=>import("./course-panels").then(m=>({default:m.PagedAttendanceBoard})));
 
 const PagedGroupSessions=lazy(()=>import("./course-panels").then(m=>({default:m.PagedGroupSessions})));
@@ -72,7 +74,7 @@ export function AdminDashboard({ state, lessons, open, view,mutate,busy,onOpenFi
 }) {
     const can=useAdminAction(),summary=state?.summary||[],month=state?.month||'',teachers=state?.teachers||[],students=state?.students||[];
     if(view==='activity')return <ActivityLog accountKey={state?.account.id+':'+state?.account.groupId}/>;
-    if(view==='attention')return <div className="course-query-stack">{can('attendance.view')&&<><PagedAttendanceBoard onOpenFinance={onOpenFinance} mode="review" role="admin" month={month} mutate={mutate} busy={busy} teachers={teachers}/><PagedAttendanceBoard onOpenFinance={onOpenFinance} mode="pending" role="admin" month={month} mutate={mutate} busy={busy} teachers={teachers}/>{can('lessons.view')&&<PagedLessonRows mode="makeup" month={month} sessionType="" title="缺席待处理" renderLesson={l=><LessonCard key={l.id} lesson={l} admin open={open}/>}/>}</>}</div>;
+    if(view==='attention')return <div className="course-query-stack">{can('attendance.view')&&<><PagedAttendanceBoard onOpenFinance={onOpenFinance} mode="review" role="admin" month={month} mutate={mutate} busy={busy} teachers={teachers}/><PagedAttendanceBoard onOpenFinance={onOpenFinance} mode="pending" role="admin" month={month} mutate={mutate} busy={busy} teachers={teachers}/>{can('lessons.view')&&<PendingMakeupBoard month={month} mutate={mutate} busy={busy} onOpenFinance={onOpenFinance}/>}</>}</div>;
     return <div className="dashboard">{can('attendance.view')&&<TeachingSummary summary={state?.teachingSummary}/>}<div className="metric-grid">{can('statistics.view')&&<><div className="metric"><span>{t('学生累计出席课时')}</span><strong>{formatDurationHours(summary.reduce((n,x)=>n+x.completed,0),getLanguage())}</strong><p>{month} · {t('已记录出席')}</p></div><div className="metric"><span>{t('未来已安排课时')}</span><strong>{formatDurationHours(summary.reduce((n,x)=>n+x.upcoming,0),getLanguage())}</strong><p>{t('所选月份')}</p></div></>}<div className="metric attention"><span>{t('待复核记录')}</span><strong>{state?.taskCounts?.pendingReview??'—'}</strong></div></div>{can('attendance.view')&&<PagedAttendanceBoard onOpenFinance={onOpenFinance} mode="review" role="admin" month={month} mutate={mutate} busy={busy} teachers={teachers}/ >}{can('lessons.view')&&<PagedLessonRows mode="upcoming" month={month} sessionType="" title="即将上课" renderLesson={l=><LessonCard key={l.id} lesson={l} admin open={open}/>}/ >}{can('statistics.view')&&<section className="panel"><h2>{t('学生科目统计')}</h2><p className="muted">{t('按实际开始日期归属月份')}</p><div className="summary-grid">{summary.map(row=><div className="summary-row" key={row.key}><strong>{row.key.replace('|',' · ')}</strong><span>{formatDurationHours(row.completed,getLanguage())} · {row.lessons} {t('堂已上课')}</span><span>{formatDurationHours(row.upcoming,getLanguage())} · {t('未来已安排')}</span><span>{row.pending} {t('待记录出席')} · {row.makeupNeeded} {t('待补')}</span></div>)}</div></section>}</div>;
 }
 

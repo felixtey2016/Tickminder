@@ -12,15 +12,18 @@ import {participantSql} from "./notification-access";
 import {corePermissionKeys,requireCorePermissions,rejectUnknownAdminAction,guardedCoreDb,guardedCoreReader} from './admin-core-permissions';
 import {hasAdminPermission} from './admin-permission-access';
 import {auditJson,appendAudit} from './audit-log';
+import {makeupEligibleSql} from './makeup-eligibility';
+import {registerAttendanceActionTranslations} from './attendance-actions-i18n';
+registerAttendanceActionTranslations();
 
 export class ClassSessionError extends Error {constructor(message:string,readonly status=400,readonly conflict?:Record<string,unknown>){super(message);}}
 const str=(value:unknown)=>typeof value==="string"?value.trim():"";
-export const classSessionActions=["createClassSession","editClassSession","cancelClassSession","proposeClassReschedule","respondClassReschedule","updateClassSessionLink"];
+export const classSessionActions=["createClassSession","scheduleMakeupSession","editClassSession","cancelClassSession","proposeClassReschedule","respondClassReschedule","updateClassSessionLink"];
 export type ClassSession=Omit<AttendanceSession,"participants"|"participantCount">&{id:string;groupId:string;sessionType:string;classroomId:string|null;classroomTitle:string|null;teacherName:string;subject:string;subjectId?:string|null;syllabusId?:string|null;plannedStart:string;plannedEnd:string;onlineLink:string|null;status:string;seriesId:string|null;revision:number;createdAt:string;updatedAt:string};
 type Participant=AttendanceParticipant;
 const columns="s.id,s.group_id AS groupId,s.session_type AS sessionType,s.classroom_id AS classroomId,s.classroom_title AS classroomTitle,s.teacher_name AS teacherName,s.subject,(SELECT subject_id FROM classrooms WHERE id=s.classroom_id AND group_id=s.group_id) AS subjectId,(SELECT syllabus_id FROM classrooms WHERE id=s.classroom_id AND group_id=s.group_id) AS syllabusId,s.planned_start AS plannedStart,s.planned_end AS plannedEnd,s.online_link AS onlineLink,s.status,s.series_id AS seriesId,s.revision,s.created_at AS createdAt,s.updated_at AS updatedAt,s.teaching_status AS teachingStatus,s.actual_start AS actualStart,s.actual_end AS actualEnd,s.attendance_note AS attendanceNote,s.attendance_recorded_at AS attendanceRecordedAt,s.attendance_recorded_by AS attendanceRecordedBy,s.attendance_reviewed_at AS attendanceReviewedAt,s.attendance_reviewed_by AS attendanceReviewedBy,s.first_submission_at AS firstSubmissionAt,s.first_submission_by AS firstSubmissionBy,s.explicit_locked_at AS explicitLockedAt,s.explicit_locked_by AS explicitLockedBy,s.explicit_lock_reason AS explicitLockReason";
 function roleFilter(actor:Account) {return actor.role==="admin"?{sql:"1",args:[]}:actor.role==="teacher"?{sql:"s.teacher_name=?",args:[actor.teacherName]}:{sql:"EXISTS(SELECT 1 FROM class_session_participants p WHERE p.session_id=s.id AND p.group_id=s.group_id AND p.student_name=?)",args:[actor.studentName]};}
-export type ClassSessionSelection={from?:string;to?:string;sessionId?:string;sessionIds?:string[];permissionKey?:'lessons.view'|'attendance.view'};
+export type ClassSessionSelection={from?:string;to?:string;sessionId?:string;sessionIds?:string[];permissionKey?:'lessons.view'|'attendance.view';makeupOnly?:boolean};
 export async function classSessionState(actor:Account,selection:ClassSessionSelection={}) {
  const permissionKey=selection.permissionKey||'lessons.view';
  await requireCorePermissions(actor,[permissionKey]);
@@ -30,7 +33,7 @@ export async function classSessionState(actor:Account,selection:ClassSessionSele
  if(selection.sessionIds){filter.sql+=' AND s.id IN (SELECT value FROM json_each(?))';filter.args.push(JSON.stringify(selection.sessionIds));}
  const [sessions,participants]=await Promise.all([
   rows<ClassSession&{participantCount:number}>("SELECT "+columns+",(SELECT count(*) FROM class_session_participants p WHERE p.session_id=s.id AND p.group_id=s.group_id) AS participantCount FROM class_sessions s WHERE "+filter.sql+" ORDER BY s.planned_start",...filter.args),
-  rows<Participant>("SELECT p.session_id AS sessionId,p.lesson_id AS lessonId,p.student_name AS studentName,p.attendance_status AS attendanceStatus,p.arrived_at AS arrivedAt,p.left_at AS leftAt,p.attendance_note AS attendanceNote,(SELECT chargeable FROM lessons WHERE id=p.lesson_id) AS chargeable FROM class_session_participants p JOIN class_sessions s ON s.id=p.session_id WHERE "+filter.sql+(actor.role==="student"?" AND p.student_name=?":"")+" ORDER BY p.student_name",...filter.args,...(actor.role==="student"?[actor.studentName]:[])),
+  rows<Participant>("SELECT p.session_id AS sessionId,p.lesson_id AS lessonId,p.student_name AS studentName,p.attendance_status AS attendanceStatus,p.arrived_at AS arrivedAt,p.left_at AS leftAt,p.attendance_note AS attendanceNote,(SELECT chargeable FROM lessons WHERE id=p.lesson_id) AS chargeable FROM class_session_participants p JOIN class_sessions s ON s.id=p.session_id WHERE "+filter.sql+(selection.makeupOnly?" AND EXISTS(SELECT 1 FROM lessons l WHERE l.id=p.lesson_id AND l.group_id=p.group_id AND "+makeupEligibleSql()+")":"")+(actor.role==="student"?" AND p.student_name=?":"")+" ORDER BY p.student_name",...filter.args,...(actor.role==="student"?[actor.studentName]:[])),
  ]);
  const classes=actor.role==="teacher"?await rows<{id:string}>("SELECT id FROM classrooms WHERE teacher_name=? AND archived=0",actor.teacherName):[],manageable=new Set(classes.map(c=>c.id));
  const enriched=sessions.map(s=>({...s,...(!showAttendance?{teachingStatus:'pending',actualStart:null,actualEnd:null,attendanceNote:null,attendanceRecordedAt:null,attendanceRecordedBy:null,attendanceReviewedAt:null,attendanceReviewedBy:null,firstSubmissionAt:null,firstSubmissionBy:null,explicitLockedAt:null,explicitLockedBy:null,explicitLockReason:null}:{}),canManage:actor.role==="admin"||Boolean(s.classroomId&&manageable.has(s.classroomId)),participants:participants.filter(p=>p.sessionId===s.id).map(p=>showAttendance?p:{...p,attendanceStatus:'pending',arrivedAt:null,leftAt:null,attendanceNote:null,chargeable:null})}));
@@ -87,6 +90,7 @@ export async function classSessionAction(actor:Account,data:Record<string,unknow
  if(!["admin","teacher"].includes(actor.role))throw new ClassSessionError("没有整班排课权限",403);
  const previous=await first<{afterJson:string}>("SELECT after_json AS afterJson FROM audit WHERE id=? AND actor_id=?","class-op:"+requestId,actor.id);
  if(previous){const saved=JSON.parse(previous.afterJson);if(saved.hash!==hash)throw new ClassSessionError("重复操作内容不同，请重新打开窗口",409);return {ok:true,replayed:true,count:saved.count};}
+ if(action==='scheduleMakeupSession')return scheduleMakeupSession(actor,data,{groupId,requestId,hash,now,guard});
  if(action==="createClassSession") {
   const existing=await first<{createHash:string;count:number}>("SELECT create_hash AS createHash,count(*) AS count FROM class_sessions WHERE create_request_id=? AND created_by=? GROUP BY create_hash",requestId,actor.id);
   if(existing){if(existing.createHash!==hash)throw new ClassSessionError("重复操作内容不同，请重新打开窗口",409);return {ok:true,replayed:true,count:existing.count};}
@@ -105,6 +109,42 @@ export async function classSessionAction(actor:Account,data:Record<string,unknow
   return {ok:true,count:dates.length,studentCount:chosen.members.length};
  }
  return changeClassSession(actor,data,{groupId,requestId,hash,now,guard});
+}
+
+async function scheduleMakeupSession(actor:Account,data:Record<string,unknown>,context:{groupId:string;requestId:string;hash:string;now:string;guard:{sql:string;args:unknown[]}}) {
+ const {groupId,requestId,hash,now,guard}=context;
+ await requireCorePermissions(actor,['attendance.view']);
+ const {first}=guardedCoreReader(actor,['lessons.create','attendance.view']),db=guardedCoreDb(actor,['lessons.create','attendance.view']);
+ const existing=await first<{createHash:string}>("SELECT create_hash AS createHash FROM class_sessions WHERE create_request_id=? AND created_by=? LIMIT 1",requestId,actor.id);
+ if(existing){if(existing.createHash!==hash)throw new ClassSessionError('重复操作内容不同，请重新打开窗口',409);return {ok:true,replayed:true,count:1};}
+ const sourceId=str(data.sessionId);if(!sourceId)throw new ClassSessionError('原课程不存在或无权访问',404);
+ const source=(await classSessionState(actor,{sessionId:sourceId,permissionKey:'attendance.view',makeupOnly:true})).allSessions[0];
+ if(!source||source.status==='cancelled')throw new ClassSessionError('原课程不存在或无权访问',404);
+ if(source.revision!==revision(data.revision))throw new ClassSessionError('课次已改变，请重新打开窗口',409);
+ const ids=Array.isArray(data.lessonIds)?data.lessonIds.filter((id):id is string=>typeof id==='string'):[];
+ if(!ids.length||ids.length!==(data.lessonIds as unknown[])?.length||ids.length!==new Set(ids).size||source.sessionType==='one_to_one'&&ids.length!==1)throw new ClassSessionError('请选择需要补课的学生');
+ const selected=source.participants.filter(p=>ids.includes(p.lessonId));
+ if(selected.length!==ids.length)throw new ClassSessionError('原课程或补课安排已改变，请重新载入',409);
+ const chosen=source.classroomId?(await classScheduleOptions(actor)).find(c=>c.id===source.classroomId):null;
+ if(source.classroomId&&(!chosen||chosen.teacherName!==source.teacherName||chosen.subject!==source.subject||selected.some(p=>!chosen.members.includes(p.studentName))))throw new ClassSessionError('班级或学生科目配对已改变，请刷新后重试',409);
+ const start=malaysiaClassIso(data.start),end=malaysiaClassIso(data.end);hoursBetween(start,end);
+ await checkSlots(actor,selected.map(p=>({id:requestId,student:p.studentName,teacherName:source.teacherName,plannedStart:start,plannedEnd:end})));
+ const roster=JSON.stringify(selected.map(p=>({lessonId:p.lessonId,student:p.studentName}))),id=requestId+':makeup';
+ // Recheck original attendance, active enrolments and replacement links inside
+ // the same write transaction. Two schedulers cannot replace one absence twice.
+ const originalsGuard=`NOT EXISTS(SELECT 1 FROM json_each(?) picked LEFT JOIN lessons original ON original.group_id=? AND original.id=json_extract(picked.value,'$.lessonId') WHERE original.id IS NULL OR original.session_id<>? OR original.student<>json_extract(picked.value,'$.student') OR NOT (${makeupEligibleSql('original')}) OR NOT EXISTS(SELECT 1 FROM plans p JOIN students st ON st.group_id=p.group_id AND st.name=p.student AND st.active=1 JOIN teachers t ON t.group_id=p.group_id AND t.name=p.teacher_name AND t.active=1 LEFT JOIN classrooms c ON c.group_id=p.group_id AND c.id=? WHERE p.group_id=original.group_id AND p.student=original.student AND p.teacher_name=original.teacher_name AND p.active=1 AND (p.subject=original.subject OR c.id IS NOT NULL AND ${classPlanSubjectSql('p','c','st')})))`;
+ const classGuard=chosen?" AND EXISTS(SELECT 1 FROM classrooms c0 WHERE c0.id=? AND c0.group_id=? AND c0.archived=0 AND c0.teacher_name=? AND c0.subject=? AND c0.updated_at=? AND (SELECT json_group_array(student_name) FROM ("+activeMembersSql+"))=?)":"";
+ const claim='EXISTS(SELECT 1 FROM class_sessions WHERE id=? AND group_id=? AND create_request_id=?)',claimArgs=[id,groupId,requestId];
+ const statements=[
+  db.prepare("INSERT INTO class_sessions(id,group_id,session_type,classroom_id,classroom_title,teacher_name,subject,planned_start,planned_end,online_link,created_by,created_at,updated_at,create_request_id,occurrence,create_hash) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,? FROM class_sessions source WHERE source.id=? AND source.group_id=? AND source.revision=? AND source.status<>'cancelled' AND "+originalsGuard+classGuard+' AND '+guard.sql)
+   .bind(id,groupId,source.sessionType,source.classroomId,source.classroomTitle,source.teacherName,source.subject,start,end,chosen?.onlineLink||source.onlineLink,actor.id,now,now,requestId,hash,source.id,groupId,source.revision,roster,groupId,source.id,source.classroomId,...(chosen?[chosen.id,groupId,chosen.teacherName,chosen.subject,chosen.updatedAt,JSON.stringify(chosen.members)]:[]),...guard.args),
+  db.prepare("INSERT INTO lessons(group_id,id,student,subject,teacher_name,planned_start,planned_end,kind,replacement_for,created_by,updated_at,session_id) SELECT ?,lower(hex(randomblob(16))),json_extract(value,'$.student'),?,?,?,?,'makeup',json_extract(value,'$.lessonId'),?,?,? FROM json_each(?) WHERE "+claim)
+   .bind(groupId,source.subject,source.teacherName,start,end,actor.id,now,id,roster,...claimArgs),
+  db.prepare("INSERT INTO audit(group_id,id,lesson_id,actor_id,action,after_json,at) SELECT ?,?||l.id,l.id,?,'scheduleMakeupSession',json_object('sessionId',l.session_id,'replacementFor',l.replacement_for,'student',l.student,'subject',l.subject,'plannedStart',l.planned_start,'plannedEnd',l.planned_end,'_audit',json_object('actorName',?,'objectName',?)),? FROM lessons l WHERE l.session_id=? AND l.group_id=? AND "+claim)
+   .bind(groupId,'makeup-create:'+requestId+':',actor.id,actor.name,[source.classroomTitle,source.subject].filter(Boolean).join(' · '),now,id,groupId,...claimArgs),
+ ];
+ try{const result=await db.batch(statements);if(!result[0].meta.changes)throw new ClassSessionError('原课程或补课安排已改变，请重新载入',409);}catch(error){if(/UNIQUE constraint/.test(String(error))){const saved=await first<{createHash:string}>("SELECT create_hash AS createHash FROM class_sessions WHERE create_request_id=? AND created_by=? LIMIT 1",requestId,actor.id);if(saved?.createHash===hash)return {ok:true,replayed:true,count:1};}throw error;}
+ return {ok:true,count:1,studentCount:selected.length,sessionId:id};
 }
 
 async function changeClassSession(actor:Account,data:Record<string,unknown>,context:{groupId:string;requestId:string;hash:string;now:string;guard:{sql:string;args:unknown[]}}) {
@@ -144,22 +184,23 @@ async function changeClassSession(actor:Account,data:Record<string,unknown>,cont
   if(!result[0].meta.changes)throw new ClassSessionError("课次或操作权限已改变，请重新载入",409);return {ok:true};
  }
  if(!["editClassSession","cancelClassSession","respondClassReschedule"].includes(action))throw new ClassSessionError("请求格式无效");
- const future=data.scope==="future";if(future&&!current.seriesId)throw new ClassSessionError("此课次没有重复安排");
+ const future=data.scope==="future",cancel=action==='cancelClassSession';if(future&&!current.seriesId)throw new ClassSessionError("此课次没有重复安排");
+ const cancelUntaught=cancel&&!future&&current.status!=='cancelled'&&['not_taught','teacher_absent'].includes(current.teachingStatus)&&!current.actualStart&&!current.actualEnd&&!await first("SELECT 1 FROM lessons l WHERE l.session_id=? AND NOT ("+makeupEligibleSql()+") LIMIT 1",id);
  const targets=future?await rows<ClassSession>("SELECT "+columns+" FROM class_sessions s WHERE s.series_id=? AND s.planned_start>=? AND s.session_type='group' AND s.status='scheduled' AND NOT EXISTS(SELECT 1 FROM lessons l WHERE l.session_id=s.id AND (l.reviewed_at IS NOT NULL OR l.actual_start IS NOT NULL OR l.status<>'scheduled')) ORDER BY s.planned_start",current.seriesId,current.plannedStart):[current];
- if(!targets.length||targets.some(s=>s.status!=="scheduled")||await first("SELECT 1 FROM lessons WHERE session_id=? AND (reviewed_at IS NOT NULL OR actual_start IS NOT NULL OR status<>'scheduled') LIMIT 1",id))throw new ClassSessionError("课次已有出席记录或已关闭，不能修改整班安排",409);
- const cancel=action==="cancelClassSession",start=cancel?current.plannedStart:response?.proposedStart||malaysiaClassIso(data.start),end=cancel?current.plannedEnd:response?.proposedEnd||malaysiaClassIso(data.end);if(!cancel)hoursBetween(start,end);if(response&&start<=now)throw new ClassSessionError("建议时间已过，请重新申请");
+ if(!targets.length||targets.some(s=>s.status!=="scheduled"&&!(cancelUntaught&&s.id===current.id))||!cancelUntaught&&await first("SELECT 1 FROM lessons WHERE session_id=? AND (reviewed_at IS NOT NULL OR actual_start IS NOT NULL OR status<>'scheduled') LIMIT 1",id))throw new ClassSessionError("课次已有出席记录或已关闭，不能修改整班安排",409);
+ const start=cancel?current.plannedStart:response?.proposedStart||malaysiaClassIso(data.start),end=cancel?current.plannedEnd:response?.proposedEnd||malaysiaClassIso(data.end);if(!cancel)hoursBetween(start,end);if(response&&start<=now)throw new ClassSessionError("建议时间已过，请重新申请");
  const shift=Date.parse(start)-Date.parse(current.plannedStart),newTimes=targets.map(s=>({session:s,start:new Date(Date.parse(s.plannedStart)+shift).toISOString(),end:future?new Date(Date.parse(s.plannedStart)+shift+Date.parse(end)-Date.parse(start)).toISOString():end}));
  const allParts=await rows<Participant>("SELECT p.session_id AS sessionId,p.lesson_id AS lessonId,p.student_name AS studentName FROM class_session_participants p JOIN class_sessions s ON s.id=p.session_id WHERE "+(future?"s.series_id=? AND s.planned_start>=?":"s.id=?"),...(future?[current.seriesId,current.plannedStart]:[id]));
  if(!cancel)await checkSlots(actor,newTimes.flatMap(v=>allParts.filter(p=>p.sessionId===v.session.id).map(p=>({id:v.session.id,student:p.studentName,teacherName:v.session.teacherName,plannedStart:v.start,plannedEnd:v.end}))),targets.map(s=>s.id));
  const expected=JSON.stringify(targets.map(s=>({id:s.id,revision:s.revision}))),statements=[
-  db.prepare("UPDATE class_sessions SET mutation_id=? WHERE id=? AND group_id=? AND revision=? AND NOT EXISTS(SELECT 1 FROM json_each(?) e LEFT JOIN class_sessions other ON other.id=json_extract(e.value,'$.id') AND other.group_id=? WHERE other.id IS NULL OR other.revision<>json_extract(e.value,'$.revision')) AND "+guard.sql).bind(requestId,id,groupId,baseRevision,expected,groupId,...guard.args),
+  db.prepare("UPDATE class_sessions SET mutation_id=? WHERE id=? AND group_id=? AND revision=? AND NOT EXISTS(SELECT 1 FROM json_each(?) e LEFT JOIN class_sessions other ON other.id=json_extract(e.value,'$.id') AND other.group_id=? WHERE other.id IS NULL OR other.revision<>json_extract(e.value,'$.revision'))"+(cancelUntaught?" AND NOT EXISTS(SELECT 1 FROM lessons l WHERE l.session_id=class_sessions.id AND l.group_id=class_sessions.group_id AND NOT ("+makeupEligibleSql()+"))":"")+" AND "+guard.sql).bind(requestId,id,groupId,baseRevision,expected,groupId,...guard.args),
   // Temporarily release only these slots inside the same transaction. A weekly
   // shift can pass through another targeted session's previous position.
   db.prepare("UPDATE lessons SET status='cancelled' WHERE session_id IN(SELECT json_extract(value,'$.id') FROM json_each(?)) AND group_id=? AND "+claim).bind(expected,groupId,...claimArgs),
  ];
  for(const v of newTimes){
   statements.push(db.prepare("UPDATE class_sessions SET planned_start=?,planned_end=?,status=?,revision=revision+1,updated_at=? WHERE id=? AND group_id=? AND "+claim).bind(cancel?v.session.plannedStart:v.start,cancel?v.session.plannedEnd:v.end,cancel?"cancelled":"scheduled",now,v.session.id,groupId,...claimArgs));
-  statements.push(db.prepare("UPDATE lessons SET planned_start=?,planned_end=?,status=?,updated_at=? WHERE session_id=? AND group_id=? AND "+claim).bind(cancel?v.session.plannedStart:v.start,cancel?v.session.plannedEnd:v.end,cancel?"cancelled":"scheduled",now,v.session.id,groupId,...claimArgs));
+  statements.push(db.prepare("UPDATE lessons SET planned_start=?,planned_end=?,status=?,updated_at=?"+(cancel?",reviewed_at=NULL,reviewed_by=NULL,chargeable=NULL":"")+" WHERE session_id=? AND group_id=? AND "+claim).bind(cancel?v.session.plannedStart:v.start,cancel?v.session.plannedEnd:v.end,cancel?"cancelled":"scheduled",now,v.session.id,groupId,...claimArgs));
   if(response)statements.push(db.prepare("UPDATE reschedule_requests SET status='accepted',responded_by=?,responded_at=? WHERE id=? AND status='pending' AND "+claim).bind(actor.id,now,response.id,...claimArgs));
   statements.push(db.prepare("UPDATE reschedule_requests SET status='stale',responded_at=? WHERE session_id=? AND status='pending' AND group_id=? AND "+claim).bind(now,v.session.id,groupId,...claimArgs));
   const event=cancel?"cancel":response?"acceptReschedule":"reschedule";statements.push(sessionAudit(actor,v.session,requestId,event,{plannedStart:v.session.plannedStart,plannedEnd:v.session.plannedEnd,originalStart:v.session.plannedStart,originalEnd:v.session.plannedEnd,...(response?{proposedStart:v.start,proposedEnd:v.end}:{})},{plannedStart:v.start,plannedEnd:v.end,status:cancel?"cancelled":"scheduled",sessionId:v.session.id},now,claim,claimArgs),sessionNotice(actor,v.session,requestId,event,now,claim,claimArgs));

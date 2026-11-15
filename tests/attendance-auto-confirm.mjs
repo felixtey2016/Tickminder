@@ -38,7 +38,10 @@ const session=id=>({...sqlite.prepare('SELECT * FROM class_sessions WHERE id=?')
 for(const learner of [student,peer])await post({action:'savePlan',student:learner.name,subjectId:'science',teacherName:teacher.name,duration:1.5});
 // The fictional roster and subject enrolment predate these historical lessons.
 for(const table of ['students','plans','billing_students','billing_subjects'])sqlite.prepare("UPDATE "+table+" SET created_at='2019-01-01T00:00:00.000Z' WHERE group_id=?").run(group);
-const classId=(await helpers.readPlanClassroom(group,student.name+'|Science')).id;
+// Current course setup creates classes explicitly; plans no longer create them.
+const classId='attendance-fixture-class';
+sqlite.prepare("INSERT INTO classrooms(id,group_id,title,subject,teacher_name,created_by,created_at,updated_at,syllabus_id,subject_id,grade) VALUES(?,?,'Fixture Class','Science',?,?,?,?, 'spm','science','Form 3')").run(classId,group,teacher.name,admin.id,now,now);
+for(const learner of [student,peer])sqlite.prepare('INSERT INTO classroom_members(id,group_id,classroom_id,student_name,created_at) VALUES(?,?,?,?,?)').run(op(),group,classId,learner.name,now);
 await post({action:'create',student:student.name,subject:'Science',teacherName:teacher.name,classroomId:classId,start:'2020-03-02T12:00',end:'2020-03-02T13:30'});
 const one=sqlite.prepare("SELECT * FROM lessons WHERE planned_start='2020-03-02T04:00:00.000Z'").get();
 const getSession=async id=>(await sessions.classSessionState(admin)).allSessions.find(s=>s.id===id);

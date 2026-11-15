@@ -1,4 +1,5 @@
 import type {Account} from './auth';
+import {makeupEligibleSql} from './makeup-eligibility';
 import type {lessons,rescheduleRequests} from '@/db/schema';
 import {learningDb} from './learning-server';
 import {guardedCoreReader,requireCorePermissions} from './admin-core-permissions';
@@ -147,7 +148,7 @@ export async function courseList(actor:Account,params:URLSearchParams){
  if(!['lessons','sessions','reschedules'].includes(view)||!['month','pending','review','makeup','originals','records','upcoming','timetable'].includes(mode))throw new CourseQueryError('课程查询无效');
  if(actor.role==='student'&&view==='sessions')throw new CourseQueryError('没有课程考勤查看权限',403);
  const sessionPermission=view==='sessions'&&await hasAdminPermission(actor,'attendance.view')?'attendance.view' as const:'lessons.view' as const;
- const keys=[view==='sessions'?sessionPermission:'lessons.view',...(view==='reschedules'?['reschedules.view']:['pending','review','records'].includes(mode)?['attendance.view']:[])];
+ const keys=[view==='sessions'?sessionPermission:'lessons.view',...(view==='reschedules'?['reschedules.view']:['pending','review','records','makeup'].includes(mode)?['attendance.view']:[])];
  await assertCourseActor(actor,keys);const reader=guardedCoreReader(actor,keys),scope=view==='sessions'?sessionScope(actor):courseLessonScope(actor),alias=view==='sessions'?'s':'l',parts=[scope.sql],args=[...scope.args];
  const teacher=text(params.get('teacher')),student=text(params.get('student')),subject=text(params.get('subject')),classroom=text(params.get('classroomId')),completion=text(params.get('completion'))||'all',sessionType=text(params.get('sessionType'));
  if(sessionType){if(!['one_to_one','group'].includes(sessionType))throw new CourseQueryError('课次类型无效');parts.push("coalesce(s.session_type,'one_to_one')=?");args.push(sessionType);}
@@ -165,7 +166,7 @@ export async function courseList(actor:Account,params:URLSearchParams){
   parts.push(courseOverlap(alias));args.push(range.end,range.start);parts.push(`${alias}.status${params.get('cancelled')==='1'?'=':'<>'}'cancelled'`);
  }else if(mode==='pending'){parts.push(view==='sessions'?"s.status<>'cancelled' AND EXISTS(SELECT 1 FROM lessons pending_lesson WHERE pending_lesson.group_id=s.group_id AND pending_lesson.session_id=s.id AND pending_lesson.status='scheduled' AND julianday(pending_lesson.planned_end)<julianday(?))":`l.status='scheduled' AND julianday(l.planned_end)<julianday(?)`);args.push(now);
  }else if(mode==='review'){parts.push(view==='sessions'?"s.status<>'cancelled' AND s.teaching_status<>'pending' AND s.attendance_reviewed_at IS NULL":"l.status IN('completed','student_absent','teacher_absent') AND l.reviewed_at IS NULL");
- }else if(mode==='makeup'){if(view!=='lessons')throw new CourseQueryError('补课查询类型无效');parts.push(`l.status IN('student_absent','teacher_absent') AND coalesce(l.chargeable,0)=0 AND ${noReplacement()}`);
+ }else if(mode==='makeup'){if(!['lessons','sessions'].includes(view))throw new CourseQueryError('补课查询类型无效');parts.push(view==='sessions'?`s.status<>'cancelled' AND EXISTS(SELECT 1 FROM lessons l WHERE l.group_id=s.group_id AND l.session_id=s.id AND ${makeupEligibleSql()})`:makeupEligibleSql());
  }else if(mode==='originals'){if(view!=='lessons'||!student||!subject)throw new CourseQueryError('请选择学生与科目查找原课程');parts.push(`l.status IN('student_absent','teacher_absent','cancelled') AND ${noReplacement()}`);
  }else if(mode==='records'){parts.push(view==='sessions'?"s.status<>'cancelled' AND s.teaching_status<>'pending'":"l.status IN('completed','student_absent','teacher_absent')");parts.push(inMonth(view==='sessions'?'coalesce(s.actual_start,s.planned_start)':"CASE WHEN l.status='completed' THEN l.actual_start ELSE l.planned_start END"));args.push(range.start,range.end);
  }else if(mode==='upcoming'){parts.push(`${alias}.status='scheduled' AND julianday(${alias}.planned_start)>=julianday(?)`);args.push(now);}
@@ -215,7 +216,7 @@ export async function courseList(actor:Account,params:URLSearchParams){
   const optionParts=[...parts],optionArgs=[...args];if(classroom){optionParts.splice(classroomPartIndex,1);optionArgs.splice(classroomArgIndex,1);}
   const classroomOptions=await reader.rows<{id:string;title:string}>(`SELECT s.classroom_id AS id,coalesce(max(c.title),max(s.classroom_title),'') AS title FROM class_sessions s LEFT JOIN classrooms c ON c.group_id=s.group_id AND c.id=s.classroom_id WHERE ${optionParts.join(' AND ')} AND s.classroom_id IS NOT NULL GROUP BY s.classroom_id ORDER BY title,s.classroom_id`,...optionArgs);
   related={classroomOptions};
-  const ids=await reader.rows<{id:string}>(`SELECT s.id ${from} WHERE ${where} ORDER BY ${order} LIMIT 20 OFFSET ?`,...args,(page-1)*20),data=await classSessionState(actor,{sessionIds:ids.map(s=>s.id),permissionKey:sessionPermission}),byId=data.byId;items=ids.map(s=>byId.get(s.id)).filter(Boolean);
+  const ids=await reader.rows<{id:string}>(`SELECT s.id ${from} WHERE ${where} ORDER BY ${order} LIMIT 20 OFFSET ?`,...args,(page-1)*20),data=await classSessionState(actor,{sessionIds:ids.map(s=>s.id),permissionKey:sessionPermission,makeupOnly:mode==='makeup'}),byId=data.byId;items=ids.map(s=>byId.get(s.id)).filter(Boolean);
  }else if(view==='reschedules'){
   const requests=await reader.rows<RequestRow>(`SELECT ${requestColumns} ${from} WHERE ${where} ORDER BY ${order} LIMIT 20 OFFSET ?`,...args,(page-1)*20),lessonRows=requests.length?await reader.rows<Lesson>(`SELECT ${lessonColumns} FROM lessons l WHERE l.id IN(SELECT value FROM json_each(?)) AND ${scope.sql}`,JSON.stringify(requests.map(r=>r.lessonId)),...scope.args):[];
   const lessons=await decorateLessons(actor,lessonRows),data=await classSessionState(actor,{sessionIds:[...new Set(requests.map(r=>r.sessionId).filter((id):id is string=>Boolean(id)))]}),groupIds=new Set(data.sessions.map(s=>s.id));

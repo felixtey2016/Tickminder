@@ -1,5 +1,13 @@
 # Full-class attendance and teacher teaching hours — Part 09
 
+## Attendance actions and deferred makeup (2026-11-15)
+
+- **课程 → 出席待处理** offers **补签（忘记签到）**, **未上课，待补课**, and **取消原课程**. Backfill uses the existing actual teaching/student attendance editor and its confirmation, permission and invoice-lock rules. Not held confirms an unpaid absence with zero actual teacher time; no placeholder makeup date is saved.
+- **待安排补课** retains unpaid absences across months until a linked makeup is scheduled or the original is cancelled. A group appears once; only students still needing makeup are selectable. Closing a date picker or postponing sends no mutation. Existing absence history is retained.
+- Scheduling uses the additive `/api/action` action `scheduleMakeupSession`: `{sessionId, revision, lessonIds, start, end, operationId}`. Dates use the existing GMT+8 local date-time format. An exact retry reuses `operationId`; an altered request needs a new operation ID. Original revision, ownership, active plans/roster, conflicts and absence/replacement eligibility are checked, including commit-time guards. Both individual and group makeup preserve their original session type and link each new lesson through `replacement_for`; a group contributes teacher time once.
+- Cancellation means cancelling the **original** lesson through the existing single-lesson/session rules, retaining history. An unpaid, wholly untaught class can also be cancelled after attendance is recorded. Already taught group sessions and issued invoice sources retain their existing restrictions and finance correction flow. Existing scheduling/attendance/Hermes actions are preserved; the legacy individual makeup action now also rechecks duplicate replacement eligibility inside its insert transaction.
+- Uses existing tables and fields; no schema migration or changes to fee/salary policies. Local regression coverage: `tests/attendance-makeup-actions.mjs`, `tests/attendance-actions-ui.mjs` and existing attendance/invoice suites. Deployment evidence is recorded separately for the exact released source.
+
 ## Production delivery
 
 - Released 2026-10-15 to https://www.tickminder.com and https://tickminder.com.
