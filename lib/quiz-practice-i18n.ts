@@ -168,6 +168,7 @@ const pairs:Record<string,[string,string]>={
  'quiz.practiceNotice':['答案会自动保存。限时练习的计时不会因离开页面而暂停。','Answers are saved automatically. Leaving the page does not pause a timed practice.'],
  'quiz.practiceReadOnly':['学生仍在作答，此处仅供查看已保存的进度。','The student is still answering. This view shows saved progress only.'],
  'quiz.submitAnswer':['确认答案','Confirm answer'],
+ 'quiz.checkingAnswer':['正在确认…','Confirming answer…'],
  'quiz.answerLocked':['答案已确认，不能修改。','This answer has been confirmed and cannot be changed.'],
  'quiz.correctResult':['回答正确','Correct'],
  'quiz.incorrectResult':['回答错误','Incorrect'],
