@@ -307,6 +307,8 @@ check(()=>assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[]))
  check(()=>assert.equal(remembered.bank.accountHolder, '陈老师'));
  const preview = await print(generated.payrollId);
  const previewHtml = await preview.text();
+ const zhPreview = process.env.PAYSLIP_BANK_TEST_FIXTURE ? await print(generated.payrollId,admin,'zh') : null;
+ const zhHtml = zhPreview ? await zhPreview.text() : null;
  check(()=>assert(previewHtml.includes('001234567') && previewHtml.includes('Maybank') && previewHtml.includes('name') && previewHtml.includes('value="brand"')));
  check(()=>assert(previewHtml.includes('<title>Ms Ada 2026-10 salary</title>')));
  const revision = previewHtml.match(/data-revision="(\d+)"/)[1];
@@ -315,19 +317,27 @@ check(()=>assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[]))
  // Minimal marker stream for exercising the archival API. The browser test
  // supplies fully encoded JPEG pages and validates the resulting document.
  const jpeg = Buffer.from([255,216,255,192,0,17,8,6,148,4,166,3,1,17,0,2,17,0,3,17,0,255,217]);
- const archiveRequest = async (expectedRevision, bankVersion, file = jpeg, as = admin) => {
+ const accountLayer = number => JSON.stringify([[{value:number, left:380, top:300, width:140, size:12, account:true}]]);
+ const archiveRequest = async (expectedRevision, bankVersion, {file = jpeg, as = admin, layer = accountLayer('001234567')} = {}) => {
   actor = as;
   const form = new FormData();
   form.set('revision',expectedRevision);
   form.set('bankVersion',bankVersion);
   form.set('template','brand');
+  if (layer !== null) form.set('textLayer',layer);
   form.append('page', new Blob([file], {type:'image/jpeg'}),'one.jpg');
   return printRoute.POST(new Request(origin + routePath, {method:'POST', headers:{Origin:origin}, body:form}),
    {params:Promise.resolve({id:generated.payrollId})});
  };
  const stale = await archiveRequest('0',version);
  check(()=>assert.equal(stale.status,409));
- const badImage = await archiveRequest(revision,version,Buffer.from('%PDF-1.4'));
+ const oldPreview = await archiveRequest(revision,version,{layer:null});
+ check(()=>assert.equal(oldPreview.status,409,'stale preview cannot create an image-only archive'));
+ const wrongDigits = await archiveRequest(revision,version,{layer:accountLayer('012345678')});
+ check(()=>assert.equal(wrongDigits.status,400,'selectable bank number must match saved profile'));
+ const wrongLayer = await archiveRequest(revision,version,{layer:'[]'});
+ check(()=>assert.equal(wrongLayer.status,400));
+ const badImage = await archiveRequest(revision,version,{file:Buffer.from('%PDF-1.4')});
  check(()=>assert.equal(badImage.status,400));
  grant(['payroll.view']);
  const viewOnly = await archiveRequest(revision,version);
@@ -340,11 +350,12 @@ check(()=>assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[]))
  check(()=>assert.equal(pdf.headers.get('Content-Type'),'application/pdf'));
  check(()=>assert.match(pdf.headers.get('Content-Disposition'), /filename="Ms Ada 2026-10 salary.pdf"/));
  check(()=>assert(validObjectSignature(archivedBytes,'application/pdf')));
+ check(()=>assert(archivedBytes.includes(Buffer.from('/ToUnicode'))));
  const secondSave = await bankRequest({action:'save',bank:{...initialBank,bankName:'CIMB Bank',accountNumber:'00987654321'},version});
  check(()=>assert.equal(secondSave.status,200));
  const oldWrite = await bankRequest({action:'save',bank:initialBank,version});
  check(()=>assert.equal(oldWrite.status,409));
- const retry = await archiveRequest(revision,version,Buffer.from('do not overwrite'));
+ const retry = await archiveRequest(revision,version,{layer:null});
  check(()=>assert.equal(retry.status,200));
  const reopened = await print(generated.payrollId);
  check(()=>assert.equal(reopened.headers.get('Content-Type'),'application/pdf'));
@@ -369,7 +380,13 @@ check(()=>assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[]))
   const bytes = Buffer.from(await response.arrayBuffer());
   check(()=>assert(validObjectSignature(bytes,row.mime)));
  }
+ const legacy = Buffer.from('%PDF-1.4\n% fictional image-only archive\n');
+ await bucket.put('private-payroll/' + gid + '/payslip/' + recreated.id, legacy);
+ const oldFile = await print(recreated.id);
+ const oldBytes = Buffer.from(await oldFile.arrayBuffer());
+ check(()=>assert.deepEqual(oldBytes, legacy, 'existing archive keeps its original bytes'));
  if (process.env.PAYSLIP_BANK_TEST_FIXTURE) fs.writeFileSync(process.env.PAYSLIP_BANK_TEST_FIXTURE,
-  JSON.stringify({html:previewHtml,headers:Object.fromEntries(preview.headers),revision}));
+  JSON.stringify({html:previewHtml,headers:Object.fromEntries(preview.headers),revision,
+   zh:{html:zhHtml,headers:Object.fromEntries(zhPreview.headers)}}));
 }
 console.log(JSON.stringify({ok:true,checks,maxBindings}));

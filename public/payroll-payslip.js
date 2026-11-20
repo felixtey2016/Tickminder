@@ -61,6 +61,7 @@
     const institution = paper.querySelector('.institution').textContent;
     const reference = paper.querySelector('.reference').textContent;
     const pages = [];
+    let textLines = [];
     let y = 0;
 
     function font(size, bold) {
@@ -93,10 +94,28 @@
       return lines;
     }
 
-    function linesText(lines, x, top, lineHeight, color, align = 'left') {
+    function linesText(lines, x, top, lineHeight, color, align = 'left', accountWidth) {
       ctx.fillStyle = color;
       ctx.textAlign = align;
-      lines.forEach((line, index) => ctx.fillText(line, x, top + lineHeight * index));
+      const round = number => Math.round(number * 100) / 100;
+      lines.forEach((line, index) => {
+        const value = line.replace(/[\p{Cc}\p{Cs}]/gu, '');
+        if (!value.trim()) return;
+        const position = top + lineHeight * index;
+        let advance = ctx.measureText(value).width;
+        if (accountWidth !== undefined && advance > accountWidth) {
+          ctx.fillText(value, x, position, accountWidth);
+          advance = accountWidth;
+        } else {
+          ctx.fillText(value, x, position);
+        }
+        if (advance <= 0) return;
+        const left = x - (align === 'right' ? advance : align === 'center' ? advance / 2 : 0);
+        textLines.push({
+          value, left: round(left), top: round(position), width: round(advance), size: lineHeight - 4,
+          ...(accountWidth === undefined ? {} : {account: true}),
+        });
+      });
     }
 
     function text(value, x, top, maxWidth, {size = 11, bold = false, color = ink, align = 'left'} = {}) {
@@ -128,7 +147,8 @@
       text(String(pages.length + 1), width - margin, height - 31, 48, {size: 8, color: muted, align: 'right'});
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', .96));
       if (!blob) throw Error('canvas');
-      pages.push(blob);
+      pages.push({image: blob, textLines});
+      textLines = [];
     }
 
     async function space(h) {
@@ -164,8 +184,12 @@
     function information(list) {
       const items = [...list.children];
       const cellWidth = usable / items.length;
+      const accountIndex = items.findIndex(item => item.querySelector('#slip-number'));
       font(12, true);
-      const values = items.map(item => wrap(item.querySelector('dd').textContent.trim(), cellWidth - 22));
+      const values = items.map((item, index) => {
+        const value = item.querySelector('dd').textContent.trim();
+        return index === accountIndex ? [value] : wrap(value, cellWidth - 22);
+      });
       font(10, false);
       const labels = items.map(item => wrap(item.querySelector('dt').textContent.trim(), cellWidth - 22));
       const labelHeight = Math.max(...labels.map(lines => lines.length)) * 14;
@@ -176,7 +200,8 @@
         font(10, false);
         linesText(labels[index], x, y + 9, 14, muted);
         font(12, true);
-        linesText(values[index], x, y + 11 + labelHeight, 16, ink);
+        linesText(values[index], x, y + 11 + labelHeight, 16, ink, 'left',
+          index === accountIndex ? cellWidth - 22 : undefined);
       });
       y += boxHeight + 18;
     }
@@ -266,12 +291,14 @@
     status.textContent = local('正在存档薪资单…', 'Saving payslip…');
     try {
       const pages = await renderPages();
-      if (pages.reduce((total, page) => total + page.size, 0) > 8 * 1024 * 1024 - 16384) throw Error('size');
+      const textLayer = JSON.stringify(pages.map(page => page.textLines));
+      if (pages.reduce((total, page) => total + page.image.size, new Blob([textLayer]).size) > 8 * 1024 * 1024 - 16384) throw Error('size');
       const data = new FormData();
       data.set('revision', form.dataset.revision);
       data.set('bankVersion', form.dataset.bankVersion);
       data.set('template', template.value);
-      pages.forEach((page, index) => data.append('page', page, 'page-' + (index + 1) + '.jpg'));
+      data.set('textLayer', textLayer);
+      pages.forEach((page, index) => data.append('page', page.image, 'page-' + (index + 1) + '.jpg'));
       const response = await fetch(location.pathname, {method: 'POST', body: data, cache: 'no-store', credentials: 'same-origin'});
       if (!response.ok) throw Error(String(response.status));
       saved = true;
@@ -288,7 +315,7 @@
     } catch (error) {
       const reason = error instanceof Error && error.message;
       status.textContent = reason === '409'
-        ? local('薪资或收款户口已更新，请重新打开预览。', 'Payroll or bank details have changed. Reopen the preview.')
+        ? local('薪资单预览已变更，请重新打开后再存档。', 'The payslip preview has changed. Reopen it before saving.')
         : reason === 'size' || reason === '413'
           ? local('薪资单超过存档大小上限。', 'The payslip exceeds the archive size limit.')
           : local('暂时无法存档，请重试。', 'Could not save the payslip. Try again.');

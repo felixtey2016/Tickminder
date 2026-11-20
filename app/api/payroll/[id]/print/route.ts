@@ -5,7 +5,7 @@ import {isPayslipTemplate, renderPayrollPayslip} from '@/lib/payroll-payslip';
 import {pdfBucket} from '@/lib/pdf-storage';
 import {readTeacherBank, savedPayslipKey, teacherBankKey} from '@/lib/teacher-finance-storage';
 import {MAX_PAYSLIP_BYTES} from '@/lib/private-payroll-objects';
-import {createArchivedPayslip, MAX_PAYSLIP_PAGES, payslipDisposition, payslipFileName} from '@/lib/payroll-pdf';
+import {createArchivedPayslip, MAX_PAYSLIP_PAGES, parsePayslipTextLayer, payslipDisposition, payslipFileName} from '@/lib/payroll-pdf';
 
 const headers = {
  'Cache-Control': 'private, no-store',
@@ -109,22 +109,25 @@ export async function POST(request: Request, context: Context) {
   const key = savedPayslipKey(document.payroll.groupId, document.payroll.id);
   if (await bucket.head(key)) return json({ok: true});
   const form = await readArchiveForm(request);
+  const textLayer = form.get('textLayer');
+  if (textLayer === null) return json({error: '薪资单预览已更新，请重新打开'}, 409);
   if (form.get('revision') !== String(document.revision)) return json({error: '薪资记录已更新，请重新打开预览'}, 409);
   if (!isPayslipTemplate(form.get('template'))) return json({error: '请选择有效排版'}, 400);
   const profileKey = await bankKey(document);
-  const profile = profileKey ? await bucket.head(profileKey) : null;
-  if ((profile?.etag || '') !== form.get('bankVersion')) return json({error: '老师的收款户口已更新，请重新打开预览'}, 409);
+  const profile = profileKey ? await readTeacherBank(profileKey) : null;
+  if ((profile?.version || '') !== form.get('bankVersion')) return json({error: '老师的收款户口已更新，请重新打开预览'}, 409);
   const files = form.getAll('page');
   if (!files.length || files.length > MAX_PAYSLIP_PAGES ||
       files.some(file => typeof file === 'string' || file.type !== 'image/jpeg')) {
    return json({error: '薪资单页面格式无效，请重新打开预览'}, 400);
   }
+  const layer = parsePayslipTextLayer(textLayer, files.length, profile?.bank?.accountNumber);
   // Recheck the payroll revision and session after the upload before storing.
   const current = await payrollPayslip(actor, id);
   if (!current.canArchive) return json({error: '没有权限存档薪资单'}, 403);
   if (current.revision !== document.revision) return json({error: '薪资记录已更新，请重新打开预览'}, 409);
   const pages = await Promise.all((files as File[]).map(async file => new Uint8Array(await file.arrayBuffer())));
-  const pdf = createArchivedPayslip(pages);
+  const pdf = createArchivedPayslip(pages, layer);
   if (pdf.byteLength > MAX_PAYSLIP_BYTES) return json({error: '薪资单超出文件大小上限'}, 413);
   // A retry or concurrent request cannot replace the first saved document.
   await bucket.put(key, pdf, {

@@ -231,5 +231,5 @@ export function renderPayrollPayslip({institutionName, payroll, bonusCents, dedu
     </tr></thead><tbody>${lineRows}</tbody></table></div>
   </section>
 </main>
-<script nonce="${escape(nonce)}" src="/payroll-payslip.js?v=1" defer></script></body></html>`;
+<script nonce="${escape(nonce)}" src="/payroll-payslip.js?v=2" defer></script></body></html>`;
 }
