@@ -9,6 +9,7 @@ const LessonDialog=lazy(()=>import("./scheduler-lesson-dialog").then(m=>({defaul
 import {useWorkspaceData} from '@/lib/use-workspace-data';
 import {workspacePageData,workspaceDataBlocksPage,workspaceIdentityKey} from '@/lib/workspace-page-data';
 import { useDisplayPreferences } from '@/lib/use-display-preferences';
+import {useTheme} from 'next-themes';
 
 import { PasswordInput } from '@/components/password-input';
 import { LoginForm } from './login-form';
@@ -37,7 +38,7 @@ import "@/lib/compact-layout-i18n";
 
 import { PageState } from "@/components/page-state";
 import { actionFailureMessage } from "@/lib/action-feedback";
-import { BarChart3, CalendarClock, ContactRound, LibraryBig, ListChecks, UserRound, UsersRound, SquarePen, ArrowLeftRight, Building2, NotebookPen } from "lucide-react";
+import { BarChart3, CalendarClock, ContactRound, LibraryBig, ListChecks, UserRound, UsersRound, SquarePen, ArrowLeftRight, Building2, NotebookPen, Play } from "lucide-react";
 import { BRAND_NAME } from "@/lib/brand";
 import { LegalLinks } from "@/components/legal-links";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -536,6 +537,17 @@ export function Scheduler({initialQuizId,initialAuth,onAuthChange}:{initialQuizI
     const admin = account.role === "admin";
     return <AdminPermissionContext.Provider value={account}><Workspace key={identityKey} initialQuizId={linkedQuizId} onLinkedQuizExit={exitLinkedQuiz} account={account} state={state} ensureScope={ensureScope} setActiveScopes={setActiveScopes} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} calendarDate={calendarDate} setCalendarDate={setCalendarDate} calendarRange={calendarRange} onCalendarRangeChange={onCalendarRangeChange} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/></AdminPermissionContext.Provider>;
 }
+function WatchPreviewLink({entry,language}:{entry:string;language:Language}) {
+    const {resolvedTheme}=useTheme();
+    const url=new URL(entry);
+    url.searchParams.set('lang',language);
+    url.searchParams.set('theme',resolvedTheme==='dark'?'dark':'light');
+    return <a className="navigation-hub-item" href={url.href} data-testid="watch-admin-preview">
+        <span className="navigation-hub-icon"><Play size={22} aria-hidden="true"/></span>
+        <span className="navigation-hub-copy"><strong>{language==='zh'?'Watch 视频库':'Watch video library'}</strong>
+        <small>{language==='zh'?'管理员预览':'Admin preview'}</small></span>
+    </a>;
+}
 function BrandLogo({ small = false }: { small?: boolean }) { return <span className={`brand-logo ${small ? "small" : ""}`}><img src="/tickminder-logo.svg" width={small ? 40 : 80} height={small ? 40 : 80} alt={BRAND_NAME} /></span>; }
 function LanguageSwitcher({ language, change }: { language: Language; change: (next: Language) => void }) { return <div className="language-switch" role="group" aria-label={t("语言")}><button type="button" aria-pressed={language === "zh"} onClick={() => change("zh")}>中文</button><span className="language-separator" aria-hidden="true">|</span><button type="button" aria-pressed={language === "en"} onClick={() => change("en")}>EN</button></div>; }
 function SignedInIdentity({ account }: { account: Account }) {
@@ -772,14 +784,16 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state:legacyState, 
     const bottomActive=primaryArea(role,activeView);
     const sections:NavigationHubSection[]=hubGroups(role,activeView).map(group=>({id:group.id,title:group.title[language],layout:group.layout,items:group.ids.map(id=>items.find(item=>item.id===id)).filter((item):item is typeof items[number]=>Boolean(item)).map(item=>({id:item.id,label:item.id==='homework'?(language==='zh'?'功课与任务':'Homework & tasks'):t(item.label),Icon:item.Icon,badge:item.id==="courses"?courseBadge(courseBadgeCount(role,badgeCounts)):<MenuBadge count={badgeCounts[item.id as keyof typeof badgeCounts]||0} includeUnread={item.id==='notifications'} quizOnly={item.id==='quizzes'}/>}))})).filter(section=>section.items.length>0);
     let pageContent: React.ReactNode = null;
-    if(activeHub){pageContent=<NavigationHub sections={sections} onChoose={choose}>
+    const watchEntry=activeView==='manageHub'&&role==='admin'&&account.watchPreview
+        ? <WatchPreviewLink entry={account.watchPreview} language={language}/> : null;
+    if(activeHub){pageContent=<NavigationHub sections={sections} onChoose={choose} leading={watchEntry}>
         {(activeView==='manageHub'||activeView==='myHub')&&<><div className="navigation-hub-actions" data-testid="hub-utility-actions">
             {account.groupId==='next-genn-edu'&&<a href="/whatsapp" data-testid="hub-whatsapp"><ServiceBrandIcon service="whatsapp"/><span>{language==='zh'?'连接 WhatsApp':'Connect WhatsApp'}</span></a>}
             <Button type="button" variant="outline" data-testid="hub-refresh" onClick={()=>void reload()}><RefreshCw size={18} aria-hidden="true"/><span>{t('刷新')}</span></Button>
             <Button type="button" variant="outline" data-testid="hub-signout" onClick={()=>void logout()}><LogOut size={18} aria-hidden="true"/><span>{t('退出登录')}</span></Button>
         </div><LegalLinks language={language} className="navigation-hub-legal"/></>}
         {activeView==='financeHub'&&<PageState kind="empty" title={language==='zh'?'暂无财务权限':'Finance access unavailable'} description={language==='zh'?'请联系集团管理员开通。':'Contact your group administrator for access.'}/>}
-        {activeView!=='financeHub'&&!sections.length&&<PageState kind="empty" title={language==='zh'?'暂无可用功能':'No available features'}/>}
+        {activeView!=='financeHub'&&!sections.length&&!watchEntry&&<PageState kind="empty" title={language==='zh'?'暂无可用功能':'No available features'}/>}
     </NavigationHub>;}
     else if((activeView==="groups"&&account.isOwner)||(activeView==="groupInfo"&&role==="admin")){pageContent=<div className="settings-compact"><GroupConsole isOwner={Boolean(account.isOwner)} mode={activeView==="groupInfo"?"information":"platform"} currentGroupId={account.groupId}/>{activeView==="groupInfo"&&canAdminAction(account,"terms.view")&&<div className="settings-tools">{projection.loading&&!projection.data?<PageState kind="loading" title="正在加载…"/>:projection.data&&<TermManager terms={state.terms||[]} mutate={classroomMutate} busy={busy}/>}</div>}</div>;}
     else if (activeView==='quizzes'&&(role==='teacher'||role==='admin'||role==='student')) {

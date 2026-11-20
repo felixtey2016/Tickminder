@@ -15,19 +15,23 @@ import { adminPermissionContext } from "@/lib/admin-permission-access";
 import { transferAccountSession } from "@/lib/account-session";
 import { studentContactRequired } from "@/lib/student-contact";
 import { GOOGLE_LINK_PROMPT_SKIPPED, googleLinkOnboardingEligible } from "@/lib/google-link-onboarding";
+import {watchPreviewConfig, watchPreviewEntry} from "@/lib/watch-preview-config";
 
-async function authPayload(account: Account | null | undefined, local: {username: string; mustChangePassword?: boolean | number} | null | undefined, google: {email: string} | null | undefined) {
+async function authPayload(request: Request, account: Account | null | undefined, local: {username: string; mustChangePassword?: boolean | number} | null | undefined, google: {email: string} | null | undefined) {
   const group=account?await selectedGroup(account):null;
   const hierarchy=account&&group?await adminAuthority(account,group.id):{isGroupChief:false,canManageAdministrators:false};
   const permission=account?.role==="admin"&&group?await adminPermissionContext(transferAccountSession(account,{...account,groupId:group.id})):null;
   const showGoogleLinkOnboarding = googleLinkOnboardingEligible(account,local,google,Boolean(group&&env.GOOGLE_CLIENT_ID)) && !(await rows("SELECT 1 AS found FROM audit WHERE group_id=? AND actor_id=? AND lesson_id=? AND action=? LIMIT 1",account!.groupId,account!.id,`account:${account!.id}`,GOOGLE_LINK_PROMPT_SKIPPED)).length;
-  return { account: account ? { groupId:group?.id || account.groupId,groupName:group?.name || null,groupUnavailable:Boolean(account && !group),id: account.id, email: google?.email || account.email, name: account.name, nameConfirmedAt: account.nameConfirmedAt, contactPhone:account.contactPhone, contactPhoneKind:account.contactPhoneKind, contactPhoneUpdatedAt:account.contactPhoneUpdatedAt, requiresStudentPhone:studentContactRequired(account,Boolean(group?.active&&local&&!local.mustChangePassword)), role: account.role, isOwner: isOwnerAccount(account), isGroupChief:hierarchy.isGroupChief, canManageAdministrators:Boolean(local&&!local.mustChangePassword&&hierarchy.canManageAdministrators), teacherName: account.teacherName, studentName: account.studentName, googleLinked: Boolean(google), emailLoginAvailable: Boolean(google && local), requiresAccountSetup: Boolean(google && !local), username: local?.username || null, mustChangePassword: Boolean(local?.mustChangePassword), showGoogleLinkOnboarding, ...(permission?{adminPermissions:permission}:{}), ...lifecycleView(account) } : null, clientId: env.GOOGLE_CLIENT_ID || null };
+  const watch = account?.role==='admin' && group?.active && local && !local.mustChangePassword &&
+    (isOwnerAccount(account) || hierarchy.isGroupChief) ? watchPreviewConfig(env) : null;
+  const watchPreview = watch ? watchPreviewEntry(watch, new URL(request.url).origin) : undefined;
+  return { account: account ? { groupId:group?.id || account.groupId,groupName:group?.name || null,groupUnavailable:Boolean(account && !group),id: account.id, email: google?.email || account.email, name: account.name, nameConfirmedAt: account.nameConfirmedAt, contactPhone:account.contactPhone, contactPhoneKind:account.contactPhoneKind, contactPhoneUpdatedAt:account.contactPhoneUpdatedAt, requiresStudentPhone:studentContactRequired(account,Boolean(group?.active&&local&&!local.mustChangePassword)), role: account.role, isOwner: isOwnerAccount(account), isGroupChief:hierarchy.isGroupChief, canManageAdministrators:Boolean(local&&!local.mustChangePassword&&hierarchy.canManageAdministrators), teacherName: account.teacherName, studentName: account.studentName, googleLinked: Boolean(google), emailLoginAvailable: Boolean(google && local), requiresAccountSetup: Boolean(google && !local), username: local?.username || null, mustChangePassword: Boolean(local?.mustChangePassword), showGoogleLinkOnboarding, ...(watchPreview?{watchPreview}:{}), ...(permission?{adminPermissions:permission}:{}), ...lifecycleView(account) } : null, clientId: env.GOOGLE_CLIENT_ID || null };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const identity = await currentIdentity();
   const account = identity?.account, local = identity?.local, google = identity?.google;
-  return NextResponse.json(await authPayload(account, local, google), {headers: {"Cache-Control": "no-store"}});
+  return NextResponse.json(await authPayload(request, account, local, google), {headers: {"Cache-Control": "no-store"}});
 }
 
 export async function POST(request: Request) {
@@ -60,7 +64,7 @@ export async function POST(request: Request) {
       if (pendingExpired(loginAccount)) return NextResponse.json({ error: "待分配账号已到期，请联系管理员" }, { status: 403 });
       if (attempt) await db.delete(loginAttempts).where(eq(loginAttempts.username, username));
       const session = await createSession(credential.accountId,request,credential.passwordHash);
-      const response = NextResponse.json({ ok: true, ...await authPayload(loginAccount, credential, loginIdentity?.googleEmail ? {email: loginIdentity.googleEmail} : null) }, {headers: {"Cache-Control": "no-store"}});
+      const response = NextResponse.json({ ok: true, ...await authPayload(request, loginAccount, credential, loginIdentity?.googleEmail ? {email: loginIdentity.googleEmail} : null) }, {headers: {"Cache-Control": "no-store"}});
       response.cookies.set("tuition_session", session.token, { httpOnly: true, secure: true, sameSite: "lax", path: "/", expires: new Date(session.expiresAt) });
       return response;
     }
@@ -89,7 +93,7 @@ export async function POST(request: Request) {
     const canonical = await db.select({account: accounts, username: localCredentials.username, mustChangePassword: localCredentials.mustChangePassword, email: googleIdentities.email}).from(googleIdentities).innerJoin(accounts, eq(accounts.id, googleIdentities.accountId)).leftJoin(localCredentials, eq(localCredentials.accountId, accounts.id)).where(eq(googleIdentities.subject, profile.id)).get();
     if (!canonical || canonical.account.disabledAt || pendingExpired(canonical.account)) return NextResponse.json({error:"账号暂时不可用，请联系管理员"},{status:403});
     const session = await createSession(canonical.account.id,request);
-    const response = NextResponse.json({ ok: true, ...await authPayload(canonical.account, canonical.username ? {username: canonical.username, mustChangePassword: Boolean(canonical.mustChangePassword)} : null, {email: canonical.email}) }, {headers: {"Cache-Control": "no-store"}});
+    const response = NextResponse.json({ ok: true, ...await authPayload(request, canonical.account, canonical.username ? {username: canonical.username, mustChangePassword: Boolean(canonical.mustChangePassword)} : null, {email: canonical.email}) }, {headers: {"Cache-Control": "no-store"}});
     response.cookies.set("tuition_session", session.token, { httpOnly: true, secure: true, sameSite: "lax", path: "/", expires: new Date(session.expiresAt) });
     return response;
   } catch (error) {

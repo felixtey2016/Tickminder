@@ -13,6 +13,9 @@ export function transferAccountSession<T extends object>(source: object, target:
   if (tokenHash) sessions.set(target, tokenHash);
   return target;
 }
+export function boundAccountSessionHash(account: object): string | null {
+  return sessions.get(account) ?? null;
+}
 export function accountSessionPredicate(account: Pick<Account, "id">, qualify=true): {sql: string; args: unknown[]} {
   const tokenHash = sessions.get(account);
   return tokenHash ? {

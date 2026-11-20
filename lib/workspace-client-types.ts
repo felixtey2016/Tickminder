@@ -26,6 +26,7 @@ export type Account = AdminPermissionAccount & {
     role: "admin" | "teacher" | "student" | "parent" | "pending";
     isOwner?: boolean;
     isGroupChief?: boolean;
+    watchPreview?: string;
     canManageAdministrators?: boolean;
     groupId?:string|null;groupName?:string|null;groupUnavailable?:boolean;
     teacherName?: string | null;

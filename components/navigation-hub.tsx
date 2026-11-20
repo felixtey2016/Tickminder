@@ -5,12 +5,13 @@ import './navigation-hub.css';
 
 export type NavigationHubItem={id:string;label:string;description?:string;Icon:LucideIcon;badge?:ReactNode};
 export type NavigationHubSection={id:string;title:string;items:NavigationHubItem[];layout?:'grid'|'list'};
-type Props={title?:string;description?:string;sections:NavigationHubSection[];onChoose:(id:string)=>void;children?:ReactNode};
+type Props={title?:string;description?:string;sections:NavigationHubSection[];onChoose:(id:string)=>void;leading?:ReactNode;children?:ReactNode};
 
-export function NavigationHub({title,description,sections,onChoose,children}:Props){
+export function NavigationHub({title,description,sections,onChoose,leading,children}:Props){
  const id=useId();
  return <div className="navigation-hub" data-testid="navigation-hub">
   {(title||description)&&<div className="navigation-hub-heading">{title&&<h1>{title}</h1>}{description&&<p>{description}</p>}</div>}
+  {leading}
   {sections.filter(section=>section.items.length>0).map(section=><section key={section.id} className="navigation-hub-section" aria-labelledby={`${id}-${section.id}`}>
    <h2 id={`${id}-${section.id}`}>{section.title}</h2>
    <div className={'navigation-hub-items navigation-hub-'+(section.layout||'grid')}>

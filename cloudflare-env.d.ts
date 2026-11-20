@@ -22,5 +22,8 @@ declare namespace Cloudflare {
     PDF_MAX_BYTES?: string;
     PDF_TOTAL_STORAGE_LIMIT_BYTES?: string;
     ADMIN_PERMISSIONS_MODE?: string;
+    WATCH_PREVIEW_APP_ORIGIN?: string;
+    WATCH_PREVIEW_APP_ALIASES?: string;
+    WATCH_PREVIEW_ORIGIN?: string;
   }
 }
