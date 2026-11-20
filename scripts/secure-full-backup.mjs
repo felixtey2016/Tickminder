@@ -100,8 +100,9 @@ function validateSnapshot(path, recovery = null) {
       finally { data.fill(0); }
     }
     const pdfs=objects.filter(x=>x.row.kind==='pdf'),images=objects.filter(x=>x.row.kind==='quiz-image'),logos=objects.filter(x=>x.row.kind==='invoice-logo');
+    const privatePayrollObjects=objects.length-pdfs.length-images.length-logos.length;
     if (counts.pdf_files !== pdfs.length) throw new Error('PDF object count does not match restored database');
-    return { databaseTables: Object.keys(counts).length, pdfCount: pdfs.length, pdfBytes: pdfs.reduce((n,x)=>n+x.row.bytes,0), invoiceLogoCount:logos.length,invoiceLogoBytes:logos.reduce((n,x)=>n+x.row.bytes,0),quizImageCount:images.length,quizImageBytes:images.reduce((n,x)=>n+x.row.bytes,0),restore: 'memory-and-files-ok' };
+    return { databaseTables: Object.keys(counts).length, pdfCount: pdfs.length, pdfBytes: pdfs.reduce((n,x)=>n+x.row.bytes,0), invoiceLogoCount:logos.length,invoiceLogoBytes:logos.reduce((n,x)=>n+x.row.bytes,0),quizImageCount:images.length,quizImageBytes:images.reduce((n,x)=>n+x.row.bytes,0),...(privatePayrollObjects?{privatePayrollObjects}:{}),restore: 'memory-and-files-ok' };
   } finally { key.fill(0); }
 }
 async function fetchExport(url, token) {
@@ -185,7 +186,14 @@ async function main() {
         const identity=row.kind+':'+id;
         if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id) || seen.has(identity)) throw new Error('Invalid or duplicate object ID');
         seen.add(identity);
-        const response = await fetchExport(new URL(`/api/backup-export?${row.kind==='quiz-image'?'image':row.kind==='invoice-logo'?'logo':'file'}=${encodeURIComponent(id)}`, site), token);
+        const endpoint = new URL('/api/backup-export', site);
+        if (row.kind === 'teacher-bank' || row.kind === 'payroll-payslip') {
+          endpoint.searchParams.set('privatePayroll', row.object_key);
+          endpoint.searchParams.set('etag', row.etag);
+        } else {
+          endpoint.searchParams.set(row.kind === 'quiz-image' ? 'image' : row.kind === 'invoice-logo' ? 'logo' : 'file', id);
+        }
+        const response = await fetchExport(endpoint, token);
         const bytes = Buffer.from(await response.arrayBuffer());
         try {
           if (bytes.length !== Number(row.bytes) || !validObjectSignature(bytes,row.mime) || row.sha256&&sha(bytes)!==row.sha256) throw new Error(`Object size, signature or checksum mismatch for ${row.kind}`);

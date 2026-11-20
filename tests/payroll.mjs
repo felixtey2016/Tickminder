@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import {createHash} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import {createFixtureLoader} from './fixture-loader.mjs';
+import {snapshotObjects, snapshotVersion, validObjectSignature} from '../scripts/backup-order.mjs';
 
 // Only fictional in-memory institutions, teachers and money. Real route, grants,
 // SQL, triggers and atomic batch semantics are retained in this fixture.
@@ -12,12 +14,32 @@ for(const file of fs.readdirSync(new URL('../drizzle/',import.meta.url)).filter(
 let actor=null,beforeBatch=null,checks=0,maxBindings=0;
 function statement(sql,values=[]){const execute=()=>{maxBindings=Math.max(maxBindings,values.length);assert(values.length<=100,'D1 parameter limit');assert((sql.match(/\bUNION\b/gi)||[]).length<5,'D1 compound query limit');const s=sqlite.prepare(sql);return s.columns().length?{results:s.all(...values),meta:{changes:0}}:{results:[],meta:s.run(...values)};};return{bind:(...v)=>statement(sql,v),all:async()=>execute(),first:async()=>execute().results[0]||null,run:async()=>execute(),execute};}
 const db={prepare:statement,batch:async statements=>{beforeBatch?.();beforeBatch=null;sqlite.exec('BEGIN');try{const result=statements.map(s=>s.execute());sqlite.exec('COMMIT');return result;}catch(error){sqlite.exec('ROLLBACK');throw error;}}};
-globalThis.__payrollRuntime={learningDb:()=>db,currentBusinessAccount:async()=>actor,OWNER_EMAIL:'owner@payroll.example.test',isOwnerAccount:a=>a?.role==='admin'&&a.email==='owner@payroll.example.test'&&!a.id.startsWith('local:')};
-globalThis.__payrollEnvironment={ADMIN_PERMISSIONS_MODE:'enforced'};
-const dataUrl=s=>'data:text/javascript;base64,'+Buffer.from(s).toString('base64'),runtimeUrl=dataUrl('export const {learningDb,currentBusinessAccount,OWNER_EMAIL,isOwnerAccount}=globalThis.__payrollRuntime;'),environmentUrl=dataUrl('export const env=globalThis.__payrollEnvironment;');
-const load=createFixtureLoader({runtimeUrl,environmentUrl,runtimeFiles:['lib/auth.ts','lib/owner.ts','lib/learning-server.ts']});
+const objects = new Map();
+const bucket = {
+ head: async key => objects.get(key) ?? null,
+ get: async (key, {onlyIf} = {}) => {
+  const object = objects.get(key);
+  if (!object || onlyIf && onlyIf.etagMatches !== object.etag) return null;
+  return {...object, body: new Blob([object.bytes]).stream(), json: async () => JSON.parse(object.bytes.toString())};
+ },
+ put: async (key, data, {onlyIf} = {}) => {
+  const previous = objects.get(key);
+  if (onlyIf?.etagDoesNotMatch === '*' && previous || onlyIf?.etagMatches && previous?.etag !== onlyIf.etagMatches) return null;
+  const bytes = Buffer.from(data);
+  const value = {key, etag: createHash('md5').update(bytes).digest('hex'), bytes, size: bytes.length};
+  objects.set(key, value);
+  return value;
+ },
+ list: async ({prefix}) => ({objects: [...objects.values()].filter(value => value.key.startsWith(prefix)), truncated: false}),
+};
+globalThis.__payrollRuntime={learningDb:()=>db,pdfBucket:()=>bucket,currentBusinessAccount:async()=>actor,OWNER_EMAIL:'owner@payroll.example.test',isOwnerAccount:a=>a?.role==='admin'&&a.email==='owner@payroll.example.test'&&!a.id.startsWith('local:')};
+globalThis.__payrollEnvironment={ADMIN_PERMISSIONS_MODE:'enforced',BUCKET:bucket,BACKUP_EXPORT_TOKEN:'fictional-payroll-backup-123456789012345'};
+const dataUrl=s=>'data:text/javascript;base64,'+Buffer.from(s).toString('base64'),runtimeUrl=dataUrl('export const {learningDb,pdfBucket,currentBusinessAccount,OWNER_EMAIL,isOwnerAccount}=globalThis.__payrollRuntime;'),environmentUrl=dataUrl('export const env=globalThis.__payrollEnvironment;');
+const load=createFixtureLoader({runtimeUrl,environmentUrl,runtimeFiles:['lib/auth.ts','lib/owner.ts','lib/learning-server.ts','lib/pdf-storage.ts']});
 const route=(await load('app/api/payroll/route.ts')).module,service=(await load('lib/payroll-server.ts')).module,permissions=(await load('lib/admin-permissions.ts')).module,payrollContract=(await load('lib/payroll.ts')).module;
 const printRoute=(await load('app/api/payroll/[id]/print/route.ts')).module;
+const bankRoute=(await load('app/api/payroll/teacher-bank/route.ts')).module;
+const backupRoute=(await load('app/api/backup-export/route.ts')).module;
 const gid='payroll-school',foreign='payroll-foreign',now=new Date().toISOString(),op=()=>crypto.randomUUID();
 for(const g of[gid,foreign])sqlite.prepare('INSERT INTO tuition_groups(id,name,join_code,created_at,updated_at) VALUES(?,?,?,?,?)').run(g,g,g,now,now);
 function account(id,role='admin',groupId=gid,email=id+'@payroll.example.test'){const value={id,role,groupId,email,name:id};sqlite.prepare('INSERT INTO accounts(id,email,name,role,group_id,created_at) VALUES(?,?,?,?,?,?)').run(id,email,id,role,groupId,now);return value;}
@@ -104,7 +126,7 @@ detail=expect(await get({view:'detail',payrollId:generated.payrollId}),200,'part
  grant(grants);
  check(()=>assert.equal(response.status,200));
  check(()=>assert.equal(response.headers.get('Cache-Control'),'private, no-store'));
- const nonce=html.match(/<script nonce="([a-f0-9]+)">/)?.[1];
+ const nonce=html.match(/<script nonce="([a-f0-9]+)" src="\/payroll-payslip.js/)?.[1];
  check(()=>assert(nonce&&response.headers.get('Content-Security-Policy').includes("'nonce-"+nonce+"'")));
  for(const text of ['Teacher payslip','Ms Ada','2026-10','230.00','20.00','5.00','245.00','Teaching record','Class class-group','Bank account number']){
   check(()=>assert(html.includes(text),'payslip includes '+text));
@@ -255,4 +277,99 @@ const deletedGenerateOperation=sqlite.prepare("SELECT operation_id,request_hash 
 const beforeDeleteRace=snapshot();beforeBatch=()=>grant(['payroll.view']);expect(await post({action:'deleteDraft',payrollId:timezoneRun.payrollId,revision:1,operationId:op()}),409,'deletion rechecks permission at write boundary');grant(grants);check(()=>assert.equal(snapshot(),beforeDeleteRace,'revoked delete cannot create tombstone or remove salary'));
 
 check(()=>assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[]));check(()=>assert.equal(sqlite.prepare('PRAGMA integrity_check').get().integrity_check,'ok'));check(()=>assert.equal(sqlite.prepare('SELECT count(*) n FROM audit WHERE action LIKE ?').get('payroll.%').n,sqlite.prepare('SELECT count(*) n FROM payroll_operations').get().n,'one audit per successful operation'));
+{
+ const origin = 'https://payroll.fixture.test';
+ const endpoint = origin + '/api/payroll/teacher-bank';
+ const body = {teacherName: 'Ms Ada'};
+ const initialBank = {bankName: 'Maybank', accountHolder: '陈老师', accountNumber: '001-23 4567'};
+ const bankRequest = async (data, as = admin, requestOrigin = origin) => {
+  actor = as;
+  return bankRoute.POST(new Request(endpoint, {method: 'POST', headers: {Origin: requestOrigin, 'Content-Type': 'application/json'},
+   body: JSON.stringify({...body, ...data})}));
+ };
+ grant(grants);
+ check(()=>assert.equal((objects.size),0));
+ for (const [user, code] of [[null, 401], [outsider, 404], [teacher, 403], [student, 403]]) {
+  const response = await bankRequest({action:'read'}, user);
+  check(()=>assert.equal(response.status, code));
+ }
+ const forged = await bankRequest({action:'save', bank:initialBank, version:null}, admin, 'https://other.example.test');
+ check(()=>assert.equal(forged.status,403));
+ const invalid = await bankRequest({action:'save', bank:{...initialBank, accountNumber:'12345a'}, version:null});
+ check(()=>assert.equal(invalid.status,400));
+ const savedBank = await bankRequest({action:'save', bank:initialBank, version:null});
+ const {version} = await savedBank.json();
+ check(()=>assert.equal(savedBank.status,200));
+ const bankRead = await bankRequest({action:'read'});
+ const remembered = await bankRead.json();
+ check(()=>assert.equal(bankRead.headers.get('Cache-Control'),'private, no-store'));
+ check(()=>assert.equal(remembered.bank.accountNumber, '001234567', 'preserve leading zeroes'));
+ check(()=>assert.equal(remembered.bank.accountHolder, '陈老师'));
+ const preview = await print(generated.payrollId);
+ const previewHtml = await preview.text();
+ check(()=>assert(previewHtml.includes('001234567') && previewHtml.includes('Maybank') && previewHtml.includes('name') && previewHtml.includes('value="brand"')));
+ check(()=>assert(previewHtml.includes('<title>Ms Ada 2026-10 salary</title>')));
+ const revision = previewHtml.match(/data-revision="(\d+)"/)[1];
+
+ const routePath = '/api/payroll/' + generated.payrollId + '/print';
+ // Minimal marker stream for exercising the archival API. The browser test
+ // supplies fully encoded JPEG pages and validates the resulting document.
+ const jpeg = Buffer.from([255,216,255,192,0,17,8,6,148,4,166,3,1,17,0,2,17,0,3,17,0,255,217]);
+ const archiveRequest = async (expectedRevision, bankVersion, file = jpeg, as = admin) => {
+  actor = as;
+  const form = new FormData();
+  form.set('revision',expectedRevision);
+  form.set('bankVersion',bankVersion);
+  form.set('template','brand');
+  form.append('page', new Blob([file], {type:'image/jpeg'}),'one.jpg');
+  return printRoute.POST(new Request(origin + routePath, {method:'POST', headers:{Origin:origin}, body:form}),
+   {params:Promise.resolve({id:generated.payrollId})});
+ };
+ const stale = await archiveRequest('0',version);
+ check(()=>assert.equal(stale.status,409));
+ const badImage = await archiveRequest(revision,version,Buffer.from('%PDF-1.4'));
+ check(()=>assert.equal(badImage.status,400));
+ grant(['payroll.view']);
+ const viewOnly = await archiveRequest(revision,version);
+ check(()=>assert.equal(viewOnly.status,403));
+ grant(grants);
+ const archive = await archiveRequest(revision,version);
+ check(()=>assert.equal(archive.status,200));
+ const pdf = await print(generated.payrollId);
+ const archivedBytes = Buffer.from(await pdf.arrayBuffer());
+ check(()=>assert.equal(pdf.headers.get('Content-Type'),'application/pdf'));
+ check(()=>assert.match(pdf.headers.get('Content-Disposition'), /filename="Ms Ada 2026-10 salary.pdf"/));
+ check(()=>assert(validObjectSignature(archivedBytes,'application/pdf')));
+ const secondSave = await bankRequest({action:'save',bank:{...initialBank,bankName:'CIMB Bank',accountNumber:'00987654321'},version});
+ check(()=>assert.equal(secondSave.status,200));
+ const oldWrite = await bankRequest({action:'save',bank:initialBank,version});
+ check(()=>assert.equal(oldWrite.status,409));
+ const retry = await archiveRequest(revision,version,Buffer.from('do not overwrite'));
+ check(()=>assert.equal(retry.status,200));
+ const reopened = await print(generated.payrollId);
+ check(()=>assert.equal(reopened.headers.get('Content-Type'),'application/pdf'));
+ const reopenedBytes = Buffer.from(await reopened.arrayBuffer());
+ check(()=>assert.deepEqual(reopenedBytes, archivedBytes, 'reopen serves the saved bytes'));
+ const deniedFile = await print(generated.payrollId,outsider);
+ check(()=>assert.equal(deniedFile.status,404));
+ const token = __payrollEnvironment.BACKUP_EXPORT_TOKEN;
+ const exportRequest = (query = '', authorized = true) => new Request(origin + '/api/backup-export' + query,
+  {headers: authorized ? {Authorization:'Bearer ' + token} : {}});
+ const backup = await backupRoute.GET(exportRequest());
+ const snapshot = await backup.json();
+ check(()=>assert.equal(snapshotVersion(snapshot),43));
+ const savedObjects = snapshotObjects(snapshot).filter(row=>['teacher-bank','payroll-payslip'].includes(row.kind));
+ check(()=>assert.equal(savedObjects.length,2));
+ for (const row of savedObjects) {
+  const query = '?' + new URLSearchParams({privatePayroll:row.object_key, etag:row.etag});
+  const unauthorized = await backupRoute.GET(exportRequest(query,false));
+  check(()=>assert.equal(unauthorized.status,404));
+  const response = await backupRoute.GET(exportRequest(query));
+  check(()=>assert.equal(response.status,200));
+  const bytes = Buffer.from(await response.arrayBuffer());
+  check(()=>assert(validObjectSignature(bytes,row.mime)));
+ }
+ if (process.env.PAYSLIP_BANK_TEST_FIXTURE) fs.writeFileSync(process.env.PAYSLIP_BANK_TEST_FIXTURE,
+  JSON.stringify({html:previewHtml,headers:Object.fromEntries(preview.headers),revision}));
+}
 console.log(JSON.stringify({ok:true,checks,maxBindings}));

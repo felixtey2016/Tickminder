@@ -31,6 +31,10 @@ const recordingSource=stripTypeScriptTypes(readFileSync(new URL('../lib/recordin
 const {recordingDriveUrl,recordingDate}=await import('data:text/javascript;base64,'+Buffer.from(recordingSource).toString('base64'));
 const externalSource=stripTypeScriptTypes(readFileSync(new URL('../lib/backup-external-schema.ts',import.meta.url),'utf8'));
 const {EXTERNAL_BOT_TABLES,externalSchemaPlan}=await import('data:text/javascript;base64,'+Buffer.from(externalSource).toString('base64'));
+const payrollObjectsSource = stripTypeScriptTypes(readFileSync(new URL('../lib/private-payroll-objects.ts', import.meta.url), 'utf8'));
+const {inspectPrivatePayrollKey} = await import('data:text/javascript;base64,' + Buffer.from(payrollObjectsSource).toString('base64'));
+const teacherBankSource = stripTypeScriptTypes(readFileSync(new URL('../lib/teacher-bank.ts', import.meta.url), 'utf8'));
+const {parseTeacherBank} = await import('data:text/javascript;base64,' + Buffer.from(teacherBankSource).toString('base64'));
 export function externalSnapshotSchema(database){
  const objects=database?.externalSchema;
  const hashes=Object.fromEntries((Array.isArray(objects)?objects:[]).filter(item=>item&&typeof item.name==='string'&&typeof item.sql==='string').map(item=>[item.name,createHash('sha256').update(item.sql).digest('hex')]));
@@ -310,7 +314,7 @@ export function checkRestoredFolderStructure(db) {
  if(invalid||db.prepare('PRAGMA foreign_key_check').all().length)throw Error('Restored folder relationships are invalid');
 }
 
-export function snapshotVersion(data){return Number(data?.format?.match(/^timelyo-d1-v(42|41|40|39|38|37|36|35|34|33|32|31|30|29|28|27|26|25|24|23|22|21|20|19|18|17|16|15|14|13|12|11|10|[1-9])$/)?.[1]||0);}
+export function snapshotVersion(data){return Number(data?.format?.match(/^timelyo-d1-v(43|42|41|40|39|38|37|36|35|34|33|32|31|30|29|28|27|26|25|24|23|22|21|20|19|18|17|16|15|14|13|12|11|10|[1-9])$/)?.[1]||0);}
 export function expectedSnapshotTables(version,tables={}){
  const base=['accounts','assignments','audit','lessons','local_credentials','login_attempts','plans','reschedule_requests','sessions','students','teachers','pdf_files','storage_quota','teaching_materials','material_recipients','homework','homework_recipients','homework_submissions','study_blocks'];
  return [...(version>=9?['tuition_groups']:[]),...base,...(version>=2?['classrooms','classroom_members','classroom_announcements']:[]),...(version>=3?['google_identities']:[]),...(version>=4?['academic_terms']:[]),...(version>=7?['notification_items','notification_deliveries','push_subscriptions','notification_runtime']:[]),...(version>=8?['site_notifications']:[]),...(version>=10?['classroom_folders','classroom_content_state']:[]),...(version>=11?['learning_versions','homework_score_history']:[]),...(version>=12?['homework_resubmission_grants','homework_feedback','learning_notifications','learning_notification_deliveries']:[]),...(version>=13?['class_sessions','class_session_participants']:[]),...(version>=15?['quizzes','quiz_versions','quiz_answer_keys','quiz_images','quiz_version_images']:[]),...(version>=16?['quiz_practice_assignments','quiz_practice_recipients','quiz_practice_attempts','quiz_practice_operations']:[]),...(version>=17?['quiz_practice_events','quiz_assignment_notifications']:[]),...(version>=18?['academic_catalogues','student_grade_promotions']:[]),...(version>=20?['billing_students','billing_subjects','billing_policies','billing_policy_versions','billing_rates','billing_rate_versions','billing_operations','billing_adjustments']:[]),...(version>=21?['admin_permission_profiles']:[]),...(version>=22?['invoice_brand_assets','invoice_brand_settings','invoices','invoice_items','invoice_operations','invoice_sequences','invoice_source_locks']:[]),...(version>=23?['whatsapp_contacts','whatsapp_challenges','whatsapp_contact_requests','class_recordings','recording_recipients','recording_operations',...EXTERNAL_BOT_TABLES.filter(name=>Object.hasOwn(tables,name))]:[]),...(version>=24?['quiz_publications','quiz_publication_reports','quiz_publication_appeals','quiz_moderation_events','quiz_moderation_operations','quiz_question_sources']:[]),...(version>=25?['invoice_finance_accounts','invoice_finance_operations','invoice_payments','invoice_receipt_sequences','invoice_receipts','invoice_finance_events','invoice_attendance_corrections']:[]),...(version>=26?FINANCE_ROUND2_TABLES:[]),...(version>=27?CLASS_PAYROLL_TABLES:[]),...(version>=28?PREPAYMENT_TABLES:[]),...(version>=29?PARENT_TABLES:[]),...(version>=30?PARENT_FINANCIAL_TABLES:[]),...(version>=31?PARENT_NOTIFICATION_TABLES:[]),...(version>=33?RESOURCE_TABLES:[]),...(version>=34?OFFBOARDING_TABLES:[]),...(version>=35?QUIZ_SHARING_TABLES:[]),...(version>=39?['notification_preferences']:[]),...(version>=42?['invoice_monthly_extra_decisions']:[])];
@@ -330,12 +334,33 @@ export function snapshotObjects(database){
    objects.push({...row,kind:'invoice-logo',mime:'image/png'});
   }
  }
+ if (snapshotVersion(database) >= 43) {
+  const privateObjects = database.privatePayrollObjects;
+  if (!Array.isArray(privateObjects) || !privateObjects.length) throw Error('Private payroll object metadata missing');
+  for (const row of privateObjects) {
+   const info = typeof row?.object_key === 'string' && inspectPrivatePayrollKey(row.object_key);
+   if (!info || row.id !== info.id || row.group_id !== info.group_id || row.kind !== info.kind || row.mime !== info.mime ||
+       !Number.isSafeInteger(row.bytes) || row.bytes < 1 || row.bytes > info.maxBytes ||
+       typeof row.etag !== 'string' || !/^[a-f0-9]{32}(?:-[0-9]+)?$/.test(row.etag)) {
+    throw Error('Invalid private payroll object metadata');
+   }
+   objects.push(row);
+  }
+ }
  const seen=new Set();for(const row of objects){const identity=row.kind+':'+row.id;if(seen.has(identity)||!/^[a-zA-Z0-9_-]{1,128}$/.test(row.id)||!Number.isSafeInteger(row.bytes)||row.bytes<1)throw Error('Invalid or duplicate backup object');seen.add(identity);}
  return objects;
 }
-export function backupObjectName(file){return file.id+'.'+(file.kind==='quiz-image'?'image':file.kind==='invoice-logo'?'logo':'pdf')+'.dpapi';}
+export function backupObjectName(file){
+ const kind = file.kind === 'quiz-image' ? 'image' : file.kind === 'invoice-logo' ? 'logo'
+  : file.kind === 'teacher-bank' ? 'bank' : file.kind === 'payroll-payslip' ? 'salary' : 'pdf';
+ return file.id + '.' + kind + '.dpapi';
+}
 export function validObjectSignature(bytes,mime){
  if(mime==='application/pdf')return bytes.subarray(0,5).toString()==='%PDF-';
+ if(mime==='application/json'){
+  try {return Boolean(parseTeacherBank(JSON.parse(bytes.toString('utf8'))));}
+  catch {return false;}
+ }
  if(mime==='image/png')return bytes.length>=33&&bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]))&&bytes.toString('ascii',12,16)==='IHDR'&&bytes.readUInt32BE(16)>0&&bytes.readUInt32BE(20)>0;
  if(mime==='image/jpeg')return bytes.length>=4&&bytes[0]===255&&bytes[1]===216&&bytes[2]===255&&bytes.at(-2)===255&&bytes.at(-1)===217;
  if(mime==='image/webp')return bytes.length>=20&&bytes.toString('ascii',0,4)==='RIFF'&&bytes.toString('ascii',8,12)==='WEBP'&&bytes.readUInt32LE(4)===bytes.length-8;
@@ -343,7 +368,7 @@ export function validObjectSignature(bytes,mime){
 }
 export function matchManifestObjects(database,files){
  const objects=snapshotObjects(database);if(!Array.isArray(files)||files.length!==objects.length)throw Error('Backup object count does not match restored database');
- const actual=new Map();for(const file of files){const kind=file.kind??'pdf',identity=kind+':'+file.id;if(!['pdf','quiz-image','invoice-logo'].includes(kind)||actual.has(identity)||!/^[a-zA-Z0-9_-]{1,128}$/.test(file.id)||!/^[a-f0-9]{64}$/.test(file.sha256)||!Number.isSafeInteger(file.bytes)||file.bytes<1||typeof file.iv!=='string'||typeof file.tag!=='string')throw Error('Invalid backup manifest entry');actual.set(identity,file);}
+ const actual=new Map();for(const file of files){const kind=file.kind??'pdf',identity=kind+':'+file.id;if(!['pdf','quiz-image','invoice-logo','teacher-bank','payroll-payslip'].includes(kind)||actual.has(identity)||!/^[a-zA-Z0-9_-]{1,128}$/.test(file.id)||!/^[a-f0-9]{64}$/.test(file.sha256)||!Number.isSafeInteger(file.bytes)||file.bytes<1||typeof file.iv!=='string'||typeof file.tag!=='string')throw Error('Invalid backup manifest entry');actual.set(identity,file);}
  return objects.map(row=>{const metadata=actual.get(row.kind+':'+row.id);if(!metadata||metadata.bytes!==row.bytes||(row.sha256&&metadata.sha256!==row.sha256)||(row.kind!=='pdf'&&(metadata.objectKey!==row.object_key||metadata.mime!==row.mime)))throw Error('Backup object metadata does not match database');return {row,metadata};});
 }
 export function checkRestoredInvoiceStructure(db){

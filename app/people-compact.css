@@ -120,3 +120,15 @@
  .people-compact .people-name-line{gap:5px 8px}
  .people-compact .directory-section-head>h2{font-size:18px}
 }
+.teacher-bank-form {
+  display: grid;
+  gap: 16px;
+}
+.teacher-bank-form label {
+  display: grid;
+  gap: 6px;
+}
+.teacher-bank-form :is(input, select) {
+  width: 100%;
+  min-width: 0;
+}

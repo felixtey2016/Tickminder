@@ -33,6 +33,11 @@ let routeSource=ts.transpileModule(fs.readFileSync(path.join(root,'app/api/backu
 for(const spec of ['cloudflare:workers','@/lib/learning-server','@/lib/pdf-storage'])routeSource=routeSource.replaceAll('"'+spec+'"','"'+stub+'"').replaceAll("'"+spec+"'","'"+stub+"'");
 const externalModule='data:text/javascript;base64,'+Buffer.from(ts.transpileModule(fs.readFileSync(path.join(root,'lib/backup-external-schema.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64');
 routeSource=routeSource.replaceAll('"@/lib/backup-external-schema"',JSON.stringify(externalModule)).replaceAll("'@/lib/backup-external-schema'",JSON.stringify(externalModule));
+for (const name of ['private-payroll-objects']) {
+ const moduleSource=ts.transpileModule(fs.readFileSync(path.join(root,'lib',name+'.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+ const moduleUrl='data:text/javascript;base64,'+Buffer.from(moduleSource).toString('base64');
+ routeSource=routeSource.replaceAll('"@/lib/'+name+'"',JSON.stringify(moduleUrl)).replaceAll("'@/lib/"+name+"'",JSON.stringify(moduleUrl));
+}
 const route=await import('data:text/javascript;base64,'+Buffer.from(routeSource).toString('base64'));
 const request=provided=>new Request('https://fixture.invalid/api/backup-export',{headers:provided?{authorization:'Bearer '+provided}:{}});
 check('anonymous export is hidden',()=>{});assert.equal((await route.GET(request())).status,404);

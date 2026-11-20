@@ -153,17 +153,43 @@ export async function payrollList(actor:Account,monthValue:string,teacherIdValue
 }
 export async function payrollDetail(actor:Account,payrollIdValue:string,pageValue=1):Promise<PayrollDetail>{await requirePayrollPermission(actor);const row=await run(actor,'payroll.view',id(payrollIdValue)),person=await teacher(actor,row.teacherId),current=await source(actor,'payroll.view',person,row.month),total=(await read<{n:number}>(actor,'payroll.view','SELECT count(*) AS n FROM payroll_events WHERE group_id=? AND payroll_id=?',actor.groupId,row.id))[0]?.n||0,{pages,page}=paging(pageValue,total),events=await read<PayrollEvent>(actor,'payroll.view',`SELECT e.id,e.kind,e.amount_cents AS amountCents,e.payment_id AS paymentId,e.occurred_at AS occurredAt,e.method,e.reference,e.notes,e.reason,e.actor_id AS actorId,e.created_at AS createdAt,(SELECT x.occurred_at FROM payroll_events x WHERE x.group_id=e.group_id AND x.payment_id=e.id AND x.kind='reverse') AS reversedAt FROM payroll_events e WHERE e.group_id=? AND e.payroll_id=? ORDER BY e.expected_revision DESC LIMIT 20 OFFSET ?`,actor.groupId,row.id,(page-1)*20);return{payroll:JSON.parse(row.documentJson) as PayrollDocument,summary:summary(row),review:{...current.review,sourceChanged:current.sourceHash!==row.sourceHash},events,page,pages,total,pageSize:20};}
 
-export async function payrollPayslip(actor: Account, payrollId: string): Promise<PayslipData> {
+export async function payrollBankTeacher(actor: Account, teacherName: unknown) {
  const gid = group(actor);
+ const name = limited(teacherName, 200, '老师姓名', true);
+ const teacher = (await read<{name: string; createdAt: string}>(actor, 'payroll.edit',
+  'SELECT name, created_at AS createdAt FROM teachers WHERE group_id=? AND name=?', gid, name))[0];
+ if (!teacher) {
+  await requirePayrollPermission(actor, 'payroll.edit');
+  throw new PayrollError('找不到这位老师。', 404);
+ }
+ return {gid, ...teacher};
+}
+
+export async function payrollPayslip(actor: Account, payrollId: string): Promise<PayslipData & {
+ revision: number;
+ teacherName: string;
+ teacherCreatedAt: string | null;
+ canArchive: boolean;
+}> {
+ const gid = group(actor);
+ const archiveAuthority = payrollAuthority(actor, 'payroll.edit');
  const record = (await read<Pick<PayslipData, 'institutionName' | 'bonusCents' | 'deductionCents'> & {
   status: PayrollSummary['status'];
   documentJson: string;
+  revision: number;
+  teacherName: string;
+  teacherCreatedAt: string | null;
+  canArchive: number;
  }>(actor, 'payroll.view', `
   SELECT r.status, r.document_json AS documentJson, r.bonus_cents AS bonusCents,
-         r.deduction_cents AS deductionCents, g.name AS institutionName
+         r.deduction_cents AS deductionCents, g.name AS institutionName, r.revision,
+         pt.teacher_name AS teacherName, t.created_at AS teacherCreatedAt,
+         CASE WHEN ${archiveAuthority.sql} THEN 1 ELSE 0 END AS canArchive
   FROM payroll_runs r JOIN tuition_groups g ON g.id = r.group_id
+  JOIN payroll_teachers pt ON pt.group_id = r.group_id AND pt.id = r.teacher_id
+  LEFT JOIN teachers t ON t.group_id = pt.group_id AND t.name = pt.teacher_name
   WHERE r.group_id = ? AND r.id = ?
- `, gid, id(payrollId)))[0];
+ `, ...archiveAuthority.args, gid, id(payrollId)))[0];
  if (!record) {
   await requirePayrollPermission(actor);
   throw new PayrollError('薪资记录不存在或无权查看', 404);
@@ -174,6 +200,10 @@ export async function payrollPayslip(actor: Account, payrollId: string): Promise
   institutionName: record.institutionName,
   bonusCents: record.bonusCents,
   deductionCents: record.deductionCents,
+  revision: record.revision,
+  teacherName: record.teacherName,
+  teacherCreatedAt: record.teacherCreatedAt,
+  canArchive: Boolean(record.canArchive),
  };
 }
 async function replay(actor:Account,key:string,operation:string,hash:string){const row=(await read<{actorId:string;hash:string;result:string}>(actor,key,'SELECT actor_id AS actorId,request_hash AS hash,result_json AS result FROM payroll_operations WHERE group_id=? AND operation_id=?',group(actor),operation))[0];if(!row)return null;if(row.actorId!==actor.id||row.hash!==hash)throw new PayrollError('操作编号已用于其他请求，请刷新后重试',409);const result=JSON.parse(row.result) as PayrollResult;if(result.payrollId&&!result.deleted&&(await read<{id:string}>(actor,key,'SELECT payroll_id AS id FROM payroll_deleted_drafts WHERE group_id=? AND payroll_id=?',group(actor),result.payrollId)).length)throw new PayrollError('这份薪资草稿已删除，请重新生成',410);return result;}

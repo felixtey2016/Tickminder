@@ -1,5 +1,19 @@
 import type {PayrollDocument} from './payroll';
 import {formatDurationSeconds} from './duration-format';
+import {malaysiaBanks, type TeacherBank} from './teacher-bank';
+import {payslipFileName} from './payroll-pdf';
+
+const payslipTemplates = ['standard', 'centered', 'brand'] as const;
+export function isPayslipTemplate(value: unknown) {
+  return payslipTemplates.some(template => template === value);
+}
+
+type PayslipOptions = {
+  bank: TeacherBank | null;
+  bankVersion: string | null;
+  revision: number;
+  canArchive: boolean;
+};
 
 export type PayslipData = {
   institutionName: string;
@@ -22,17 +36,26 @@ const styles = `
   .tools { margin-bottom: 20px; }
   .tools form { display: grid; gap: 12px; }
   .fields,.metadata,.bank { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
-  label,input { display: block; width: 100%; }
+  label,input,select { display: block; width: 100%; }
   label { font-size: .9em; }
-  input,button { font: inherit; min-height: 44px; border-radius: 8px; padding: 8px 12px; }
-  input { margin-top: 4px; border: 1px solid #c9c2d4; color: inherit; background: white; }
+  input,select,button,.tool-actions a { font: inherit; min-height: 44px; border-radius: 8px; padding: 8px 12px; }
+  input,select { margin-top: 4px; border: 1px solid #c9c2d4; color: inherit; background: white; }
   button { justify-self: start; border: 1px solid transparent; background: #5942a9; color: white; font-weight: bold; cursor: pointer; }
   button:disabled { opacity: .55; cursor: default; }
-  input:focus-visible,button:focus-visible { outline: 2px solid #5942a9; outline-offset: 2px; }
+  input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible { outline: 2px solid #5942a9; outline-offset: 2px; }
+  .tool-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tool-actions a { border: 1px solid #c9c2d4; color: #5942a9; text-decoration: none; }
+  .tool-actions .secondary { background: white; color: #5942a9; border-color: #c9c2d4; }
+  [hidden] { display: none !important; }
+  #save-status:empty { display: none; }
   .paper { border-top: 4px solid #5942a9; padding: 28px; }
   .heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
   .institution { font-weight: 700; color: #4b387f; overflow-wrap: anywhere; }
   .reference { color: #545060; font-size: .85em; overflow-wrap: anywhere; }
+  .layout-picker { max-width: 24rem; }
+  body[data-template="centered"] .heading { display: grid; justify-content: center; text-align: center; }
+  body[data-template="brand"] .heading { background: #5942a9; color: white; padding: 18px; border-radius: 8px; }
+  body[data-template="brand"] .heading :is(.institution,.reference) { color: white; }
   .metadata,.bank { padding: 12px; border-radius: 8px; background: #f4f1fa; }
   .metadata dd,.bank dd { font-weight: 600; overflow-wrap: anywhere; }
   dt { color: #545060; font-size: .85em; }
@@ -79,40 +102,10 @@ const styles = `
   }
 `;
 
-// Bank details are entered directly on the printable page. There is no
-// submission or persistence for the inputs, and the preview uses textContent.
-const printScript = `
-  const bank = document.getElementById('teacher-bank');
-  const holder = document.getElementById('account-holder');
-  const account = document.getElementById('account-number');
-  const button = document.getElementById('print-slip');
-  function updatePreview() {
-    const bankName = bank.value.trim(), accountHolder = holder.value.trim();
-    const digits = account.value.trim().replace(/[ -]/g, '');
-    const validNumber = /^[0-9]{5,34}$/.test(digits);
-    const invalidNumber = Boolean(account.value.trim()) && !validNumber;
-    document.getElementById('slip-bank').textContent = bankName || '—';
-    document.getElementById('slip-holder').textContent = accountHolder || '—';
-    document.getElementById('slip-number').textContent = validNumber ? digits : '—';
-    account.setAttribute('aria-invalid', String(invalidNumber));
-    document.getElementById('bank-number-hint').hidden = !invalidNumber;
-    const ready = Boolean(bankName && accountHolder && validNumber);
-    document.body.toggleAttribute('data-bank-ready', ready);
-    button.disabled = !ready;
-    return ready;
-  }
-  document.getElementById('bank-form').addEventListener('input', updatePreview);
-  document.getElementById('bank-form').addEventListener('submit', event => {
-    event.preventDefault();
-    if (updatePreview()) window.print();
-  });
-  window.addEventListener('beforeprint', updatePreview);
-  updatePreview();
-`;
-
-export function renderPayrollPayslip({institutionName, payroll, bonusCents, deductionCents}: PayslipData, language: Language, nonce: string) {
+export function renderPayrollPayslip({institutionName, payroll, bonusCents, deductionCents}: PayslipData, language: Language, nonce: string, options: PayslipOptions) {
   const label = (zh: string, en: string) => language === 'zh' ? zh : en;
   const title = label('老师薪资单', 'Teacher payslip');
+  const fileName = payslipFileName(payroll.teacherName, payroll.month);
   const moneyFormatter = new Intl.NumberFormat('en-MY', {style:'currency', currency:'MYR'});
   const money = (cents: number) => escape(moneyFormatter.format(cents / 100));
   const dateFormatter = new Intl.DateTimeFormat(language === 'zh' ? 'zh-CN' : 'en-GB', {
@@ -153,22 +146,46 @@ export function renderPayrollPayslip({institutionName, payroll, bonusCents, dedu
   return `<!doctype html>
 <html lang="${language === 'zh' ? 'zh-CN' : 'en'}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title} · ${escape(payroll.month)} · ${escape(reference)}</title><style>${styles}</style></head>
-<body>
+<title>${escape(fileName.replace(/\.pdf$/, ''))}</title><style>${styles}</style></head>
+<body data-template="standard"${options.bank ? ' data-bank-ready' : ''}>
 <section class="tools" aria-label="${label('打印设置', 'Print settings')}">
-  <form id="bank-form" autocomplete="off">
-    <div><h2>${label('填写收款银行资料', 'Enter bank details')}</h2>
-      <p class="detail">${label('银行资料仅用于这次打印或保存 PDF。','Bank details are used for this PDF or printout.')}</p>
-    </div>
-    <div class="fields">
-      <label for="teacher-bank">${label('银行名称', 'Bank name')}<input id="teacher-bank" required maxlength="100"></label>
+  <form id="bank-form" autocomplete="off" data-revision="${escape(options.revision)}" data-bank-version="${escape(options.bankVersion ?? '')}">
+    <label class="layout-picker" for="payslip-template">${label('薪资单排版', 'Payslip layout')}
+      <select id="payslip-template">
+        <option value="standard">${label('标准商务款', 'Standard business')}</option>
+        <option value="centered">${label('简洁居中款', 'Simple centred')}</option>
+        <option value="brand">${label('机构品牌款', 'Institution brand')}</option>
+      </select>
+    </label>
+    ${options.bank
+      ? `<p class="detail">${label('已带入老师资料中的收款户口。', 'Bank details loaded from the teacher profile.')}</p>`
+      : `<div><h2>${label('填写收款银行资料', 'Enter bank details')}</h2>
+      <p class="detail">${label('也可以在老师资料保存收款户口，下次自动带出。','You can save bank details on the teacher profile to use them next time.')}</p>
+    </div><div class="fields">
+      <label for="teacher-bank">${label('银行名称', 'Bank name')}
+        <select id="teacher-bank" required>
+          <option value="">${label('请选择', 'Select')}</option>
+          ${malaysiaBanks.map(bank => `<option value="${escape(bank)}">${escape(bank)}</option>`).join('')}
+          <option value="__other_bank__">${label('其他银行', 'Other bank')}</option>
+        </select>
+      </label>
       <label for="account-holder">${label('户名', 'Account holder')}<input id="account-holder" required maxlength="160"></label>
       <div>
         <label for="account-number">${label('银行户口号码', 'Bank account number')}<input id="account-number" required inputmode="numeric" maxlength="42" aria-describedby="bank-number-hint"></label>
         <span class="detail" id="bank-number-hint" hidden>${label('请输入 5 至 34 位数字。', 'Enter 5 to 34 digits.')}</span>
       </div>
+      <label id="other-bank-field" for="other-bank-name" hidden>${label('填写银行名称', 'Enter bank name')}
+        <input id="other-bank-name" maxlength="100" disabled>
+      </label>
+    </div>`}
+    <div class="tool-actions">
+      ${options.canArchive
+        ? `<button id="save-slip" type="submit" disabled>${label('存档并下载 PDF', 'Save and download PDF')}</button>`
+        : `<button id="print-slip" type="submit" disabled>${label('打印 / 保存 PDF', 'Print / Save PDF')}</button>`}
+      <a id="open-saved-slip" hidden>${label('查看已存档薪资单', 'Open saved payslip')}</a>
+      <a id="download-saved-slip" hidden>${label('下载 PDF', 'Download PDF')}</a>
     </div>
-    <button id="print-slip" type="submit" disabled>${label('打印 / 保存 PDF', 'Print / Save PDF')}</button>
+    <p class="detail" id="save-status" role="status"></p>
   </form>
 </section>
 <p class="print-error">${label('请先填写收款银行资料，再打印薪资单。', 'Fill in the bank details before printing the payslip.')}</p>
@@ -194,9 +211,9 @@ export function renderPayrollPayslip({institutionName, payroll, bonusCents, dedu
   <section class="section">
     <h2>${label('收款银行资料', 'Bank details')}</h2>
     <dl class="bank">
-      ${term(label('银行名称', 'Bank name'), '<span id="slip-bank">—</span>')}
-      ${term(label('户名', 'Account holder'), '<span id="slip-holder">—</span>')}
-      ${term(label('银行户口号码', 'Bank account number'), '<span id="slip-number">—</span>')}
+      ${term(label('银行名称', 'Bank name'), `<span id="slip-bank">${escape(options.bank?.bankName || '—')}</span>`)}
+      ${term(label('户名', 'Account holder'), `<span id="slip-holder">${escape(options.bank?.accountHolder || '—')}</span>`)}
+      ${term(label('银行户口号码', 'Bank account number'), `<span id="slip-number">${escape(options.bank?.accountNumber || '—')}</span>`)}
     </dl>
   </section>
   ${monthly.length ? `<section class="section"><h2>${label('班级月薪明细', 'Fixed monthly pay')}</h2><div class="table-wrap">
@@ -214,5 +231,5 @@ export function renderPayrollPayslip({institutionName, payroll, bonusCents, dedu
     </tr></thead><tbody>${lineRows}</tbody></table></div>
   </section>
 </main>
-<script nonce="${escape(nonce)}">${printScript}</script></body></html>`;
+<script nonce="${escape(nonce)}" src="/payroll-payslip.js?v=1" defer></script></body></html>`;
 }

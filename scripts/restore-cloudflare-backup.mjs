@@ -143,12 +143,16 @@ try {
     for (const [name, table] of tables) if (rowHash(table, local.prepare(`SELECT * FROM ${identifier(name)}`).all()) !== rowHash(table, table.rows)) throw new Error('Local row checksum mismatch');
   } finally { local.close(); }
   const files = matchManifestObjects(database,manifest.files);
-  const pdfCount=files.filter(f=>f.row.kind==='pdf').length,imageCount=files.length-pdfCount;
+  const pdfCount=files.filter(f=>f.row.kind==='pdf').length;
+  const imageCount=files.filter(f=>['quiz-image','invoice-logo'].includes(f.row.kind)).length;
+  const payrollCount=files.length-pdfCount-imageCount;
   for (const {row:file} of files) {
+    // matchManifestObjects already validated the private payroll prefix and subtype.
+    if (file.kind==='teacher-bank'||file.kind==='payroll-payslip') continue;
     if (!/^[a-zA-Z0-9_-]+$/.test(file.id) || !(file.kind==='quiz-image'?/^quiz\/[a-zA-Z0-9_-]{1,128}$/:file.kind==='invoice-logo'?/^invoice-brand\/[a-z0-9-]{1,64}\/[a-zA-Z0-9_-]{1,128}\.png$/:/^pdf\/[a-zA-Z0-9_-]{1,128}$/).test(file.object_key)) throw new Error('Unexpected backup object key');
   }
   if (!args.includes('--apply')) {
-    console.log(JSON.stringify({verified: true, tables: tables.length, pdfs: pdfCount,quizImages:imageCount, mode: 'local-dry-run', createdAt: manifest.createdAt}));
+    console.log(JSON.stringify({verified: true, tables: tables.length, pdfs: pdfCount,quizImages:imageCount,privatePayrollObjects:payrollCount, mode: 'local-dry-run', createdAt: manifest.createdAt}));
   } else {
     const existing = query("SELECT count(*) AS count FROM sqlite_master WHERE type='table' AND name NOT GLOB 'sqlite_*' AND name NOT GLOB '_cf_*' AND name NOT GLOB 'd1_*'")[0];
     if (Number(existing?.count) !== 0) throw new Error('Recovery database must be empty; refusing overwrite');
@@ -182,7 +186,7 @@ try {
       } finally { bytes.fill(0); }
     }
     console.log(JSON.stringify({restored: true, database: target.d1_databases[0].database_name,
-      tables: tables.length, pdfs: pdfCount,quizImages:imageCount, verification: 'all-table-row-hashes-and-object-SHA256', createdAt: manifest.createdAt}));
+      tables: tables.length, pdfs: pdfCount,quizImages:imageCount,privatePayrollObjects:payrollCount, verification: 'all-table-row-hashes-and-object-SHA256', createdAt: manifest.createdAt}));
   }
 } catch (error) {
   console.error(error.message);

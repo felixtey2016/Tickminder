@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { learningDb } from "@/lib/learning-server";
 import { pdfBucket } from "@/lib/pdf-storage";
 import {EXTERNAL_BOT_TABLES,externalSchemaPlan,type ExternalSchemaObject} from '@/lib/backup-external-schema';
+import {inspectPrivatePayrollKey, listPrivatePayrollObjects} from '@/lib/private-payroll-objects';
 
 const baseTables = [
   "accounts", "assignments", "audit", "lessons", "local_credentials",
@@ -49,6 +50,18 @@ export async function GET(request: Request) {
   try {
     const db = learningDb();
     const url = new URL(request.url);
+    const payrollObject = url.searchParams.get('privatePayroll');
+    if (payrollObject !== null) {
+      const info = inspectPrivatePayrollKey(payrollObject);
+      const version = url.searchParams.get('etag') || '';
+      if (!info || !/^[a-f0-9]{32}(?:-[0-9]+)?$/.test(version)) return new Response(null, {status: 400, headers: noStore});
+      const object = await pdfBucket().get(payrollObject, {onlyIf: {etagMatches: version}});
+      if (!object || !('body' in object) || object.size < 1 || object.size > info.maxBytes) {
+        return new Response(null, {status: 409, headers: noStore});
+      }
+      return new Response(object.body, {headers: {...noStore, 'Content-Type': info.mime,
+        'Content-Disposition': 'attachment', 'Content-Length': String(object.size)}});
+    }
     const imageId = url.searchParams.get("image");
     if (imageId !== null) {
       if (!/^[a-zA-Z0-9_-]{1,128}$/.test(imageId)) return new Response(null, { status: 400, headers: noStore });
@@ -251,7 +264,8 @@ export async function GET(request: Request) {
     if(hasResources&&!hasAttendanceWindow)throw Error("Resource library requires attendance foundation");
     const contents=await db.batch<Record<string,unknown>>(names.map(name=>db.prepare(`SELECT * FROM "${name}"`)));
     names.forEach((name,index)=>{tables[name].rows=contents[index].results;});
-    return Response.json({ format: hasMonthlyExtraDecisions ? "timelyo-d1-v42" : hasInvoiceBillingScope ? "timelyo-d1-v41" : hasMonthlyIncludedSessions ? "timelyo-d1-v40" : hasNotificationPreferences ? "timelyo-d1-v39" : hasQuizResumePosition ? "timelyo-d1-v38" : hasAdminMaterialCreation ? "timelyo-d1-v37" : hasStudentContact ? "timelyo-d1-v36" : hasQuizSharing ? "timelyo-d1-v35" : hasLifecycle ? "timelyo-d1-v34" : hasResources ? "timelyo-d1-v33" : hasAttendanceWindow ? "timelyo-d1-v32" : hasParentNotifications ? "timelyo-d1-v31" : hasParentFinancialAccess ? "timelyo-d1-v30" : hasParents ? "timelyo-d1-v29" : hasPrepayments ? "timelyo-d1-v28" : hasClassPayroll ? "timelyo-d1-v27" : hasFinanceRound2 ? "timelyo-d1-v26" : hasInvoiceFinance ? "timelyo-d1-v25" : hasQuizUpgrade ? "timelyo-d1-v24" : hasRecordingsAndContacts ? "timelyo-d1-v23" : hasInvoices ? "timelyo-d1-v22" : hasAdminPermissions ? "timelyo-d1-v21" : hasBilling ? "timelyo-d1-v20" : hasAcademicCatalogues && tables.quiz_practice_attempts.columns.includes("discarded_at") ? "timelyo-d1-v19" : hasAcademicCatalogues ? "timelyo-d1-v18" : hasFormalPractice ? "timelyo-d1-v17" : hasPractice ? "timelyo-d1-v16" : hasQuizzes ? "timelyo-d1-v15" : hasClassSessions&&tables.class_sessions.columns.includes("teaching_status") ? "timelyo-d1-v14" : hasClassSessions ? "timelyo-d1-v13" : hasReview ? "timelyo-d1-v12" : hasVersions ? "timelyo-d1-v11" : hasFolders ? "timelyo-d1-v10" : hasGroups ? "timelyo-d1-v9" : hasInbox ? "timelyo-d1-v8" : hasNotifications ? "timelyo-d1-v7" : tables.accounts.columns.includes("pending_expires_at") ? "timelyo-d1-v6" : tables.reschedule_requests.columns.includes("requested_role") ? "timelyo-d1-v5" : hasTerms ? "timelyo-d1-v4" : hasIdentities ? "timelyo-d1-v3" : hasClassrooms ? "timelyo-d1-v2" : "timelyo-d1-v1", tables,...external.names.length?{externalSchema}:{} }, { headers: noStore });
+    const privatePayrollObjects = env.BUCKET ? await listPrivatePayrollObjects(env.BUCKET) : [];
+    return Response.json({ format: privatePayrollObjects.length ? "timelyo-d1-v43" : hasMonthlyExtraDecisions ? "timelyo-d1-v42" : hasInvoiceBillingScope ? "timelyo-d1-v41" : hasMonthlyIncludedSessions ? "timelyo-d1-v40" : hasNotificationPreferences ? "timelyo-d1-v39" : hasQuizResumePosition ? "timelyo-d1-v38" : hasAdminMaterialCreation ? "timelyo-d1-v37" : hasStudentContact ? "timelyo-d1-v36" : hasQuizSharing ? "timelyo-d1-v35" : hasLifecycle ? "timelyo-d1-v34" : hasResources ? "timelyo-d1-v33" : hasAttendanceWindow ? "timelyo-d1-v32" : hasParentNotifications ? "timelyo-d1-v31" : hasParentFinancialAccess ? "timelyo-d1-v30" : hasParents ? "timelyo-d1-v29" : hasPrepayments ? "timelyo-d1-v28" : hasClassPayroll ? "timelyo-d1-v27" : hasFinanceRound2 ? "timelyo-d1-v26" : hasInvoiceFinance ? "timelyo-d1-v25" : hasQuizUpgrade ? "timelyo-d1-v24" : hasRecordingsAndContacts ? "timelyo-d1-v23" : hasInvoices ? "timelyo-d1-v22" : hasAdminPermissions ? "timelyo-d1-v21" : hasBilling ? "timelyo-d1-v20" : hasAcademicCatalogues && tables.quiz_practice_attempts.columns.includes("discarded_at") ? "timelyo-d1-v19" : hasAcademicCatalogues ? "timelyo-d1-v18" : hasFormalPractice ? "timelyo-d1-v17" : hasPractice ? "timelyo-d1-v16" : hasQuizzes ? "timelyo-d1-v15" : hasClassSessions&&tables.class_sessions.columns.includes("teaching_status") ? "timelyo-d1-v14" : hasClassSessions ? "timelyo-d1-v13" : hasReview ? "timelyo-d1-v12" : hasVersions ? "timelyo-d1-v11" : hasFolders ? "timelyo-d1-v10" : hasGroups ? "timelyo-d1-v9" : hasInbox ? "timelyo-d1-v8" : hasNotifications ? "timelyo-d1-v7" : tables.accounts.columns.includes("pending_expires_at") ? "timelyo-d1-v6" : tables.reschedule_requests.columns.includes("requested_role") ? "timelyo-d1-v5" : hasTerms ? "timelyo-d1-v4" : hasIdentities ? "timelyo-d1-v3" : hasClassrooms ? "timelyo-d1-v2" : "timelyo-d1-v1", tables,...external.names.length?{externalSchema}:{},...(privatePayrollObjects.length?{privatePayrollObjects}:{}) }, { headers: noStore });
   } catch {
     return Response.json({ error: "Backup export unavailable" }, { status: 503, headers: noStore });
   }

@@ -103,6 +103,11 @@ let routeSource=ts.transpileModule(fs.readFileSync(path.join(root,'app/api/backu
 for(const name of ['cloudflare:workers','@/lib/learning-server','@/lib/pdf-storage'])routeSource=routeSource.replaceAll('"'+name+'"',JSON.stringify(stub));
 const externalModule='data:text/javascript;base64,'+Buffer.from(ts.transpileModule(fs.readFileSync(path.join(root,'lib/backup-external-schema.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64');
 routeSource=routeSource.replaceAll('"@/lib/backup-external-schema"',JSON.stringify(externalModule)).replaceAll("'@/lib/backup-external-schema'",JSON.stringify(externalModule));
+for (const name of ['private-payroll-objects']) {
+ const moduleSource=ts.transpileModule(fs.readFileSync(path.join(root,'lib',name+'.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+ const moduleUrl='data:text/javascript;base64,'+Buffer.from(moduleSource).toString('base64');
+ routeSource=routeSource.replaceAll('"@/lib/'+name+'"',JSON.stringify(moduleUrl)).replaceAll("'@/lib/"+name+"'",JSON.stringify(moduleUrl));
+}
 const route=await import(sourceUrl(routeSource));
 const request=secret=>new Request('https://fictional-billing.example.test/api/backup-export',{headers:secret?{authorization:'Bearer '+secret}:{}});
 let response=await route.GET(request(token)),payload=await response.json();

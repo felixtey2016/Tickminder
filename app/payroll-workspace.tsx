@@ -142,7 +142,7 @@ export default function PayrollWorkspace({permissions,initialPayrollId,initialMo
       </> : <>
        {!busy&&<Button asChild variant="outline" adminGrant="payroll.view">
         <a href={'/api/payroll/'+encodeURIComponent(document.id)+'/print?lang='+getLanguage()} target="_blank" rel="noopener noreferrer" data-testid="payroll-payslip">
-         {payLabel('生成薪资单','Generate payslip')}
+         {payLabel('薪资单','Payslip')}
         </a>
        </Button>}
        {permissions.edit&&<Button type="button" variant="outline" disabled={busy} onClick={()=>{pending.current=null;setAction({kind:'adjust'});}}>{F2('adjustPayroll')}</Button>}
