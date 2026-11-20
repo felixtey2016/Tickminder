@@ -17,6 +17,7 @@ globalThis.__payrollEnvironment={ADMIN_PERMISSIONS_MODE:'enforced'};
 const dataUrl=s=>'data:text/javascript;base64,'+Buffer.from(s).toString('base64'),runtimeUrl=dataUrl('export const {learningDb,currentBusinessAccount,OWNER_EMAIL,isOwnerAccount}=globalThis.__payrollRuntime;'),environmentUrl=dataUrl('export const env=globalThis.__payrollEnvironment;');
 const load=createFixtureLoader({runtimeUrl,environmentUrl,runtimeFiles:['lib/auth.ts','lib/owner.ts','lib/learning-server.ts']});
 const route=(await load('app/api/payroll/route.ts')).module,service=(await load('lib/payroll-server.ts')).module,permissions=(await load('lib/admin-permissions.ts')).module,payrollContract=(await load('lib/payroll.ts')).module;
+const printRoute=(await load('app/api/payroll/[id]/print/route.ts')).module;
 const gid='payroll-school',foreign='payroll-foreign',now=new Date().toISOString(),op=()=>crypto.randomUUID();
 for(const g of[gid,foreign])sqlite.prepare('INSERT INTO tuition_groups(id,name,join_code,created_at,updated_at) VALUES(?,?,?,?,?)').run(g,g,g,now,now);
 function account(id,role='admin',groupId=gid,email=id+'@payroll.example.test'){const value={id,role,groupId,email,name:id};sqlite.prepare('INSERT INTO accounts(id,email,name,role,group_id,created_at) VALUES(?,?,?,?,?,?)').run(id,email,id,role,groupId,now);return value;}
@@ -46,6 +47,11 @@ for(const [name,status]of[['Student A','completed'],['Student B','student_absent
  sqlite.prepare('INSERT INTO lessons(id,group_id,session_id,student,subject,teacher_name,planned_start,planned_end,status,created_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run('lesson-'+name,gid,'session-group',name,'Mathematics','Ms Ada','2026-10-01T12:00:00Z','2026-10-01T13:30:00Z',status,owner.id,now);
 }
 async function get(params,as=admin){actor=as;const response=await route.GET(new Request('https://payroll.example.test/api/payroll?'+new URLSearchParams(params)));return{status:response.status,data:await response.json()};}
+async function print(payrollId,as=admin,lang='en'){
+ actor=as;
+ const url='https://payroll.example.test/api/payroll/'+encodeURIComponent(payrollId)+'/print?lang='+lang;
+ return printRoute.GET(new Request(url),{params:Promise.resolve({id:payrollId})});
+}
 async function post(data,as=admin){actor=as;const response=await route.POST(new Request('https://payroll.example.test/api/payroll',{method:'POST',headers:{origin:'https://payroll.example.test','content-type':'application/json'},body:JSON.stringify(data)}));return{status:response.status,data:await response.json()};}
 const check=fn=>{fn();checks++;},expect=(r,status,label)=>{check(()=>assert.equal(r.status,status,label+': '+JSON.stringify(r.data)));return r.data;};
 expect(await get({view:'teachers'},null),401,'anonymous denied');expect(await get({view:'teachers'},teacher),403,'teacher payroll denied');expect(await get({view:'teachers'},student),403,'student payroll denied');
@@ -59,6 +65,8 @@ expect(await post(rateBody('Ms Ada',10000)),200,'teacher default rate');const ov
 const history=expect(await get({view:'rates',teacherId:tid['Ms Ada']}),200,'rate history');check(()=>assert.equal(history.rates.length,2));check(()=>assert.equal(history.classrooms.length,2));
 expect(await post(rateBody('Ms Ada',1,'2026-02-30',1)),400,'invalid effective date');expect(await post(rateBody('Ms Ada',0,'2026-10-01',1)),400,'zero rate denied');expect(await post(rateBody('Ms Ada',10000,'2026-10-01',0)),409,'stale rate revision');expect(await post(rateBody('Ms Ada',10000,'2026-10-01',0,'class-foreign')),404,'foreign classroom denied');
 const generatedBody={action:'generate',teacherId:tid['Ms Ada'],month:'2026-10',operationId:op()},generated=expect(await post(generatedBody),200,'salary accrues during current month');expect(await post(generatedBody),200,'generation replay');
+const draftPrint=await print(generated.payrollId);
+check(()=>assert.equal(draftPrint.status,409,'draft is not a formal payslip'));
 let detail=expect(await get({view:'detail',payrollId:generated.payrollId}),200,'draft details');check(()=>assert.equal(detail.summary.baseTotalCents,28000));check(()=>assert.equal(detail.summary.lessonCount,2));check(()=>assert.equal(detail.summary.durationSeconds,9000));check(()=>assert.equal(detail.payroll.sourceLines.length,4));check(()=>assert.equal(detail.review.excludedCount,2));check(()=>assert.equal(detail.review.sourceChanged,false));
 const groupLine=detail.payroll.sourceLines.find(l=>l.sessionId==='session-group');check(()=>assert.equal(groupLine.amountCents,18000,'90min paid once despite two students'));check(()=>assert.equal(groupLine.rateVersionId,override.rateId));
 check(()=>assert.equal(detail.summary.draftPreview.confirmedCents,28000));check(()=>assert.equal(detail.summary.draftPreview.projectedCents,0));check(()=>assert.equal(detail.summary.draftPreview.complete,true));
@@ -82,6 +90,35 @@ expect(await post({action:'adjust',payrollId:generated.payrollId,revision:rev,op
 expect(await post({action:'adjust',payrollId:generated.payrollId,revision:rev,operationId:op(),kind:'deduction',amountCents:500,reason:'Agreed correction'}),200,'deduction adjustment');rev++;
 const paymentBody={action:'pay',payrollId:generated.payrollId,revision:rev,operationId:op(),amountCents:10000,method:'bank_transfer',paidAt:'2026-10-20',reference:'SAL-ONE'},payment=expect(await post(paymentBody),200,'partial salary payment');expect(await post(paymentBody),200,'payment replay');rev++;
 detail=expect(await get({view:'detail',payrollId:generated.payrollId}),200,'partial balance');check(()=>assert.equal(detail.summary.totalCents,24500));check(()=>assert.equal(detail.summary.paidCents,10000));check(()=>assert.equal(detail.summary.remainingCents,14500));
+{
+ const before=sqlite.prepare('SELECT * FROM payroll_runs WHERE id=?').get(generated.payrollId);
+ const response=await print(generated.payrollId),html=await response.text();
+ for(const [account,status] of [[null,401],[teacher,403],[student,403],[outsider,404]]){
+  const denied=await print(generated.payrollId,account);
+  check(()=>assert.equal(denied.status,status));
+  check(()=>assert.equal(denied.headers.get('Cache-Control'),'private, no-store'));
+ }
+ grant([]);
+ const revoked=await print(generated.payrollId);
+ check(()=>assert.equal(revoked.status,403,'revoked finance grant cannot print'));
+ grant(grants);
+ check(()=>assert.equal(response.status,200));
+ check(()=>assert.equal(response.headers.get('Cache-Control'),'private, no-store'));
+ const nonce=html.match(/<script nonce="([a-f0-9]+)">/)?.[1];
+ check(()=>assert(nonce&&response.headers.get('Content-Security-Policy').includes("'nonce-"+nonce+"'")));
+ for(const text of ['Teacher payslip','Ms Ada','2026-10','230.00','20.00','5.00','245.00','Teaching record','Class class-group','Bank account number']){
+  check(()=>assert(html.includes(text),'payslip includes '+text));
+ }
+ for(const text of ['SAL-ONE','Agreed correction','session-group','rateVersionId','Student A','Student B']){
+  check(()=>assert(!html.includes(text),'payslip excludes private ledger data '+text));
+ }
+ const zh=await print(generated.payrollId,admin,'zh'),zhHtml=await zh.text();
+ check(()=>assert(zhHtml.includes('老师薪资单')&&zhHtml.includes('应发薪资')));
+ check(()=>assert.deepEqual(sqlite.prepare('SELECT * FROM payroll_runs WHERE id=?').get(generated.payrollId),before,'printing never changes payroll'));
+ if(process.env.PAYSLIP_TEST_FIXTURE)fs.writeFileSync(process.env.PAYSLIP_TEST_FIXTURE,JSON.stringify({
+  html,headers:Object.fromEntries(response.headers),detail,
+ }));
+}
 expect(await post({...paymentBody,revision:rev,operationId:op(),amountCents:14501}),400,'overpayment denied');expect(await post({...paymentBody,amountCents:9000}),409,'operation body mismatch');expect(await post({...paymentBody,revision:rev,operationId:op(),paidAt:'2026-02-30'}),400,'invalid payment calendar date');expect(await post({...paymentBody,revision:rev,operationId:op(),paidAt:'2026-10-20T24:00:00Z'}),400,'invalid payment clock');expect(await post({...paymentBody,revision:rev,operationId:op(),paidAt:'2099-01-01'}),400,'future payment');
 expect(await post({action:'adjust',payrollId:generated.payrollId,revision:rev,operationId:op(),kind:'deduction',amountCents:15000,reason:'Would fall below paid'}),400,'deduction cannot fall below already disbursed');expect(await post({action:'adjust',payrollId:generated.payrollId,revision:rev,operationId:op(),kind:'bonus',amountCents:1,reason:''}),400,'adjustment reason required');
 const reverseBody={action:'reversePayment',payrollId:generated.payrollId,revision:rev,paymentId:payment.eventId,operationId:op(),effectiveAt:'2026-10-21',reason:'Incorrect registration'};
@@ -181,6 +218,11 @@ expect(await post({action:'refresh',payrollId:modeRun.payrollId,revision:4,opera
 const recreated=(await get({view:'list',teacherId:modesId,month:'2026-10'})).data.items[0];check(()=>assert.notEqual(recreated.id,modeRun.payrollId));
 let recreatedDetail=expect(await get({view:'detail',payrollId:recreated.id}),200,'recreated salary details');
 expect(await post({action:'confirm',payrollId:recreated.id,revision:1,expectedSourceHash:recreatedDetail.payroll.sourceHash,operationId:op()}),200,'confirm agreed monthly salary');
+const monthlyPrint=await print(recreated.id),monthlyHtml=await monthlyPrint.text();
+check(()=>assert.equal(monthlyPrint.status,200));
+check(()=>assert(monthlyHtml.includes('Fixed monthly pay')&&monthlyHtml.includes('350.00')&&monthlyHtml.includes('475.00')));
+check(()=>assert(monthlyHtml.includes('Included in monthly pay')&&monthlyHtml.includes(' / lesson')&&monthlyHtml.includes(' / hour')));
+check(()=>assert(!monthlyHtml.includes('Agreed partial month total'),'internal monthly review notes stay private'));
 expect(await post({action:'deleteDraft',payrollId:recreated.id,revision:2,operationId:op()}),409,'confirmed salary cannot be deleted');
 check(()=>assert.throws(()=>sqlite.prepare('DELETE FROM payroll_deleted_drafts WHERE payroll_id=?').run(modeRun.payrollId),/payroll_immutable/));
 check(()=>assert.throws(()=>sqlite.prepare('DELETE FROM payroll_runs WHERE id=?').run(recreated.id),/payroll_immutable/));

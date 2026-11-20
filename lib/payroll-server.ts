@@ -5,6 +5,7 @@ import {accountSessionPredicate} from './account-session';
 import {OWNER_EMAIL} from './owner';
 import {billingDate,billingMonth,billHourlyCents,malaysiaDate} from './billing';
 import {PAYROLL_METHODS,PayrollError,payrollDraftPreview,type PayrollTeacher,type PayrollRate,type PayrollSourceLine,type PayrollReview,type PayrollDocument,type PayrollSummary,type PayrollDetail,type PayrollList,type PayrollRatesResponse,type PayrollResult,type PayrollEvent,type PayrollMethod,type PayrollMonthlyLine,type PayrollClassroomResponse,type PayrollRateMode} from './payroll';
+import type {PayslipData} from './payroll-payslip';
 
 type Guard={sql:string;args:unknown[]};
 const text=(v:unknown)=>typeof v==='string'?v.trim():'';
@@ -151,6 +152,30 @@ export async function payrollList(actor:Account,monthValue:string,teacherIdValue
  return{items:await Promise.all(rows.map(async row=>row.id?summary(row):{id:null,teacherId:await payrollTeacherId(gid,row.candidateName),teacherName:row.candidateName,month:m,status:'not_generated' as const,lessonCount:row.candidateLessonCount,durationSeconds:row.candidateDurationSeconds,rosterMissing:Boolean(row.rosterMissing)})),page,pages,total,pageSize:20};
 }
 export async function payrollDetail(actor:Account,payrollIdValue:string,pageValue=1):Promise<PayrollDetail>{await requirePayrollPermission(actor);const row=await run(actor,'payroll.view',id(payrollIdValue)),person=await teacher(actor,row.teacherId),current=await source(actor,'payroll.view',person,row.month),total=(await read<{n:number}>(actor,'payroll.view','SELECT count(*) AS n FROM payroll_events WHERE group_id=? AND payroll_id=?',actor.groupId,row.id))[0]?.n||0,{pages,page}=paging(pageValue,total),events=await read<PayrollEvent>(actor,'payroll.view',`SELECT e.id,e.kind,e.amount_cents AS amountCents,e.payment_id AS paymentId,e.occurred_at AS occurredAt,e.method,e.reference,e.notes,e.reason,e.actor_id AS actorId,e.created_at AS createdAt,(SELECT x.occurred_at FROM payroll_events x WHERE x.group_id=e.group_id AND x.payment_id=e.id AND x.kind='reverse') AS reversedAt FROM payroll_events e WHERE e.group_id=? AND e.payroll_id=? ORDER BY e.expected_revision DESC LIMIT 20 OFFSET ?`,actor.groupId,row.id,(page-1)*20);return{payroll:JSON.parse(row.documentJson) as PayrollDocument,summary:summary(row),review:{...current.review,sourceChanged:current.sourceHash!==row.sourceHash},events,page,pages,total,pageSize:20};}
+
+export async function payrollPayslip(actor: Account, payrollId: string): Promise<PayslipData> {
+ const gid = group(actor);
+ const record = (await read<Pick<PayslipData, 'institutionName' | 'bonusCents' | 'deductionCents'> & {
+  status: PayrollSummary['status'];
+  documentJson: string;
+ }>(actor, 'payroll.view', `
+  SELECT r.status, r.document_json AS documentJson, r.bonus_cents AS bonusCents,
+         r.deduction_cents AS deductionCents, g.name AS institutionName
+  FROM payroll_runs r JOIN tuition_groups g ON g.id = r.group_id
+  WHERE r.group_id = ? AND r.id = ?
+ `, gid, id(payrollId)))[0];
+ if (!record) {
+  await requirePayrollPermission(actor);
+  throw new PayrollError('薪资记录不存在或无权查看', 404);
+ }
+ if (record.status !== 'confirmed') throw new PayrollError('核算完成后才能生成正式薪资单', 409);
+ return {
+  payroll: JSON.parse(record.documentJson) as PayrollDocument,
+  institutionName: record.institutionName,
+  bonusCents: record.bonusCents,
+  deductionCents: record.deductionCents,
+ };
+}
 async function replay(actor:Account,key:string,operation:string,hash:string){const row=(await read<{actorId:string;hash:string;result:string}>(actor,key,'SELECT actor_id AS actorId,request_hash AS hash,result_json AS result FROM payroll_operations WHERE group_id=? AND operation_id=?',group(actor),operation))[0];if(!row)return null;if(row.actorId!==actor.id||row.hash!==hash)throw new PayrollError('操作编号已用于其他请求，请刷新后重试',409);const result=JSON.parse(row.result) as PayrollResult;if(result.payrollId&&!result.deleted&&(await read<{id:string}>(actor,key,'SELECT payroll_id AS id FROM payroll_deleted_drafts WHERE group_id=? AND payroll_id=?',group(actor),result.payrollId)).length)throw new PayrollError('这份薪资草稿已删除，请重新生成',410);return result;}
 function opGuard(gid:string,operation:string,execution:string):Guard{return{sql:'EXISTS(SELECT 1 FROM payroll_operations WHERE group_id=? AND operation_id=? AND execution_id=?)',args:[gid,operation,execution]};}
 function identityStatement(person:PayrollTeacher,gid:string,now:string,guard:Guard){return learningDb().prepare(`INSERT OR IGNORE INTO payroll_teachers(id,group_id,teacher_name,created_at) SELECT ?,?,?,? WHERE ${guard.sql}`).bind(person.teacherId,gid,person.teacherName,now,...guard.args);}

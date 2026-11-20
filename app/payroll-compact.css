@@ -54,6 +54,7 @@
  .payroll-compact>.panel{padding:16px}
  .payroll-compact .finance2-section-head>h2{font-size:1.12rem}
  .payroll-compact .finance2-filters{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+ .payroll-compact .finance2-actions>a[data-slot="button"]{flex:1 1 120px}
  .payroll-compact .payroll-controls .finance2-section-head>.finance2-actions{width:100%}
  .payroll-compact .payroll-controls .finance2-section-head>.finance2-actions>button{flex:1}
  .payroll-compact .payroll-draft-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
