@@ -3,8 +3,12 @@ import {runParentNotificationTick} from './lib/parent-delivery';
 import {maintainNotificationHistory,NOTIFICATION_MAINTENANCE_CRON} from './lib/notification-maintenance';
 import {newDiagnosticContext,withDiagnosticContext} from './lib/diagnostics-context';
 import {reportUnexpectedError} from './lib/diagnostics-server';
-import {watchPreviewConfig, type WatchPreviewBindings} from './lib/watch-preview-config';
+import {watchPreviewBranding,watchPreviewConfig,watchPreviewLegacyLocation,type WatchPreviewBindings} from './lib/watch-preview-config';
 const sources=new Set(['/api/action','/api/class-sessions','/api/invoices','/api/invoice-finance','/api/invoice-attendance-corrections','/api/parents','/api/manage','/api/groups']);
+const watchPaths=new Set([
+ '/api/watch-preview/catalog','/api/watch-preview/facets','/api/watch-preview/redeem',
+ '/watch-preview.css','/watch-preview.js',watchPreviewBranding.logo,watchPreviewBranding.favicon,
+]);
 const app=handler as ExportedHandler;
 type DiagnosticsBindings={DIAGNOSTICS?:R2Bucket;CF_VERSION_METADATA?:{id?:string}};
 export default {
@@ -17,6 +21,12 @@ export default {
     const watch=watchPreviewConfig(bindings as WatchPreviewBindings);
     if(watch){
       const url=new URL(request.url);
+      if(url.origin===watch.legacyWatch){
+        const destination=['GET','HEAD'].includes(request.method) ? watchPreviewLegacyLocation(watch,url) : null;
+        const headers=new Headers({'Cache-Control':'no-store','Referrer-Policy':'no-referrer'});
+        if(destination)headers.set('Location',destination);
+        return new Response(null,{status:destination?302:404,headers});
+      }
       if(url.origin===watch.watch){
         const videoPrefix=watch.entryPath.replace(/\/$/,'')+'/videos/';
         if(url.pathname===watch.entryPath||(!watch.splitOrigin&&url.pathname==='/watch/')){
@@ -26,7 +36,7 @@ export default {
           url.searchParams.set('video',url.pathname.slice(videoPrefix.length));
           url.pathname='/api/watch-preview/video';
           request=new Request(url,request) as typeof request;
-        }else if(watch.splitOrigin&&!['/api/watch-preview/catalog','/api/watch-preview/facets','/api/watch-preview/redeem','/watch-preview.css','/watch-preview.js','/tickminder-logo.svg'].includes(url.pathname)){
+        }else if(watch.splitOrigin&&!watchPaths.has(url.pathname)){
           return new Response(null,{status:404,headers:{'Cache-Control':'no-store'}});
         }
       }

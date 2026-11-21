@@ -1,4 +1,5 @@
 import type {WatchVideo} from './watch-preview-video';
+import {watchPreviewBranding} from './watch-preview-config';
 
 type Language = 'en' | 'zh';
 
@@ -8,6 +9,7 @@ const symbols = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   close: '<path d="m6 6 12 12M18 6 6 18"/>',
   appearance: '<path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"/>',
+  back: '<path d="m12 5-7 7 7 7M5 12h14"/>',
 };
 function icon(name: keyof typeof symbols) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${symbols[name]}</svg>`;
@@ -28,17 +30,16 @@ export function watchPreviewPage(language: Language, managementUrl: string, entr
  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
  <meta name="robots" content="noindex, nofollow">
  <meta name="color-scheme" content="light dark">
- <title>${catalog ? 'Watch · Tickminder' : title + ' · Watch'}</title>
- <link rel="icon" href="/tickminder-logo.svg">
- <link rel="stylesheet" href="/watch-preview.css">
+ <title>${catalog ? 'TickPlay' : title + ' · TickPlay'}</title>
+ <link rel="icon" href="${watchPreviewBranding.favicon}" type="image/png" sizes="64x64">
+ <link rel="stylesheet" href="/watch-preview.css?v=tickplay">
  <script defer src="/watch-preview.js?v=2"></script>
 </head>
 <body>
  <header class="watch-bar">
   <div class="watch-bar-inner" data-view="${catalog ? 'catalog' : 'video'}">
    <a class="brand" href="${management}">
-    <img src="/tickminder-logo.svg" alt="" width="38" height="38">
-    <span class="brand-name">Watch<small>Tickminder</small></span>
+    <img src="${watchPreviewBranding.logo}" alt="TickPlay" width="1370" height="552">
    </a>
    ${catalog ? `<form id="search-form" class="search-field" role="search">
     ${icon('search')}<input id="search" type="search" maxlength="120"
@@ -47,7 +48,7 @@ export function watchPreviewPage(language: Language, managementUrl: string, entr
    </form>` : ''}
    <div class="bar-actions">
     <button type="button" class="icon-button" id="appearance" aria-label="${t('切换主题', 'Change appearance')}">${icon('appearance')}</button>
-    <a class="back-link" href="${management}">${t('返回 Tickminder','Back to Tickminder')}</a>
+    <a class="back-link" href="${management}">${icon('back')}<span>${t('返回 Tickminder','Back to Tickminder')}</span></a>
    </div>
   </div>
  </header>

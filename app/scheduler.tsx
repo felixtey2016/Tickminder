@@ -544,7 +544,7 @@ function WatchPreviewLink({entry,language}:{entry:string;language:Language}) {
     url.searchParams.set('theme',resolvedTheme==='dark'?'dark':'light');
     return <a className="navigation-hub-item" href={url.href} data-testid="watch-admin-preview">
         <span className="navigation-hub-icon"><Play size={22} aria-hidden="true"/></span>
-        <span className="navigation-hub-copy"><strong>{language==='zh'?'Watch 视频库':'Watch video library'}</strong>
+        <span className="navigation-hub-copy"><strong>{language==='zh'?'TickPlay 视频库':'TickPlay video library'}</strong>
         <small>{language==='zh'?'管理员预览':'Admin preview'}</small></span>
     </a>;
 }

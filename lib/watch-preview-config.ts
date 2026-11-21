@@ -1,7 +1,15 @@
+import {validWatchVideoId, watchCatalogParams} from './watch-preview-video';
+
+export const watchPreviewBranding = {
+  logo: '/branding/tickplay-logo.webp',
+  favicon: '/branding/tickplay-icon-64.png',
+} as const;
+
 export type WatchPreviewBindings = {
   WATCH_PREVIEW_APP_ORIGIN?: string;
   WATCH_PREVIEW_APP_ALIASES?: string;
   WATCH_PREVIEW_ORIGIN?: string;
+  WATCH_PREVIEW_LEGACY_ORIGIN?: string;
 };
 
 function origin(value: string | undefined) {
@@ -25,7 +33,10 @@ export function watchPreviewConfig(bindings: WatchPreviewBindings) {
     const alias = origin(value.trim());
     if (alias && alias !== watch) appOrigins.add(alias);
   }
-  return {app, appOrigins, watch, splitOrigin, entryPath, entry: watch + entryPath};
+  const legacyOrigin = origin(bindings.WATCH_PREVIEW_LEGACY_ORIGIN);
+  const legacyWatch = splitOrigin && legacyOrigin && legacyOrigin !== watch && !appOrigins.has(legacyOrigin)
+    ? legacyOrigin : null;
+  return {app, appOrigins, watch, legacyWatch, splitOrigin, entryPath, entry: watch + entryPath};
 }
 
 export type WatchPreviewConfig = NonNullable<ReturnType<typeof watchPreviewConfig>>;
@@ -36,4 +47,22 @@ export function watchPreviewEntry(config: WatchPreviewConfig, appOrigin: string)
   url.searchParams.set('enter', '1');
   if (appOrigin !== config.app && config.appOrigins.has(appOrigin)) url.searchParams.set('from', appOrigin);
   return url.href;
+}
+
+export function watchPreviewLegacyLocation(config: WatchPreviewConfig, url: URL) {
+  const root = url.pathname === '/';
+  const videoPrefix = '/videos/';
+  const video = root ? url.searchParams.get('video') : url.pathname.slice(videoPrefix.length);
+  if (!root && (!url.pathname.startsWith(videoPrefix) || !validWatchVideoId(video))) return null;
+
+  const target = new URL(config.entry);
+  if (validWatchVideoId(video)) target.pathname = videoPrefix + video;
+  const params = watchCatalogParams(url.searchParams);
+  const theme = url.searchParams.get('theme');
+  const from = url.searchParams.get('from');
+  if (theme === 'light' || theme === 'dark') params.set('theme', theme);
+  if (from && config.appOrigins.has(from)) params.set('from', from);
+  if (root && url.searchParams.get('enter') === '1') params.set('enter', '1');
+  target.search = params.toString();
+  return target.href;
 }

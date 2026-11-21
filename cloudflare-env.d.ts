@@ -25,5 +25,6 @@ declare namespace Cloudflare {
     WATCH_PREVIEW_APP_ORIGIN?: string;
     WATCH_PREVIEW_APP_ALIASES?: string;
     WATCH_PREVIEW_ORIGIN?: string;
+    WATCH_PREVIEW_LEGACY_ORIGIN?: string;
   }
 }

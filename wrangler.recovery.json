@@ -21,6 +21,10 @@
     {
       "pattern": "watch.tickminder.com",
       "custom_domain": true
+    },
+    {
+      "pattern": "tickplay.tickminder.com",
+      "custom_domain": true
     }
   ],
   "d1_databases": [
@@ -47,7 +51,8 @@
     "ADMIN_PERMISSIONS_MODE": "enforced",
     "WATCH_PREVIEW_APP_ORIGIN": "https://www.tickminder.com",
     "WATCH_PREVIEW_APP_ALIASES": "https://tickminder.com",
-    "WATCH_PREVIEW_ORIGIN": "https://watch.tickminder.com",
+    "WATCH_PREVIEW_ORIGIN": "https://tickplay.tickminder.com",
+    "WATCH_PREVIEW_LEGACY_ORIGIN": "https://watch.tickminder.com",
     "DIAGNOSTICS_FEED_URL": "https://tickminder-lesson-reminder-clock.felixtey2016.workers.dev/diagnostics/feed"
   },
   "triggers": {
