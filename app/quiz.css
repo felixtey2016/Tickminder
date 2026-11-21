@@ -21,7 +21,10 @@
 .quiz-question-head button{min-height:44px;min-width:44px}
 .quiz-live-preview{background:#f6f4fa;border-left:3px solid #b09bdd;padding:16px;margin:16px 0;white-space:pre-wrap;overflow-wrap:anywhere}
 .quiz-live-preview h4{color:#686078;font-size:12px;margin-bottom:12px}
-.quiz-math-text{white-space:pre-wrap;overflow-wrap:anywhere}.quiz-formula-block{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:8px 0}.quiz-formula-inline{display:inline-block;max-width:100%;overflow-x:auto;vertical-align:middle}.quiz-formula-block .katex-display{margin:.4em 0}
+.quiz-math-text{white-space:pre-wrap;overflow-wrap:anywhere}
+.quiz-formula-block{display:block;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:8px 0}
+.quiz-formula-inline{display:inline-block;max-width:100%;overflow-x:auto;overflow-y:hidden;padding-block:.12em;vertical-align:middle}
+.quiz-formula-block .katex-display{margin:.4em 0}
 .quiz-option-editor,.quiz-answer-settings{border-top:1px solid var(--quiz-line);padding-top:20px;margin-top:20px}.quiz-option-editor{position:relative}
 .quiz-image-picker{display:inline-flex;align-items:center;gap:8px;border:1px solid #b7afcd;border-radius:6px;padding:8px 12px;min-height:44px;cursor:pointer;font-size:14px;background:#fff}.quiz-image-picker.disabled{opacity:.6;cursor:default}.quiz-image-picker input{width:1px;height:1px;position:absolute;opacity:0}.quiz-image-picker:focus-within{outline:2px solid #795bc5;outline-offset:2px}
 .quiz-picture{display:block;background:#f8f8fa;border:1px solid #d9d4e8;border-radius:4px;padding:8px;width:100%;min-width:0;margin:8px 0}.quiz-picture img{display:block;width:100%;height:240px;object-fit:contain}.quiz-image-editor{margin-bottom:16px}

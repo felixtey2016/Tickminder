@@ -42,6 +42,7 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
 
  async function perform(request:NonNullable<typeof pending.current>){
   if(saving.current)return false;let succeeded=false;saving.current=true;setBusy(true);setError('');pending.current=request;
+  if(request.body.action==='check')setCheckingQuestionId(String(request.body.questionId));
   try{
    const {attempt:next,serverNow}=await practiceApi<{attempt:PracticeAttempt;serverNow?:string}>({},request.body);succeeded=true;if(!mounted.current)return false;syncClock(serverNow);if(request.body.automatic===true&&next.status==='in_progress')deadlineSent.current=false;
    const merged={...next.answers};if(next.status==='in_progress')for(const [id,value] of Object.entries(local.current))if(!same(value,request.snapshot[id])&&!next.checkedQuestionIds.includes(id))merged[id]=value;
@@ -53,10 +54,10 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
    saving.current=false;
    if(mounted.current){
     setBusy(false);
-    const questionId=queuedCheck.current;queuedCheck.current=null;
+    const questionId=queuedCheck.current;
+    if(succeeded||!pending.current||request.body.action!=='save')queuedCheck.current=null;
     const next=current.current;
-    // A tap made while autosave is pending is an explicit confirmation intent.
-    // Wait for that save's revision, then check the latest local answer once.
+    // If an autosave is in flight, grade the selected answer using its updated revision.
     if(questionId&&succeeded&&!pending.current&&next&&next.id===request.body.attemptId&&next.canAnswer&&next.status==='in_progress'&&!next.checkedQuestionIds.includes(questionId)&&filled(local.current[questionId])&&(!next.deadlineAt||Date.parse(next.deadlineAt)>Date.now()+serverOffset.current)){
      void mutate('check',{questionId});
     }else{
@@ -73,12 +74,17 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
    queuedCheck.current=questionId;setCheckingQuestionId(questionId);return;
   }
   if(saving.current||pending.current)return;
-  setCheckingQuestionId(questionId);void mutate('check',{questionId});
+  void mutate('check',{questionId});
  }
  function mutate(action:'save'|'check'|'submit',extra:Record<string,unknown>={}){const a=current.current;if(!a||!a.canAnswer||a.status!=='in_progress'||saving.current||pending.current)return Promise.resolve(false);const snapshot=structuredClone(local.current),savedFlags=[...localFlags.current];if(action==='submit'&&extra.automatic!==true&&a.content.questions.some(question=>!filled(snapshot[question.id]))){setError('quiz.allAnswersRequired');return Promise.resolve(false);}return perform({body:{action,attemptId:a.id,revision:a.revision,answers:snapshot,flaggedQuestionIds:savedFlags,...(localQuestion.current?{currentQuestionId:localQuestion.current}:{}),operationId:crypto.randomUUID(),...(action==='save'&&!a.assignmentId&&editingText.current?{deferCompletion:true}:{}),...extra},snapshot,flags:savedFlags});}
  useEffect(()=>{if(!dirty||busy||error||done||!attempt?.canAnswer)return;const timer=window.setTimeout(()=>{void mutate('save');},700);return()=>clearTimeout(timer);},[answers,flags,index,dirty,busy,error,done,attempt?.revision]);
  useEffect(()=>{if(remaining!==0||done||!attempt?.canAnswer||busy||error||deadlineSent.current)return;if(current.current?.deadlineAt&&Date.parse(current.current.deadlineAt)>Date.now()+serverOffset.current)return;deadlineSent.current=true;void mutate('submit',{automatic:true});},[remaining,done,attempt?.revision,busy,error,clockOffset]);
- function updateAnswer(q:QuizQuestion,value:QuizAnswer){if(!answering||requestCompletesSelf||queuedCheck.current===q.id||attempt?.checkedQuestionIds.includes(q.id)||pending.current&&!saving.current||pending.current?.body.action==='check'&&pending.current.body.questionId===q.id)return;local.current={...local.current,[q.id]:value};setAnswers(local.current);setDirty(true);setError('');}
+ function updateAnswer(q:QuizQuestion,value:QuizAnswer){
+  if(answerDisabled||queuedCheck.current===q.id||current.current?.checkedQuestionIds.includes(q.id)||pending.current&&!saving.current||pending.current?.body.action==='check')return;
+  local.current={...local.current,[q.id]:value};
+  setAnswers(local.current);setDirty(true);setError('');
+  if(value.optionId)confirmAnswer(q.id);
+ }
  function toggleFlag(id:string){if(!answering||pending.current&&!saving.current||['quiz.conflict','quiz.practiceFinished','quiz.practiceLocked'].includes(error))return;localFlags.current=localFlags.current.includes(id)?localFlags.current.filter(value=>value!==id):[...localFlags.current,id];setFlags(localFlags.current);setDirty(true);setError('');}
  async function close(){
   editingText.current=false;
@@ -94,6 +100,10 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
  }
  const questions=attempt?.content.questions||[],reviewQuestions=wrongOnly&&done&&attempt?.scoreVisible&&attempt.answersVisible?questions.filter(q=>{const result=attempt?.results.find(r=>r.questionId===q.id);return !result||result.status==='incorrect'||result.status==='manual'||result.status==='graded'&&(result.points??0)<q.points;}):questions;
  const q=reviewQuestions[Math.min(index,Math.max(0,reviewQuestions.length-1))],result=q?attempt?.results.find(r=>r.questionId===q.id):undefined,locked=Boolean(q&&attempt?.checkedQuestionIds.includes(q.id)),unanswered=questions.filter(q=>!filled(answers[q.id])).length,answerDisabled=!answering||requestCompletesSelf||checkingQuestionId===q?.id||locked||Boolean(error&&pending.current)||['quiz.conflict','quiz.practiceFinished','quiz.practiceLocked'].includes(error)||busy&&pending.current?.body.action!=='save'||remaining===0;
+ const immediateChoiceResult=Boolean(q?.options.length&&attempt?.immediate&&locked&&(result?.status==='correct'||result?.status==='incorrect'));
+ const correctChoiceId=immediateChoiceResult&&q?(result?.correctOptionId??result?.key?.correctOptionId??(result?.status==='correct'?answers[q.id]?.optionId:undefined)):undefined;
+ const correctChoiceIndex=q?.options.findIndex(option=>option.id===correctChoiceId)??-1;
+ const showOutcome=attempt?.scoreVisible||!done||immediateChoiceResult;
  useEffect(()=>{setGradePoints(result?.points==null?'':String(result.points));setGradeFeedback(result?.feedback||'');setGradeReason('');},[q?.id,result?.points,result?.feedback]);
  useEffect(()=>{setGradeSaved(false);},[q?.id]);
  async function grade(){const a=current.current;if(!a||!q||saving.current||pending.current)return;const points=Number(gradePoints);if(!gradePoints.trim()||!Number.isFinite(points)||points<0||points>q.points||Math.abs(Math.round(points*100)-points*100)>1e-8){setError('quiz.invalidGrade');return;}if(result?.status==='graded'&&!gradeReason.trim()){setError('quiz.gradeReasonRequired');return;}await perform({body:{action:'grade',operationId:crypto.randomUUID(),attemptId:a.id,revision:a.revision,questionId:q.id,points,feedback:gradeFeedback.trim(),...(gradeReason.trim()?{reason:gradeReason.trim()}:{})},snapshot:structuredClone(local.current),flags:[...localFlags.current]});}
@@ -121,10 +131,30 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
     <progress value={Math.min(index+1,reviewQuestions.length)} max={reviewQuestions.length} aria-label={t('quiz.questions')}/>
     {answering&&remaining===0&&<p role="status">{t('quiz.practiceTimeUp')}</p>}
     <section className="quiz-player-question"><h3><QuizMath text={q.prompt[questionLanguage]||q.prompt.primary||q.prompt.en}/></h3>{q.imageId&&<QuizPicture id={q.imageId} alt={t('quiz.promptImage')}/>} {q.extraImageIds.map(id=><QuizPicture key={id} id={id} alt={t('quiz.promptImage')}/>)}</section>
-    {q.options.length?<div className="quiz-answer-grid">{q.options.map((o,i)=><div className={'quiz-answer-cell'+(answers[q.id]?.optionId===o.id?' is-selected':'')} key={o.id}><button type="button" className="quiz-option-button" disabled={answerDisabled} aria-pressed={answers[q.id]?.optionId===o.id} onClick={()=>updateAnswer(q,{optionId:o.id})}><span className="quiz-option-letter">{String.fromCharCode(65+i)}</span><QuizMath text={o.text[questionLanguage]||o.text.primary||o.text.en}/>{answers[q.id]?.optionId===o.id&&<Check size={20}/>}</button>{o.imageId&&<QuizPicture id={o.imageId} alt={t('quiz.optionImage')+' '+String.fromCharCode(65+i)}/>}</div>)}</div>:<label className="quiz-field">{t('quiz.yourAnswer')}{q.answerUnit&&<span>{t('quiz.answerUnit')} · {q.answerUnit}</span>}<textarea onFocus={()=>{editingText.current=true;}} onBlur={finishTextEditing} rows={q.type==='written'?5:2} maxLength={6000} disabled={answerDisabled} value={answers[q.id]?.text||''} onChange={e=>updateAnswer(q,{text:e.target.value,...(q.answerUnit?{unit:q.answerUnit}:{})})}/></label>}
-    {answering&&attempt.immediate&&!attempt.manualQuestionIds.includes(q.id)&&<div className="quiz-check-answer"><Button type="button" aria-busy={checkingQuestionId===q.id} disabled={locked||Boolean(checkingQuestionId)||busy&&!backgroundSave||Boolean(pending.current)&&!backgroundSave||!filled(answers[q.id])||remaining===0||blockedRefresh(error)} onClick={()=>confirmAnswer(q.id)}>{t(checkingQuestionId===q.id?'quiz.checkingAnswer':'quiz.submitAnswer')}</Button>{locked&&<p className="quiz-note">{t('quiz.answerLocked')}</p>}</div>}
+    {q.options.length?<div className="quiz-answer-grid" aria-busy={checkingQuestionId===q.id}>{q.options.map((option,position)=>{
+      const selected=answers[q.id]?.optionId===option.id;
+      const correct=correctChoiceId===option.id;
+      const incorrect=immediateChoiceResult&&selected&&result?.status==='incorrect';
+      const state=correct?'is-correct':incorrect?'is-incorrect':selected?'is-selected':'';
+      const letter=String.fromCharCode(65+position);
+      return <div key={option.id} className={state?'quiz-answer-cell '+state:'quiz-answer-cell'}>
+       <button type="button" className="quiz-option-button" disabled={answerDisabled} aria-pressed={selected} onClick={()=>updateAnswer(q,{optionId:option.id})}>
+        <span className="quiz-option-letter">{letter}</span>
+        <QuizMath text={option.text[questionLanguage]||option.text.primary||option.text.en}/>
+        {incorrect?<X size={20} className="quiz-option-result-icon" aria-hidden="true"/>:(selected||correct)&&<Check size={20} className="quiz-option-result-icon" aria-hidden="true"/>}
+        {(correct||incorrect)&&<span className="sr-only">{t(correct?'quiz.correctAnswer':'quiz.incorrectResult')}</span>}
+       </button>
+       {option.imageId&&<QuizPicture id={option.imageId} alt={t('quiz.optionImage')+' '+letter}/>}
+      </div>;
+    })}</div>:<label className="quiz-field">{t('quiz.yourAnswer')}{q.answerUnit&&<span>{t('quiz.answerUnit')} · {q.answerUnit}</span>}<textarea onFocus={()=>{editingText.current=true;}} onBlur={finishTextEditing} rows={q.type==='written'?5:2} maxLength={6000} disabled={answerDisabled} value={answers[q.id]?.text||''} onChange={e=>updateAnswer(q,{text:e.target.value,...(q.answerUnit?{unit:q.answerUnit}:{})})}/></label>}
+    {q.options.length>0&&checkingQuestionId===q.id&&<p className="quiz-note" role="status">{t('quiz.checkingAnswer')}</p>}
+    {answering&&attempt.immediate&&!q.options.length&&!attempt.manualQuestionIds.includes(q.id)&&<div className="quiz-check-answer"><Button type="button" aria-busy={checkingQuestionId===q.id} disabled={locked||Boolean(checkingQuestionId)||busy&&!backgroundSave||Boolean(pending.current)&&!backgroundSave||!filled(answers[q.id])||remaining===0||blockedRefresh(error)} onClick={()=>confirmAnswer(q.id)}>{t(checkingQuestionId===q.id?'quiz.checkingAnswer':'quiz.submitAnswer')}</Button>{locked&&<p className="quiz-note">{t('quiz.answerLocked')}</p>}</div>}
     {!done&&attempt.manualQuestionIds.includes(q.id)&&<p className="quiz-note">{t(attempt.assignmentId?'quiz.pendingManual':'quiz.pendingSelfManual')}</p>}
-    {(done&&(attempt.scoreVisible||attempt.answersVisible)||locked)&&result&&<section className={'quiz-answer-feedback '+(attempt.scoreVisible||!done?result.status:'released-answer')} aria-live="polite">{(attempt.scoreVisible||!done)&&<strong>{t(result.status==='correct'?'quiz.correctResult':result.status==='incorrect'?'quiz.incorrectResult':result.status==='graded'?'quiz.score':attempt.assignmentId?'quiz.pendingManual':'quiz.pendingSelfManual')}{attempt.scoreVisible&&result.points!==null&&' · '+result.points+' / '+q.points}</strong>}{done&&<><p>{t('quiz.yourAnswer')} · <QuizMath text={answerText(q,answers[q.id],questionLanguage)}/></p>{attempt.answersVisible&&result.key&&resultAnswer(q,result,questionLanguage)&&<p>{t('quiz.correctAnswer')} · <QuizMath text={resultAnswer(q,result,questionLanguage)}/></p>}{attempt.answersVisible&&result.key?.correctOptionId&&q.options.find(o=>o.id===result.key?.correctOptionId)?.imageId&&<QuizPicture id={q.options.find(o=>o.id===result.key?.correctOptionId)!.imageId!} alt={t('quiz.correctAnswer')}/>} {attempt.answersVisible&&result.key?.explanation&&<div><h4>{t('quiz.resultExplanation')}</h4><QuizMath text={result.key.explanation}/></div>}{attempt.scoreVisible&&result.feedback&&<p>{t('quiz.manualFeedback')} · {result.feedback}</p>}</>}</section>}
+    {(done&&(attempt.scoreVisible||attempt.answersVisible)||locked)&&result&&<section className={'quiz-answer-feedback '+(showOutcome?result.status:'released-answer')} aria-live="polite">
+     {showOutcome&&<strong>{t(result.status==='correct'?'quiz.correctResult':result.status==='incorrect'?'quiz.incorrectResult':result.status==='graded'?'quiz.score':attempt.assignmentId?'quiz.pendingManual':'quiz.pendingSelfManual')}{attempt.scoreVisible&&result.points!==null&&' · '+result.points+' / '+q.points}</strong>}
+     {result.status==='incorrect'&&correctChoiceIndex>=0&&(!done||!attempt.answersVisible)&&<p>{t('quiz.correctAnswer')} · {String.fromCharCode(65+correctChoiceIndex)}</p>}
+     {done&&<><p>{t('quiz.yourAnswer')} · <QuizMath text={answerText(q,answers[q.id],questionLanguage)}/></p>{attempt.answersVisible&&result.key&&resultAnswer(q,result,questionLanguage)&&<p>{t('quiz.correctAnswer')} · <QuizMath text={resultAnswer(q,result,questionLanguage)}/></p>}{attempt.answersVisible&&result.key?.correctOptionId&&q.options.find(o=>o.id===result.key?.correctOptionId)?.imageId&&<QuizPicture id={q.options.find(o=>o.id===result.key?.correctOptionId)!.imageId!} alt={t('quiz.correctAnswer')}/>} {attempt.answersVisible&&result.key?.explanation&&<div><h4>{t('quiz.resultExplanation')}</h4><QuizMath text={result.key.explanation}/></div>}{attempt.scoreVisible&&result.feedback&&<p>{t('quiz.manualFeedback')} · {result.feedback}</p>}</>}
+    </section>}
     {done&&attempt.canGrade&&can("quizAssignments.grade")&&(result?.status==='manual'||result?.status==='graded')&&<fieldset className="quiz-grade-panel"><legend>{t('quiz.grade')}</legend><label className="quiz-field">{t('quiz.gradePoints')}<input type="number" min="0" max={q.points} step="0.01" value={gradePoints} onChange={e=>{setGradePoints(e.target.value);setGradeSaved(false);}}/></label><label className="quiz-field">{t('quiz.gradeFeedback')}<textarea maxLength={2000} value={gradeFeedback} onChange={e=>{setGradeFeedback(e.target.value);setGradeSaved(false);}}/></label>{result.status==='graded'&&<label className="quiz-field">{t('quiz.gradeReason')}<textarea required maxLength={1000} value={gradeReason} onChange={e=>{setGradeReason(e.target.value);setGradeSaved(false);}}/></label>}<Button adminGrant="quizAssignments.grade" disabled={busy} onClick={()=>void grade()}>{t('quiz.gradeSave')}</Button>{gradeSaved&&<p role="status">{t('quiz.gradeSaved')}</p>}</fieldset>}
     <div className="quiz-player-nav"><Button variant="outline" disabled={index===0} onClick={()=>changeQuestion(index-1)}><ChevronLeft size={17}/>{t('quiz.previous')}</Button>{index<reviewQuestions.length-1?<Button variant="outline" onClick={()=>changeQuestion(Math.min(index+1,reviewQuestions.length-1))}>{t('quiz.next')}<ChevronRight size={17}/></Button>:answering&&attempt.assignmentId?<Button disabled={unanswered>0||busy||Boolean(pending.current)} onClick={()=>setConfirm(true)}>{t('quiz.submitPractice')}</Button>:answering&&(unanswered>0||attempt.immediate&&questions.some(question=>!attempt.manualQuestionIds.includes(question.id)&&!attempt.checkedQuestionIds.includes(question.id)))?<Button variant="outline" onClick={goToRemaining}>{t(unanswered?'quiz.backToUnanswered':'quiz.backToUnconfirmed')}</Button>:null}</div>
    </>}

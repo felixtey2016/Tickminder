@@ -27,9 +27,16 @@ const account={id:'fixture-user',role:practice?'student':'teacher',groupId:'fixt
 const fixtureRoot=createRoot(document.getElementById('root'));window.fixtureUnmount=()=>fixtureRoot.unmount();fixtureRoot.render(<AdminPermissionContext.Provider value={account}><div className='app-shell shell-wave1'><main className='workspace workspace-compact'>{practice?<QuizPracticePlayer attemptId='fixture-attempt' language={lang} onClose={()=>window.fixtureClosed++} onChanged={()=>window.fixtureChanged++}/>:<QuizWorkspace view='quizBank' role='teacher' language={lang}/>}</main></div></AdminPermissionContext.Provider>);`;
 async function open(params={},options={}){
  const context=await browser.newContext({viewport:{width:options.width||390,height:844},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(10000);
- const errors=[],writes=[],saveStarted=deferred(),releaseSave=deferred(),draftStarted=deferred(),releaseDraft=deferred(),checkStarted=deferred();let attempt=structuredClone(initialAttempt),draft=structuredClone(quiz);
+ const errors=[],writes=[],saveStarted=deferred(),releaseSave=deferred(),draftStarted=deferred(),releaseDraft=deferred(),checkStarted=deferred();
+ let attempt=structuredClone(initialAttempt),draft=structuredClone(quiz),saveFailed=false;
  if(options.self)attempt.assignmentId=null;if(options.single){attempt.content.questions=attempt.content.questions.slice(0,1);attempt.questionCount=1;attempt.totalScore=1;attempt.rawTotalScore=1;}
  if(options.text){attempt.content.questions[0]={...attempt.content.questions[0],type:'blank',options:[]};}
+ if(options.fractions){
+  const question=attempt.content.questions[0];
+  question.prompt.primary='Write $\\frac{63}{99}$ in its simplest form.';
+  for(const [position,value] of ['\\frac{21}{33}','\\frac{11}{7}','\\frac{7}{9}','\\frac{7}{11}'].entries())question.options[position].text.primary='$'+value+'$';
+  if(attempt.content.questions[1])attempt.content.questions[1].prompt.primary='$\\frac{\\frac{'+'1234567890'.repeat(8)+'}{2}}{\\frac{3}{4}}$';
+ }
  if(options.deferred)attempt.immediate=false;if(options.deadline)attempt.deadlineAt='2035-01-01T00:00:00.000Z';
  await page.route('**/*',async route=>{
   const u=new URL(route.request().url());if(u.origin!==origin){errors.push('external request '+u.origin);return route.abort();}if(!u.pathname.startsWith('/api/'))return route.continue();
@@ -43,10 +50,20 @@ async function open(params={},options={}){
   if(u.pathname==='/api/quiz-practice'){
    if(route.request().method()==='GET')return reply(u.searchParams.has('attemptId')?{attempt,serverNow:new Date().toISOString()}:{assignments:[],attempts:[],hasMore:false,serverNow:new Date().toISOString()});
    const body=route.request().postDataJSON();writes.push(body);
-   if(body.action==='save'){saveStarted.resolve(body);if(options.holdSave)await releaseSave.promise;if(options.failSave)return reply({error:options.failSave},options.failSave==='quiz.network'?503:409);}
+   if(body.action==='save'){saveStarted.resolve(body);if(options.holdSave)await releaseSave.promise;if(options.failSave&&(!options.failSaveOnce||!saveFailed)){saveFailed=true;return reply({error:options.failSave},options.failSave==='quiz.network'?503:409);}}
    check(body.revision===attempt.revision,'request uses latest saved revision');
    attempt={...attempt,answers:{...attempt.answers,...body.answers},flaggedQuestionIds:body.flaggedQuestionIds||[],currentQuestionId:body.currentQuestionId||attempt.currentQuestionId,revision:attempt.revision+1};
-   if(body.action==='check'){checkStarted.resolve(body);if(!attempt.checkedQuestionIds.includes(body.questionId)){attempt.checkedQuestionIds.push(body.questionId);const correct=attempt.answers[body.questionId]?.optionId===content.questions[0].options[0].id||attempt.answers[body.questionId]?.text==='42';attempt.results.push({questionId:body.questionId,status:correct?'correct':'incorrect',points:correct?1:0});}}
+   if(body.action==='check'){
+    checkStarted.resolve(body);
+    if(!attempt.checkedQuestionIds.includes(body.questionId)){
+     attempt.checkedQuestionIds.push(body.questionId);
+     const answer=attempt.answers[body.questionId];
+     const correctIndex=options.fractions&&body.questionId==='question-0'?3:0;
+     const correctOptionId=attempt.content.questions.find(question=>question.id===body.questionId)?.options[correctIndex]?.id;
+     const correct=answer?.optionId===correctOptionId||answer?.text==='42';
+     attempt.results.push({questionId:body.questionId,status:correct?'correct':'incorrect',points:correct?1:0,...(answer?.optionId&&correctOptionId?{correctOptionId}:{})});
+    }
+   }
    const complete=attempt.content.questions.every(q=>Boolean(attempt.answers[q.id]?.optionId||attempt.answers[q.id]?.text?.trim())&&(!attempt.immediate||attempt.manualQuestionIds.includes(q.id)||attempt.checkedQuestionIds.includes(q.id)));
    if(body.action==='submit'||!attempt.assignmentId&&complete&&!body.deferCompletion){attempt={...attempt,status:'submitted',canAnswer:false,scoreVisible:true,answersVisible:true,score:attempt.results.filter(r=>r.status==='correct').length,submittedAt:new Date().toISOString(),submissionReason:'student'};}
    return reply({attempt,serverNow:new Date().toISOString()});
@@ -57,6 +74,7 @@ async function open(params={},options={}){
  return{page,writes,saveStarted:saveStarted.promise,releaseSave:()=>releaseSave.resolve(),draftStarted:draftStarted.promise,releaseDraft:()=>releaseDraft.resolve(),checkStarted:checkStarted.promise,attempt:()=>attempt,expire:()=>{attempt.deadlineAt=new Date(Date.now()-1000).toISOString();},close:async()=>{releaseSave.resolve();releaseDraft.resolve();check(!errors.length,errors.join('; '));await context.close();}};
 }
 async function tap(page,locator){await locator.scrollIntoViewIfNeeded();const b=await locator.boundingBox();assert(b);await page.mouse.click(b.x+b.width/2,b.y+b.height/2);}
+async function startBackgroundSave(f){await f.page.locator('.quiz-flag-question').click();await f.saveStarted;}
 async function editDraft(f,lang){const p=f.page;await p.getByTestId('quiz-tab-mine').click();await p.locator('.quiz-item-more summary').first().click();await p.getByRole('button',{name:lang==='zh'?'编辑':'Edit',exact:true}).click();await p.getByLabel(lang==='zh'?'测验标题':'Quiz title',{exact:true}).fill('Updated fixture quiz');return p.getByRole('button',{name:lang==='zh'?'保存草稿':'Save draft',exact:true});}
 try{
  await build({absWorkingDir:root,stdin:{contents:entry,resolveDir:root,sourcefile:'quiz-interactions-fixture.tsx',loader:'tsx'},bundle:true,platform:'browser',format:'esm',jsx:'automatic',outfile:path.join(temporary,'ui.js'),assetNames:'fixture-assets/[name]-[hash]',loader:{'.woff':'file','.woff2':'file','.ttf':'file'},alias:{'@':root},logLevel:'silent'});
@@ -67,13 +85,41 @@ try{
  // for disabled controls, unlike locator.click(), reproducing the user's tap.
  for(const lang of baseline?['en']:['zh','en'])for(const type of baseline?['choice']:['choice','text']){
   const f=await open({mode:'practice',lang,theme:type==='text'?'dark':'light'},{holdSave:true,text:type==='text',width:lang==='en'?1280:390}),p=f.page;
-  if(type==='text')await p.locator('.quiz-field textarea').fill('41');else await p.getByRole('button',{name:'A Answer A',exact:true}).click();await f.saveStarted;
-  if(type==='text')await p.locator('.quiz-field textarea').fill('42');else await p.getByRole('button',{name:'B Answer B',exact:true}).click();
-  const confirm=p.locator('.quiz-check-answer button'),disabledBefore=await confirm.isDisabled();await tap(p,confirm);
-  if(!baseline){await p.waitForFunction(()=>document.querySelector('.quiz-check-answer button')?.getAttribute('aria-busy')==='true');check((await confirm.innerText()).includes(lang==='zh'?'正在确认':'Confirming answer'),'confirmation shows immediate progress');check(await confirm.isDisabled(),'queued confirmation blocks duplicate taps');await tap(p,confirm);const option=p.locator('.quiz-option-button').first();if(type==='choice')check(await option.isDisabled(),'answer is fixed when confirmation is requested');}
-  f.releaseSave();
-  if(baseline){await p.waitForFunction(()=>!document.querySelector('.quiz-check-answer button').disabled);await p.waitForTimeout(100);check(disabledBefore&&f.writes.every(body=>body.action!=='check'),'baseline first tap was lost while autosaving');results.push({baseline:'first-confirm-tap-lost',reproduced:true});}
-  else{await p.locator('.quiz-answer-feedback').waitFor();const requests=f.writes.filter(body=>body.action==='check');check(requests.length===1,'one tap triggers exactly one confirmation after save');check(requests[0].revision===2,'queued confirmation uses new revision');check(type==='text'?requests[0].answers['question-0'].text==='42':requests[0].answers['question-0'].optionId==='option-0-B','last selected answer survives stale autosave response');check(f.attempt().checkedQuestionIds.includes('question-0'),'confirmed question is locked');await p.screenshot({path:path.join(evidence,'confirm-'+lang+'-'+type+'.png')});}
+  const confirm=p.locator('.quiz-check-answer button'),options=p.locator('.quiz-option-button');
+  if(baseline){
+   await options.first().click();await f.saveStarted;
+   const disabledBefore=await confirm.isDisabled();await tap(p,confirm);
+   f.releaseSave();await p.waitForFunction(()=>!document.querySelector('.quiz-check-answer button').disabled);
+   check(disabledBefore&&f.writes.every(body=>body.action!=='check'),'baseline first tap was lost while autosaving');
+   results.push({baseline:'first-confirm-tap-lost',reproduced:true});
+  }else{
+   if(type==='text'){
+    await p.locator('.quiz-field textarea').fill('41');await f.saveStarted;
+    await p.locator('.quiz-field textarea').fill('42');await tap(p,confirm);
+    await p.locator('.quiz-check-answer button[aria-busy=true]').waitFor();
+    check(await confirm.isDisabled(),'queued text confirmation blocks duplicate taps');
+    await tap(p,confirm);
+   }else{
+    await startBackgroundSave(f);
+    await options.nth(1).click();
+    await p.locator('.quiz-answer-grid[aria-busy=true]').waitFor();
+    check(await confirm.count()===0,'immediate choice has no confirmation button');
+    check(await options.first().isDisabled(),'selection is fixed while waiting for the save');
+    await tap(p,options.first());
+   }
+   f.releaseSave();
+   await p.locator('.quiz-answer-feedback').waitFor();
+   const requests=f.writes.filter(body=>body.action==='check');
+   check(requests.length===1&&requests[0].revision===2,'one tap waits for the current autosave and uses its revision');
+   check(type==='text'?requests[0].answers['question-0'].text==='42':requests[0].answers['question-0'].optionId==='option-0-B','latest answer survives background autosave');
+   check(f.attempt().checkedQuestionIds.includes('question-0'),'graded question is locked');
+   if(type==='choice'){
+    check(await p.locator('.quiz-answer-cell.is-incorrect [aria-pressed=true]').count()===1,'wrong selection is marked');
+    check(await p.locator('.quiz-answer-cell.is-correct [aria-pressed=false]').count()===1,'the correct unselected option is marked');
+    check(await p.locator('.quiz-answer-cell.is-selected').count()===0,'graded choices drop the purple selection state');
+   }
+   await p.screenshot({path:path.join(evidence,'confirm-'+lang+'-'+type+'.png')});
+  }
   await f.close();
  }
  for(const lang of baseline?['en']:['zh','en']){
@@ -85,11 +131,48 @@ try{
  if(!baseline){
   {const f=await open({lang:'en'},{failDraft:true}),p=f.page,save=await editDraft(f,'en');await save.click();await p.locator('.quiz-editor [role=alert]').waitFor();check(await p.getByLabel('Quiz title',{exact:true}).inputValue()==='Updated fixture quiz','failed draft save keeps edited content');check(await p.locator('.quiz-editor').isVisible(),'failed draft never navigates');await f.close();}
   {const f=await open({lang:'en'}),p=f.page;await p.getByTestId('quiz-tab-mine').click();await p.locator('.quiz-item-more summary').first().click();await p.getByRole('button',{name:'Edit',exact:true}).click();await p.getByRole('tab',{name:'Sharing',exact:true}).click();const panel=p.getByTestId('quiz-sharing-panel');await panel.getByRole('radio',{name:/Public/}).check();const refreshed=p.waitForResponse(r=>r.url().includes('/api/quizzes?id=')&&r.request().method()==='GET');await panel.getByRole('button',{name:'Save sharing settings',exact:true}).click();await refreshed;await panel.locator('.quiz-sharing-options:not([disabled])').waitFor();check(await p.locator('.quiz-editor').isVisible(),'updating sharing does not close the editor');check(f.writes.some(body=>body.action==='share'),'sharing flow was actually saved');await f.close();}
-  {const f=await open({mode:'practice',lang:'en'},{holdSave:true,failSave:'quiz.conflict'}),p=f.page;await p.getByRole('button',{name:'A Answer A',exact:true}).click();await f.saveStarted;await tap(p,p.getByRole('button',{name:'Confirm answer',exact:true}));f.releaseSave();await p.getByRole('alert').waitFor();check(f.writes.every(body=>body.action!=='check'),'failed autosave does not blindly confirm against stale revision');check(await p.locator('.quiz-option-button[aria-pressed=true]').count()===1,'local answer survives save conflict');await f.close();}
-  {const f=await open({mode:'practice',lang:'en'},{self:true,single:true}),p=f.page;await p.getByRole('button',{name:'A Answer A',exact:true}).click();await tap(p,p.getByRole('button',{name:'Confirm answer',exact:true}));await p.locator('.quiz-result-summary').waitFor();check(f.writes.filter(body=>body.action==='check').length===1,'fast first tap confirms and completes last self-practice question once');await f.close();}
-  {const f=await open({mode:'practice',lang:'en'},{holdSave:true}),p=f.page;await p.getByRole('button',{name:'A Answer A',exact:true}).click();await f.saveStarted;await tap(p,p.getByRole('button',{name:'Confirm answer',exact:true}));await p.evaluate(()=>window.fixtureUnmount());f.releaseSave();await p.waitForTimeout(150);check(f.writes.every(body=>body.action!=='check'),'unmount never runs queued confirmation in another page');await f.close();}
-  {const f=await open({mode:'practice',lang:'en'},{holdSave:true,deadline:true}),p=f.page;await p.getByRole('button',{name:'A Answer A',exact:true}).click();await f.saveStarted;await tap(p,p.getByRole('button',{name:'Confirm answer',exact:true}));f.expire();f.releaseSave();await p.locator('.quiz-result-summary').waitFor();check(f.writes.every(body=>body.action!=='check')&&f.writes.some(body=>body.action==='submit'&&body.automatic),'expiry takes priority over queued check');await f.close();}
-  {const f=await open({mode:'practice',lang:'en'},{deferred:true}),p=f.page;await p.getByRole('button',{name:'A Answer A',exact:true}).click();await f.saveStarted;check(await p.locator('.quiz-check-answer').count()===0,'deferred feedback never gains a correctness button');check(f.writes.every(body=>body.action!=='check'),'autosave never reveals deferred answers');await f.close();}
+  {const f=await open({mode:'practice',lang:'en'},{holdSave:true,failSave:'quiz.conflict'}),p=f.page;await startBackgroundSave(f);await p.locator('.quiz-option-button').first().click();f.releaseSave();await p.getByRole('alert').waitFor();check(f.writes.every(body=>body.action!=='check'),'a failed save never checks using a stale revision');check(await p.locator('.quiz-option-button[aria-pressed=true]').count()===1,'local answer survives save conflict');await f.close();}
+  {const f=await open({mode:'practice',lang:'en'},{holdSave:true,failSave:'quiz.network',failSaveOnce:true}),p=f.page;await startBackgroundSave(f);await p.locator('.quiz-option-button').first().click();f.releaseSave();await p.getByRole('alert').getByRole('button').first().click();await p.locator('.quiz-answer-cell.is-correct [aria-pressed=true]').waitFor();check(f.writes.filter(body=>body.action==='check').length===1,'retrying a failed save continues the original selection intent');await f.close();}
+  {const f=await open({mode:'practice',lang:'en'},{self:true,single:true}),p=f.page;await p.locator('.quiz-option-button').first().click();await p.locator('.quiz-result-summary').waitFor();check(f.writes.length===1&&f.writes[0].action==='check','one request grades and completes the final self-practice question');check(await p.locator('.quiz-answer-cell.is-correct [aria-pressed=true]').count()===1,'the correct selected option remains green after auto-completion');await f.close();}
+  {const f=await open({mode:'practice',lang:'en'},{holdSave:true}),p=f.page;await startBackgroundSave(f);await p.locator('.quiz-option-button').first().click();await p.evaluate(()=>window.fixtureUnmount());f.releaseSave();await p.waitForTimeout(150);check(f.writes.every(body=>body.action!=='check'),'unmount never runs queued grading in another page');await f.close();}
+  {const f=await open({mode:'practice',lang:'en'},{holdSave:true,deadline:true}),p=f.page;await startBackgroundSave(f);await p.locator('.quiz-option-button').first().click();f.expire();f.releaseSave();await p.locator('.quiz-result-summary').waitFor();check(f.writes.every(body=>body.action!=='check')&&f.writes.some(body=>body.action==='submit'&&body.automatic),'expiry takes priority over queued grading');await f.close();}
+  {const f=await open({mode:'practice',lang:'en'},{deferred:true}),p=f.page;await p.locator('.quiz-option-button').first().click();await f.saveStarted;check(await p.locator('.quiz-check-answer').count()===0,'deferred feedback never gains a correctness button');check(f.writes.every(body=>body.action!=='check'),'autosave never reveals deferred answers');check(await p.locator('.quiz-answer-cell.is-correct,.quiz-answer-cell.is-incorrect').count()===0,'deferred practice does not mark option correctness');await f.close();}
+  for(const theme of ['light','dark']){
+   const f=await open({mode:'practice',lang:'zh',theme},{fractions:true,width:390}),p=f.page;
+   await p.locator('.quiz-player-question .mfrac').waitFor();
+   const layout=await p.locator('.quiz-formula-inline').evaluateAll(formulas=>formulas.map(formula=>({
+    vertical:getComputedStyle(formula).overflowY,
+    width:formula.clientWidth,
+    scrollWidth:formula.scrollWidth,
+   })));
+   check(layout.length===5&&layout.every(formula=>formula.vertical==='hidden'&&formula.width>0&&formula.scrollWidth<=formula.width+1),'short fractions fit without a vertical scrollbar: '+JSON.stringify(layout));
+   await p.locator('.quiz-option-button').nth(1).click();
+   await p.locator('.quiz-answer-cell.is-incorrect').waitFor();
+   const frames=await p.waitForFunction(()=>{
+    const cells=[...document.querySelectorAll('.quiz-answer-cell:is(.is-correct,.is-incorrect)')];
+    const canvas=document.createElement('canvas').getContext('2d');
+    const color=value=>{canvas.fillStyle=value.trim();return canvas.fillStyle;};
+    return cells.length===2&&cells.every(cell=>{
+     const style=getComputedStyle(cell);
+     const tone=cell.classList.contains('is-correct')?'success':'danger';
+     const button=cell.querySelector('button');
+     return !cell.classList.contains('is-selected')&&style.boxShadow==='none'&&
+      color(style.backgroundColor)===color(style.getPropertyValue('--ui-'+tone+'-bg'))&&
+      color(style.borderTopColor)===color(style.getPropertyValue('--ui-'+tone+'-text'))&&
+      getComputedStyle(button).backgroundColor==='rgba(0, 0, 0, 0)';
+    });
+   });
+   check(await frames.jsonValue(),'both full frames finish using only the expected feedback colors');
+   await p.screenshot({path:path.join(evidence,'fractions-one-tap-'+theme+'.png')});
+   await p.getByRole('button',{name:'下一题',exact:true}).click();
+   await p.locator('.quiz-player-question .mfrac').nth(1).waitFor();
+   const wide=await p.locator('.quiz-player-question .quiz-formula-inline').evaluate(formula=>{
+    formula.scrollLeft=50;
+    return {left:formula.scrollLeft,width:formula.clientWidth,scrollWidth:formula.scrollWidth,vertical:getComputedStyle(formula).overflowY};
+   });
+   check(wide.left>0&&wide.scrollWidth>wide.width&&wide.vertical==='hidden','a long fraction stays horizontally scrollable: '+JSON.stringify(wide));
+   await f.close();
+  }
  }
  fs.writeFileSync(path.join(evidence,baseline?'baseline.json':'results.json'),JSON.stringify({suite:'quiz-interaction-regressions-ui',baseline,checks,results,scope:'Real React components and generated CSS; deterministic fictional APIs only.'},null,2));console.log(JSON.stringify({suite:'quiz-interaction-regressions-ui',baseline,passed:checks,results,evidence}));
 }catch(error){if(browser){const page=browser.contexts().flatMap(c=>c.pages()).at(-1);if(page){await page.screenshot({path:path.join(evidence,'failure.png')}).catch(()=>{});fs.writeFileSync(path.join(evidence,'failure.txt'),String(error)+'\n'+await page.locator('body').innerText().catch(()=>''));}}throw error;}finally{await browser?.close();await new Promise(resolve=>server?server.close(resolve):resolve());const resolved=path.resolve(temporary);if(path.dirname(resolved)===path.resolve(os.tmpdir())&&path.basename(resolved).startsWith('tickminder-quiz-interactions-'))fs.rmSync(resolved,{recursive:true,force:true});}

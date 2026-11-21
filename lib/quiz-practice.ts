@@ -79,7 +79,18 @@ function viewSummary(a:Account,row:AttemptRow,reviewer:boolean):PracticeAttemptS
 }
 async function viewAttempt(a:Account,row:AttemptRow):Promise<PracticeAttempt>{
  const summary=viewSummary(a,row,await mayReview(a,row)),content=orderedPracticeContent(JSON.parse(row.content_json),row.order_json),keys=await attemptKeys(row),checked=JSON.parse(row.checked_json) as string[];
- const results=(JSON.parse(row.results_json) as PracticeResult[]).filter(r=>summary.answersVisible||row.status==='in_progress'&&checked.includes(r.questionId)).map(r=>{const key=summary.answersVisible?keys.find(k=>k.questionId===r.questionId):undefined;return {...r,...(!summary.scoreVisible&&row.status==='submitted'?{points:null}:{}),...(key?{key:{correctOptionId:key.correctOptionId,accepted:key.accepted,unit:key.unit,explanation:key.explanation,rubric:key.rubric}}:{})};});
+ const checkedIds=new Set(checked),keyByQuestion=new Map(keys.map(key=>[key.questionId,key]));
+ const results=(JSON.parse(row.results_json) as PracticeResult[]).flatMap(result=>{
+  const key=keyByQuestion.get(result.questionId),wasChecked=checkedIds.has(result.questionId);
+  const correctOptionId=row.immediate&&wasChecked&&key?.mode==='choice'?key.correctOptionId:null;
+  if(!summary.answersVisible&&!correctOptionId&&!(row.status==='in_progress'&&wasChecked))return [];
+  return [{
+   ...result,
+   ...(!summary.scoreVisible&&row.status==='submitted'?{points:null}:{}),
+   ...(correctOptionId?{correctOptionId}:{}),
+   ...(summary.answersVisible&&key?{key:{correctOptionId:key.correctOptionId,accepted:key.accepted,unit:key.unit,explanation:key.explanation,rubric:key.rubric}}:{}),
+  }];
+ });
  return {...summary,content:{...content,timeLimitSeconds:settings(row).timeLimitSeconds},answers:JSON.parse(row.answers_json),flaggedQuestionIds:JSON.parse(row.flagged_json||'[]'),checkedQuestionIds:checked,manualQuestionIds:keys.filter(k=>k.mode==='manual').map(k=>k.questionId),results};
 }
 function assignmentSnapshot(row:AttemptRow):SqlGuard{return row.assignment_id?{sql:'EXISTS(SELECT 1 FROM quiz_practice_assignments snapshot WHERE snapshot.id=? AND snapshot.revision=?)',values:[row.assignment_id,row.assignment_revision]}:{sql:'1',values:[]};}
