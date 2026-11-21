@@ -80,7 +80,13 @@ check('single-language and explicitly bilingual ZIPs retain only the requested t
  }
 });
 check('prompt asks for missing requirements first and documents actual rules',()=>{
- for(const essential of ['grade, curriculum, subject or question language(s)','wait for my answer','题目语言：EN, BM','1-150','exactly 4 options','fullwidth colon','U+FF1A','<=20 MiB','<=1 MiB','<=5 MiB','<=60 MiB','<=300 entries','manual Quiz builder','save the draft','does not publish or assign','Do not invent a download URL','Create original questions only if I explicitly request'])assert(prompt.includes(essential),essential);
+ for(const essential of ['grade, curriculum, subject or question language(s)','wait for my answer','题目语言：EN, BM','1-150','exactly 4 options','fullwidth colon','U+FF1A','<=20 MiB','<=1 MiB','<=5 MiB','<=60 MiB','<=300 entries','manual Quiz builder','save the draft','does not publish or assign','Do not invent a download URL','Create original questions that match the confirmed curriculum'])assert(prompt.includes(essential),essential);
+});
+check('original questions can use generated images that are checked before packaging',()=>{
+ assert(prompt.includes('For original questions, you may generate or draw new diagrams'));
+ assert(prompt.includes('Check each image against the stem, options and correct answer'));
+ assert(prompt.includes('PNG, JPG/JPEG or WebP with real matching image data'));
+ assert(!prompt.includes('crop the actual source image'));
 });
 rejects('ASCII colon substitutions are not valid machine format',example.replaceAll('：',':'));
 rejects('translated machine field names are rejected',example.replace('题目编码：','Question code：'));

@@ -54,9 +54,9 @@ Open **Upload ZIP**, then choose one ZIP file or drag one ZIP into the dialog on
 - The English AI prompt asks for grade, curriculum, subject and requested languages before generating a ZIP. [Download the AI prompt](/downloads/tickminder-quiz-ai-prompt.txt)
 - The example ZIP has two original science questions in English, Malay and Chinese. Both questions have four options. [Download the example ZIP](/downloads/tickminder-quiz-example.zip)
 
-This ZIP format currently supports **1–150 single-answer MCQs with exactly four options A–D**. The manual builder's other question types are not extra ZIP formats. Do not silently convert written, true/false or multi-answer questions; use the manual builder or resolve the intended format first. The AI prompt defaults to faithful source conversion and permits original generation only when explicitly requested. Missing answers or required diagrams must be resolved rather than invented.
+The ZIP format supports **1–150 single-answer MCQs with exactly four options A–D**. Use the manual builder for written, true/false or multi-answer questions. The general AI prompt creates original questions from the confirmed requirements and supports optional reference material.
 
-Use UTF-8 plain text with `questions.txt` at the ZIP root and an `images/` folder only when referenced source crops are needed. Do not add an enclosing project folder:
+Put the UTF-8 `questions.txt` file at the ZIP root. Include `images/` when the questions or options refer to image files.
 
 ```text
 questions.txt
@@ -111,7 +111,7 @@ Start with one `[QUIZ]` block for the whole ZIP. Repeat the question block with 
 - Image paths are case-sensitive and relative to the ZIP root. Use uppercase `NONE` for absent images. Difficulty must be `easy`, `medium` or `hard`; the answer must be one uppercase A–D letter. Both individual option images and composite option diagrams are retained, but a composite alone does not supply the required text or image for every option.
 - `解题步骤` is optional. Put it after `标准答案` and write numbered steps, up to 4000 characters, using separate lines for the calculation and reasoning. Leave it blank or omit it for questions without a solution. The steps import into the existing explanation field and are offered only for questions with content.
 - Import rejects missing prompts/options/answers/images, duplicate question/source identifiers, unsafe/duplicate paths, invalid image signatures, invalid UTF-8 and oversized archives. Limits: 20 MiB compressed, 60 MiB declared/actual unpacked data, 300 entries and 150 questions. `questions.txt` has a 1 MiB limit; each image 5 MiB. Use an unencrypted, single-volume ZIP, with no unsupported extra file formats or unsafe paths.
-- Source text, answers and mathematical notation are preserved; importing does not verify the educational correctness of supplied answers or infer LaTeX from ambiguous plain text. To typeset math, use `$...$` inline and `$$...$$` for a separate formula. Obtain needed image crops from the authorised source; do not invent missing diagrams.
+- For original questions, use a supplied image or generate a diagram, chart or illustration when needed. Check that labels, units, values and any relevant scale match the question and its answer. To typeset math, use `$...$` inline and `$$...$$` for a separate formula.
 - Import opens a private reviewable draft. Confirm title, subject and classification, inspect diagrams and answer keys, then save. Exact ZIP SHA256 is retained per author/group; importing the same ZIP again opens that owned draft instead of duplicating it. Changing an existing source bank does not silently overwrite used versions. Import does not automatically publish or assign the Quiz.
 - The attached Kedah sample contains **40 questions / 39 images**, with **16 easy / 23 medium / 1 hard**. It is used as a local QA fixture; it is not automatically published to the production creator library.
 

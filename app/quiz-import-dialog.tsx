@@ -39,8 +39,9 @@ export default function QuizImportDialog({language,disabled=false,onImport,onClo
   {error&&<div className="quiz-import-error" data-testid="quiz-import-error" role="alert"><p>{error}</p>{errorDetails&&<details data-testid="quiz-import-error-details"><summary>{text('查看全部问题','View all issues')}</summary><pre>{errorDetails}</pre></details>}</div>}
   <details className="quiz-import-tutorial" data-testid="quiz-import-tutorial"><summary><BookOpen size={17} aria-hidden="true"/>{text('教学','Tutorial')}<ChevronDown size={16} aria-hidden="true"/></summary><div>
    <ol>
-    <li>{text('把 AI 提示词和原题一起给 AI，并注明年级、课程体系（如 SPM 或 IGCSE）、科目、主题和题目语言。','Give your AI the prompt, source material, grade, curriculum (such as SPM or IGCSE), subject, topic and question languages.')}</li>
+    <li>{text('把提示词给 AI，注明年级、课程体系（如 SPM 或 IGCSE）、科目、主题和题目语言。有参考资料也可以一并提供。','Give your AI the prompt, grade, curriculum (such as SPM or IGCSE), subject, topic and question languages. Reference material is optional.')}</li>
     <li>{text('可选华文、英文、马来文，或明确指定多种，例如「英文和马来文」。资料缺漏时，AI 应先提问。','Choose Chinese, English, Malay, or an explicit combination such as English and Malay. The AI should ask for any missing details first.')}</li>
+    <li>{text('原创题需要图表或示意图时，可以让 AI 生成。检查图中的标注、数值和单位是否与题目及答案一致。','For original questions, the AI can generate diagrams or charts where needed. Check that the labels, values and units match the question and answer.')}</li>
     <li>{text('导入 ZIP 后，检查自动带入的分类、各语言题目和答案，再保存草稿。解题步骤可选填。','Review the imported classification, language versions and answers before saving the draft. Worked solutions are optional.')}</li>
    </ol>
    <pre aria-label={text('ZIP 文件结构','ZIP structure')}>questions.txt{'\n'}images/  ({text('选填','optional')})</pre>
