@@ -4,6 +4,12 @@ import {parseQuizNotation} from './quiz-notation';
 export type QuizImport={content:QuizContent;keys:QuizKey[];images:Map<string,Uint8Array>;warnings:string[];sourceKey:string;filename:string};
 export class QuizImportError extends Error{constructor(public issues:string[]){super(issues.join('\n'));}}
 const imagePath=/^images\/[\p{L}\p{N}_ .-]+\.(png|jpe?g|webp)$/iu;
+const solutionLabel='解题步骤';
+const questionLabels=new Set([
+ '题目编码','所属年级','所属章节','所属子章节','难度等级','题干 (BM)','题干 (EN)','图片入口',
+ ...Array.from('ABCD',letter=>[`选项 ${letter} (BM)`,`选项 ${letter} (EN)`,`选项 ${letter} 图片入口`]).flat(),
+ '选项合图入口','标准答案',solutionLabel,
+]);
 const crcTable=Uint32Array.from({length:256},(_,i)=>{let n=i;for(let j=0;j<8;j++)n=n&1?0xedb88320^(n>>>1):n>>>1;return n>>>0;});
 function crc32(bytes:Uint8Array){let n=0xffffffff;for(const b of bytes)n=crcTable[(n^b)&255]^(n>>>8);return (n^0xffffffff)>>>0;}
 // Validate central and local headers before allocation. fflate's filename map
@@ -39,7 +45,19 @@ export function parseQuestionText(source:string,files:Map<string,Uint8Array>){
  if([...clean.matchAll(/^\[Q[^\]\n]*\]\s*$/gm)].some(m=>!/^\[Q\d+\]\s*$/.test(m[0])))throw new QuizImportError(['Invalid question block header: use [Q01]']);
  for(const block of blocks){const number=block.match(/^\[Q(\d+)\]/)![1],fields=new Map<string,string>();let current='';
   if(usedNumbers.has(Number(number)))issues.push('Q'+number+': duplicate question number');usedNumbers.add(Number(number));
-  for(const line of block.split('\n').slice(1)){const match=line.match(/^([^：\n]{1,100})[：](.*)$/);if(match){current=match[1].trim();if(fields.has(current))issues.push('Q'+number+': duplicate field '+current);fields.set(current,match[2].trim());}else if(line.trim()&&current)fields.set(current,(fields.get(current)||'')+'\n'+line.trim());}
+  for(const line of block.split('\n').slice(1)){
+   const match=line.match(/^([^：\n]{1,100})[：](.*)$/);
+   const name=match?.[1].trim()||'';
+   if(match&&(current!==solutionLabel||questionLabels.has(name))){
+    current=name;
+    if(fields.has(current))issues.push('Q'+number+': duplicate field '+current);
+    fields.set(current,match[2].trim());
+   }else if(current===solutionLabel){
+    fields.set(current,(fields.get(current)||'')+'\n'+line.trimEnd());
+   }else if(line.trim()&&current){
+    fields.set(current,(fields.get(current)||'')+'\n'+line.trim());
+   }
+  }
   const get=(k:string)=>fields.get(k)||'',{question:q,key}=newQuestion('mcq');q.sourceId=get('题目编码');q.level=get('所属年级');q.chapter=[get('所属章节'),get('所属子章节')].filter(Boolean).join(' · ').slice(0,200);q.prompt={primary:get('题干 (BM)'),en:get('题干 (EN)')};
   if(!q.sourceId||usedIds.has(q.sourceId))issues.push('Q'+number+': missing or duplicate 题目编码');usedIds.add(q.sourceId);
   if(!['easy','medium','hard'].includes(get('难度等级')))issues.push('Q'+number+': difficulty must be easy / medium / hard');else q.difficulty=get('难度等级') as typeof q.difficulty;
@@ -48,7 +66,9 @@ export function parseQuestionText(source:string,files:Map<string,Uint8Array>){
   q.options=q.options.map((o,i)=>{const letter=String.fromCharCode(65+i);o.text={primary:get('选项 '+letter+' (BM)'),en:get('选项 '+letter+' (EN)')};o.imageId=image('选项 '+letter+' 图片入口');if(!o.text.primary&&!o.text.en&&!o.imageId)issues.push('Q'+number+': empty option '+letter);return o;});
   const composite=image('选项合图入口');if(composite)q.extraImageIds=[composite];
   const correct=get('标准答案');if(!/^[A-D]$/.test(correct))issues.push('Q'+number+': answer must be A / B / C / D');else key.correctOptionId=q.options[correct.charCodeAt(0)-65].id;
-  for(const [field,value] of [['题干 (BM)',q.prompt.primary],['题干 (EN)',q.prompt.en],...q.options.flatMap((o,i)=>[[`选项 ${String.fromCharCode(65+i)} (BM)`,o.text.primary],[`选项 ${String.fromCharCode(65+i)} (EN)`,o.text.en]])])for(const warning of parseQuizNotation(value).warnings)warnings.push(`Q${number} ${field}: 符号范围不明确，保留原文，请对照原卷检查 / Ambiguous notation kept as written; check the source: ${warning.expression}`);
+  key.explanation=get(solutionLabel).trim();
+  if(key.explanation.length>4000)issues.push('Q'+number+': '+solutionLabel+' maximum: 4000 characters');
+  for(const [field,value] of [['题干 (BM)',q.prompt.primary],['题干 (EN)',q.prompt.en],...q.options.flatMap((o,i)=>[[`选项 ${String.fromCharCode(65+i)} (BM)`,o.text.primary],[`选项 ${String.fromCharCode(65+i)} (EN)`,o.text.en]]),[solutionLabel,key.explanation]])for(const warning of parseQuizNotation(value).warnings)warnings.push(`Q${number} ${field}: 符号范围不明确，保留原文，请对照原卷检查 / Ambiguous notation kept as written; check the source: ${warning.expression}`);
   content.questions.push(q);keys.push(key);
  }
  if(issues.length)throw new QuizImportError(issues);

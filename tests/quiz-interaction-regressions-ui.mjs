@@ -38,6 +38,12 @@ async function open(params={},options={}){
   if(attempt.content.questions[1])attempt.content.questions[1].prompt.primary='$\\frac{\\frac{'+'1234567890'.repeat(8)+'}{2}}{\\frac{3}{4}}$';
  }
  if(options.deferred)attempt.immediate=false;if(options.deadline)attempt.deadlineAt='2035-01-01T00:00:00.000Z';
+ function gradeQuestion(question){
+  const answer=attempt.answers[question.id];
+  const correctOptionId=question.options[options.fractions&&question.id==='question-0'?3:0]?.id;
+  const correct=correctOptionId?answer?.optionId===correctOptionId:answer?.text==='42';
+  return {questionId:question.id,status:correct?'correct':'incorrect',points:correct?question.points:0,correctOptionId};
+ }
  await page.route('**/*',async route=>{
   const u=new URL(route.request().url());if(u.origin!==origin){errors.push('external request '+u.origin);return route.abort();}if(!u.pathname.startsWith('/api/'))return route.continue();
   const reply=(body,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(body)});
@@ -57,15 +63,20 @@ async function open(params={},options={}){
     checkStarted.resolve(body);
     if(!attempt.checkedQuestionIds.includes(body.questionId)){
      attempt.checkedQuestionIds.push(body.questionId);
-     const answer=attempt.answers[body.questionId];
-     const correctIndex=options.fractions&&body.questionId==='question-0'?3:0;
-     const correctOptionId=attempt.content.questions.find(question=>question.id===body.questionId)?.options[correctIndex]?.id;
-     const correct=answer?.optionId===correctOptionId||answer?.text==='42';
-     attempt.results.push({questionId:body.questionId,status:correct?'correct':'incorrect',points:correct?1:0,...(answer?.optionId&&correctOptionId?{correctOptionId}:{})});
+     const result=gradeQuestion(attempt.content.questions.find(question=>question.id===body.questionId));
+     const solution=options.solutions?.[body.questionId]?.trim();
+     attempt.results.push({...result,...(solution?{solution}:{})});
     }
    }
    const complete=attempt.content.questions.every(q=>Boolean(attempt.answers[q.id]?.optionId||attempt.answers[q.id]?.text?.trim())&&(!attempt.immediate||attempt.manualQuestionIds.includes(q.id)||attempt.checkedQuestionIds.includes(q.id)));
-   if(body.action==='submit'||!attempt.assignmentId&&complete&&!body.deferCompletion){attempt={...attempt,status:'submitted',canAnswer:false,scoreVisible:true,answersVisible:true,score:attempt.results.filter(r=>r.status==='correct').length,submittedAt:new Date().toISOString(),submissionReason:'student'};}
+   if(body.action==='submit'||!attempt.assignmentId&&complete&&!body.deferCompletion){
+    const grades=attempt.content.questions.map(gradeQuestion);
+    const answersVisible=options.releaseAnswers!==false;
+    const results=answersVisible?grades.map(result=>({...result,key:{
+     correctOptionId:result.correctOptionId,accepted:[],unit:'',explanation:options.solutions?.[result.questionId]||'',rubric:'',
+    }})):attempt.results;
+    attempt={...attempt,status:'submitted',canAnswer:false,scoreVisible:true,answersVisible,results,score:grades.reduce((sum,result)=>sum+result.points,0),submittedAt:new Date().toISOString(),submissionReason:'student'};
+   }
    return reply({attempt,serverNow:new Date().toISOString()});
   }
   errors.push('unexpected API '+u.pathname);return reply({error:'fixture.unexpected'},500);
@@ -137,6 +148,50 @@ try{
   {const f=await open({mode:'practice',lang:'en'},{holdSave:true}),p=f.page;await startBackgroundSave(f);await p.locator('.quiz-option-button').first().click();await p.evaluate(()=>window.fixtureUnmount());f.releaseSave();await p.waitForTimeout(150);check(f.writes.every(body=>body.action!=='check'),'unmount never runs queued grading in another page');await f.close();}
   {const f=await open({mode:'practice',lang:'en'},{holdSave:true,deadline:true}),p=f.page;await startBackgroundSave(f);await p.locator('.quiz-option-button').first().click();f.expire();f.releaseSave();await p.locator('.quiz-result-summary').waitFor();check(f.writes.every(body=>body.action!=='check')&&f.writes.some(body=>body.action==='submit'&&body.automatic),'expiry takes priority over queued grading');await f.close();}
   {const f=await open({mode:'practice',lang:'en'},{deferred:true}),p=f.page;await p.locator('.quiz-option-button').first().click();await f.saveStarted;check(await p.locator('.quiz-check-answer').count()===0,'deferred feedback never gains a correctness button');check(f.writes.every(body=>body.action!=='check'),'autosave never reveals deferred answers');check(await p.locator('.quiz-answer-cell.is-correct,.quiz-answer-cell.is-incorrect').count()===0,'deferred practice does not mark option correctness');await f.close();}
+  const sampleSolution='1. Find the common factor.\n2. Simplify to $\\frac{7}{11}$.';
+  for(const selection of [0,1]){
+   const f=await open({mode:'practice',lang:'zh',theme:selection?'dark':'light'},{solutions:{'question-0':sampleSolution}}),p=f.page;
+   const options=p.locator('.quiz-option-button'),solution=p.locator('.quiz-answer-feedback .quiz-solution');
+   await options.first().waitFor();
+   check(await p.locator('.quiz-solution').count()===0,'steps are unavailable before the answer is checked');
+   await options.nth(selection).click();
+   await solution.waitFor();
+   check(await solution.getAttribute('open')===null,'the worked solution starts collapsed for either result');
+   await solution.locator('summary').click();
+   await solution.locator('.quiz-solution-steps .mfrac').waitFor();
+   check((await solution.locator('.quiz-solution-steps').innerText()).includes('2. Simplify'),'solution keeps its numbered steps and renders the fraction');
+   await p.getByRole('button',{name:'下一题',exact:true}).click();
+   await options.nth(1).click();
+   await p.locator('.quiz-answer-feedback.incorrect').waitFor();
+   check(await p.locator('.quiz-solution').count()===0,'an older question without a solution has no entry');
+   await f.close();
+  }
+  for(const releaseAnswers of [true,false]){
+   const f=await open({mode:'practice',lang:'en',theme:'dark'},{deferred:true,self:true,releaseAnswers,solutions:{'question-0':sampleSolution,'question-1':'  '}}),p=f.page;
+   await p.locator('.quiz-option-button').first().click();
+   await p.getByRole('button',{name:'Next question',exact:true}).click();
+   await p.locator('.quiz-option-button').nth(1).click();
+   await p.locator('.quiz-result-summary').waitFor();
+   const overview=p.locator('.quiz-question-results');
+   if(releaseAnswers){
+    check((await p.locator('.quiz-correct-count').innerText())==='1 / 2 questions correct','completed practice shows count of correct questions');
+    check(await overview.locator('li').count()===2,'every question appears in the completed results');
+    check(await overview.locator('li').first().locator('.quiz-result-mark.correct').count()===1,'the first question shows correct');
+    check(await overview.locator('li').last().locator('.quiz-result-mark.incorrect').count()===1,'the second question shows incorrect');
+    check(await overview.locator('.quiz-solution').count()===1,'only the question with steps gets a solution link');
+    check(await overview.locator('summary').evaluate(summary=>{
+     const question=summary.querySelector('.quiz-result-question').getBoundingClientRect();
+     const action=summary.querySelector('.quiz-solution-action').getBoundingClientRect();
+     return action.left>=question.right&&Math.abs(action.top+action.height/2-question.top-question.height/2)<1;
+    }),'solution action stays beside its result at mobile width');
+    await overview.locator('summary').click();
+    await overview.locator('.quiz-solution-steps .mfrac').waitFor();
+    await p.screenshot({path:path.join(evidence,'optional-solutions-results.png')});
+   }else{
+    check(await overview.count()===0&&await p.locator('.quiz-correct-count,.quiz-solution').count()===0,'score release by itself keeps question results and steps private');
+   }
+   await f.close();
+  }
   for(const theme of ['light','dark']){
    const f=await open({mode:'practice',lang:'zh',theme},{fractions:true,width:390}),p=f.page;
    await p.locator('.quiz-player-question .mfrac').waitFor();

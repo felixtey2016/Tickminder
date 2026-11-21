@@ -82,12 +82,15 @@ async function viewAttempt(a:Account,row:AttemptRow):Promise<PracticeAttempt>{
  const checkedIds=new Set(checked),keyByQuestion=new Map(keys.map(key=>[key.questionId,key]));
  const results=(JSON.parse(row.results_json) as PracticeResult[]).flatMap(result=>{
   const key=keyByQuestion.get(result.questionId),wasChecked=checkedIds.has(result.questionId);
-  const correctOptionId=row.immediate&&wasChecked&&key?.mode==='choice'?key.correctOptionId:null;
+  const checkedChoice=row.immediate&&wasChecked&&key?.mode==='choice'?key:null;
+  const correctOptionId=checkedChoice?.correctOptionId;
+  const solution=summary.answersVisible?'':checkedChoice?.explanation?.trim();
   if(!summary.answersVisible&&!correctOptionId&&!(row.status==='in_progress'&&wasChecked))return [];
   return [{
    ...result,
    ...(!summary.scoreVisible&&row.status==='submitted'?{points:null}:{}),
    ...(correctOptionId?{correctOptionId}:{}),
+   ...(solution?{solution}:{}),
    ...(summary.answersVisible&&key?{key:{correctOptionId:key.correctOptionId,accepted:key.accepted,unit:key.unit,explanation:key.explanation,rubric:key.rubric}}:{}),
   }];
  });

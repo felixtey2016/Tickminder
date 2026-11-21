@@ -19,16 +19,20 @@ Create a standard, unencrypted, single-volume .zip attachment with this exact la
 questions.txt
 images/                 (only when referenced source image files are needed)
 
-questions.txt must be UTF-8 plain text at the ZIP root. There must be no enclosing project folder. Do not put Markdown fences, headings, commentary, answer explanations, JSON, PDF, HTML or spreadsheet files inside questions.txt.
+questions.txt must be UTF-8 plain text at the ZIP root. There must be no enclosing project folder. Use only question blocks and their fields. Write any worked explanation in the optional 解题步骤 field.
 Use ordinary stored or deflated ZIP entries. Keep ZIP <=20 MiB, questions.txt <=1 MiB, every extracted file <=5 MiB, total extracted content <=60 MiB and the archive <=300 entries (including directory entries). Split a larger set without dropping questions.
 All paths must be unique, with matching filename case. Do not use absolute paths, drive letters, backslashes, dot/dot-dot segments, nested image folders, duplicate paths, encryption or multi-volume archives. Omit hidden operating-system files and unrelated attachments.
 
 Exact question format
 Start each question on its own line with [Q01], [Q02], ... [Q100], up to 150. Use unique question numbers and unique nonempty 题目编码 values. Preserve an original source code when available; otherwise use a consistent unique code.
-Copy every field label in the example exactly once per question, including spaces, parentheses, A-D and the fullwidth colon ： (Unicode U+FF1A). Never translate, rename or replace these labels with English labels or ASCII colons.
-Put each field's value on the same line; join source line wraps with spaces without changing meaning. Keep mathematical/chemical notation intact. Use explicit $...$ LaTeX only when its meaning is certain; do not guess the scope of powers, indices or fractions.
+Copy every required field label in the example exactly once per question, including spaces, parentheses, A-D and the fullwidth colon ： (Unicode U+FF1A). 解题步骤 is optional. Keep the labels as written.
+Put each required field's value on the same line and join source line wraps with spaces without changing their meaning. Keep mathematical and chemical notation intact. Use explicit $...$ LaTeX when the formula's scope is clear.
 难度等级 accepts exactly easy, medium or hard.
 标准答案 accepts exactly one uppercase letter: A, B, C or D. Do not append a word, explanation, punctuation or multiple letters.
+
+Worked solutions (optional)
+To include a solution, add 解题步骤 after 标准答案. Use numbered lines that explain the method, intermediate steps and how the result leads to the verified answer. Use the language of the question and keep the field to 4000 characters. Line breaks in the steps are preserved.
+Omit the field or leave it blank for a question without a worked solution. Students get a solution link for questions with filled-in steps.
 
 Language fields
 Put supplied Malay text in the (BM) fields and supplied English text in the (EN) fields. For English-only content, leave every (BM) value empty and fill the (EN) values, as in the example. Leave an unavailable language empty; never use NONE as missing text.
@@ -67,10 +71,12 @@ The BEGIN/END marker lines below identify this example in the prompt only. Do no
 选项 D 图片入口：NONE
 选项合图入口：NONE
 标准答案：B
+解题步骤：1. Identify the quantity being measured. The question asks for temperature.
+2. A thermometer measures temperature, so select B.
 --- END EXACT questions.txt EXAMPLE ---
 
 Final checks and delivery
-Check question counts, unique codes, exact field labels/fullwidth colons, four real options, one verified answer, image references and archive limits before delivery.
+Check question counts, unique codes, exact field labels/fullwidth colons, four real options, one verified answer, any worked steps, image references and archive limits before delivery.
 If your tools can create files, attach the actual finished .zip file and briefly state its question count and any unresolved issues. Do not invent a download URL or claim a file exists when it does not.
 If file/ZIP creation tools are unavailable, say so honestly. Provide the exact questions.txt content without wrapper lines and the exact source image filenames needed; explain how to save UTF-8 questions.txt, put it at the ZIP root with the optional images folder, and compress those items into a ZIP. Do not claim the package has been validated or is complete when required images/answers are missing.
 The teacher must still import, review the questions and answers, choose the correct title, subject, syllabus and other required editor settings, then save the draft. This text protocol does not set all Quiz-level catalogue fields and does not publish or assign a Quiz.

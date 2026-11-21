@@ -89,10 +89,13 @@ Canonical English-only question block (repeat with distinct question/source IDs)
 选项 D 图片入口：NONE
 选项合图入口：NONE
 标准答案：B
+解题步骤：1. Identify the quantity being measured. The question asks for temperature.
+2. A thermometer measures temperature, so select B.
 ```
 
 - Keep each field name, space, parenthesis and fullwidth colon `：` exactly as shown; English field-name substitutions and ASCII colons are not compatible. For English-only questions, leave BM fields empty and populate EN fields; do not fill missing text with `NONE`. Unknown grade/chapter/subchapter values may remain empty. Quiz-level title, subject, syllabus and other required classification are reviewed in the editor, rather than assumed from this text format.
 - Image paths are case-sensitive and relative to the ZIP root. Use uppercase `NONE` for absent images. Difficulty must be `easy`, `medium` or `hard`; the answer must be one uppercase A–D letter. Both individual option images and composite option diagrams are retained, but a composite alone does not supply the required text or image for every option.
+- `解题步骤` is optional. Put it after `标准答案` and write numbered steps, up to 4000 characters, using separate lines for the calculation and reasoning. Leave it blank or omit it for questions without a solution. The steps import into the existing explanation field and are offered only for questions with content.
 - Import rejects missing prompts/options/answers/images, duplicate question/source identifiers, unsafe/duplicate paths, invalid image signatures, invalid UTF-8 and oversized archives. Limits: 20 MiB compressed, 60 MiB declared/actual unpacked data, 300 entries and 150 questions. `questions.txt` has a 1 MiB limit; each image 5 MiB. Use an unencrypted, single-volume ZIP, with no unsupported extra file formats or unsafe paths.
 - Source text, answers and mathematical notation are preserved; importing does not verify the educational correctness of supplied answers or infer LaTeX from ambiguous plain text. To typeset math, use `$...$` inline and `$$...$$` for a separate formula. Obtain needed image crops from the authorised source; do not invent missing diagrams.
 - Import opens a private reviewable draft. Confirm title, subject and classification, inspect diagrams and answer keys, then save. Exact ZIP SHA256 is retained per author/group; importing the same ZIP again opens that owned draft instead of duplicating it. Changing an existing source bank does not silently overwrite used versions. Import does not automatically publish or assign the Quiz.

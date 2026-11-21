@@ -25,7 +25,12 @@ const teacher=account('teacher-alpha-0001','teacher','老师甲'),teacher2=accou
 for(const s of [student,student2])sqlite.prepare('INSERT INTO plans(group_id,key,student,subject,teacher_name,duration,active,created_at) VALUES(?,?,?,?,?,1,1,?)').run(g,crypto.randomUUID(),s.studentName,'Mathematics',teacher.teacherName,now);
 const classroom='classroom-alpha-01';sqlite.prepare('INSERT INTO classrooms(id,group_id,title,subject,teacher_name,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').run(classroom,g,'中四数学','Mathematics',teacher.teacherName,teacher.id,now,now);for(const s of [student,student2])sqlite.prepare('INSERT INTO classroom_members(id,group_id,classroom_id,student_name,created_at) VALUES(?,?,?,?,?)').run(crypto.randomUUID(),g,classroom,s.studentName,now);
 function fixture(){const c={...quiz.emptyQuiz(),title:'数学练习测试',subject:'Mathematics',exam:'SPM',shuffleQuestions:true,shuffleOptions:true};const keys=[];for(const type of ['mcq','blank','math','written']){const item=quiz.newQuestion(type);item.question.prompt={primary:'测试 '+type,en:''};item.question.options.forEach((o,i)=>{o.text.primary='答案 '+i;});if(type==='blank')item.key.accepted=['Kuala Lumpur','吉隆坡'];if(type==='math'){item.key.accepted=['1/2'];item.key.tolerance=.001;}if(type==='written')item.key.rubric='说明解题步骤';c.questions.push(item.question);keys.push(item.key);}return {c,keys};}
-const {c,keys}=fixture(),quizId=crypto.randomUUID();actor=teacher;await server.saveQuiz(actor,{id:quizId,revision:0,operationId:crypto.randomUUID(),content:c,keys});await server.shareQuiz(actor,{id:quizId,revision:1,operationId:crypto.randomUUID(),visibility:'public'});
+const {c,keys}=fixture(),quizId=crypto.randomUUID();
+const choiceSolution='1. Compare the choices.\n2. Select the verified result.';
+const unopenedSolution='1. Review the source phrase.\n2. Match the exact location.';
+keys[0].explanation=choiceSolution;
+keys[1].explanation=unopenedSolution;
+actor=teacher;await server.saveQuiz(actor,{id:quizId,revision:0,operationId:crypto.randomUUID(),content:c,keys});await server.shareQuiz(actor,{id:quizId,revision:1,operationId:crypto.randomUUID(),visibility:'public'});
 async function post(data,a=actor){actor=a;const r=await route.POST(new Request('https://quiz.test/api/quiz-practice',{method:'POST',headers:{origin:'https://quiz.test','content-type':'application/json'},body:JSON.stringify(data)}));return {status:r.status,data:await r.json()};}
 async function get(query='',a=actor){actor=a;const r=await route.GET(new Request('https://quiz.test/api/quiz-practice'+query));return {status:r.status,data:await r.json()};}
 const op=()=>crypto.randomUUID();
@@ -40,7 +45,9 @@ const check={action:'check',attemptId:attempt.id,revision:attempt.revision,answe
 assert.equal(attempt.results.length,1,'other answers are not revealed');
 assert.equal(attempt.results[0].status,'incorrect');
 assert.equal(attempt.results[0].correctOptionId,choiceKey.correctOptionId,'the checked option can be highlighted');
-assert.equal(attempt.results[0].key,undefined,'the full key and explanation stay protected');
+assert.equal(attempt.results[0].solution,choiceSolution,'the checked question can show its worked steps');
+assert.equal(attempt.results[0].key,undefined,'immediate feedback only returns the checked solution and option');
+assert.equal(JSON.stringify(attempt).includes(unopenedSolution),false,'unchecked answers and steps stay protected');
 assert.deepEqual((await get('?attemptId='+attempt.id,student)).data.attempt.results,attempt.results,'resuming retains the checked answer feedback');
 assert.equal((await post(check,student)).data.attempt.revision,attempt.revision);
 assert.equal((await post({...check,operationId:op()},student)).status,409,'stale revision');assert.equal((await post({action:'save',attemptId:attempt.id,revision:attempt.revision,answers:{[choice.id]:{optionId:choiceKey.correctOptionId}},operationId:op()},student)).data.error,'quiz.practiceLocked');
@@ -49,6 +56,7 @@ assert.equal((await get('?attemptId='+attempt.id,student2)).status,404,'another 
 r=await post({action:'grade',attemptId:attempt.id,revision:attempt.revision,questionId:c.questions[3].id,points:1,feedback:'步骤正确',operationId:op()},teacher);assert.equal(r.status,200,JSON.stringify(r.data));attempt=r.data.attempt;assert.equal(attempt.score,3);assert.equal(attempt.pendingManual,0);
 const assignmentId=op(),assignBody={action:'assign',id:assignmentId,quizId,bank:true,classroomId:classroom,operationId:op()};r=await post(assignBody,teacher);assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await post(assignBody,teacher)).data.id,assignmentId);assert.equal((await get('',student)).data.assignments.length,1);assert.equal((await get('?targets=1',teacher2)).data.classrooms.length,0);
 r=await post({action:'start',assignmentId,immediate:true,operationId:op()},student);assert.equal(r.status,200,JSON.stringify(r.data));const assignedAttempt=r.data.attempt;assert.equal(assignedAttempt.immediate,false,'teacher default overrides student');assert.equal((await post({action:'check',attemptId:assignedAttempt.id,revision:1,questionId:choice.id,answers:{[choice.id]:{optionId:wrong}},operationId:op()},student)).status,400);
+assert.deepEqual(assignedAttempt.results,[],'deferred attempt starts with no results or steps');
 sqlite.prepare('DELETE FROM classroom_members WHERE classroom_id=? AND student_name=?').run(classroom,student.studentName);assert.equal((await post({action:'save',attemptId:assignedAttempt.id,revision:1,answers:{},operationId:op()},student)).status,404,'removed class member cannot mutate');sqlite.prepare('INSERT INTO classroom_members(id,group_id,classroom_id,student_name,created_at) VALUES(?,?,?,?,?)').run(op(),g,classroom,student.studentName,now);
 const direct={action:'assign',id:op(),quizId,bank:true,studentNames:[student.studentName],immediate:true,settings:{kind:'practice',scoreRelease:'manual',answerRelease:'manual'},operationId:op()};assert.equal((await post(direct,teacher2)).status,403,'other teacher cannot allocate');assert.equal((await post(direct,teacher)).status,200);assert.equal((await post({...direct,id:op(),studentNames:[foreign.studentName],operationId:op()},admin)).status,403,'foreign targets denied');
 const immediateAssigned=(await post({action:'start',assignmentId:direct.id,operationId:op()},student)).data.attempt;
@@ -58,8 +66,18 @@ const immediateChecked=(await post({...check,attemptId:immediateAssigned.id,revi
 const immediateSubmitted=(await post({action:'submit',attemptId:immediateChecked.id,revision:immediateChecked.revision,answers,operationId:op()},student)).data.attempt;
 assert.equal(immediateSubmitted.scoreVisible,false);
 assert.equal(immediateSubmitted.answersVisible,false);
-assert.deepEqual(immediateSubmitted.results,[{questionId:choice.id,status:'incorrect',points:null,correctOptionId:choiceKey.correctOptionId}],'only the previously checked choice stays visible before release');
+assert.deepEqual(immediateSubmitted.results,[{questionId:choice.id,status:'incorrect',points:null,correctOptionId:choiceKey.correctOptionId,solution:choiceSolution}],'only the previously checked choice and its steps stay visible before release');
 assert.equal((await get('?attemptId='+immediateSubmitted.id,student2)).status,404);
+const deferredAssignment={...direct,id:op(),immediate:false,operationId:op()};
+assert.equal((await post(deferredAssignment,teacher)).status,200);
+const deferredAttempt=(await post({action:'start',assignmentId:deferredAssignment.id,operationId:op()},student)).data.attempt;
+const deferredSubmitted=(await post({action:'submit',attemptId:deferredAttempt.id,revision:deferredAttempt.revision,answers,operationId:op()},student)).data.attempt;
+assert.equal(deferredSubmitted.answersVisible,false);
+assert.deepEqual(deferredSubmitted.results,[],'a deferred assignment keeps all solutions private until release');
+const defaultSubmitted=(await post({action:'submit',attemptId:assignedAttempt.id,revision:assignedAttempt.revision,answers,operationId:op()},student)).data.attempt;
+assert.equal(defaultSubmitted.answersVisible,true);
+assert.equal(defaultSubmitted.results.find(result=>result.questionId===choice.id).key.explanation,choiceSolution);
+assert.equal(defaultSubmitted.results.find(result=>result.questionId===c.questions[2].id).key.explanation,'','previous questions can still have no steps');
 sqlite.prepare('UPDATE classrooms SET archived=1 WHERE id=?').run(classroom);assert.equal((await post({action:'start',assignmentId,operationId:op()},student)).status,404,'archived classes cannot start');sqlite.prepare('UPDATE classrooms SET archived=0 WHERE id=?').run(classroom);
 beforeBatch=()=>sqlite.prepare('UPDATE accounts SET disabled_at=? WHERE id=?').run(now,student.id);r=await post({action:'start',quizId,bank:true,operationId:op()},student);assert.equal(r.status,409,'disabled race mutation guard');sqlite.prepare('UPDATE accounts SET disabled_at=NULL WHERE id=?').run(student.id);
 // Source withdrawal/deletion prevents new starts while historical attempt keys and image grants survive.
