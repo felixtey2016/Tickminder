@@ -26,7 +26,7 @@ const p=new URLSearchParams(location.search),lang=p.get('lang')||'en',practice=p
 const account={id:'fixture-user',role:practice?'student':'teacher',groupId:'fixture-group',teacherName:practice?null:'Fixture Teacher',studentName:practice?'Fixture Student':null};setClientGroup(account.groupId);setPrivateReadIdentity(workspaceIdentityKey(account),account.groupId);history.replaceState({timelyoRole:account.role,timelyoGroup:account.groupId,timelyoView:'quizzes'},'');window.fixtureClosed=0;window.fixtureChanged=0;
 const fixtureRoot=createRoot(document.getElementById('root'));window.fixtureUnmount=()=>fixtureRoot.unmount();fixtureRoot.render(<AdminPermissionContext.Provider value={account}><div className='app-shell shell-wave1'><main className='workspace workspace-compact'>{practice?<QuizPracticePlayer attemptId='fixture-attempt' language={lang} onClose={()=>window.fixtureClosed++} onChanged={()=>window.fixtureChanged++}/>:<QuizWorkspace view='quizBank' role='teacher' language={lang}/>}</main></div></AdminPermissionContext.Provider>);`;
 async function open(params={},options={}){
- const context=await browser.newContext({viewport:{width:options.width||390,height:844},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(10000);
+ const context=await browser.newContext({viewport:{width:options.width||390,height:844},reducedMotion:'reduce',...(options.touch?{hasTouch:true,isMobile:true}:{})}),page=await context.newPage();page.setDefaultTimeout(10000);
  const errors=[],writes=[],saveStarted=deferred(),releaseSave=deferred(),draftStarted=deferred(),releaseDraft=deferred(),checkStarted=deferred();
  let attempt=structuredClone(initialAttempt),draft=structuredClone(quiz),saveFailed=false;
  if(options.self)attempt.assignmentId=null;if(options.single){attempt.content.questions=attempt.content.questions.slice(0,1);attempt.questionCount=1;attempt.totalScore=1;attempt.rawTotalScore=1;}
@@ -86,7 +86,7 @@ async function open(params={},options={}){
 }
 async function tap(page,locator){await locator.scrollIntoViewIfNeeded();const b=await locator.boundingBox();assert(b);await page.mouse.click(b.x+b.width/2,b.y+b.height/2);}
 async function startBackgroundSave(f){await f.page.locator('.quiz-flag-question').click();await f.saveStarted;}
-async function editDraft(f,lang){const p=f.page;await p.getByTestId('quiz-tab-mine').click();await p.locator('.quiz-item-more summary').first().click();await p.getByRole('button',{name:lang==='zh'?'编辑':'Edit',exact:true}).click();await p.getByLabel(lang==='zh'?'测验标题':'Quiz title',{exact:true}).fill('Updated fixture quiz');return p.getByRole('button',{name:lang==='zh'?'保存草稿':'Save draft',exact:true});}
+async function editDraft(f,lang){const p=f.page;await p.getByTestId('quiz-tab-mine').click();await p.locator('.quiz-item-more-trigger').first().click();await p.getByRole('button',{name:lang==='zh'?'编辑':'Edit',exact:true}).click();await p.getByLabel(lang==='zh'?'测验标题':'Quiz title',{exact:true}).fill('Updated fixture quiz');return p.getByRole('button',{name:lang==='zh'?'保存草稿':'Save draft',exact:true});}
 try{
  await build({absWorkingDir:root,stdin:{contents:entry,resolveDir:root,sourcefile:'quiz-interactions-fixture.tsx',loader:'tsx'},bundle:true,platform:'browser',format:'esm',jsx:'automatic',outfile:path.join(temporary,'ui.js'),assetNames:'fixture-assets/[name]-[hash]',loader:{'.woff':'file','.woff2':'file','.ttf':'file'},alias:{'@':root},logLevel:'silent'});
  const globals=await postcss([(tw.default||tw)({base:root})]).process(fs.readFileSync(path.join(root,'app/globals.css'),'utf8'),{from:path.join(root,'app/globals.css')}),css=globals.css+'\n'+fs.readFileSync(path.join(temporary,'ui.css'),'utf8');
@@ -141,7 +141,43 @@ try{
  }
  if(!baseline){
   {const f=await open({lang:'en'},{failDraft:true}),p=f.page,save=await editDraft(f,'en');await save.click();await p.locator('.quiz-editor [role=alert]').waitFor();check(await p.getByLabel('Quiz title',{exact:true}).inputValue()==='Updated fixture quiz','failed draft save keeps edited content');check(await p.locator('.quiz-editor').isVisible(),'failed draft never navigates');await f.close();}
-  {const f=await open({lang:'en'}),p=f.page;await p.getByTestId('quiz-tab-mine').click();await p.locator('.quiz-item-more summary').first().click();await p.getByRole('button',{name:'Edit',exact:true}).click();await p.getByRole('tab',{name:'Sharing',exact:true}).click();const panel=p.getByTestId('quiz-sharing-panel');await panel.getByRole('radio',{name:/Public/}).check();const refreshed=p.waitForResponse(r=>r.url().includes('/api/quizzes?id=')&&r.request().method()==='GET');await panel.getByRole('button',{name:'Save sharing settings',exact:true}).click();await refreshed;await panel.locator('.quiz-sharing-options:not([disabled])').waitFor();check(await p.locator('.quiz-editor').isVisible(),'updating sharing does not close the editor');check(f.writes.some(body=>body.action==='share'),'sharing flow was actually saved');await f.close();}
+  {const f=await open({lang:'en'}),p=f.page;await p.getByTestId('quiz-tab-mine').click();await p.locator('.quiz-item-more-trigger').first().click();await p.getByRole('button',{name:'Edit',exact:true}).click();await p.getByRole('tab',{name:'Sharing',exact:true}).click();const panel=p.getByTestId('quiz-sharing-panel');await panel.getByRole('radio',{name:/Public/}).check();const refreshed=p.waitForResponse(r=>r.url().includes('/api/quizzes?id=')&&r.request().method()==='GET');await panel.getByRole('button',{name:'Save sharing settings',exact:true}).click();await refreshed;await panel.locator('.quiz-sharing-options:not([disabled])').waitFor();check(await p.locator('.quiz-editor').isVisible(),'updating sharing does not close the editor');check(f.writes.some(body=>body.action==='share'),'sharing flow was actually saved');await f.close();}
+  {
+   const f=await open({lang:'zh'},{touch:true}),p=f.page;
+   await p.getByTestId('quiz-tab-mine').tap();
+   const trigger=p.locator('.quiz-item-more-trigger').first(),menu=p.locator('.quiz-item-secondary-actions');
+   await trigger.waitFor();
+   await trigger.evaluate(button=>{
+    const card=button.closest('article'),spacer=document.createElement('div'),tail=document.createElement('div'),nav=document.createElement('nav');
+    spacer.style.height='650px';tail.style.height='1200px';
+    card.before(spacer);card.after(tail);
+    nav.className='mobile-bottom-nav';
+    nav.style.cssText='display:block;position:fixed;inset:auto 0 0;height:68px;z-index:55';
+    document.body.append(nav);
+    window.scrollBy(0,button.getBoundingClientRect().bottom-nav.getBoundingClientRect().top+12);
+   });
+   await trigger.tap();
+   await menu.waitFor();
+   await p.waitForFunction(()=>{
+    const menu=document.querySelector('.quiz-item-secondary-actions'),nav=document.querySelector('nav.mobile-bottom-nav');
+    return menu.getBoundingClientRect().bottom<=nav.getBoundingClientRect().top-6&&menu.getAttribute('data-side')==='top';
+   });
+   check(await menu.locator('button').count()>=4,'menu exposes the available actions above the mobile navigation');
+   const initialScroll=await p.evaluate(()=>window.scrollY);
+   const input=await p.context().newCDPSession(p);
+   await input.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:6,y:610}]});
+   for(const y of [580,550,520,490,460,430])await input.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:6,y}]});
+   await input.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+   await p.waitForFunction(start=>window.scrollY>start+20,initialScroll);
+   check(await menu.isVisible(),'a page swipe outside the menu scrolls without closing it');
+   await p.keyboard.press('Escape');
+   await menu.waitFor({state:'hidden'});
+   await trigger.tap();
+   await menu.waitFor();
+   await p.touchscreen.tap(6,540);
+   await menu.waitFor({state:'hidden'});
+   await f.close();
+  }
   {const f=await open({mode:'practice',lang:'en'},{holdSave:true,failSave:'quiz.conflict'}),p=f.page;await startBackgroundSave(f);await p.locator('.quiz-option-button').first().click();f.releaseSave();await p.getByRole('alert').waitFor();check(f.writes.every(body=>body.action!=='check'),'a failed save never checks using a stale revision');check(await p.locator('.quiz-option-button[aria-pressed=true]').count()===1,'local answer survives save conflict');await f.close();}
   {const f=await open({mode:'practice',lang:'en'},{holdSave:true,failSave:'quiz.network',failSaveOnce:true}),p=f.page;await startBackgroundSave(f);await p.locator('.quiz-option-button').first().click();f.releaseSave();await p.getByRole('alert').getByRole('button').first().click();await p.locator('.quiz-answer-cell.is-correct [aria-pressed=true]').waitFor();check(f.writes.filter(body=>body.action==='check').length===1,'retrying a failed save continues the original selection intent');await f.close();}
   {const f=await open({mode:'practice',lang:'en'},{self:true,single:true}),p=f.page;await p.locator('.quiz-option-button').first().click();await p.locator('.quiz-result-summary').waitFor();check(f.writes.length===1&&f.writes[0].action==='check','one request grades and completes the final self-practice question');check(await p.locator('.quiz-answer-cell.is-correct [aria-pressed=true]').count()===1,'the correct selected option remains green after auto-completion');await f.close();}

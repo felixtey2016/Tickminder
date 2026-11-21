@@ -9,6 +9,7 @@ import {lazy,Suspense,useEffect,useId,useMemo,useRef,useState,type ReactNode} fr
 import {ArrowLeft,Copy,Eye,MoreHorizontal,Play,Plus,Search,SlidersHorizontal,SquarePen,Trash2,Upload,UsersRound,X} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Dialog,DialogContent,DialogDescription,DialogTitle} from '@/components/ui/dialog';
+import {Popover,PopoverContent,PopoverTrigger} from '@/components/ui/popover';
 import {t,type Language} from '@/lib/i18n';
 import {groupFetch} from '@/lib/group-client';
 import {readApiJson,showActionToast} from '@/lib/action-feedback';
@@ -53,6 +54,26 @@ function mergeFacets(values:(Facets|undefined)[]):Facets{
 }
 function FilterField({label,children,className=''}:{label:string;children:(id:string)=>ReactNode;className?:string}){const id=useId();return <div className={'quiz-field '+className}><label htmlFor={id}>{label}</label>{children(id)}</div>;}
 
+function QuizItemMenu({children}:{children:ReactNode}){
+ const [open,setOpen]=useState(false),[bottomPadding,setBottomPadding]=useState(12);
+ const label=t('更多操作');
+ function changeOpen(next:boolean){
+  if(next){
+   const nav=document.querySelector('.mobile-bottom-nav:not([hidden])')?.getBoundingClientRect();
+   const aboveBottomNav=nav&&nav.width>nav.height&&nav.height>0&&nav.bottom>=window.innerHeight-2;
+   setBottomPadding(aboveBottomNav?window.innerHeight-nav.top+8:12);
+  }
+  setOpen(next);
+ }
+ return <Popover open={open} onOpenChange={changeOpen}>
+  <PopoverTrigger asChild><Button type="button" variant="outline" className="quiz-item-more-trigger" aria-label={label} title={label}><MoreHorizontal size={18} aria-hidden="true"/></Button></PopoverTrigger>
+  <PopoverContent align="end" sideOffset={6} sticky="always" collisionPadding={{top:12,right:12,bottom:bottomPadding,left:12}} className="quiz-item-secondary-actions" aria-label={label}
+   onClick={event=>{if(event.target instanceof Element&&event.target.closest('button:not(:disabled)'))setOpen(false);}}>
+   {children}
+  </PopoverContent>
+ </Popover>;
+}
+
 export default function QuizWorkspace({view,language,role='teacher',initialQuizId,onLinkedQuizExit}:{view:'quizzes'|'quizBank';language:Language;role?:'student'|'teacher'|'admin'|'parent';initialQuizId?:string;onLinkedQuizExit?:()=>void}){
  const can=useAdminAction();
  const author=role==='teacher'||role==='admin';
@@ -62,7 +83,7 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
  const {catalogue,loading:catalogueLoading,error:catalogueError,reload:reloadCatalogue}=useAcademicCatalogue('quiz');
  const [tab,setTab,replaceTab]=usePageHistoryState<'bank'|'mine'|'assigned'|'history'|'manage'>('quiz.tab',role!=='parent'&&view!=='quizBank'&&assignmentsAllowed?'assigned':'bank');
  const [filtersOpen,setFiltersOpen]=useState(false);
- const toolbarMore=useRef<HTMLDetailsElement>(null),workspaceRoot=useRef<HTMLDivElement>(null);
+ const toolbarMore=useRef<HTMLDetailsElement>(null);
  const [composeOpen,setComposeOpen]=useState(false),[reviewOpen,setReviewOpen]=useState(false),[reporting,setReporting]=useState<string|null>(null);
  const [filters,setFilters]=useState<Filters>(EMPTY_FILTERS),[searchInput,setSearchInput]=useState('');
  const [facets,setFacets]=useState<Facets>(EMPTY_FACETS),[items,setItems]=useState<Item[]>([]);
@@ -105,8 +126,8 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
   if(['bank','history'].includes(window.history.state?.timelyoQuizTab)){replaceTab(window.history.state.timelyoQuizTab);const next={...window.history.state};delete next.timelyoQuizTab;window.history.replaceState(next,'');}
  },[replaceTab]);
  useEffect(()=>{
-  const close=(event:PointerEvent)=>{if(!(event.target instanceof Node))return;if(!toolbarMore.current?.contains(event.target))closeTools();for(const menu of workspaceRoot.current?.querySelectorAll<HTMLDetailsElement>('.quiz-item-more[open]')||[])if(!menu.contains(event.target))menu.removeAttribute('open');};
-  document.addEventListener('pointerdown',close);return()=>document.removeEventListener('pointerdown',close);
+  const close=(event:MouseEvent)=>{if(event.target instanceof Node&&!toolbarMore.current?.contains(event.target))closeTools();};
+  document.addEventListener('click',close);return()=>document.removeEventListener('click',close);
  },[]);
 
  useEffect(()=>{
@@ -177,7 +198,7 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
    </div>
    <div className="quiz-item-actions">
     {tab!=='manage'&&<div className="quiz-item-primary-actions">{author&&<Button adminGrant="quizAssignments.assign" data-testid="quiz-assign-to-students" onClick={()=>setAllocation(source)}><UsersRound size={17}/>{compactLabel('布置给学生','Assign to students')}</Button>}<Button adminGrant="quizzes.view" variant={author?'outline':'default'} data-testid="quiz-card-practice" disabled={resumeBusy} onClick={()=>void beginPractice(source)}><Play size={17}/>{resumeBusy?t('quiz.loading'):pending?t('quiz.resume'):author?compactLabel('试做','Try quiz'):t('quiz.practice')}</Button></div>}
-    {tab!=='manage'&&<details className="quiz-item-more"><summary aria-label={t('更多操作')} title={t('更多操作')}><MoreHorizontal size={18}/></summary><div className="quiz-item-secondary-actions" onClick={event=>{if((event.target as HTMLElement).closest('button'))event.currentTarget.closest('details')?.removeAttribute('open');}}>{author&&<>{!itemBank(item)&&Boolean(item.canEdit)&&<Button adminGrant="quizzes.edit" variant="outline" onClick={()=>void open(item)}><SquarePen size={17}/>{t('quiz.edit')}</Button>}{Boolean(item.canShare)&&(!Boolean(item.canEdit)||!can("quizzes.edit"))&&<Button adminGrant="quizzes.share" variant="outline" onClick={()=>void open(item)}>{t("quiz.bankSettings")}</Button>}<Button variant="outline" onClick={()=>void open(item,true)}><Eye size={17}/>{t('quiz.previewQuiz')}</Button><Button adminGrant="quizzes.duplicate" variant="outline" disabled={copyBusy} onClick={()=>void duplicate(item)}><Copy size={17}/>{t(can('quizzes.edit')?'quiz.copyEdit':'quiz.duplicate')}</Button>{deleteAction}</>}<QuizCopyLinkButton quizId={item.id}/>{bank&&item.visibility==='public'&&<Button type="button" variant="outline" onClick={()=>setReporting(item.id)}>{t('quiz.report')}</Button>}</div></details>}
+    {tab!=='manage'&&<QuizItemMenu>{author&&<>{!itemBank(item)&&Boolean(item.canEdit)&&<Button adminGrant="quizzes.edit" variant="outline" onClick={()=>void open(item)}><SquarePen size={17}/>{t('quiz.edit')}</Button>}{Boolean(item.canShare)&&(!Boolean(item.canEdit)||!can("quizzes.edit"))&&<Button adminGrant="quizzes.share" variant="outline" onClick={()=>void open(item)}>{t("quiz.bankSettings")}</Button>}<Button variant="outline" onClick={()=>void open(item,true)}><Eye size={17}/>{t('quiz.previewQuiz')}</Button><Button adminGrant="quizzes.duplicate" variant="outline" disabled={copyBusy} onClick={()=>void duplicate(item)}><Copy size={17}/>{t(can('quizzes.edit')?'quiz.copyEdit':'quiz.duplicate')}</Button>{deleteAction}</>}<QuizCopyLinkButton quizId={item.id}/>{bank&&item.visibility==='public'&&<Button type="button" variant="outline" onClick={()=>setReporting(item.id)}>{t('quiz.report')}</Button>}</QuizItemMenu>}
     {tab==='manage'&&<><QuizCopyLinkButton quizId={item.id}/>{deleteAction}</>}
    </div>
   </article>;
@@ -190,7 +211,7 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
  if(reviewOpen)return <Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizModerationWorkspace owner={Boolean(facets.canModerate)} language={language} onBack={()=>{setReviewOpen(false);setReload(value=>value+1);}}/></Suspense>;
  if(editor)return <Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizEditor key={editor.id} initial={editor} onBack={()=>{setEditor(null);setReload(value=>value+1);}} onSaved={(_saved,reason)=>{facetCache.current.clear();setReload(value=>value+1);if(reason==='draft'){setEditor(null);clearFilters();setTab('bank');}}}/></Suspense>;
  if(opening&&opening.mode!=='preview')return <section className="quiz-editor quiz-opening" aria-busy={!opening.error}><header className="quiz-editor-header"><Button variant="outline" onClick={cancelOpening}><ArrowLeft size={17}/>{t('quiz.back')}</Button><div className="quiz-editor-title"><h2>{opening.item.title}</h2><p>{t(opening.mode==='copy'?'quiz.copying':'quiz.loading')}</p></div></header>{openingBody()}</section>;
- return <div className="quiz-workspace quiz-library-wave3" data-testid="quiz-hub" ref={workspaceRoot} onKeyDown={event=>{if(event.key!=='Escape'||!(event.target instanceof Element))return;const menu=event.target.closest<HTMLDetailsElement>('.quiz-item-more[open]');if(menu){menu.removeAttribute('open');menu.querySelector('summary')?.focus();}}}>
+ return <div className="quiz-workspace quiz-library-wave3" data-testid="quiz-hub">
   <div className={'quiz-hub-navigation'+(author?' is-author':'')}>
   <div className="quiz-workspace-head"><h2 className="sr-only">{t('quiz.hubTitle')}</h2><div>{author&&!catalogTab&&catalogueAllowed&&<Button adminGrant="quizAssignments.assign" data-testid="quiz-choose-assignment" onClick={()=>changeTab("bank")}><UsersRound size={17}/>{compactLabel("布置测验","Assign quiz")}</Button>}{author&&catalogTab&&<Button adminGrant="quizzes.create" variant="outline" className="quiz-create-button" data-testid="quiz-create" disabled={busy==='import'} onClick={create}><Plus size={17}/>{t('quiz.createQuiz')}</Button>}<details className="quiz-toolbar-more" ref={toolbarMore} onKeyDown={event=>{if(event.key==='Escape'){closeTools();event.currentTarget.querySelector('summary')?.focus();}}}><summary aria-label={t('更多操作')} title={t('更多操作')} data-testid="quiz-tools-more"><MoreHorizontal size={20}/></summary><div className="quiz-toolbar-menu" onClick={event=>{if((event.target as HTMLElement).closest('button'))closeTools();}}>{author&&<>{!catalogTab&&<Button adminGrant="quizzes.create" variant="ghost" data-testid="quiz-create" onClick={create}><Plus size={17}/>{t("quiz.createQuiz")}</Button>}{facets.maintenanceImport&&<Button adminGrant="quizzes.import" variant="ghost" data-testid="quiz-import" disabled={busy==='import'} onClick={()=>setImportOpen(true)}><Upload size={17}/>{t('quiz.import')}</Button>}<Button adminGrant="quizzes.duplicate" variant="ghost" disabled={busy!==null} onClick={()=>setComposeOpen(true)}>{t('quiz.compose')}</Button></>}<Button variant="ghost" onClick={()=>setReviewOpen(true)}>{t(facets.canModerate?'quiz.moderation':'quiz.reviewReports')}</Button>{facets.canModerate&&<Button variant="ghost" disabled={busy!==null} onClick={()=>{setBusy('seed');void api<{id:string;error?:string}>('/api/quiz-seed',{method:'POST',headers:{'content-type':'application/json'},body:'{}'}).then(result=>api<LocalQuiz&{error?:string}>('/api/quizzes?id='+encodeURIComponent(result.id))).then(data=>{setTab('mine');setEditor(data);}).catch(error=>setActionError(errorCode(error))).finally(()=>setBusy(null));}}>{t('quiz.seedDraft')}</Button>}</div></details></div></div>
 

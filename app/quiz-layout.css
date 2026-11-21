@@ -63,12 +63,6 @@
 .quiz-workspace .quiz-item-actions button { min-width: 0; max-width: 100%; min-height: 44px; height: auto; flex: 0 1 auto; white-space: normal; line-height: 1.5; }
 .quiz-workspace .quiz-item-primary-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .quiz-workspace .quiz-item-primary-actions > button { flex: 0 1 auto; }
-.quiz-item-more { position: relative; flex: 0 0 44px; min-width: 0; }
-.quiz-item-more > summary { display: flex; align-items: center; justify-content: center; gap: 8px; width: 44px; min-height: 44px; padding: 10px; border: 1px solid #b7afcd; border-radius: 6px; background: #fff; color: #51486b; font-size: 14px; font-weight: 600; list-style: none; cursor: pointer; }
-.quiz-item-more > summary::-webkit-details-marker { display: none; }
-.quiz-item-more > summary:focus-visible { outline: 2px solid #6245bd; outline-offset: 3px; }
-.quiz-item-secondary-actions { position: absolute; z-index: 15; top: calc(100% + 6px); right: 0; display: grid; gap: 6px; width: 220px; max-width: calc(100vw - 48px); padding: 8px; background: #fff; border: 1px solid var(--quiz-line); border-radius: 8px; box-shadow: 0 8px 28px #25213f1a; }
-.quiz-item-secondary-actions > button { width: 100%; justify-content: flex-start; }
 .quiz-workspace .quiz-assignment-badges { gap: 6px; }
 .quiz-workspace .quiz-practice-heading-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-bottom: 12px; }
 .quiz-workspace .quiz-practice-panel-head { display: grid; gap: 8px; margin-block: 0 12px; }
