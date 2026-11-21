@@ -10,18 +10,18 @@ import {QuizMath} from '@/components/quiz-math';
 import {QuizPicture} from '@/components/quiz-player';
 import {t,type Language} from '@/lib/i18n';
 import {practiceApi,practiceError} from '@/lib/quiz-practice-client';
-import type {QuizAnswer,QuizQuestion} from '@/lib/quiz';
+import {quizQuestionLanguages,quizReadText,quizReadingLanguageLabel,type QuizAnswer,type QuizQuestion,type QuizReadingLanguage} from '@/lib/quiz';
 import type {PracticeAttempt,PracticeResult} from '@/lib/quiz-practice-types';
 
 const filled=(answer:QuizAnswer|undefined)=>Boolean(answer?.optionId||answer?.text?.trim());
 const same=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
 const sameFlags=(a:string[],b:string[])=>a.length===b.length&&a.every(id=>b.includes(id));
 const blockedRefresh=(error:string)=>['quiz.conflict','quiz.practiceFinished','quiz.practiceLocked','quiz.notFound','quiz.forbidden'].includes(error);
-function answerText(q:QuizQuestion,answer:QuizAnswer|undefined,lang:'primary'|'en'){
- if(!filled(answer))return t('quiz.noAnswer');const option=q.options.find(o=>o.id===answer?.optionId);return option?(option.text[lang]||option.text.primary||option.text.en||t('quiz.option')+' '+String.fromCharCode(65+q.options.indexOf(option))):answer?.text||'';
+function answerText(q:QuizQuestion,answer:QuizAnswer|undefined,lang:QuizReadingLanguage){
+ if(!filled(answer))return t('quiz.noAnswer');const option=q.options.find(o=>o.id===answer?.optionId);return option?(quizReadText(option.text,lang)||t('quiz.option')+' '+String.fromCharCode(65+q.options.indexOf(option))):answer?.text||'';
 }
-function resultAnswer(q:QuizQuestion,result:PracticeResult|undefined,lang:'primary'|'en'){
- const key=result?.key;if(!key)return '';const option=q.options.find(o=>o.id===key.correctOptionId);return option?(option.text[lang]||option.text.primary||option.text.en||t('quiz.option')+' '+String.fromCharCode(65+q.options.indexOf(option))):key.accepted.join(' / ')+(key.unit?' '+key.unit:'');
+function resultAnswer(q:QuizQuestion,result:PracticeResult|undefined,lang:QuizReadingLanguage){
+ const key=result?.key;if(!key)return '';const option=q.options.find(o=>o.id===key.correctOptionId);return option?(quizReadText(option.text,lang)||t('quiz.option')+' '+String.fromCharCode(65+q.options.indexOf(option))):key.accepted.join(' / ')+(key.unit?' '+key.unit:'');
 }
 function outcome(q:QuizQuestion,result:PracticeResult|undefined){
  if(result?.status!=='graded'||result.points==null)return result?.status;
@@ -41,7 +41,7 @@ function SolutionDetails({solution,label}:{solution:string;label?:ReactNode}){
 
 export default function QuizPracticePlayer({attemptId,language,onClose,onChanged}:{attemptId:string;language:Language;onClose:()=>void;onChanged:()=>void}){
  const can=useAdminAction();
- const [attempt,setAttempt]=useState<PracticeAttempt|null>(null),[answers,setAnswers]=useState<Record<string,QuizAnswer>>({}),[flags,setFlags]=useState<string[]>([]),[index,setIndex]=useState(0),[questionLanguage,setQuestionLanguage]=useState<'primary'|'en'>('primary'),[clockOffset,setClockOffset]=useState(0);
+ const [attempt,setAttempt]=useState<PracticeAttempt|null>(null),[answers,setAnswers]=useState<Record<string,QuizAnswer>>({}),[flags,setFlags]=useState<string[]>([]),[index,setIndex]=useState(0),[preferredLanguage,setPreferredLanguage]=useState<QuizReadingLanguage>('primary'),[clockOffset,setClockOffset]=useState(0);
  const [error,setError]=useState(''),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[dirty,setDirty]=useState(false),[confirm,setConfirm]=useState(false),[recoveryConfirm,setRecoveryConfirm]=useState<'leave'|'reload'|null>(null),[remaining,setRemaining]=useState<number|null>(null),[wrongOnly,setWrongOnly]=useState(false),[gradePoints,setGradePoints]=useState(''),[gradeFeedback,setGradeFeedback]=useState(''),[gradeReason,setGradeReason]=useState(''),[gradeSaved,setGradeSaved]=useState(false);
  const current=useRef<PracticeAttempt|null>(null),local=useRef<Record<string,QuizAnswer>>({}),localFlags=useRef<string[]>([]),localQuestion=useRef<string|null>(null),serverOffset=useRef(0),saving=useRef(false),pending=useRef<{body:Record<string,unknown>;snapshot:Record<string,QuizAnswer>;flags:string[]}|null>(null),mounted=useRef(true),deadlineSent=useRef(false),exitRequested=useRef(false);
  const done=attempt?.status==='submitted',answering=Boolean(attempt?.canAnswer&&!done);
@@ -133,7 +133,9 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
  function retry(){if(pending.current)void perform(pending.current);else if(blockedRefresh(error)&&dirty)setRecoveryConfirm('reload');else if(dirty&&current.current?.canAnswer)void mutate('save');else void load();}
 
  const label=(zh:string,en:string)=>language==='zh'?zh:en;
- const hasAlternateLanguage=attempt?.content.primaryLanguage!=='en'&&Boolean(q&&[q.prompt,...q.options.map(option=>option.text)].some(value=>value.primary.trim()&&value.en.trim()&&value.primary.trim()!==value.en.trim()));
+ const primaryLanguage=attempt?.content.primaryLanguage||'zh';
+ const languages=q?quizQuestionLanguages(q,primaryLanguage):[];
+ const questionLanguage=languages.includes(preferredLanguage)?preferredLanguage:languages[0]||'primary';
  const saveLabel=t(busy?'quiz.savingAnswers':dirty?'quiz.unsaved':'quiz.answersSaved');
  const backgroundSave=Boolean(saving.current&&pending.current?.body.action==='save');
  return <Dialog open onOpenChange={open=>{if(!open)void close();}}><DialogContent className="quiz-player-dialog quiz-practice-player quiz-practice-compact quiz-player-wave3" overlayClassName="content-edit-overlay" showCloseButton={false}><div className="quiz-player-heading"><div className="quiz-practice-heading-copy"><DialogTitle className="quiz-practice-title" title={attempt?.title||t('quiz.practiceTitle')}>{attempt?.title||t('quiz.practiceTitle')}</DialogTitle><div className="quiz-practice-meta">{attempt?.creator&&<p className="quiz-creator" title={t('quiz.creator')+' · '+attempt.creator}>{t('quiz.creator')} · {attempt.creator}</p>}{answering&&<span className="quiz-autosave" role="status" aria-label={saveLabel} title={saveLabel}><Save size={14} aria-hidden="true"/>{busy?label('保存中…','Saving…'):dirty?label('未保存','Unsaved'):label('已保存','Saved')}</span>}</div></div><Button type="button" variant="ghost" className="quiz-player-close" aria-label={t(attempt?.assignmentId?'quiz.backToHub':'quiz.exitPractice')} disabled={busy} onClick={()=>void close()}><X size={20} aria-hidden="true"/></Button></div><DialogDescription className="sr-only">{t('quiz.practiceTitle')}</DialogDescription>
@@ -164,10 +166,10 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
    <details className="quiz-attempt-navigation"><summary aria-label={t('quiz.questionNavigation')+' · '+t('quiz.navSummary').replace('{answered}',String(questions.filter(question=>filled(answers[question.id])).length)).replace('{total}',String(questions.length)).replace('{flagged}',String(flags.length))}><ChevronRight size={16} aria-hidden="true"/><span>{label('题目','Questions')}</span><span className="quiz-navigation-count">{questions.filter(question=>filled(answers[question.id])).length} / {questions.length}{flags.length>0&&<><Flag size={13} aria-hidden="true"/>{flags.length}</>}</span></summary><nav aria-label={t('quiz.questionNavigation')}>{reviewQuestions.map((question,position)=>{const answered=filled(answers[question.id]),flagged=flags.includes(question.id),number=questions.findIndex(item=>item.id===question.id)+1;return <button type="button" key={question.id} className={(position===index?'is-current ':'')+(answered?'is-answered ':'')+(flagged?'is-flagged':'')} aria-current={position===index?'step':undefined} aria-label={[t('quiz.questionNumber').replace('{number}',String(number)),t(answered?'quiz.answered':'quiz.unanswered'),flagged?t('quiz.flagged'):''].filter(Boolean).join(' · ')} onClick={()=>changeQuestion(position)}><span>{number}</span>{flagged&&<Flag size={12} aria-hidden="true"/>}</button>;})}</nav></details>
    {!reviewQuestions.length&&done&&<p className="quiz-empty">{t('quiz.noWrongQuestions')}</p>}
    {q&&<>
-    <div className="quiz-player-top quiz-practice-question-bar"><span className="quiz-question-position">{Math.min(index+1,reviewQuestions.length)} / {reviewQuestions.length} · {q.points} {t('quiz.pointsUnit')}</span>{!done&&remaining!==null&&<span className="quiz-practice-timer" role="timer" aria-label={t('quiz.deadline')} title={label('离开页面后计时仍会继续','The timer keeps running when you leave')}><Clock3 size={16} aria-hidden="true"/>{Math.floor(remaining/60)}:{String(remaining%60).padStart(2,'0')}</span>}<div className="quiz-question-tools">{hasAlternateLanguage&&<><label className="sr-only" htmlFor="quiz-practice-language">{t('quiz.language')}</label><select id="quiz-practice-language" value={questionLanguage} onChange={e=>setQuestionLanguage(e.target.value as 'primary'|'en')}><option value="primary">{attempt.content.primaryLanguage==='ms'?'BM':'中文'}</option><option value="en">EN</option></select></>}{answering&&<Button type="button" variant="ghost" className="quiz-flag-question" aria-label={t(flags.includes(q.id)?'quiz.unflagQuestion':'quiz.flagQuestion')} title={t(flags.includes(q.id)?'quiz.unflagQuestion':'quiz.flagQuestion')} aria-pressed={flags.includes(q.id)} disabled={busy&&pending.current?.body.action!=='save'||Boolean(error&&pending.current)||['quiz.conflict','quiz.practiceFinished','quiz.practiceLocked'].includes(error)} onClick={()=>toggleFlag(q.id)}><Flag size={16} aria-hidden="true"/></Button>}</div></div>
+    <div className="quiz-player-top quiz-practice-question-bar"><span className="quiz-question-position">{Math.min(index+1,reviewQuestions.length)} / {reviewQuestions.length} · {q.points} {t('quiz.pointsUnit')}</span>{!done&&remaining!==null&&<span className="quiz-practice-timer" role="timer" aria-label={t('quiz.deadline')} title={label('离开页面后计时仍会继续','The timer keeps running when you leave')}><Clock3 size={16} aria-hidden="true"/>{Math.floor(remaining/60)}:{String(remaining%60).padStart(2,'0')}</span>}<div className="quiz-question-tools">{languages.length>1&&<><label className="sr-only" htmlFor="quiz-practice-language">{t('quiz.questionDisplayLanguage')}</label><select id="quiz-practice-language" value={questionLanguage} onChange={event=>setPreferredLanguage(event.target.value as QuizReadingLanguage)}>{languages.map(code=><option key={code} value={code}>{quizReadingLanguageLabel(code,primaryLanguage)}</option>)}</select></>}{answering&&<Button type="button" variant="ghost" className="quiz-flag-question" aria-label={t(flags.includes(q.id)?'quiz.unflagQuestion':'quiz.flagQuestion')} title={t(flags.includes(q.id)?'quiz.unflagQuestion':'quiz.flagQuestion')} aria-pressed={flags.includes(q.id)} disabled={busy&&pending.current?.body.action!=='save'||Boolean(error&&pending.current)||['quiz.conflict','quiz.practiceFinished','quiz.practiceLocked'].includes(error)} onClick={()=>toggleFlag(q.id)}><Flag size={16} aria-hidden="true"/></Button>}</div></div>
     <progress value={Math.min(index+1,reviewQuestions.length)} max={reviewQuestions.length} aria-label={t('quiz.questions')}/>
     {answering&&remaining===0&&<p role="status">{t('quiz.practiceTimeUp')}</p>}
-    <section className="quiz-player-question"><h3><QuizMath text={q.prompt[questionLanguage]||q.prompt.primary||q.prompt.en}/></h3>{q.imageId&&<QuizPicture id={q.imageId} alt={t('quiz.promptImage')}/>} {q.extraImageIds.map(id=><QuizPicture key={id} id={id} alt={t('quiz.promptImage')}/>)}</section>
+    <section className="quiz-player-question"><h3><QuizMath text={quizReadText(q.prompt,questionLanguage)}/></h3>{q.imageId&&<QuizPicture id={q.imageId} alt={t('quiz.promptImage')}/>} {q.extraImageIds.map(id=><QuizPicture key={id} id={id} alt={t('quiz.promptImage')}/>)}</section>
     {q.options.length?<div className="quiz-answer-grid" aria-busy={checkingQuestionId===q.id}>{q.options.map((option,position)=>{
       const selected=answers[q.id]?.optionId===option.id;
       const correct=correctChoiceId===option.id;
@@ -177,7 +179,7 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
       return <div key={option.id} className={state?'quiz-answer-cell '+state:'quiz-answer-cell'}>
        <button type="button" className="quiz-option-button" disabled={answerDisabled} aria-pressed={selected} onClick={()=>updateAnswer(q,{optionId:option.id})}>
         <span className="quiz-option-letter">{letter}</span>
-        <QuizMath text={option.text[questionLanguage]||option.text.primary||option.text.en}/>
+        <QuizMath text={quizReadText(option.text,questionLanguage)}/>
         {incorrect?<X size={20} className="quiz-option-result-icon" aria-hidden="true"/>:(selected||correct)&&<Check size={20} className="quiz-option-result-icon" aria-hidden="true"/>}
         {(correct||incorrect)&&<span className="sr-only">{t(correct?'quiz.correctAnswer':'quiz.incorrectResult')}</span>}
        </button>

@@ -18,6 +18,8 @@ let checks=0;const check=fn=>{fn();checks++;},reject=(value,previous)=>check(()=
 const checked=checkQuizAcademic(catalogue,paper);check(()=>assert.equal(checked.exam,'SPM'));check(()=>assert.equal(checked.subject,'Mathematics'));check(()=>assert.equal(checked.syllabusId,'spm'));check(()=>assert.equal(checked.subjectId,'mathematics'));check(()=>assert.equal(paper.subject,'mAtH','original object is never mutated'));
 reject({...paper,subject:'Unlisted'});reject({...paper,exam:''});reject({...paper,exam:'IGCSE',catalog:{level:'Form 4'}});
 const igcse=checkQuizAcademic(catalogue,{...paper,exam:'IGCSE',catalog:{level:'year 9'}});check(()=>assert.equal(igcse.catalog.level,'Year 9'));
+check(()=>assert.equal(checkQuizAcademic(catalogue,{...paper,exam:'IGCSE',grade:'year 9'}).grade,'Year 9'));
+reject({...paper,exam:'IGCSE',grade:'Form 4'});
 const historic={...paper,exam:'',subject:'Archived custom subject'},changedTitle={...historic,title:'Edited question text'};
 check(()=>assert.equal(checkQuizAcademic(catalogue,changedTitle,historic),changedTitle));reject({...historic,subject:'Another arbitrary subject'},historic);
 catalogue.syllabuses[0].subjects[0].active=false;

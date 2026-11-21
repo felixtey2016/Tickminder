@@ -37,10 +37,14 @@ export default function QuizImportDialog({language,disabled=false,onImport,onClo
   </button>
   {working&&<p className="quiz-import-status" role="status">{t('quiz.importing')}</p>}
   {error&&<div className="quiz-import-error" data-testid="quiz-import-error" role="alert"><p>{error}</p>{errorDetails&&<details data-testid="quiz-import-error-details"><summary>{text('查看全部问题','View all issues')}</summary><pre>{errorDetails}</pre></details>}</div>}
-  <details className="quiz-import-tutorial" data-testid="quiz-import-tutorial"><summary><BookOpen size={17} aria-hidden="true"/>{text('教学','Tutorial')}<ChevronDown size={16} aria-hidden="true"/></summary><div lang="en">
-   <ol><li>Download the AI prompt. Give it to your AI with your paper or images and the quiz details.</li><li>Ask for one ZIP using the exact field labels. Add an optional <code>解题步骤</code> field after the answer if you want students to see worked steps.</li><li>Import the ZIP, check the questions, answers and any solutions, then save your draft. Share it when ready.</li></ol>
-   <pre aria-label="ZIP structure">questions.txt{'\n'}images/  (optional)</pre>
-   <div className="quiz-import-downloads"><a href="/downloads/tickminder-quiz-ai-prompt.txt" download data-testid="quiz-import-prompt-download"><Download size={16} aria-hidden="true"/>Download AI prompt</a><a href="/downloads/tickminder-quiz-example.zip" download data-testid="quiz-import-sample-download"><Download size={16} aria-hidden="true"/>Example ZIP</a></div>
+  <details className="quiz-import-tutorial" data-testid="quiz-import-tutorial"><summary><BookOpen size={17} aria-hidden="true"/>{text('教学','Tutorial')}<ChevronDown size={16} aria-hidden="true"/></summary><div>
+   <ol>
+    <li>{text('把 AI 提示词和原题一起给 AI，并注明年级、课程体系（如 SPM 或 IGCSE）、科目、主题和题目语言。','Give your AI the prompt, source material, grade, curriculum (such as SPM or IGCSE), subject, topic and question languages.')}</li>
+    <li>{text('可选华文、英文、马来文，或明确指定多种，例如「英文和马来文」。资料缺漏时，AI 应先提问。','Choose Chinese, English, Malay, or an explicit combination such as English and Malay. The AI should ask for any missing details first.')}</li>
+    <li>{text('导入 ZIP 后，检查自动带入的分类、各语言题目和答案，再保存草稿。解题步骤可选填。','Review the imported classification, language versions and answers before saving the draft. Worked solutions are optional.')}</li>
+   </ol>
+   <pre aria-label={text('ZIP 文件结构','ZIP structure')}>questions.txt{'\n'}images/  ({text('选填','optional')})</pre>
+   <div className="quiz-import-downloads"><a href="/downloads/tickminder-quiz-ai-prompt.txt" download data-testid="quiz-import-prompt-download"><Download size={16} aria-hidden="true"/>{text('下载 AI 提示词','Download AI prompt')}</a><a href="/downloads/tickminder-quiz-example.zip" download data-testid="quiz-import-sample-download"><Download size={16} aria-hidden="true"/>{text('示例 ZIP','Example ZIP')}</a></div>
   </div></details>
  </DialogContent></Dialog>;
 }

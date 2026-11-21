@@ -29,6 +29,11 @@ async function open(params={},options={}){
  const context=await browser.newContext({viewport:{width:options.width||390,height:844},reducedMotion:'reduce',...(options.touch?{hasTouch:true,isMobile:true}:{})}),page=await context.newPage();page.setDefaultTimeout(10000);
  const errors=[],writes=[],saveStarted=deferred(),releaseSave=deferred(),draftStarted=deferred(),releaseDraft=deferred(),checkStarted=deferred();
  let attempt=structuredClone(initialAttempt),draft=structuredClone(quiz),saveFailed=false;
+ if(options.multilingual){
+  const question=attempt.content.questions[0];
+  question.prompt={en:'English test question?',ms:'Soalan dalam Bahasa Melayu?',zh:'这是一道华文题？'};
+  question.options.forEach((option,index)=>{option.text={en:'English option '+index,ms:'Pilihan '+index,zh:'选项 '+index};});
+ }
  if(options.self)attempt.assignmentId=null;if(options.single){attempt.content.questions=attempt.content.questions.slice(0,1);attempt.questionCount=1;attempt.totalScore=1;attempt.rawTotalScore=1;}
  if(options.text){attempt.content.questions[0]={...attempt.content.questions[0],type:'blank',options:[]};}
  if(options.fractions){
@@ -47,11 +52,17 @@ async function open(params={},options={}){
  await page.route('**/*',async route=>{
   const u=new URL(route.request().url());if(u.origin!==origin){errors.push('external request '+u.origin);return route.abort();}if(!u.pathname.startsWith('/api/'))return route.continue();
   const reply=(body,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(body)});
-  if(u.pathname==='/api/academic-catalogues')return reply(catalogue);
+  if(u.pathname==='/api/academic-catalogues'){
+   if(!options.importZip)return reply(catalogue);
+   const expanded=structuredClone(catalogue);
+   expanded.syllabuses[0].grades.push('Form 2');
+   expanded.syllabuses[0].subjects.push({id:'science',name:'Science',aliases:[],active:true});
+   return reply(expanded);
+  }
   if(u.pathname==='/api/quizzes'){
-   if(route.request().method()==='POST'){const body=route.request().postDataJSON();writes.push(body);if(body.action==='save'){draftStarted.resolve(body);if(options.holdDraft)await releaseDraft.promise;if(options.failDraft)return reply({error:'quiz.unavailable'},503);draft={...draft,content:body.content,keys:body.keys,revision:draft.revision+1};return reply({id:quizId,revision:draft.revision});}if(body.action==='share'){draft={...draft,visibility:body.visibility,sharingMode:body.visibility,sharingRevision:draft.sharingRevision+1,sharedRevision:draft.revision};return reply({ok:true});}errors.push('unexpected quiz action '+body.action);return reply({error:'quiz.unavailable'},503);}
+   if(route.request().method()==='POST'){const body=route.request().postDataJSON();writes.push(body);if(body.action==='save'||body.action==='maintenanceImport'){draftStarted.resolve(body);if(options.holdDraft)await releaseDraft.promise;if(options.failDraft)return reply({error:'quiz.unavailable'},503);draft={...draft,content:body.content,keys:body.keys,revision:draft.revision+1};return reply({id:quizId,revision:draft.revision});}if(body.action==='share'){draft={...draft,visibility:body.visibility,sharingMode:body.visibility,sharingRevision:draft.sharingRevision+1,sharedRevision:draft.revision};return reply({ok:true});}errors.push('unexpected quiz action '+body.action);return reply({error:'quiz.unavailable'},503);}
    if(u.searchParams.has('id'))return reply(draft);
-   return reply({items:[{id:quizId,title:draft.content.title,subject:'Mathematics',exam:'SPM',difficulty:'mixed',questionCount:2,totalScore:2,visibility:draft.visibility,bank:false,creator:'Fixture Teacher',organisation:'Fixture Group',canEdit:true,canShare:true,revision:draft.revision,sharedRevision:draft.sharedRevision}],hasMore:false,facets:{subjects:['Mathematics'],levels:[],chapters:[],maintenanceImport:false,manageQuizzes:false,canModerate:false}});
+   return reply({items:[{id:quizId,title:draft.content.title,subject:'Mathematics',exam:'SPM',difficulty:'mixed',questionCount:2,totalScore:2,visibility:draft.visibility,bank:false,creator:'Fixture Teacher',organisation:'Fixture Group',canEdit:true,canShare:true,revision:draft.revision,sharedRevision:draft.sharedRevision}],hasMore:false,facets:{subjects:['Mathematics'],levels:[],chapters:[],maintenanceImport:Boolean(options.importZip),manageQuizzes:false,canModerate:false}});
   }
   if(u.pathname==='/api/quiz-practice'){
    if(route.request().method()==='GET')return reply(u.searchParams.has('attemptId')?{attempt,serverNow:new Date().toISOString()}:{assignments:[],attempts:[],hasMore:false,serverNow:new Date().toISOString()});
@@ -140,6 +151,75 @@ try{
   await f.close();
  }
  if(!baseline){
+  {
+   const f=await open({lang:'en'},{touch:true}),p=f.page;
+   await p.getByTestId('quiz-tab-mine').tap();
+   await p.getByTestId('quiz-create').first().tap();
+   await p.getByLabel('Quiz title',{exact:true}).fill('Manual multilingual exercise');
+   await p.getByTestId('quiz-editor-syllabus').selectOption('spm');
+   await p.getByTestId('quiz-editor-subject').selectOption('math');
+   await p.getByTestId('quiz-editor-grade').selectOption('Form 4');
+   await p.getByTestId('quiz-editor-topic').fill('Numbers');
+   await p.getByRole('tab',{name:/^Questions/}).tap();
+   const picker=p.getByTestId('quiz-editor-question-language'),stem=p.getByTestId('quiz-editor-prompt');
+   const questionPicker=p.locator('.quiz-mobile-question-select select');
+   check(await questionPicker.evaluate(select=>{
+    const style=getComputedStyle(select);
+    return style.borderTopStyle==='solid'&&parseFloat(style.borderTopWidth)>0&&style.borderTopColor!=='rgba(0, 0, 0, 0)'&&select.getBoundingClientRect().height>=44;
+   }),'mobile question dropdown has an outline without focus and a full tap target');
+   for(const [code,promptText,choice] of [['en','Which number is even?','Number'],['ms','Nombor yang manakah genap?','Nombor'],['zh','哪一个数是偶数？','数字']]){
+    await picker.selectOption(code);
+    check(await stem.inputValue()==='','an unentered language has its own blank prompt');
+    await stem.fill(promptText);
+    const options=p.locator('.quiz-option-editor textarea');
+    for(let index=0;index<4;index++)await options.nth(index).fill(choice+' '+index);
+   }
+   await picker.selectOption('en');
+   check(await stem.inputValue()==='Which number is even?','returning to English restores the earlier text');
+   check(await p.locator('.quiz-option-editor textarea').first().inputValue()==='Number 0','returning to English restores the earlier options');
+   await picker.selectOption('ms');
+   check(await stem.inputValue()==='Nombor yang manakah genap?','returning to Malay restores the earlier text');
+   await p.getByRole('button',{name:'Save draft',exact:true}).tap();
+   const saved=await f.draftStarted,q=saved.content.questions[0];
+   check(q.prompt.en==='Which number is even?'&&q.prompt.ms==='Nombor yang manakah genap?'&&q.prompt.zh==='哪一个数是偶数？'&&!('primary' in q.prompt),'manual draft saves three independent languages');
+   check(q.options[0].text.en==='Number 0'&&q.options[0].text.ms==='Nombor 0'&&q.options[0].text.zh==='数字 0','saved answer options share stable IDs and independent languages');
+   await p.getByTestId('quiz-hub').waitFor();
+   await f.close();
+  }
+  {
+   const f=await open({lang:'zh'},{importZip:true,width:390}),p=f.page;
+   await p.getByTestId('quiz-tab-mine').click();
+   await p.getByTestId('quiz-tools-more').click();
+   await p.getByTestId('quiz-import').click();
+   await p.getByTestId('quiz-import-tutorial').locator('summary').click();
+   check((await p.getByTestId('quiz-import-tutorial').innerText()).includes('资料缺漏时，AI 应先提问'),'the Chinese tutorial explains required inputs and bilingual declaration');
+   await p.getByTestId('quiz-import-file').setInputFiles(path.join(root,'public/downloads/tickminder-quiz-example.zip'));
+   await p.locator('.quiz-editor').waitFor();
+   check(await p.getByTestId('quiz-editor-syllabus').inputValue()==='spm'&&await p.getByTestId('quiz-editor-subject').inputValue()==='science','real ZIP preselects curriculum and subject in review');
+   check(await p.getByTestId('quiz-editor-grade').inputValue()==='Form 2'&&await p.getByTestId('quiz-editor-topic').inputValue()==='Heat and Temperature','real ZIP preselects grade and topic in review');
+   await p.getByRole('tab',{name:/^题目编辑/}).click();
+   await p.getByTestId('quiz-editor-question-language').selectOption('zh');
+   check(await p.getByTestId('quiz-editor-prompt').inputValue()==='哪一种仪器用来测量温度？','Chinese stem from the example remains editable');
+   await p.getByRole('button',{name:'保存草稿',exact:true}).click();
+   const imported=await f.draftStarted;
+   check(imported.action==='maintenanceImport'&&imported.content.questions[0].prompt.ms.includes('mengukur suhu'),'ZIP draft uses the existing import save path and retains translations');
+   await p.getByTestId('quiz-hub').waitFor();
+   await f.close();
+  }
+  {
+   const f=await open({mode:'practice',lang:'en'},{multilingual:true,touch:true}),p=f.page;
+   const language=p.locator('#quiz-practice-language'),stem=p.locator('.quiz-player-question h3');
+   await language.waitFor();
+   check(await language.inputValue()==='en'&&(await stem.innerText()).includes('English test question'),'student sees the declared default language');
+   await language.selectOption('ms');
+   check((await stem.innerText()).includes('Soalan dalam Bahasa Melayu')&&(await p.locator('.quiz-option-button').first().innerText()).includes('Pilihan 0'),'student switches both stem and options to Malay');
+   await language.selectOption('zh');
+   check((await stem.innerText()).includes('这是一道华文题')&&(await p.locator('.quiz-option-button').first().innerText()).includes('选项 0'),'student switches both stem and options to Chinese');
+   await p.locator('.quiz-option-button').first().tap();
+   const checked=await f.checkStarted;
+   check(checked.answers['question-0'].optionId==='option-0-A','switching language does not change the graded option ID');
+   await f.close();
+  }
   {const f=await open({lang:'en'},{failDraft:true}),p=f.page,save=await editDraft(f,'en');await save.click();await p.locator('.quiz-editor [role=alert]').waitFor();check(await p.getByLabel('Quiz title',{exact:true}).inputValue()==='Updated fixture quiz','failed draft save keeps edited content');check(await p.locator('.quiz-editor').isVisible(),'failed draft never navigates');await f.close();}
   {const f=await open({lang:'en'}),p=f.page;await p.getByTestId('quiz-tab-mine').click();await p.locator('.quiz-item-more-trigger').first().click();await p.getByRole('button',{name:'Edit',exact:true}).click();await p.getByRole('tab',{name:'Sharing',exact:true}).click();const panel=p.getByTestId('quiz-sharing-panel');await panel.getByRole('radio',{name:/Public/}).check();const refreshed=p.waitForResponse(r=>r.url().includes('/api/quizzes?id=')&&r.request().method()==='GET');await panel.getByRole('button',{name:'Save sharing settings',exact:true}).click();await refreshed;await panel.locator('.quiz-sharing-options:not([disabled])').waitFor();check(await p.locator('.quiz-editor').isVisible(),'updating sharing does not close the editor');check(f.writes.some(body=>body.action==='share'),'sharing flow was actually saved');await f.close();}
   {

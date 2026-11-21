@@ -96,7 +96,7 @@
  .quiz-editor-wave3 .quiz-question-list-head {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;margin:0;}
  .quiz-editor-wave3 .quiz-question-list nav {display:none;}
  .quiz-editor-wave3 .quiz-mobile-question-select {display:grid;gap:6px;font-size:14px;color:var(--ui-muted);}
- .quiz-editor-wave3 .quiz-mobile-question-select select {width:100%;}
+ .quiz-editor-wave3 .quiz-mobile-question-select select {width:100%;border:1px solid var(--ui-border);border-radius:6px;padding:10px 12px;}
  .quiz-editor-wave3 .quiz-add-question {display:flex;flex-direction:row;flex-wrap:wrap;gap:8px;margin:0;padding:0;border:0;}
  .quiz-editor-wave3 .quiz-add-question select {flex:1 1 7em;min-width:0;}
  .quiz-editor-wave3 .quiz-add-question button {flex:1 1 6em;min-width:0;min-height:44px;padding-inline:8px;white-space:normal;overflow-wrap:anywhere;}

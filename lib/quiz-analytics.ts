@@ -40,7 +40,11 @@ export async function quizAnalytics(actor:Account,url:URL):Promise<QuizAnalysis>
  (SELECT min(score*100.0/total_score) FROM selected) AS lowestPercent,
  (SELECT json_array_length(content_json,'$.questions') FROM authorised) AS questionCount`;
  const questionsSql=`${ctes},
- questions AS(SELECT json_extract(q.value,'$.id') AS questionId,cast(q.key AS INTEGER)+1 AS number,json_extract(q.value,'$.type') AS type,substr(json_extract(q.value,'$.prompt.primary'),1,180) AS prompt,json_extract(q.value,'$.points') AS points,
+ questions AS(SELECT json_extract(q.value,'$.id') AS questionId,cast(q.key AS INTEGER)+1 AS number,json_extract(q.value,'$.type') AS type,
+ substr(coalesce(json_extract(q.value,'$.prompt.primary'),
+  nullif(json_extract(q.value,'$.prompt.'||json_extract(qa.content_json,'$.primaryLanguage')),''),
+  nullif(json_extract(q.value,'$.prompt.en'),''),json_extract(q.value,'$.prompt.zh'),json_extract(q.value,'$.prompt.ms')),1,180) AS prompt,
+ json_extract(q.value,'$.points') AS points,
  CASE WHEN (SELECT json_extract(k.value,'$.mode') FROM quiz_answer_keys ak JOIN json_each(ak.answers_json) k WHERE ak.version_id=qa.version_id AND json_extract(k.value,'$.questionId')=json_extract(q.value,'$.id') LIMIT 1)='manual' THEN 1 ELSE 0 END AS manual
  FROM authorised qa JOIN json_each(qa.content_json,'$.questions') q),
  picked AS(SELECT s.id AS attemptId,p.value AS questionId FROM selected s JOIN json_each(s.order_json,'$.questions') p),

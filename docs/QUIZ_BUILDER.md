@@ -49,10 +49,10 @@ The 20 MiB compressed-file limit is checked before reading the browser File into
 
 ## ZIP import contract
 
-Open **Upload ZIP**, then choose one ZIP file or drag one ZIP into the dialog on desktop. Both paths use the same validation and draft-review workflow. The **Tutorial / 教学** panel is closed by default; clicking it reveals the short English guide and these downloads, without printing the full AI prompt in the main page:
+Open **Upload ZIP**, then choose one ZIP file or drag one ZIP into the dialog on desktop. Both paths use the same validation and draft-review workflow. The **Tutorial / 教学** panel is closed by default. Open it to see these downloads and the details to give the AI.
 
-- [Download the universal English AI prompt](/downloads/tickminder-quiz-ai-prompt.txt). It works for any subject and explains the existing machine format; its Chinese field names are protocol tokens and must not be translated.
-- [Download the validated example ZIP](/downloads/tickminder-quiz-example.zip). This small package has two original English science questions, four options each and no images. Its root `questions.txt` passes the actual importer without warnings.
+- The English AI prompt asks for grade, curriculum, subject and requested languages before generating a ZIP. [Download the AI prompt](/downloads/tickminder-quiz-ai-prompt.txt)
+- The example ZIP has two original science questions in English, Malay and Chinese. Both questions have four options. [Download the example ZIP](/downloads/tickminder-quiz-example.zip)
 
 This ZIP format currently supports **1–150 single-answer MCQs with exactly four options A–D**. The manual builder's other question types are not extra ZIP formats. Do not silently convert written, true/false or multi-answer questions; use the manual builder or resolve the intended format first. The AI prompt defaults to faithful source conversion and permits original generation only when explicitly requested. Missing answers or required diagrams must be resolved rather than invented.
 
@@ -63,29 +63,42 @@ questions.txt
 images/                 (optional; referenced PNG/JPG/WebP only)
 ```
 
-Canonical English-only question block (repeat with distinct question/source IDs):
+Start with one `[QUIZ]` block for the whole ZIP. Repeat the question block with distinct question and source IDs.
 
 ```text
+[QUIZ]
+测验标题：Heat and Temperature
+课程体系：SPM
+科目：Science
+年级：Form 2
+主题：Heat and Temperature
+题目语言：EN, BM, ZH
+
 [Q01]
 题目编码：TM-EXAMPLE-001
 所属年级：
 所属章节：
 所属子章节：
 难度等级：easy
-题干 (BM)：
+题干 (BM)：Apakah alat yang digunakan untuk mengukur suhu?
 题干 (EN)：Which instrument is used to measure temperature?
+题干 (ZH)：哪一种仪器用来测量温度？
 图片入口：NONE
-选项 A (BM)：
+选项 A (BM)：Pembaris
 选项 A (EN)：Ruler
+选项 A (ZH)：尺
 选项 A 图片入口：NONE
-选项 B (BM)：
+选项 B (BM)：Termometer
 选项 B (EN)：Thermometer
+选项 B (ZH)：温度计
 选项 B 图片入口：NONE
-选项 C (BM)：
+选项 C (BM)：Neraca
 选项 C (EN)：Balance
+选项 C (ZH)：天平
 选项 C 图片入口：NONE
-选项 D (BM)：
+选项 D (BM)：Jam randik
 选项 D (EN)：Stopwatch
+选项 D (ZH)：秒表
 选项 D 图片入口：NONE
 选项合图入口：NONE
 标准答案：B
@@ -93,7 +106,8 @@ Canonical English-only question block (repeat with distinct question/source IDs)
 2. A thermometer measures temperature, so select B.
 ```
 
-- Keep each field name, space, parenthesis and fullwidth colon `：` exactly as shown; English field-name substitutions and ASCII colons are not compatible. For English-only questions, leave BM fields empty and populate EN fields; do not fill missing text with `NONE`. Unknown grade/chapter/subchapter values may remain empty. Quiz-level title, subject, syllabus and other required classification are reviewed in the editor, rather than assumed from this text format.
+- Keep each field name, space, parenthesis and fullwidth colon `：` as shown. Declare one or more of `EN` (English), `BM` (Malay) and `ZH` (Chinese) in `题目语言`. The first code sets the quiz's default display language. Fill each declared language and leave other language fields empty. An option with a complete image may omit text.
+- The quiz header pre-fills the title, curriculum, subject, grade and topic in the draft. Blank per-question grades inherit the quiz grade. Check that the curriculum, subject and grade match the active quiz catalogue. Older ZIPs without a header still use the original BM/EN format.
 - Image paths are case-sensitive and relative to the ZIP root. Use uppercase `NONE` for absent images. Difficulty must be `easy`, `medium` or `hard`; the answer must be one uppercase A–D letter. Both individual option images and composite option diagrams are retained, but a composite alone does not supply the required text or image for every option.
 - `解题步骤` is optional. Put it after `标准答案` and write numbered steps, up to 4000 characters, using separate lines for the calculation and reasoning. Leave it blank or omit it for questions without a solution. The steps import into the existing explanation field and are offered only for questions with content.
 - Import rejects missing prompts/options/answers/images, duplicate question/source identifiers, unsafe/duplicate paths, invalid image signatures, invalid UTF-8 and oversized archives. Limits: 20 MiB compressed, 60 MiB declared/actual unpacked data, 300 entries and 150 questions. `questions.txt` has a 1 MiB limit; each image 5 MiB. Use an unencrypted, single-volume ZIP, with no unsupported extra file formats or unsafe paths.

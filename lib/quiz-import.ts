@@ -1,15 +1,69 @@
 import {unzipSync} from 'fflate';
-import {emptyQuiz,newQuestion,quizImageIds,quizImageMime,type QuizContent,type QuizKey} from './quiz';
+import {emptyQuiz,newQuestion,quizImageIds,quizImageMime,type QuizContent,type QuizKey,type QuizLanguage,type QuizText} from './quiz';
 import {parseQuizNotation} from './quiz-notation';
 export type QuizImport={content:QuizContent;keys:QuizKey[];images:Map<string,Uint8Array>;warnings:string[];sourceKey:string;filename:string};
 export class QuizImportError extends Error{constructor(public issues:string[]){super(issues.join('\n'));}}
 const imagePath=/^images\/[\p{L}\p{N}_ .-]+\.(png|jpe?g|webp)$/iu;
 const solutionLabel='解题步骤';
+const zipLanguages={EN:'en',BM:'ms',ZH:'zh'} as const;
+type ZipLanguage=keyof typeof zipLanguages;
+const languageCodes=Object.keys(zipLanguages) as ZipLanguage[];
+const textLabels=['题干',...Array.from('ABCD',letter=>'选项 '+letter)]
+ .flatMap(label=>languageCodes.map(code=>label+' ('+code+')'));
 const questionLabels=new Set([
- '题目编码','所属年级','所属章节','所属子章节','难度等级','题干 (BM)','题干 (EN)','图片入口',
- ...Array.from('ABCD',letter=>[`选项 ${letter} (BM)`,`选项 ${letter} (EN)`,`选项 ${letter} 图片入口`]).flat(),
+ '题目编码','所属年级','所属章节','所属子章节','难度等级','图片入口',...textLabels,
+ ...Array.from('ABCD',letter=>`选项 ${letter} 图片入口`),
  '选项合图入口','标准答案',solutionLabel,
 ]);
+const headerLabels={'测验标题':160,'课程体系':100,'科目':100,'年级':80,'主题':160,'题目语言':24} as const;
+function readQuizHeader(source:string,content:QuizContent):QuizLanguage[]|null{
+ const headers=[...source.matchAll(/^\[QUIZ\][ \t]*$/gim)];
+ if(!headers.length)return null;
+ const start=headers[0].index!,firstQuestion=source.search(/^\[Q\d+\][ \t]*$/m);
+ if(headers.length!==1||headers[0][0].trim()!=='[QUIZ]'||source.slice(0,start).trim()||firstQuestion<=start)
+  throw new QuizImportError(['Place one [QUIZ] metadata block at the start of questions.txt, before [Q01].']);
+ const issues:string[]=[],fields=new Map<string,string>();
+ for(const line of source.slice(start,firstQuestion).split('\n').slice(1)){
+  if(!line.trim())continue;
+  const match=line.match(/^([^：\n]+)：(.*)$/);
+  const label=match?.[1].trim()||'';
+  if(!match||!Object.hasOwn(headerLabels,label)){issues.push('[QUIZ]: invalid field '+line.slice(0,100));continue;}
+  const value=match[2].trim();
+  if(fields.has(label))issues.push('[QUIZ]: duplicate field '+label);
+  const limit=headerLabels[label as keyof typeof headerLabels];
+  if(value.length>limit)issues.push(`[QUIZ]: ${label} maximum: ${limit} characters`);
+  fields.set(label,value);
+ }
+ for(const label of ['课程体系','科目','年级','题目语言'])if(!fields.get(label))issues.push('[QUIZ]: missing '+label);
+ const codes=(fields.get('题目语言')||'').split(/[,，、]/).map(code=>code.trim().toUpperCase());
+ if(codes.some(code=>!Object.hasOwn(zipLanguages,code))||new Set(codes).size!==codes.length)
+  issues.push('[QUIZ]: 题目语言 must list one or more distinct codes: EN, BM, ZH');
+ if(issues.length)throw new QuizImportError(issues);
+ const languages=codes.map(code=>zipLanguages[code as ZipLanguage]);
+ content.title=fields.get('测验标题')||'';
+ content.exam=fields.get('课程体系')!;
+ content.subject=fields.get('科目')!;
+ content.grade=fields.get('年级')!;
+ const topic=fields.get('主题');
+ if(topic)content.topic=topic;
+ content.primaryLanguage=languages[0];
+ return languages;
+}
+
+function readQuestionText(label:string,fields:Map<string,string>,languages:QuizLanguage[]|null,question:string,issues:string[],hasImage=false):QuizText{
+ const values={en:fields.get(label+' (EN)')||'',ms:fields.get(label+' (BM)')||'',zh:fields.get(label+' (ZH)')||''};
+ if(!languages){
+  if(values.zh)issues.push(`${question}: declare ZH in the [QUIZ] 题目语言 field for ${label} (ZH)`);
+  if(!values.en&&!values.ms&&!hasImage)issues.push(`${question}: ${label==='题干'?'missing prompt':'empty option '+label.slice(-1)}`);
+  return {primary:values.ms,en:values.en};
+ }
+ for(const code of languageCodes){
+  const language=zipLanguages[code],declared=languages.includes(language);
+  if(declared&&!values[language]&&!hasImage)issues.push(`${question}: missing ${label} (${code})`);
+  if(!declared&&values[language])issues.push(`${question}: ${label} (${code}) is filled but ${code} is not declared in 题目语言`);
+ }
+ return {en:values.en,...(values.zh?{zh:values.zh}:{}),...(values.ms?{ms:values.ms}:{})};
+}
 const crcTable=Uint32Array.from({length:256},(_,i)=>{let n=i;for(let j=0;j<8;j++)n=n&1?0xedb88320^(n>>>1):n>>>1;return n>>>0;});
 function crc32(bytes:Uint8Array){let n=0xffffffff;for(const b of bytes)n=crcTable[(n^b)&255]^(n>>>8);return (n^0xffffffff)>>>0;}
 // Validate central and local headers before allocation. fflate's filename map
@@ -42,7 +96,8 @@ export function parseQuestionText(source:string,files:Map<string,Uint8Array>){
  const issues:string[]=[],warnings:string[]=[],content=emptyQuiz(),keys:QuizKey[]=[],usedIds=new Set<string>(),usedNumbers=new Set<number>();content.primaryLanguage='ms';
  const clean=source.replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n'),blocks=clean.split(/(?=^\[Q\d+\]\s*$)/m).filter(x=>/^\[Q\d+\]/.test(x));
  if(!blocks.length||blocks.length>150)throw new QuizImportError(['questions.txt: 1–150 [Q01] question blocks required']);
- if([...clean.matchAll(/^\[Q[^\]\n]*\]\s*$/gm)].some(m=>!/^\[Q\d+\]\s*$/.test(m[0])))throw new QuizImportError(['Invalid question block header: use [Q01]']);
+ const languages=readQuizHeader(clean,content);
+ if([...clean.matchAll(/^\[Q[^\]\n]*\]\s*$/gm)].some(m=>m[0].trim()!=='[QUIZ]'&&!/^\[Q\d+\]\s*$/.test(m[0])))throw new QuizImportError(['Invalid question block header: use [Q01]']);
  for(const block of blocks){const number=block.match(/^\[Q(\d+)\]/)![1],fields=new Map<string,string>();let current='';
   if(usedNumbers.has(Number(number)))issues.push('Q'+number+': duplicate question number');usedNumbers.add(Number(number));
   for(const line of block.split('\n').slice(1)){
@@ -58,17 +113,27 @@ export function parseQuestionText(source:string,files:Map<string,Uint8Array>){
     fields.set(current,(fields.get(current)||'')+'\n'+line.trim());
    }
   }
-  const get=(k:string)=>fields.get(k)||'',{question:q,key}=newQuestion('mcq');q.sourceId=get('题目编码');q.level=get('所属年级');q.chapter=[get('所属章节'),get('所属子章节')].filter(Boolean).join(' · ').slice(0,200);q.prompt={primary:get('题干 (BM)'),en:get('题干 (EN)')};
+  const get=(k:string)=>fields.get(k)||'',{question:q,key}=newQuestion('mcq'),question='Q'+number;
+  q.sourceId=get('题目编码');
+  q.level=get('所属年级')||content.grade||'';
+  q.chapter=[get('所属章节'),get('所属子章节')].filter(Boolean).join(' · ').slice(0,200);
+  q.prompt=readQuestionText('题干',fields,languages,question,issues);
   if(!q.sourceId||usedIds.has(q.sourceId))issues.push('Q'+number+': missing or duplicate 题目编码');usedIds.add(q.sourceId);
   if(!['easy','medium','hard'].includes(get('难度等级')))issues.push('Q'+number+': difficulty must be easy / medium / hard');else q.difficulty=get('难度等级') as typeof q.difficulty;
-  if(!q.prompt.primary&&!q.prompt.en)issues.push('Q'+number+': missing prompt');
   const image=(label:string)=>{const p=get(label);if(!p||p==='NONE')return null;if(!imagePath.test(p)||p.includes('..')||!files.has(p)){issues.push('Q'+number+': image not found or invalid path '+p);return null;}return p;};q.imageId=image('图片入口');
-  q.options=q.options.map((o,i)=>{const letter=String.fromCharCode(65+i);o.text={primary:get('选项 '+letter+' (BM)'),en:get('选项 '+letter+' (EN)')};o.imageId=image('选项 '+letter+' 图片入口');if(!o.text.primary&&!o.text.en&&!o.imageId)issues.push('Q'+number+': empty option '+letter);return o;});
+  q.options=q.options.map((option,index)=>{
+   const label='选项 '+String.fromCharCode(65+index),imageId=image(label+' 图片入口');
+   return {...option,imageId,text:readQuestionText(label,fields,languages,question,issues,Boolean(imageId))};
+  });
   const composite=image('选项合图入口');if(composite)q.extraImageIds=[composite];
   const correct=get('标准答案');if(!/^[A-D]$/.test(correct))issues.push('Q'+number+': answer must be A / B / C / D');else key.correctOptionId=q.options[correct.charCodeAt(0)-65].id;
   key.explanation=get(solutionLabel).trim();
   if(key.explanation.length>4000)issues.push('Q'+number+': '+solutionLabel+' maximum: 4000 characters');
-  for(const [field,value] of [['题干 (BM)',q.prompt.primary],['题干 (EN)',q.prompt.en],...q.options.flatMap((o,i)=>[[`选项 ${String.fromCharCode(65+i)} (BM)`,o.text.primary],[`选项 ${String.fromCharCode(65+i)} (EN)`,o.text.en]]),[solutionLabel,key.explanation]])for(const warning of parseQuizNotation(value).warnings)warnings.push(`Q${number} ${field}: 符号范围不明确，保留原文，请对照原卷检查 / Ambiguous notation kept as written; check the source: ${warning.expression}`);
+  for(const field of [...textLabels,solutionLabel]){
+   const value=field===solutionLabel?key.explanation:get(field);
+   if(field!==solutionLabel&&value.length>6000)issues.push(`${question}: ${field} maximum: 6000 characters`);
+   for(const warning of parseQuizNotation(value).warnings)warnings.push(`${question} ${field}: 符号范围不明确，保留原文，请对照原卷检查 / Ambiguous notation kept as written; check the source: ${warning.expression}`);
+  }
   content.questions.push(q);keys.push(key);
  }
  if(issues.length)throw new QuizImportError(issues);
@@ -84,6 +149,6 @@ export async function importQuizZip(bytes:Uint8Array,filename:string):Promise<Qu
  const images=new Map(Object.entries(entries).filter(([name])=>imagePath.test(name))),parsed=parseQuestionText(text,images);
  const skipped=[...directory.keys()].filter(name=>!name.endsWith('/')&&!(name in entries));if(skipped.length)parsed.warnings.push('Ignored unsupported files: '+skipped.join(', '));
  const sourceKey=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes as Uint8Array<ArrayBuffer>)),b=>b.toString(16).padStart(2,'0')).join('');
- parsed.content.title=filename.replace(/\.zip$/i,'').slice(0,160);
+ if(!parsed.content.title)parsed.content.title=filename.replace(/\.zip$/i,'').slice(0,160);
  return {...parsed,images,sourceKey,filename};
 }

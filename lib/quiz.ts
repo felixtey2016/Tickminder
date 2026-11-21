@@ -9,11 +9,17 @@ export type QuizCatalogKind='subtopic'|'chapter_overall'|'level_overall';
 // their persisted label. Historic immutable versions retain their original label.
 export type QuizLevel=string;
 export type QuizCatalog={kind:QuizCatalogKind;level:QuizLevel;chapterCode:string;chapterTitle:string;subtopicCode:string;subtopicTitle:string;setNumber:number};
-export type QuizText={primary:string;en:string};
+export const QUIZ_LANGUAGES=['zh','en','ms'] as const;
+export type QuizLanguage=typeof QUIZ_LANGUAGES[number];
+export const QUIZ_LANGUAGE_NAMES={zh:'中文',en:'English',ms:'Bahasa Melayu'} as const;
+export type QuizReadingLanguage=QuizLanguage|'primary';
+// Saved legacy questions keep their original primary/en fields. New questions
+// store explicit language codes so changing the default never relabels a stem.
+export type QuizText={primary?:string;en:string;zh?:string;ms?:string};
 export type QuizOption={id:string;text:QuizText;imageId:string|null};
 export type QuizQuestion={id:string;type:QuizType;prompt:QuizText;imageId:string|null;extraImageIds:string[];options:QuizOption[];points:number;difficulty:Exclude<Difficulty,'mixed'>;sourceId:string;chapter:string;level:string;answerUnit?:string};
 export type QuizKey={questionId:string;mode:'choice'|'text'|'numeric'|'manual';correctOptionId:string|null;accepted:string[];caseSensitive:boolean;tolerance:number;unit:string;rubric:string;explanation:string};
-export type QuizContent={schemaVersion:1;title:string;instructions:string;subject:string;exam:string;syllabusId?:string;subjectId?:string;year:number|null;region:string;paper:string;difficulty:Difficulty;primaryLanguage:'zh'|'en'|'ms';timeLimitSeconds:number|null;shuffleQuestions:boolean;shuffleOptions:boolean;questions:QuizQuestion[];bankKind?:QuizBankKind;catalog?:QuizCatalog|null;sampling?:QuizSampling};
+export type QuizContent={schemaVersion:1;title:string;instructions:string;subject:string;exam:string;syllabusId?:string;subjectId?:string;grade?:string;topic?:string;year:number|null;region:string;paper:string;difficulty:Difficulty;primaryLanguage:QuizLanguage;timeLimitSeconds:number|null;shuffleQuestions:boolean;shuffleOptions:boolean;questions:QuizQuestion[];bankKind?:QuizBankKind;catalog?:QuizCatalog|null;sampling?:QuizSampling};
 export type QuizDraft={id:string;revision:number;visibility:QuizVisibility;content:QuizContent;keys:QuizKey[];canEdit:boolean;sharedRevision:number|null};
 export class QuizError extends Error{constructor(public code:string,public status=400){super(code);}}
 export function quizImageMime(bytes:Uint8Array):'image/png'|'image/jpeg'|'image/webp'|null{
@@ -25,11 +31,34 @@ export function quizImageMime(bytes:Uint8Array):'image/png'|'image/jpeg'|'image/
 }
 const fail=(code:string):never=>{throw new QuizError(code);};
 function string(value:unknown,max:number,required=false){if(typeof value!=='string'||value.length>max||(required&&!value.trim()))return fail('quiz.invalidFields');return value.trim();}
-function text(value:unknown):QuizText{const v=value as QuizText;return {primary:string(v?.primary,6000),en:string(v?.en,6000)};}
+function text(value:unknown):QuizText{
+ const v=record(value),en=string(v.en,6000);
+ if(v.primary!==undefined){
+  if(v.zh!==undefined||v.ms!==undefined)return fail('quiz.invalidFields');
+  return {primary:string(v.primary,6000),en};
+ }
+ const zh=v.zh===undefined?'':string(v.zh,6000),ms=v.ms===undefined?'':string(v.ms,6000);
+ return {en,...(zh?{zh}:{}),...(ms?{ms}:{})};
+}
 function id(value:unknown){return typeof value==='string'&&/^[a-zA-Z0-9_-]{1,100}$/.test(value)?value:fail('quiz.invalidFields');}
 function image(value:unknown){return value==null||value===''?null:id(value);}
 function finite(value:unknown,min:number,max:number){return typeof value==='number'&&Number.isFinite(value)&&value>=min&&value<=max?value:fail('quiz.invalidFields');}
 function record(value:unknown):Record<string,unknown>{if(!value||typeof value!=='object'||Array.isArray(value))return fail('quiz.invalidFields');return value as Record<string,unknown>;}
+export function quizReadText(value:QuizText,language:QuizReadingLanguage='primary'){
+ return value[language]||value.primary||value.en||value.zh||value.ms||'';
+}
+export function quizQuestionLanguages(question:QuizQuestion,primary:QuizLanguage):QuizReadingLanguage[]{
+ if(question.prompt.primary!==undefined){
+  const translated=primary!=='en'&&[question.prompt,...question.options.map(option=>option.text)]
+   .some(value=>value.primary?.trim()&&value.en.trim()&&value.primary.trim()!==value.en.trim());
+  return translated?['primary','en']:['primary'];
+ }
+ return [primary,...QUIZ_LANGUAGES.filter(language=>language!==primary)].filter(language=>question.prompt[language]?.trim());
+}
+export function quizReadingLanguageLabel(language:QuizReadingLanguage,primary:QuizLanguage){
+ const code=language==='primary'?primary:language;
+ return code==='ms'?'BM':code==='en'?'EN':'中文';
+}
 export function checkQuizCatalog(value:unknown):QuizCatalog|null{
  if(value==null)return null;const v=record(value);
  if(!['subtopic','chapter_overall','level_overall'].includes(String(v.kind))||typeof v.level!=='string'||!v.level.trim()||v.level.length>80)return fail('quiz.invalidCatalog');
@@ -55,16 +84,18 @@ export function checkQuiz(input:unknown,rawKeys:unknown):{content:QuizContent;ke
  if(v.bankKind!==undefined&&!['platform','creator'].includes(v.bankKind))return fail('quiz.invalidCatalog');
  if(v.syllabusId!==undefined)content.syllabusId=id(v.syllabusId);
  if(v.subjectId!==undefined)content.subjectId=id(v.subjectId);
+ if(v.grade!==undefined){const grade=string(v.grade,80);if(grade)content.grade=grade;}
+ if(v.topic!==undefined){const topic=string(v.topic,160);if(topic)content.topic=topic;}
  content.bankKind=v.bankKind||'creator';content.catalog=checkQuizCatalog(v.catalog);
  if(content.year!==null&&!Number.isInteger(content.year)||content.timeLimitSeconds!==null&&!Number.isInteger(content.timeLimitSeconds))return fail('quiz.invalidFields');
  const ids=new Set<string>(),images=new Set<string>();
  for(const raw of v.questions){
   record(raw);if(!Array.isArray(raw.extraImageIds)||raw.extraImageIds.length>4)return fail('quiz.invalidQuestion');
   const q:QuizQuestion={id:id(raw.id),type:['mcq','true_false','blank','math','written'].includes(raw.type)?raw.type:fail('quiz.invalidFields'),prompt:text(raw.prompt),imageId:image(raw.imageId),extraImageIds:Array.isArray(raw.extraImageIds)&&raw.extraImageIds.length<=4?raw.extraImageIds.map(x=>id(x)):[],options:[],points:finite(raw.points,0.01,1000),difficulty:['easy','medium','hard'].includes(raw.difficulty)?raw.difficulty:fail('quiz.invalidFields'),sourceId:string(raw.sourceId,120),chapter:string(raw.chapter,200),level:string(raw.level,100)};
-  if(ids.has(q.id)||!q.prompt.primary&&!q.prompt.en||Math.abs(Math.round(q.points*100)-q.points*100)>1e-8)return fail('quiz.invalidQuestion');ids.add(q.id);if(q.imageId)images.add(q.imageId);q.extraImageIds.forEach(x=>images.add(x));
+  if(ids.has(q.id)||!quizReadText(q.prompt)||Math.abs(Math.round(q.points*100)-q.points*100)>1e-8)return fail('quiz.invalidQuestion');ids.add(q.id);if(q.imageId)images.add(q.imageId);q.extraImageIds.forEach(x=>images.add(x));
   if(q.type==='mcq'||q.type==='true_false'){
    if(!Array.isArray(raw.options)||raw.options.length<(q.type==='mcq'?2:2)||raw.options.length>(q.type==='true_false'?2:6))return fail('quiz.invalidOptions');
-   const optionIds=new Set<string>();q.options=raw.options.map(o=>{record(o);const option={id:id(o.id),text:text(o.text),imageId:image(o.imageId)};if(optionIds.has(option.id)||!option.text.primary&&!option.text.en&&!option.imageId)return fail('quiz.invalidOptions');optionIds.add(option.id);if(option.imageId)images.add(option.imageId);return option;});
+   const optionIds=new Set<string>();q.options=raw.options.map(o=>{record(o);const option={id:id(o.id),text:text(o.text),imageId:image(o.imageId)};if(optionIds.has(option.id)||!quizReadText(option.text)&&!option.imageId)return fail('quiz.invalidOptions');optionIds.add(option.id);if(option.imageId)images.add(option.imageId);return option;});
   }content.questions.push(q);
  }
  if(!Array.isArray(rawKeys)||rawKeys.length!==content.questions.length)return fail('quiz.invalidAnswers');
@@ -90,10 +121,16 @@ export function checkQuiz(input:unknown,rawKeys:unknown):{content:QuizContent;ke
  if(JSON.stringify({content,keys}).length>450000)return fail('quiz.tooLarge');return {content,keys,images:[...images],total};
 }
 export function emptyQuiz():QuizContent{return {schemaVersion:1,title:'',instructions:'',subject:'',exam:'',year:null,region:'',paper:'',difficulty:'mixed',primaryLanguage:'zh',timeLimitSeconds:null,shuffleQuestions:false,shuffleOptions:false,questions:[]};}
-export function newQuestion(type:QuizType='mcq'):{question:QuizQuestion;key:QuizKey}{
- const qid=crypto.randomUUID(),choice=type==='mcq'||type==='true_false';
- const options=choice?Array.from({length:type==='true_false'?2:4},(_,i)=>({id:crypto.randomUUID(),text:{primary:type==='true_false'?(i===0?'正确':'错误'):'',en:type==='true_false'?(i===0?'True':'False'):''},imageId:null})):[];
- return {question:{id:qid,type,prompt:{primary:'',en:''},imageId:null,extraImageIds:[],options,points:1,difficulty:'medium',sourceId:'',chapter:'',level:''},key:{questionId:qid,mode:choice?'choice':type==='blank'?'text':type==='math'?'numeric':'manual',correctOptionId:options[0]?.id||null,accepted:[],caseSensitive:false,tolerance:0,unit:'',rubric:'',explanation:''}};
+export function newQuestion(type:QuizType='mcq',format:'legacy'|'multilingual'='legacy'):{question:QuizQuestion;key:QuizKey}{
+ const qid=crypto.randomUUID(),choice=type==='mcq'||type==='true_false',multilingual=format==='multilingual';
+ const options:QuizOption[]=choice?Array.from({length:type==='true_false'?2:4},(_,index)=>{
+  const en=type==='true_false'?(index===0?'True':'False'):'';
+  const zh=type==='true_false'?(index===0?'正确':'错误'):'';
+  const text:QuizText=multilingual?{en,...(zh?{zh,ms:index===0?'Betul':'Salah'}:{})}:{primary:zh,en};
+  return {id:crypto.randomUUID(),text,imageId:null};
+ }):[];
+ const prompt:QuizText=multilingual?{en:''}:{primary:'',en:''};
+ return {question:{id:qid,type,prompt,imageId:null,extraImageIds:[],options,points:1,difficulty:'medium',sourceId:'',chapter:'',level:''},key:{questionId:qid,mode:choice?'choice':type==='blank'?'text':type==='math'?'numeric':'manual',correctOptionId:options[0]?.id||null,accepted:[],caseSensitive:false,tolerance:0,unit:'',rubric:'',explanation:''}};
 }
 export function quizImageIds(content:QuizContent){return [...new Set(content.questions.flatMap(q=>[q.imageId,...q.extraImageIds,...q.options.map(o=>o.imageId)]).filter((id):id is string=>Boolean(id)))];}
 export function normaliseQuizText(value:string,caseSensitive=false){const normal=value.trim().replace(/\s+/gu,' ');return caseSensitive?normal:normal.toLocaleLowerCase('en');}

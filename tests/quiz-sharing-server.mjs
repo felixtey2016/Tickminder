@@ -50,5 +50,25 @@ try{
  const publicAgain=await share(author,p,'public',[],3);await server.saveQuiz(author,{id:p.id,revision:1,operationId:op(),content:{...p.content,title:'Unpublished changed title'},keys:p.keys});await verify(async()=>assert.equal(ok(await query(foreignStudent)).items.find(q=>q.id===p.id).title,p.content.title));
  const legacy=await paper();sqlite.prepare("UPDATE quizzes SET visibility='organisation',shared_revision=1 WHERE id=?").run(legacy.id);await verify(async()=>assert.ok(ok(await query(secondStudent)).items.some(q=>q.id===legacy.id)));await verify(async()=>assert.equal(ok(await query(foreignStudent)).items.some(q=>q.id===legacy.id),false));await verify(async()=>assert.equal(ok(await query(foreignStudent)).items.some(q=>q.id===legacyId),false));
  const race=await paper(),snapshot=sharingSnapshot();beforeBatch=()=>sqlite.prepare('UPDATE plans SET active=0 WHERE key=?').run('sharing-linked-plan');await share(author,race,'selected',[student.id],0,409);await verify(async()=>assert.equal(sqlite.prepare('SELECT count(*) n FROM quiz_share_settings WHERE quiz_id=?').get(race.id).n,0));
+ const legacyBefore=sqlite.prepare('SELECT content_json FROM quiz_versions WHERE id=?').get(legacyVersion).content_json;
+ const {importQuizZip}=(await load('lib/quiz-import.ts')).module;
+ const classified=await importQuizZip(fs.readFileSync(new URL('../public/downloads/tickminder-quiz-example.zip',import.meta.url)),'fixture.zip');
+ classified.content.title='New science practice';
+ const draftId=op();
+ actor=author;
+ const imported=await catalog.POST(new Request('https://fixture.test/api/quizzes',{
+  method:'POST',headers:{origin:'https://fixture.test','content-type':'application/json'},
+  body:JSON.stringify({action:'maintenanceImport',id:draftId,revision:0,operationId:op(),content:classified.content,keys:classified.keys,sourceKey:classified.sourceKey}),
+ }));
+ ok({status:imported.status,data:await imported.json()});
+ const saved=ok(await query(author,draftId,'bank=0'));
+ check(()=>assert.deepEqual(saved.content.questions[0].prompt,classified.content.questions[0].prompt));
+ check(()=>assert.deepEqual([saved.content.syllabusId,saved.content.subjectId,saved.content.grade,saved.content.topic],['spm','science','Form 2','Heat and Temperature']));
+ const filtered=ok(await query(author,null,'bank=0&syllabus=spm&subject=science&level=Form%202&search=Temperature'));
+ check(()=>assert.deepEqual(filtered.items.map(item=>[item.id,item.grade,item.topic]),[[draftId,'Form 2','Heat and Temperature']]));
+ const wrongGrade=ok(await query(author,null,'bank=0&syllabus=spm&subject=science&level=Form%204&search=Temperature'));
+ check(()=>assert.equal(wrongGrade.items.length,0));
+ check(()=>assert.equal(sqlite.prepare('SELECT content_json FROM quiz_versions WHERE id=?').get(legacyVersion).content_json,legacyBefore));
+ denied(await query(student,draftId),404);
  await verify(async()=>assert.equal(sqlite.prepare('PRAGMA foreign_key_check').all().length,0));console.log('Unified Quiz private/public/selected audiences, creator names, roles, live relationships and CAS: '+checks+' checks passed');
 }finally{sqlite.close();globalThis.fetch=nativeFetch;delete globalThis.__moderationRuntime;}

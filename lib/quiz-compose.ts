@@ -48,7 +48,7 @@ export async function composeQuiz(actor:Account,data:Record<string,unknown>){
   }
  }
  if(!template)invalid();
- const content:QuizContent={...template,title:intent.title,bankKind:'creator',catalog:null,year:null,region:'',paper:'',questions,difficulty:questions.every(q=>q.difficulty===questions[0].difficulty)?questions[0].difficulty:'mixed',shuffleQuestions:false,shuffleOptions:false};
+ const content:QuizContent={...template,title:intent.title,bankKind:'creator',catalog:null,grade:undefined,topic:undefined,year:null,region:'',paper:'',questions,difficulty:questions.every(q=>q.difficulty===questions[0].difficulty)?questions[0].difficulty:'mixed',shuffleQuestions:false,shuffleOptions:false};
  delete content.sampling;
  return saveQuiz(actor,{id:data.id,operationId:data.operationId,revision:0,content,keys},{versionId:versionIds[0],versionIds,questionSources:sources,request:intent,legacyMetadata:template});
 }
