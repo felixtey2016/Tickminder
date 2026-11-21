@@ -8,10 +8,12 @@ import '@/app/quiz-player-wave3.css';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {QuizMath} from '@/components/quiz-math';
 import {QuizPicture} from '@/components/quiz-player';
+import {QuizSoundMenu} from '@/components/quiz-sound-menu';
 import {t,type Language} from '@/lib/i18n';
 import {practiceApi,practiceError} from '@/lib/quiz-practice-client';
 import {quizQuestionLanguages,quizReadText,quizReadingLanguageLabel,type QuizAnswer,type QuizQuestion,type QuizReadingLanguage} from '@/lib/quiz';
 import type {PracticeAttempt,PracticeResult} from '@/lib/quiz-practice-types';
+import {useQuizSound} from '@/lib/quiz-sound';
 
 const filled=(answer:QuizAnswer|undefined)=>Boolean(answer?.optionId||answer?.text?.trim());
 const same=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
@@ -45,6 +47,7 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
  const [error,setError]=useState(''),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[dirty,setDirty]=useState(false),[confirm,setConfirm]=useState(false),[recoveryConfirm,setRecoveryConfirm]=useState<'leave'|'reload'|null>(null),[remaining,setRemaining]=useState<number|null>(null),[wrongOnly,setWrongOnly]=useState(false),[gradePoints,setGradePoints]=useState(''),[gradeFeedback,setGradeFeedback]=useState(''),[gradeReason,setGradeReason]=useState(''),[gradeSaved,setGradeSaved]=useState(false);
  const current=useRef<PracticeAttempt|null>(null),local=useRef<Record<string,QuizAnswer>>({}),localFlags=useRef<string[]>([]),localQuestion=useRef<string|null>(null),serverOffset=useRef(0),saving=useRef(false),pending=useRef<{body:Record<string,unknown>;snapshot:Record<string,QuizAnswer>;flags:string[]}|null>(null),mounted=useRef(true),deadlineSent=useRef(false),exitRequested=useRef(false);
  const done=attempt?.status==='submitted',answering=Boolean(attempt?.canAnswer&&!done);
+ const audio=useQuizSound(attempt?.accountId);
  const editingText=useRef(false),queuedCheck=useRef<string|null>(null);
  const [checkingQuestionId,setCheckingQuestionId]=useState<string|null>(null);
  const requestCompletesSelf=Boolean(pending.current&&!attempt?.assignmentId&&pending.current.body.deferCompletion!==true&&attempt?.content.questions.every(question=>filled(pending.current!.snapshot[question.id])&&(!attempt.immediate||attempt.manualQuestionIds.includes(question.id)||attempt.checkedQuestionIds.includes(question.id)||pending.current!.body.action==='check'&&pending.current!.body.questionId===question.id)));
@@ -60,6 +63,13 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
   if(request.body.action==='check')setCheckingQuestionId(String(request.body.questionId));
   try{
    const {attempt:next,serverNow}=await practiceApi<{attempt:PracticeAttempt;serverNow?:string}>({},request.body);succeeded=true;if(!mounted.current)return false;syncClock(serverNow);if(request.body.automatic===true&&next.status==='in_progress')deadlineSent.current=false;
+   const before=current.current;
+   const checked=request.body.questionId;
+   if(request.body.action==='check'&&typeof checked==='string'&&before?.id===next.id&&before.immediate&&
+      !exitRequested.current&&!before.checkedQuestionIds.includes(checked)&&next.checkedQuestionIds.includes(checked)){
+    const outcome=next.results.find(result=>result.questionId===checked)?.status;
+    if(outcome==='correct'||outcome==='incorrect')void audio.playEffect(outcome);
+   }
    const merged={...next.answers};if(next.status==='in_progress')for(const [id,value] of Object.entries(local.current))if(!same(value,request.snapshot[id])&&!next.checkedQuestionIds.includes(id))merged[id]=value;
    const mergedFlags=next.status==='in_progress'&&!sameFlags(localFlags.current,request.flags)?localFlags.current:next.flaggedQuestionIds;
    const finishAfterBlur=next.status==='in_progress'&&!next.assignmentId&&request.body.deferCompletion===true&&!editingText.current&&next.content.questions.every(question=>filled(merged[question.id]));
@@ -85,6 +95,7 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
  function confirmAnswer(questionId:string){
   const a=current.current;
   if(!a?.canAnswer||a.status!=='in_progress'||!a.immediate||a.checkedQuestionIds.includes(questionId)||a.manualQuestionIds.includes(questionId)||!filled(local.current[questionId])||queuedCheck.current||a.deadlineAt&&Date.parse(a.deadlineAt)<=Date.now()+serverOffset.current)return;
+  audio.prepareEffect();
   if(saving.current&&pending.current?.body.action==='save'){
    queuedCheck.current=questionId;setCheckingQuestionId(questionId);return;
   }
@@ -138,7 +149,7 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
  const questionLanguage=languages.includes(preferredLanguage)?preferredLanguage:languages[0]||'primary';
  const saveLabel=t(busy?'quiz.savingAnswers':dirty?'quiz.unsaved':'quiz.answersSaved');
  const backgroundSave=Boolean(saving.current&&pending.current?.body.action==='save');
- return <Dialog open onOpenChange={open=>{if(!open)void close();}}><DialogContent className="quiz-player-dialog quiz-practice-player quiz-practice-compact quiz-player-wave3" overlayClassName="content-edit-overlay" showCloseButton={false}><div className="quiz-player-heading"><div className="quiz-practice-heading-copy"><DialogTitle className="quiz-practice-title" title={attempt?.title||t('quiz.practiceTitle')}>{attempt?.title||t('quiz.practiceTitle')}</DialogTitle><div className="quiz-practice-meta">{attempt?.creator&&<p className="quiz-creator" title={t('quiz.creator')+' · '+attempt.creator}>{t('quiz.creator')} · {attempt.creator}</p>}{answering&&<span className="quiz-autosave" role="status" aria-label={saveLabel} title={saveLabel}><Save size={14} aria-hidden="true"/>{busy?label('保存中…','Saving…'):dirty?label('未保存','Unsaved'):label('已保存','Saved')}</span>}</div></div><Button type="button" variant="ghost" className="quiz-player-close" aria-label={t(attempt?.assignmentId?'quiz.backToHub':'quiz.exitPractice')} disabled={busy} onClick={()=>void close()}><X size={20} aria-hidden="true"/></Button></div><DialogDescription className="sr-only">{t('quiz.practiceTitle')}</DialogDescription>
+ return <Dialog open onOpenChange={open=>{if(!open)void close();}}><DialogContent className="quiz-player-dialog quiz-practice-player quiz-practice-compact quiz-player-wave3" overlayClassName="content-edit-overlay" showCloseButton={false}><div className="quiz-player-heading"><div className="quiz-practice-heading-copy"><DialogTitle className="quiz-practice-title" title={attempt?.title||t('quiz.practiceTitle')}>{attempt?.title||t('quiz.practiceTitle')}</DialogTitle><div className="quiz-practice-meta">{attempt?.creator&&<p className="quiz-creator" title={t('quiz.creator')+' · '+attempt.creator}>{t('quiz.creator')} · {attempt.creator}</p>}{answering&&<span className="quiz-autosave" role="status" aria-label={saveLabel} title={saveLabel}><Save size={14} aria-hidden="true"/>{busy?label('保存中…','Saving…'):dirty?label('未保存','Unsaved'):label('已保存','Saved')}</span>}</div></div><div className="quiz-player-heading-actions">{answering&&<QuizSoundMenu language={language} audio={audio}/>}<Button type="button" variant="ghost" className="quiz-player-close" aria-label={t(attempt?.assignmentId?'quiz.backToHub':'quiz.exitPractice')} disabled={busy} onClick={()=>void close()}><X size={20} aria-hidden="true"/></Button></div></div><DialogDescription className="sr-only">{t('quiz.practiceTitle')}</DialogDescription>
   {loading&&<p role="status">{t('quiz.loading')}</p>}
   {error&&<div className="quiz-error" role="alert" data-error-popup-ignore><p>{t(error==='quiz.conflict'?'quiz.attemptConflict':error)}</p>{dirty&&<p>{label('未保存的作答仍保留在这里。','Your unsaved answers are still here.')}</p>}<Button variant="outline" onClick={retry} disabled={busy}>{t(blockedRefresh(error)?'quiz.refresh':'quiz.retry')}</Button>{dirty&&<Button variant="ghost" disabled={busy} onClick={()=>setRecoveryConfirm('leave')}>{label('离开选项','Leave options')}</Button>}</div>}
   {attempt&&!loading&&<>

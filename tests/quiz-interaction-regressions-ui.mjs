@@ -27,6 +27,12 @@ const account={id:'fixture-user',role:practice?'student':'teacher',groupId:'fixt
 const fixtureRoot=createRoot(document.getElementById('root'));window.fixtureUnmount=()=>fixtureRoot.unmount();fixtureRoot.render(<AdminPermissionContext.Provider value={account}><div className='app-shell shell-wave1'><main className='workspace workspace-compact'>{practice?<QuizPracticePlayer attemptId='fixture-attempt' language={lang} onClose={()=>window.fixtureClosed++} onChanged={()=>window.fixtureChanged++}/>:<QuizWorkspace view='quizBank' role='teacher' language={lang}/>}</main></div></AdminPermissionContext.Provider>);`;
 async function open(params={},options={}){
  const context=await browser.newContext({viewport:{width:options.width||390,height:844},reducedMotion:'reduce',...(options.touch?{hasTouch:true,isMobile:true}:{})}),page=await context.newPage();page.setDefaultTimeout(10000);
+ if(options.soundProbe)await page.addInitScript(setting=>{
+  window.fixtureSounds=[];
+  const start=AudioBufferSourceNode.prototype.start;
+  AudioBufferSourceNode.prototype.start=function(...args){window.fixtureSounds.push(this.buffer.duration);return start.apply(this,args);};
+  if(setting==='muted')localStorage.setItem('tickminder.quiz.sound.fixture-user',JSON.stringify({music:true,effects:false}));
+ },options.soundProbe);
  const errors=[],writes=[],saveStarted=deferred(),releaseSave=deferred(),draftStarted=deferred(),releaseDraft=deferred(),checkStarted=deferred();
  let attempt=structuredClone(initialAttempt),draft=structuredClone(quiz),saveFailed=false;
  if(options.multilingual){
@@ -101,7 +107,7 @@ async function editDraft(f,lang){const p=f.page;await p.getByTestId('quiz-tab-mi
 try{
  await build({absWorkingDir:root,stdin:{contents:entry,resolveDir:root,sourcefile:'quiz-interactions-fixture.tsx',loader:'tsx'},bundle:true,platform:'browser',format:'esm',jsx:'automatic',outfile:path.join(temporary,'ui.js'),assetNames:'fixture-assets/[name]-[hash]',loader:{'.woff':'file','.woff2':'file','.ttf':'file'},alias:{'@':root},logLevel:'silent'});
  const globals=await postcss([(tw.default||tw)({base:root})]).process(fs.readFileSync(path.join(root,'app/globals.css'),'utf8'),{from:path.join(root,'app/globals.css')}),css=globals.css+'\n'+fs.readFileSync(path.join(temporary,'ui.css'),'utf8');
- server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http://localhost').pathname;if(pathname==='/ui.js'){res.setHeader('content-type','text/javascript');res.end(fs.readFileSync(path.join(temporary,'ui.js')));return;}if(pathname==='/ui.css'){res.setHeader('content-type','text/css');res.end(css);return;}if(pathname.startsWith('/fixture-assets/')){const file=path.resolve(temporary,'.'+pathname);if(file.startsWith(temporary+path.sep)&&fs.existsSync(file)){res.end(fs.readFileSync(file));return;}}if(pathname.includes('.')){res.writeHead(404);res.end();return;}res.setHeader('content-type','text/html');res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui.css"></head><body><div id="root"></div><script type="module" src="/ui.js"></script></body></html>');});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));origin='http://127.0.0.1:'+server.address().port;
+ server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http://localhost').pathname;if(pathname==='/ui.js'){res.setHeader('content-type','text/javascript');res.end(fs.readFileSync(path.join(temporary,'ui.js')));return;}if(pathname==='/ui.css'){res.setHeader('content-type','text/css');res.end(css);return;}if(pathname.startsWith('/fixture-assets/')){const file=path.resolve(temporary,'.'+pathname);if(file.startsWith(temporary+path.sep)&&fs.existsSync(file)){res.end(fs.readFileSync(file));return;}}if(/^\/quiz-audio\/(correct|incorrect)\.wav$/.test(pathname)){res.setHeader('content-type','audio/wav');res.end(fs.readFileSync(path.join(root,'public',pathname)));return;}if(pathname.includes('.')){res.writeHead(404);res.end();return;}res.setHeader('content-type','text/html');res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui.css"></head><body><div id="root"></div><script type="module" src="/ui.js"></script></body></html>');});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));origin='http://127.0.0.1:'+server.address().port;
  browser=await chromium.launch({headless:true,...process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{},args:['--no-sandbox']});
  // Slow autosave is held by a deterministic gate. A physical tap does not wait
  // for disabled controls, unlike locator.click(), reproducing the user's tap.
@@ -151,6 +157,40 @@ try{
   await f.close();
  }
  if(!baseline){
+  {
+   const f=await open({mode:'practice',lang:'en',theme:'dark'},{touch:true,soundProbe:'record'}),p=f.page;
+   const speaker=p.getByRole('button',{name:'Sound settings',exact:true});
+   const music=p.getByRole('switch',{name:'Background music',exact:true});
+   const effects=p.getByRole('switch',{name:'Answer sounds',exact:true});
+   await speaker.tap();
+   await music.waitFor();
+   check(await music.getAttribute('aria-checked')==='true'&&await effects.getAttribute('aria-checked')==='true','sound menu opens with both preferences enabled');
+   await music.tap();
+   check(await music.getAttribute('aria-checked')==='false'&&await effects.getAttribute('aria-checked')==='true','music and answer sounds have independent switches');
+   await speaker.tap();
+   await p.locator('.quiz-option-button').first().tap();
+   await p.waitForFunction(()=>window.fixtureSounds.length===1);
+   check(Math.abs((await p.evaluate(()=>window.fixtureSounds[0]))-.5)<.001,'server-confirmed correct choice plays the supplied correct WAV');
+   await p.getByRole('button',{name:'Next question',exact:true}).tap();
+   await p.locator('.quiz-option-button').nth(1).tap();
+   await p.waitForFunction(()=>window.fixtureSounds.length===2);
+   check(Math.abs((await p.evaluate(()=>window.fixtureSounds[1]))-.46)<.001,'server-confirmed incorrect choice plays the supplied wrong WAV');
+   await speaker.tap();
+   await effects.tap();
+   await p.reload();
+   await speaker.tap();
+   check(await music.getAttribute('aria-checked')==='false'&&await effects.getAttribute('aria-checked')==='false','both preferences survive reopening the quiz');
+   check((await p.evaluate(()=>window.fixtureSounds.length))===0,'resuming a graded question does not replay effects');
+   await f.close();
+  }
+  for(const options of [{soundProbe:'muted'},{soundProbe:'record',deferred:true}]){
+   const f=await open({mode:'practice',lang:'en'},options),p=f.page;
+   await p.locator('.quiz-option-button').first().click();
+   await (options.deferred?f.saveStarted:f.checkStarted);
+   await p.waitForFunction(()=>document.querySelector('.quiz-autosave')?.textContent?.includes('Saved'));
+   check((await p.evaluate(()=>window.fixtureSounds.length))===0,'muted or deferred answering does not play a correctness cue');
+   await f.close();
+  }
   {
    const f=await open({lang:'en'},{touch:true}),p=f.page;
    await p.getByTestId('quiz-tab-mine').tap();
