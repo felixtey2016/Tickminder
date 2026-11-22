@@ -24,9 +24,9 @@ import {setLanguage} from './lib/i18n';import './lib/quiz-i18n';import './lib/qu
 import './app/ui-refresh.css';import './app/appearance.css';import './app/shell-wave1.css';
 const p=new URLSearchParams(location.search),lang=p.get('lang')||'en',practice=p.get('mode')==='practice';setLanguage(lang);document.documentElement.classList.toggle('dark',p.get('theme')==='dark');
 const account={id:'fixture-user',role:practice?'student':'teacher',groupId:'fixture-group',teacherName:practice?null:'Fixture Teacher',studentName:practice?'Fixture Student':null};setClientGroup(account.groupId);setPrivateReadIdentity(workspaceIdentityKey(account),account.groupId);history.replaceState({timelyoRole:account.role,timelyoGroup:account.groupId,timelyoView:'quizzes'},'');window.fixtureClosed=0;window.fixtureChanged=0;
-const fixtureRoot=createRoot(document.getElementById('root'));window.fixtureUnmount=()=>fixtureRoot.unmount();fixtureRoot.render(<AdminPermissionContext.Provider value={account}><div className='app-shell shell-wave1'><main className='workspace workspace-compact'>{practice?<QuizPracticePlayer attemptId='fixture-attempt' language={lang} onClose={()=>window.fixtureClosed++} onChanged={()=>window.fixtureChanged++}/>:<QuizWorkspace view='quizBank' role='teacher' language={lang}/>}</main></div></AdminPermissionContext.Provider>);`;
+const fixtureRoot=createRoot(document.getElementById('root'));window.fixtureUnmount=()=>fixtureRoot.unmount();fixtureRoot.render(<AdminPermissionContext.Provider value={account}><div className='app-shell shell-wave1'><main className='workspace workspace-compact'>{practice?<QuizPracticePlayer attemptId='fixture-attempt' presentation={p.get('layout')==='page'?'page':'dialog'} language={lang} onClose={()=>window.fixtureClosed++} onChanged={()=>window.fixtureChanged++}/>:<QuizWorkspace view='quizBank' role='teacher' language={lang}/>}</main></div></AdminPermissionContext.Provider>);`;
 async function open(params={},options={}){
- const context=await browser.newContext({viewport:{width:options.width||390,height:844},reducedMotion:'reduce',...(options.touch?{hasTouch:true,isMobile:true}:{})}),page=await context.newPage();page.setDefaultTimeout(10000);
+ const context=await browser.newContext({viewport:{width:options.width||390,height:844},reducedMotion:options.animate?'no-preference':'reduce',...(options.touch?{hasTouch:true,isMobile:true}:{})}),page=await context.newPage();page.setDefaultTimeout(10000);
  if(options.soundProbe)await page.addInitScript(setting=>{
   window.fixtureSounds=[];
   const outputs=new WeakMap();
@@ -41,6 +41,20 @@ async function open(params={},options={}){
  },options.soundProbe);
  const errors=[],writes=[],shareTargetQueries=[],saveStarted=deferred(),releaseSave=deferred(),draftStarted=deferred(),releaseDraft=deferred(),checkStarted=deferred();
  let attempt=structuredClone(initialAttempt),draft=structuredClone(quiz),saveFailed=false,shareFailed=false;
+ if(options.streakQuestions){
+  const questions=Array.from({length:options.streakQuestions},(_,index)=>({
+   ...structuredClone(content.questions[0]),id:'streak-question-'+index,
+   prompt:{primary:(index===2?'Read this longer question and inspect all four answer choices. '.repeat(28):'Question '+(index+1)),en:''},
+   options:content.questions[0].options.map((option,position)=>({...option,id:'streak-option-'+index+'-'+position})),
+  }));
+  attempt.content.questions=questions;
+  attempt.questionCount=attempt.totalScore=attempt.rawTotalScore=questions.length;
+  const checked=questions.slice(0,options.resumeStreak||0);
+  attempt.checkedQuestionIds=checked.map(question=>question.id);
+  attempt.answers=Object.fromEntries(checked.map(question=>[question.id,{optionId:question.options[0].id}]));
+  attempt.results=checked.map(question=>({questionId:question.id,status:'correct',points:1,correctOptionId:question.options[0].id}));
+  attempt.currentQuestionId=questions[checked.length].id;
+ }
  if(options.multilingual){
   const question=attempt.content.questions[0];
   question.prompt={en:'English test question?',ms:'Soalan dalam Bahasa Melayu?',zh:'这是一道华文题？'};
@@ -63,7 +77,7 @@ async function open(params={},options={}){
   return {questionId:question.id,status:correct?'correct':'incorrect',points:correct?question.points:0,correctOptionId};
  }
  await page.route('**/*',async route=>{
-  const u=new URL(route.request().url());if(u.origin!==origin){errors.push('external request '+u.origin);return route.abort();}if(!u.pathname.startsWith('/api/'))return route.continue();
+  const u=new URL(route.request().url());if(u.origin!==origin){errors.push('external request '+u.origin);return route.abort();}if(options.blockStreakAsset&&u.pathname==='/tickquiz-streak/10.webp')return route.abort();if(!u.pathname.startsWith('/api/'))return route.continue();
   const reply=(body,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(body)});
   if(u.pathname==='/api/academic-catalogues'){
    if(!options.importZip)return reply(catalogue);
@@ -122,7 +136,7 @@ async function editDraft(f,lang){const p=f.page;await p.getByTestId('quiz-tab-mi
 try{
  await build({absWorkingDir:root,stdin:{contents:entry,resolveDir:root,sourcefile:'quiz-interactions-fixture.tsx',loader:'tsx'},bundle:true,platform:'browser',format:'esm',jsx:'automatic',outfile:path.join(temporary,'ui.js'),assetNames:'fixture-assets/[name]-[hash]',loader:{'.woff':'file','.woff2':'file','.ttf':'file'},alias:{'@':root},logLevel:'silent'});
  const globals=await postcss([(tw.default||tw)({base:root})]).process(fs.readFileSync(path.join(root,'app/globals.css'),'utf8'),{from:path.join(root,'app/globals.css')}),css=globals.css+'\n'+fs.readFileSync(path.join(temporary,'ui.css'),'utf8');
- server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http://localhost').pathname;if(pathname==='/ui.js'){res.setHeader('content-type','text/javascript');res.end(fs.readFileSync(path.join(temporary,'ui.js')));return;}if(pathname==='/ui.css'){res.setHeader('content-type','text/css');res.end(css);return;}if(pathname.startsWith('/fixture-assets/')){const file=path.resolve(temporary,'.'+pathname);if(file.startsWith(temporary+path.sep)&&fs.existsSync(file)){res.end(fs.readFileSync(file));return;}}if(/^\/quiz-audio\/(correct|incorrect)\.wav$/.test(pathname)){res.setHeader('content-type','audio/wav');res.end(fs.readFileSync(path.join(root,'public',pathname)));return;}if(pathname.includes('.')){res.writeHead(404);res.end();return;}res.setHeader('content-type','text/html');res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui.css"></head><body><div id="root"></div><script type="module" src="/ui.js"></script></body></html>');});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));origin='http://127.0.0.1:'+server.address().port;
+ server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http://localhost').pathname;if(pathname==='/ui.js'){res.setHeader('content-type','text/javascript');res.end(fs.readFileSync(path.join(temporary,'ui.js')));return;}if(pathname==='/ui.css'){res.setHeader('content-type','text/css');res.end(css);return;}if(pathname.startsWith('/fixture-assets/')){const file=path.resolve(temporary,'.'+pathname);if(file.startsWith(temporary+path.sep)&&fs.existsSync(file)){res.end(fs.readFileSync(file));return;}}if(/^\/quiz-audio\/(correct|incorrect)\.wav$/.test(pathname)){res.setHeader('content-type','audio/wav');res.end(fs.readFileSync(path.join(root,'public',pathname)));return;}if(/^\/tickquiz-streak\/(3|5|10|perfect)\.webp$/.test(pathname)){res.setHeader('content-type','image/webp');res.end(fs.readFileSync(path.join(root,'public',pathname)));return;}if(pathname.includes('.')){res.writeHead(404);res.end();return;}res.setHeader('content-type','text/html');res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui.css"></head><body><div id="root"></div><script type="module" src="/ui.js"></script></body></html>');});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));origin='http://127.0.0.1:'+server.address().port;
  browser=await chromium.launch({headless:true,...process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{},args:['--no-sandbox']});
  // Slow autosave is held by a deterministic gate. A physical tap does not wait
  // for disabled controls, unlike locator.click(), reproducing the user's tap.
@@ -172,6 +186,59 @@ try{
   await f.close();
  }
  if(!baseline){
+  {
+   const f=await open({mode:'practice',lang:'en',layout:'page'},{touch:true,animate:true,streakQuestions:12,resumeStreak:2}),p=f.page;
+   const overlay=p.locator('.quiz-streak-overlay'),next=p.getByRole('button',{name:'Next question',exact:true});
+   const choose=async position=>{
+    await p.locator('.quiz-option-button').nth(position).tap();
+    await p.locator(position?'.quiz-answer-cell.is-incorrect':'.quiz-answer-cell.is-correct').waitFor();
+   };
+   await p.locator('.quiz-option-button').first().waitFor();
+   check(await overlay.count()===0,'resuming does not replay old milestones');
+   await choose(0);
+   await overlay.getByText('Congratulations! 3 in a row!').waitFor();
+   const layer=await overlay.evaluate(el=>{const box=el.getBoundingClientRect();return {viewport:box.y===0&&box.height===innerHeight&&box.width===innerWidth,scrolled:scrollY>0,pointers:getComputedStyle(el).pointerEvents};});
+   check(layer.viewport&&layer.scrolled&&layer.pointers==='none','the celebration covers the current viewport without intercepting input after scrolling');
+   await overlay.locator('img:not([hidden])').waitFor();
+   await next.tap();
+   await p.getByText('Question 4',{exact:true}).waitFor();
+   await choose(1);
+   check(await overlay.count()===0,'a confirmed wrong answer clears the streak celebration');
+   for(let question=5;question<=9;question++){
+    await next.tap();
+    await p.getByText('Question '+question,{exact:true}).waitFor();
+    await choose(0);
+    if(question===6)check(await overlay.count()===0,'answers before the mistake do not count towards the new streak');
+    if(question===7)await overlay.getByText('Congratulations! 3 in a row!').waitFor();
+   }
+   await overlay.getByText('Congratulations! 5 in a row!').waitFor();
+   check(await overlay.locator('.quiz-streak-stars span').count()===6,'the five-answer milestone has animated stars');
+   await overlay.waitFor({state:'detached'});
+   await f.close();
+  }
+  {
+   const f=await open({mode:'practice',lang:'en',layout:'page'},{width:1280,animate:true,streakQuestions:11,resumeStreak:9,blockStreakAsset:true}),p=f.page;
+   await p.locator('.quiz-option-button').first().click();
+   const overlay=p.locator('.quiz-streak-overlay');
+   await overlay.getByText('Congratulations! 10 in a row!').waitFor();
+   check(await overlay.locator('img').isHidden(),'the celebration is legible without the mascot image');
+   check(await overlay.locator('.quiz-streak-confetti span').count()===14,'ten correct answers show falling confetti on desktop');
+   await f.close();
+  }
+  for(const releaseAnswers of [true,false]){
+   const f=await open({mode:'practice',lang:'en',layout:'page'},{self:true,deferred:true,streakQuestions:3,releaseAnswers}),p=f.page;
+   for(let n=0;n<3;n++){
+    await p.locator('.quiz-option-button').first().click();
+    if(n<2)await p.getByRole('button',{name:'Next question',exact:true}).click();
+   }
+   const results=p.locator('.quiz-result-summary');await results.waitFor();
+   check(await p.locator('.quiz-streak-overlay').count()===0,'deferred feedback never plays a mid-answer celebration');
+   const streak=results.getByText(/Longest streak/);
+   check(await streak.isVisible()===releaseAnswers,'results show a streak only after individual answers are released');
+   check(await results.getByText('All answers correct!').isVisible()===releaseAnswers,'the perfect-score art follows the same release policy');
+   if(releaseAnswers)check((await streak.innerText()).includes('3 correct in a row'),'the results summarize the complete streak');
+   await f.close();
+  }
   for(const limit of [null,7]){
    const f=await open({lang:'en'},{touch:true,width:320}),p=f.page;
    await p.getByTestId('quiz-card-practice').first().tap();

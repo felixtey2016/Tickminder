@@ -1,7 +1,7 @@
 'use client';
 import {displayFormatter} from '@/lib/display-preferences';
 import {useAdminAction} from "@/app/admin-permission-context";
-import {useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
+import {useCallback,useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
 import {ArrowLeft,Check,ChevronLeft,ChevronRight,Clock3,Flag,Save,Timer,X} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import '@/app/quiz-player-wave3.css';
@@ -9,6 +9,7 @@ import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/u
 import {QuizMath} from '@/components/quiz-math';
 import {QuizPicture} from '@/components/quiz-picture';
 import {QuizSoundMenu} from '@/components/quiz-sound-menu';
+import {QuizStreakCelebration,quizStreakImage,quizStreakMilestone} from '@/components/quiz-streak-celebration';
 import {TickQuizBrand} from '@/components/tickquiz-brand';
 import {t,type Language} from '@/lib/i18n';
 import {practiceApi,practiceError} from '@/lib/quiz-practice-client';
@@ -32,6 +33,24 @@ function outcome(q:QuizQuestion,result:PracticeResult|undefined){
  if(result.points===q.points)return 'correct';
  if(result.points===0)return 'incorrect';
  return 'graded';
+}
+function streakStats(order:readonly string[],correct:Set<string>){
+ let current=0,longest=0;
+ for(const id of order){
+  current=correct.has(id)?current+1:0;
+  longest=Math.max(longest,current);
+ }
+ return {current,longest};
+}
+function checkedQuizStreak(attempt:PracticeAttempt){
+ const correct=new Set(attempt.results.filter(result=>result.status==='correct').map(result=>result.questionId));
+ return streakStats(attempt.checkedQuestionIds,correct).current;
+}
+function resultStreak(attempt:PracticeAttempt,correct:Set<string>){
+ const order=attempt.content.questions.map(question=>question.id);
+ if(!attempt.immediate)return streakStats(order,correct).longest;
+ const checked=new Set(attempt.checkedQuestionIds);
+ return streakStats([...attempt.checkedQuestionIds,...order.filter(id=>!checked.has(id))],correct).longest;
 }
 function solutionText(result:PracticeResult|undefined){
  return (result?.solution||result?.key?.explanation)?.trim();
@@ -78,10 +97,23 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
  const audio=useQuizSound(attempt?.accountId,answering?attempt?.id:undefined);
  const editingText=useRef(false),queuedCheck=useRef<string|null>(null);
  const [checkingQuestionId,setCheckingQuestionId]=useState<string|null>(null);
+ const [streakCelebration,setStreakCelebration]=useState<{questionId:string;milestone:NonNullable<ReturnType<typeof quizStreakMilestone>>}|null>(null);
+ const clearCelebration=useCallback(()=>setStreakCelebration(null),[]);
+ const preloadedStreakImages=useRef(new Set<string>());
+ const preloadMilestone=useMemo(()=>attempt?.status==='in_progress'&&attempt.canAnswer&&attempt.immediate&&attempt.checkedQuestionIds.length<attempt.questionCount
+  ?quizStreakMilestone(checkedQuizStreak(attempt)+1):undefined,[attempt]);
+ useEffect(()=>{
+  if(!preloadMilestone)return;
+  const src=quizStreakImage(preloadMilestone);
+  if(preloadedStreakImages.current.has(src))return;
+  preloadedStreakImages.current.add(src);
+  const image=new Image();
+  image.src=src;
+ },[preloadMilestone]);
  const requestCompletesSelf=Boolean(pending.current&&!attempt?.assignmentId&&pending.current.body.deferCompletion!==true&&attempt?.content.questions.every(question=>filled(pending.current!.snapshot[question.id])&&(!attempt.immediate||attempt.manualQuestionIds.includes(question.id)||attempt.checkedQuestionIds.includes(question.id)||pending.current!.body.action==='check'&&pending.current!.body.questionId===question.id)));
  const dateFormatter=useMemo(()=>displayFormatter(language==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),[language]);
  function syncClock(value:string|undefined){if(value&&Number.isFinite(Date.parse(value))){serverOffset.current=Date.parse(value)-Date.now();setClockOffset(serverOffset.current);}}
- async function load(){queuedCheck.current=null;setCheckingQuestionId(null);setLoading(true);setError('');try{const {attempt:next,serverNow}=await practiceApi<{attempt:PracticeAttempt;serverNow?:string}>({attemptId});if(!mounted.current)return;syncClock(serverNow);current.current=next;local.current=next.answers;localFlags.current=next.flaggedQuestionIds;setAttempt(next);setAnswers(next.answers);setFlags(next.flaggedQuestionIds);const resumeIndex=next.status==='in_progress'&&next.canAnswer?Math.max(0,next.content.questions.findIndex(question=>question.id===next.currentQuestionId)):0;setIndex(resumeIndex);localQuestion.current=next.content.questions[resumeIndex]?.id||null;setDirty(false);pending.current=null;deadlineSent.current=false;exitRequested.current=false;}catch(e){if(mounted.current)setError(practiceError(e));}finally{if(mounted.current)setLoading(false);}}
+ async function load(){queuedCheck.current=null;setCheckingQuestionId(null);clearCelebration();setLoading(true);setError('');try{const {attempt:next,serverNow}=await practiceApi<{attempt:PracticeAttempt;serverNow?:string}>({attemptId});if(!mounted.current)return;syncClock(serverNow);current.current=next;local.current=next.answers;localFlags.current=next.flaggedQuestionIds;setAttempt(next);setAnswers(next.answers);setFlags(next.flaggedQuestionIds);const resumeIndex=next.status==='in_progress'&&next.canAnswer?Math.max(0,next.content.questions.findIndex(question=>question.id===next.currentQuestionId)):0;setIndex(resumeIndex);localQuestion.current=next.content.questions[resumeIndex]?.id||null;setDirty(false);pending.current=null;deadlineSent.current=false;exitRequested.current=false;}catch(e){if(mounted.current)setError(practiceError(e));}finally{if(mounted.current)setLoading(false);}}
  useEffect(()=>{mounted.current=true;void load();return()=>{mounted.current=false;};},[attemptId]);
  useEffect(()=>{if(!attempt?.deadlineAt||done){setRemaining(null);return;}const update=()=>setRemaining(Math.max(0,Math.ceil((Date.parse(attempt.deadlineAt!)-Date.now()-clockOffset)/1000)));update();const id=window.setInterval(update,500);return()=>clearInterval(id);},[attempt?.deadlineAt,done,clockOffset]);
  useEffect(()=>{const unload=(event:BeforeUnloadEvent)=>{if(dirty||saving.current||pending.current){event.preventDefault();event.returnValue='';}},navigate=(event:Event)=>{if(dirty||saving.current||pending.current){event.preventDefault();if(dirty&&!saving.current&&!pending.current)void mutate('save');}};window.addEventListener('beforeunload',unload);window.addEventListener('tickminder-navigate',navigate);return()=>{window.removeEventListener('beforeunload',unload);window.removeEventListener('tickminder-navigate',navigate);};},[dirty]);
@@ -97,6 +129,11 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
       !exitRequested.current&&!before.checkedQuestionIds.includes(checked)&&next.checkedQuestionIds.includes(checked)){
     const outcome=next.results.find(result=>result.questionId===checked)?.status;
     if(outcome==='correct'||outcome==='incorrect')void audio.playEffect(outcome);
+    if(outcome==='incorrect')clearCelebration();
+    if(outcome==='correct'&&next.checkedQuestionIds.at(-1)===checked&&!document.hidden){
+     const milestone=quizStreakMilestone(checkedQuizStreak(next));
+     if(milestone)setStreakCelebration({questionId:checked,milestone});
+    }
    }
    const merged={...next.answers};if(next.status==='in_progress')for(const [id,value] of Object.entries(local.current))if(!same(value,request.snapshot[id])&&!next.checkedQuestionIds.includes(id))merged[id]=value;
    const mergedFlags=next.status==='in_progress'&&!sameFlags(localFlags.current,request.flags)?localFlags.current:next.flaggedQuestionIds;
@@ -158,7 +195,9 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
  const showQuestionResults=done&&attempt?.answersVisible;
  const showCorrectCount=showQuestionResults&&attempt?.scoreVisible;
  const reviewQuestions=wrongOnly&&showCorrectCount?questions.filter(question=>outcome(question,resultsByQuestion.get(question.id))!=='correct'):questions;
- const correctCount=showCorrectCount?questions.filter(question=>outcome(question,resultsByQuestion.get(question.id))==='correct').length:0;
+ const correctQuestions=showCorrectCount?new Set(questions.filter(question=>outcome(question,resultsByQuestion.get(question.id))==='correct').map(question=>question.id)):null;
+ const correctCount=correctQuestions?.size??0;
+ const longestStreak=correctQuestions&&attempt?resultStreak(attempt,correctQuestions):null;
  const q=reviewQuestions[Math.min(index,Math.max(0,reviewQuestions.length-1))],result=q?resultsByQuestion.get(q.id):undefined,locked=Boolean(q&&attempt?.checkedQuestionIds.includes(q.id)),unanswered=questions.filter(q=>!filled(answers[q.id])).length,answerDisabled=!answering||requestCompletesSelf||checkingQuestionId===q?.id||locked||Boolean(error&&pending.current)||['quiz.conflict','quiz.practiceFinished','quiz.practiceLocked'].includes(error)||busy&&pending.current?.body.action!=='save'||remaining===0;
  const immediateChoiceResult=Boolean(q?.options.length&&attempt?.immediate&&locked&&(result?.status==='correct'||result?.status==='incorrect'));
  const correctChoiceId=immediateChoiceResult&&q?(result?.correctOptionId??result?.key?.correctOptionId??(result?.status==='correct'?answers[q.id]?.optionId:undefined)):undefined;
@@ -179,6 +218,7 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
  const saveLabel=t(busy?'quiz.savingAnswers':dirty?'quiz.unsaved':'quiz.answersSaved');
  const backgroundSave=Boolean(saving.current&&pending.current?.body.action==='save');
  const body=<>
+  {streakCelebration&&<QuizStreakCelebration key={streakCelebration.questionId} milestone={streakCelebration.milestone} onEnd={clearCelebration}/>}
   {page&&<div className="tikquiz-player-header"><div className="tikquiz-player-header-inner"><Button type="button" variant="outline" size="icon" disabled={busy} aria-label={t(attempt?.assignmentId?'quiz.backToHub':'quiz.exitPractice')} onClick={()=>void close()}><ArrowLeft size={20} aria-hidden="true"/></Button><span className="tikquiz-logo"><TickQuizBrand/></span></div></div>}
   <div className="quiz-player-heading"><div className="quiz-practice-heading-copy"><Title className="quiz-practice-title" title={attempt?.title||t('quiz.practiceTitle')}>{attempt?.title||t('quiz.practiceTitle')}</Title><div className="quiz-practice-meta">{attempt?.creator&&<p className="quiz-creator" title={t('quiz.creator')+' · '+attempt.creator}>{t('quiz.creator')} · {attempt.creator}</p>}{answering&&<span className="quiz-autosave" role="status" aria-label={saveLabel} title={saveLabel}><Save size={14} aria-hidden="true"/>{busy?label('保存中…','Saving…'):dirty?label('未保存','Unsaved'):label('已保存','Saved')}</span>}</div></div>{!page&&<div className="quiz-player-heading-actions">{answering&&<QuizSoundMenu language={language} audio={audio}/>}<Button type="button" variant="ghost" className="quiz-player-close" aria-label={t(attempt?.assignmentId?'quiz.backToHub':'quiz.exitPractice')} disabled={busy} onClick={()=>void close()}><X size={20} aria-hidden="true"/></Button></div>}</div>{!page&&<DialogDescription className="sr-only">{t('quiz.practiceTitle')}</DialogDescription>}
   {page&&answering&&<div className="tikquiz-audio-bar"><QuizSoundMenu language={language} audio={audio} showTrack/></div>}
@@ -187,7 +227,7 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
   {attempt&&!loading&&<>
    {!done&&!attempt.canAnswer&&<p className="quiz-note">{t('quiz.practiceReadOnly')}</p>}
    {attempt.content.instructions&&<details className="quiz-practice-instructions"><summary>{label('说明','Instructions')}</summary><div><QuizMath text={attempt.content.instructions}/></div></details>}
-   {done&&<section className="quiz-result-summary" aria-label={t('quiz.practiceComplete')}><Check size={24} aria-hidden="true" className="quiz-result-check"/><div><h3>{t('quiz.practiceComplete')}</h3>{attempt.scoreVisible&&attempt.score!==null?<><p><strong>{t(attempt.pendingManual?'quiz.provisionalScore':'quiz.score')} {attempt.score} / {attempt.totalScore}</strong></p>{showCorrectCount&&<p className="quiz-correct-count">{t('quiz.questionsCorrect').replace('{correct}',String(correctCount)).replace('{total}',String(questions.length))}</p>}{attempt.rawScore!==null&&attempt.rawTotalScore!==attempt.totalScore&&<p>{t('quiz.rawScore')} · {attempt.rawScore} / {attempt.rawTotalScore}</p>}{attempt.pendingManual>0&&<p>{t('quiz.resultPending')}</p>}</>:<p>{t('quiz.scoreNotReleased')}</p>}{!attempt.answersVisible&&<p>{t('quiz.answersNotReleased')}</p>}{attempt.late&&<p className="quiz-assignment-blocked">{t('quiz.late')}</p>}{attempt.submissionReason==='timer'&&<p>{t('quiz.autoSubmittedTimer')}</p>}{attempt.submissionReason==='deadline'&&<p>{t('quiz.autoSubmittedDeadline')}</p>}{timeTaken!==null&&<p className="quiz-time-taken" data-testid="quiz-time-taken"><Timer size={16} aria-hidden="true"/><strong>{t('quiz.timeTaken')}</strong><time dateTime={'PT'+timeTaken+'S'}>{formatQuizDuration(timeTaken)}</time></p>}{attempt.submittedAt&&<time dateTime={attempt.submittedAt}>{dateFormatter.format(new Date(attempt.submittedAt))} GMT+8</time>}</div></section>}
+   {done&&<section className="quiz-result-summary" aria-label={t('quiz.practiceComplete')}><Check size={24} aria-hidden="true" className="quiz-result-check"/><div><h3>{t('quiz.practiceComplete')}</h3>{attempt.scoreVisible&&attempt.score!==null?<><p><strong>{t(attempt.pendingManual?'quiz.provisionalScore':'quiz.score')} {attempt.score} / {attempt.totalScore}</strong></p>{showCorrectCount&&<p className="quiz-correct-count">{t('quiz.questionsCorrect').replace('{correct}',String(correctCount)).replace('{total}',String(questions.length))}</p>}{longestStreak!==null&&<p>{t('quiz.longestStreak').replace('{count}',String(longestStreak))}</p>}{showCorrectCount&&questions.length>0&&correctCount===questions.length&&<p className="quiz-streak-perfect"><img src={quizStreakImage('perfect')} alt="" width="48" height="48" loading="lazy"/><strong>{t('quiz.streakPerfect')}</strong></p>}{attempt.rawScore!==null&&attempt.rawTotalScore!==attempt.totalScore&&<p>{t('quiz.rawScore')} · {attempt.rawScore} / {attempt.rawTotalScore}</p>}{attempt.pendingManual>0&&<p>{t('quiz.resultPending')}</p>}</>:<p>{t('quiz.scoreNotReleased')}</p>}{!attempt.answersVisible&&<p>{t('quiz.answersNotReleased')}</p>}{attempt.late&&<p className="quiz-assignment-blocked">{t('quiz.late')}</p>}{attempt.submissionReason==='timer'&&<p>{t('quiz.autoSubmittedTimer')}</p>}{attempt.submissionReason==='deadline'&&<p>{t('quiz.autoSubmittedDeadline')}</p>}{timeTaken!==null&&<p className="quiz-time-taken" data-testid="quiz-time-taken"><Timer size={16} aria-hidden="true"/><strong>{t('quiz.timeTaken')}</strong><time dateTime={'PT'+timeTaken+'S'}>{formatQuizDuration(timeTaken)}</time></p>}{attempt.submittedAt&&<time dateTime={attempt.submittedAt}>{dateFormatter.format(new Date(attempt.submittedAt))} GMT+8</time>}</div></section>}
    {done&&(!attempt.scoreVisible||!attempt.answersVisible)&&<Button variant="outline" disabled={loading||busy} onClick={()=>void load()}>{t('quiz.refresh')}</Button>}
    {done&&attempt.scoreVisible&&attempt.answersVisible&&<label className="quiz-check"><input type="checkbox" checked={wrongOnly} onChange={e=>{setWrongOnly(e.target.checked);setIndex(0);}}/>{t('quiz.wrongQuestions')}</label>}
    {showQuestionResults&&reviewQuestions.length>0&&<section className="quiz-question-results" aria-label={t('quiz.questionResults')}>

@@ -1,0 +1,112 @@
+.quiz-streak-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.quiz-streak-card {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  max-width: min(100%, 280px);
+  animation: quiz-streak-pop 1200ms ease-out both;
+}
+
+.quiz-streak-card img {
+  width: clamp(96px, 32vw, 128px);
+  max-height: 28vh;
+  height: auto;
+  object-fit: contain;
+}
+
+.quiz-streak-card img[hidden] {
+  display: none;
+}
+
+.quiz-streak-message {
+  padding: 9px 16px;
+  border: 1px solid #f4c84f;
+  border-radius: 999px;
+  background: #4e349e;
+  color: white;
+  box-shadow: 0 3px 12px #24124c42;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.quiz-streak-stars {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+}
+
+.quiz-streak-stars span {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  color: #edaf17;
+  font-size: 19px;
+  line-height: 1;
+  animation: quiz-streak-star 800ms ease-out var(--star-delay) both;
+}
+
+.quiz-streak-confetti {
+  position: absolute;
+  inset-block: 0;
+  width: min(86%, 430px);
+}
+
+.quiz-streak-confetti span {
+  position: absolute;
+  top: 8%;
+  left: var(--strip-x);
+  width: 6px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--strip-color);
+  animation: quiz-streak-strip 990ms ease-in var(--strip-delay) both;
+}
+
+.quiz-result-summary .quiz-streak-perfect {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quiz-streak-perfect img {
+  width: 48px;
+  height: 48px;
+}
+
+@keyframes quiz-streak-pop {
+  0% { opacity: 0; transform: translateY(14px) scale(.84); }
+  19% { opacity: 1; transform: translateY(-4px) scale(1.04); }
+  30%, 77% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-4px) scale(.98); }
+}
+
+@keyframes quiz-streak-star {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.35); }
+  23% { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--star-x), var(--star-y)) scale(.9); }
+}
+
+@keyframes quiz-streak-strip {
+  0% { opacity: 0; transform: translateY(-24px) rotate(0deg); }
+  22%, 67% { opacity: .9; }
+  100% { opacity: 0; transform: translate(var(--strip-drift), min(62vh, 500px)) rotate(var(--strip-rotation)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quiz-streak-card { animation: none; }
+  .quiz-streak-stars, .quiz-streak-confetti { display: none; }
+}

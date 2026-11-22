@@ -11,6 +11,9 @@ const pairs:Record<string,[string,string]>={
  'quiz.allResponses':['全部记录','All responses'],
  'quiz.answeredProgress':['已答 {answered} / {total}','Answered {answered} / {total}'],
  'quiz.timeElapsed':['已用时间','Elapsed time'],
+ 'quiz.streakCelebration':['连续答对 {count} 题！','Congratulations! {count} in a row!'],
+ 'quiz.longestStreak':['最长连续答对 {count} 题','Longest streak · {count} correct in a row'],
+ 'quiz.streakPerfect':['全部答对！','All answers correct!'],
  'quiz.timeTaken':['完成用时','Time taken'],
 
  'quiz.discardPractice':['删除练习记录','Delete practice record'],
