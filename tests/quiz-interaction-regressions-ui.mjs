@@ -560,6 +560,11 @@ try{
    if(releaseAnswers){
     check(await p.locator('.quiz-correct-ring').getAttribute('aria-label')==='1 / 2 questions correct','completed practice shows an accessible count of correct questions');
     check(await p.locator('.quiz-correct-ring-fill').evaluate(circle=>circle.style.getPropertyValue('--quiz-ring-offset'))==='50','the ring fills halfway for one correct answer out of two');
+    check(await p.locator('.quiz-correct-ring > div > span').evaluate(label=>{
+     const ring=label.closest('.quiz-correct-ring').getBoundingClientRect();
+     const text=document.createRange();text.selectNodeContents(label);
+     return [...text.getClientRects()].every(rect=>rect.left>=ring.left+ring.width*.15&&rect.right<=ring.right-ring.width*.15);
+    }),'the English label fits inside the ring on mobile');
     check(await overview.locator('li').count()===2,'every question appears in the completed results');
     check(await overview.locator('li').first().locator('.quiz-result-mark.correct').count()===1,'the first question shows correct');
     check(await overview.locator('li').last().locator('.quiz-result-mark.incorrect').count()===1,'the second question shows incorrect');

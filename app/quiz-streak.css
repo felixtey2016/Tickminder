@@ -158,9 +158,9 @@
   stroke-dashoffset: var(--quiz-ring-offset);
   animation: quiz-correct-ring-fill 850ms ease-out both;
 }
-.quiz-correct-ring > div {position:absolute;display:grid;place-items:center;padding:0 10px;line-height:1.2;}
+.quiz-correct-ring > div {position:absolute;display:grid;place-items:center;width:67%;line-height:1.2;}
 .quiz-correct-ring > div > strong {font-variant-numeric:tabular-nums;text-align:center;}
-.quiz-correct-ring > div > span {font-size:.71rem;margin-top:3px;text-align:center;color:var(--ui-muted);}
+.quiz-correct-ring > div > span {max-width:100%;font-size:clamp(.625rem,2.6vw,.71rem);margin-top:3px;text-align:center;overflow-wrap:anywhere;color:var(--ui-muted);}
 .quiz-result-stats {min-width:0;}
 
 .quiz-review-original {min-width:0;padding:12px;}
