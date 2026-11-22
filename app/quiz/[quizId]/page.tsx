@@ -1,9 +1,10 @@
 import type {Metadata} from 'next';
 import {notFound} from 'next/navigation';
+import {TICK_QUIZ_PAGE_TITLE} from '@/lib/brand';
 import {SchedulerEntry} from '../../scheduler-entry';
 import {validQuizLinkId} from '@/lib/quiz-link';
 
-export const metadata:Metadata={title:'TikQuiz · Tickminder',robots:{index:false,follow:false}};
+export const metadata:Metadata={title:TICK_QUIZ_PAGE_TITLE,robots:{index:false,follow:false}};
 
 // No Quiz metadata is loaded before authentication. The existing workspace
 // preserves this path through sign-in, setup and optional Google linking.

@@ -2,6 +2,8 @@
 
 import {lazy, Suspense, useEffect, useRef, useState, type MouseEvent} from 'react';
 import {ArrowLeft} from 'lucide-react';
+import {TickQuizBrand} from '@/components/tickquiz-brand';
+import {TICK_QUIZ_NAME, TICK_QUIZ_PAGE_TITLE} from '@/lib/brand';
 import {AppearanceToggle} from '@/components/appearance-toggle';
 import {canAdminAction} from '@/lib/admin-permission-client';
 import {t, type Language} from '@/lib/i18n';
@@ -55,7 +57,7 @@ export default function TikQuizEntry({initialPath, account, language, changeLang
   const approvedBack = useRef<string | null>(null);
   current.current = location;
   useEffect(() => {
-    document.title = 'TikQuiz · Tickminder';
+    document.title = TICK_QUIZ_PAGE_TITLE;
     if (!tikQuizRoute(window.location.pathname)) {
       window.history.replaceState({...window.history.state, tikQuizReturnTo: null}, '', current.current.href);
     }
@@ -172,15 +174,15 @@ export default function TikQuizEntry({initialPath, account, language, changeLang
       {!playing && <header className="tikquiz-header"><div className="tikquiz-header-inner">
         <a href={landing} className="tikquiz-logo" onClick={event => {
           if (navigateClick(event)) { event.preventDefault(); go(landing, {guarded: true}); }
-        }}><img src="/tikquiz-logo.webp" alt="TikQuiz" width={171} height={61}/></a>
+        }}><TickQuizBrand/></a>
         <div className="tikquiz-header-actions">
           <AuthLanguageSwitcher language={language} change={changeLanguage}/>
           <AppearanceToggle language={language}/>
-          <a className="tikquiz-app-link" href={appHome}><ArrowLeft size={17} aria-hidden="true"/><span>{label('返回 Tickminder', 'Back to Tickminder')}</span></a>
         </div>
+        <a className="tikquiz-app-link" href={appHome}><ArrowLeft size={17} aria-hidden="true"/><span>{label('返回 Tickminder', 'Back to Tickminder')}</span></a>
       </div></header>}
       <main className={'tikquiz-content' + (playing ? ' tikquiz-content-player' : '')}>
-        {showTabs && <nav aria-label="TikQuiz" className="tikquiz-nav">
+        {showTabs && <nav aria-label={TICK_QUIZ_NAME} className="tikquiz-nav">
           {nav.filter(item => item.visible).map(item => <a key={item.section} href={tikQuizPath(item.section)}
             aria-current={section === item.section ? 'page' : undefined}
             onClick={event => {

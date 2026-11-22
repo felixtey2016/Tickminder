@@ -1,10 +1,11 @@
 import type {Metadata} from 'next';
 import {notFound} from 'next/navigation';
+import {TICK_QUIZ_PAGE_TITLE} from '@/lib/brand';
 import {SchedulerEntry} from '../../scheduler-entry';
 import {tikQuizRoute} from '@/lib/tikquiz-route';
 
 export const metadata: Metadata = {
-  title: 'TikQuiz · Tickminder',
+  title: TICK_QUIZ_PAGE_TITLE,
   robots: {index: false, follow: false},
 };
 
