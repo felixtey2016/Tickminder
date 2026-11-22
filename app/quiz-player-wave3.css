@@ -8,7 +8,7 @@
 .quiz-player-heading-actions {display:flex;align-items:center;gap:4px;flex:none;}
 .quiz-player-heading-actions .quiz-sound-trigger {width:44px;height:44px;color:var(--ui-muted);}
 .quiz-sound-menu[data-slot=popover-content] {
- z-index:110;width:min(252px,var(--radix-popover-content-available-width,252px));padding:4px 12px;
+ z-index:110;width:min(306px,var(--radix-popover-content-available-width,306px));max-height:var(--radix-popover-content-available-height);padding:4px 12px;overflow:auto;overscroll-behavior:contain;
  background:var(--ui-surface);color:var(--ui-text);border-color:var(--ui-border);border-radius:8px;
 }
 .quiz-sound-setting {display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;padding:8px 0;cursor:pointer;}
@@ -149,3 +149,68 @@
  .quiz-player-wave3 .quiz-result-summary strong {font-size:18px;}
  .quiz-link-wave3 .quiz-library-item {padding:16px;}
 }
+
+.quiz-sound-trigger-with-title {
+  min-height: 42px;
+  gap: 8px;
+  padding-inline: 11px;
+  border-color: var(--ui-border);
+  border-radius: 999px;
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  font-size: .8125rem;
+  font-weight: 600;
+}
+.quiz-sound-trigger-with-title > svg {flex: none;}
+.quiz-music-track-window {
+  width: 112px;
+  max-width: 33vw;
+  display: block;
+  overflow: hidden;
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.quiz-music-track-window > span {display: inline-block;}
+.quiz-music-track-window[data-scroll="true"] > span {
+  animation: quiz-music-title-scroll 7s ease-in-out infinite alternate;
+}
+@keyframes quiz-music-title-scroll {
+  0%, 18% {transform: translateX(0);}
+  82%, 100% {transform: translateX(var(--quiz-music-title-shift));}
+}
+@media (prefers-reduced-motion: reduce) {
+  .quiz-music-track-window[data-scroll="true"] > span {animation: none;}
+}
+.quiz-music-resume {width: 100%; margin-block: 6px 2px;}
+.quiz-music-playlist {
+  border-top: 1px solid var(--ui-border);
+  margin-top: 6px;
+  padding-top: 8px;
+}
+.quiz-music-playlist h3 {
+  margin: 0 3px 5px;
+  font-size: .8125rem;
+  font-weight: 650;
+  color: var(--ui-muted);
+}
+.quiz-music-playlist ul {list-style: none; margin: 0; padding: 0;}
+.quiz-music-playlist button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 38px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  color: var(--ui-text);
+  text-align: start;
+  font-size: .875rem;
+}
+.quiz-music-playlist button:hover, .quiz-music-playlist button[aria-pressed="true"] {
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent-text, var(--ui-accent));
+}
+.quiz-music-playlist button svg {flex: none;}
+.quiz-music-repeat {border-top: 1px solid var(--ui-border); margin-top: 6px;}

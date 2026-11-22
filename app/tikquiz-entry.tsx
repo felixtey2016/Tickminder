@@ -1,7 +1,9 @@
 'use client';
 
 import {lazy, Suspense, useEffect, useRef, useState, type MouseEvent} from 'react';
-import {ArrowLeft} from 'lucide-react';
+import {ArrowLeft, Check, ChevronDown} from 'lucide-react';
+import {Button} from '@/components/ui/button';
+import {Popover, PopoverContent, PopoverTrigger} from '@/components/ui/popover';
 import {TickQuizBrand} from '@/components/tickquiz-brand';
 import {TICK_QUIZ_NAME, TICK_QUIZ_PAGE_TITLE} from '@/lib/brand';
 import {AppearanceToggle} from '@/components/appearance-toggle';
@@ -11,7 +13,6 @@ import {tikQuizPath, tikQuizRoute} from '@/lib/tikquiz-route';
 import {useDisplayPreferences} from '@/lib/use-display-preferences';
 import type {Account} from '@/lib/workspace-client-types';
 import {AdminPermissionContext} from './admin-permission-context';
-import {AuthLanguageSwitcher} from './login-form';
 import './quiz.css';
 import './quiz-layout.css';
 import './tikquiz.css';
@@ -40,6 +41,26 @@ function allowNavigation() {
 }
 function navigateClick(event: MouseEvent<HTMLAnchorElement>) {
   return event.button === 0 && !event.defaultPrevented && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+}
+
+function QuizHeaderPreferences({language, onChange}: {language: Language; onChange: (language: Language) => void}) {
+  const [open, setOpen] = useState(false);
+  const title = language === 'zh' ? '语言和外观' : 'Language and appearance';
+  return <Popover open={open} onOpenChange={setOpen}>
+    <PopoverTrigger asChild>
+      <Button type="button" variant="outline" className="tikquiz-language-trigger" aria-label={title}>
+        <span>{language === 'zh' ? '中文' : 'EN'}</span><ChevronDown size={17} aria-hidden="true"/>
+      </Button>
+    </PopoverTrigger>
+    <PopoverContent align="end" sideOffset={8} className="tikquiz-preferences-menu" aria-label={title}>
+      {([{id: 'zh', text: '中文'}, {id: 'en', text: 'English'}] as const).map(({id, text}) =>
+        <button key={id} type="button" aria-pressed={language === id} className="tikquiz-language-choice"
+          onClick={() => { onChange(id); setOpen(false); }}>
+          {text}{language === id && <Check size={17} aria-hidden="true"/>}
+        </button>)}
+      <div className="tikquiz-appearance-setting"><AppearanceToggle language={language} showLabel/></div>
+    </PopoverContent>
+  </Popover>;
 }
 
 export default function TikQuizEntry({initialPath, account, language, changeLanguage}: {
@@ -176,10 +197,13 @@ export default function TikQuizEntry({initialPath, account, language, changeLang
           if (navigateClick(event)) { event.preventDefault(); go(landing, {guarded: true}); }
         }}><TickQuizBrand/></a>
         <div className="tikquiz-header-actions">
-          <AuthLanguageSwitcher language={language} change={changeLanguage}/>
-          <AppearanceToggle language={language}/>
+          <QuizHeaderPreferences language={language} onChange={changeLanguage}/>
+          <a className="tikquiz-app-link" href={appHome} aria-label={label('返回 Tickminder', 'Back to Tickminder')} title={label('返回 Tickminder', 'Back to Tickminder')}>
+            <ArrowLeft size={17} aria-hidden="true"/>
+            <span className="tikquiz-app-link-full">{label('返回 Tickminder', 'Back to Tickminder')}</span>
+            <span className="tikquiz-app-link-short">{label('返回', 'Back')}</span>
+          </a>
         </div>
-        <a className="tikquiz-app-link" href={appHome}><ArrowLeft size={17} aria-hidden="true"/><span>{label('返回 Tickminder', 'Back to Tickminder')}</span></a>
       </div></header>}
       <main className={'tikquiz-content' + (playing ? ' tikquiz-content-player' : '')}>
         {showTabs && <nav aria-label={TICK_QUIZ_NAME} className="tikquiz-nav">

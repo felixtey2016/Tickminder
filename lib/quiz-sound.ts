@@ -1,11 +1,12 @@
 'use client';
 
 import {useEffect,useRef,useState} from 'react';
+import {useQuizMusic,type QuizMusicId} from './quiz-music';
 
 const clips={correct:'/quiz-audio/correct.wav',incorrect:'/quiz-audio/incorrect.wav'} as const;
 type Feedback=keyof typeof clips;
-type Preferences={music:boolean;effects:boolean};
-const defaults:Preferences={music:true,effects:true};
+type Preferences={music:boolean;effects:boolean;repeat:boolean};
+const defaults:Preferences={music:true,effects:true,repeat:false};
 type Player={
  context:AudioContext;
  abort:AbortController;
@@ -17,7 +18,7 @@ type Player={
 function readPreferences(key:string):Preferences{
  try{
   const saved=JSON.parse(localStorage.getItem(key)||'null');
-  return {music:saved?.music!==false,effects:saved?.effects!==false};
+  return {music:saved?.music!==false,effects:saved?.effects!==false,repeat:saved?.repeat===true};
  }catch{return defaults;}
 }
 
@@ -39,10 +40,12 @@ function loadClip(player:Player,feedback:Feedback){
  })();
 }
 
-export function useQuizSound(accountId:string|undefined){
+export function useQuizSound(accountId:string|undefined,attemptId?:string){
  const key=accountId?'tickminder.quiz.sound.'+accountId:null;
  const player=useRef<Player|null>(null);
- const [preferences,setPreferences]=useState(defaults);
+ const [saved,setSaved]=useState<{key:string|null;preferences:Preferences}>({key:null,preferences:defaults});
+ const preferences=saved.key===key?saved.preferences:defaults;
+ const music=useQuizMusic(key&&key===saved.key&&attemptId?key+':'+attemptId:null,preferences.music,preferences.repeat);
  const current=useRef(defaults);
 
  function release(){
@@ -54,16 +57,26 @@ export function useQuizSound(accountId:string|undefined){
  useEffect(()=>{
   const saved=key?readPreferences(key):defaults;
   current.current=saved;
-  setPreferences(saved);
+  setSaved({key,preferences:saved});
   return release;
  },[key]);
 
+ function savePreferences(next:Preferences){
+  current.current=next;
+  setSaved({key,preferences:next});
+  if(key)try{localStorage.setItem(key,JSON.stringify(next));}catch{/* Keep the preference for this session. */}
+ }
+
  function change(setting:keyof Preferences,enabled:boolean){
   const next={...current.current,[setting]:enabled};
-  current.current=next;
-  setPreferences(next);
-  if(key)try{localStorage.setItem(key,JSON.stringify(next));}catch{/* Keep the preference for this session. */}
+  savePreferences(next);
+  if(setting==='music'||setting==='repeat')music.sync({enabled:next.music,repeat:next.repeat});
   if(setting==='effects'&&!enabled)release();
+ }
+
+ function selectTrack(id:QuizMusicId){
+  if(!current.current.music)savePreferences({...current.current,music:true});
+  music.select(id);
  }
 
  // Call from the answer gesture, before the asynchronous grading request.
@@ -96,5 +109,5 @@ export function useQuizSound(accountId:string|undefined){
   }catch{/* A sound can be skipped without affecting scoring. */}
  }
 
- return {preferences,change,prepareEffect,playEffect};
+ return {preferences,change,prepareEffect,playEffect,music,selectTrack};
 }

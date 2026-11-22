@@ -8,7 +8,7 @@ export function AppearanceProvider({children}:{children:React.ReactNode}) {
   return <ThemeProvider attribute="class" storageKey="tickminder.appearance" defaultTheme="light" enableSystem={false} disableTransitionOnChange>{children}</ThemeProvider>;
 }
 
-export function AppearanceToggle({language='zh'}:{language?:'zh'|'en'}) {
+export function AppearanceToggle({language='zh',showLabel=false}:{language?:'zh'|'en';showLabel?:boolean}) {
   const {theme,setTheme}=useTheme();
   const [ready,setReady]=useState(false);
   useEffect(()=>setReady(true),[]);
@@ -16,5 +16,6 @@ export function AppearanceToggle({language='zh'}:{language?:'zh'|'en'}) {
   const label=language==='zh'?(dark?'切换浅色外观':'切换深色外观'):(dark?'Use light appearance':'Use dark appearance');
   return <button type="button" className="appearance-toggle" aria-label={label} title={label} aria-pressed={dark} onClick={()=>setTheme(dark?'light':'dark')}>
     {dark?<Sun size={19} aria-hidden="true"/>:<Moon size={19} aria-hidden="true"/>}
+    {showLabel&&<span>{label}</span>}
   </button>;
 }

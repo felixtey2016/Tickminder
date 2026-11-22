@@ -27,6 +27,9 @@
       "custom_domain": true
     }
   ],
+  "assets": {
+    "binding": "ASSETS"
+  },
   "d1_databases": [
     {
       "binding": "DB",

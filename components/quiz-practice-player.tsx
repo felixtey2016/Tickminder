@@ -75,7 +75,7 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
  const resultChange=useRef(onResultChange);
  resultChange.current=onResultChange;
  useEffect(()=>{if(attempt)resultChange.current?.(attempt.status==='submitted');},[attempt?.id,attempt?.status]);
- const audio=useQuizSound(attempt?.accountId);
+ const audio=useQuizSound(attempt?.accountId,answering?attempt?.id:undefined);
  const editingText=useRef(false),queuedCheck=useRef<string|null>(null);
  const [checkingQuestionId,setCheckingQuestionId]=useState<string|null>(null);
  const requestCompletesSelf=Boolean(pending.current&&!attempt?.assignmentId&&pending.current.body.deferCompletion!==true&&attempt?.content.questions.every(question=>filled(pending.current!.snapshot[question.id])&&(!attempt.immediate||attempt.manualQuestionIds.includes(question.id)||attempt.checkedQuestionIds.includes(question.id)||pending.current!.body.action==='check'&&pending.current!.body.questionId===question.id)));
@@ -179,8 +179,9 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
  const saveLabel=t(busy?'quiz.savingAnswers':dirty?'quiz.unsaved':'quiz.answersSaved');
  const backgroundSave=Boolean(saving.current&&pending.current?.body.action==='save');
  const body=<>
-  {page&&<div className="tikquiz-player-header"><div className="tikquiz-player-header-inner"><Button type="button" variant="outline" size="icon" disabled={busy} aria-label={t(attempt?.assignmentId?'quiz.backToHub':'quiz.exitPractice')} onClick={()=>void close()}><ArrowLeft size={20} aria-hidden="true"/></Button><span className="tikquiz-logo"><TickQuizBrand/></span><div className="tikquiz-player-header-actions">{answering&&<QuizSoundMenu language={language} audio={audio}/>}</div></div></div>}
+  {page&&<div className="tikquiz-player-header"><div className="tikquiz-player-header-inner"><Button type="button" variant="outline" size="icon" disabled={busy} aria-label={t(attempt?.assignmentId?'quiz.backToHub':'quiz.exitPractice')} onClick={()=>void close()}><ArrowLeft size={20} aria-hidden="true"/></Button><span className="tikquiz-logo"><TickQuizBrand/></span></div></div>}
   <div className="quiz-player-heading"><div className="quiz-practice-heading-copy"><Title className="quiz-practice-title" title={attempt?.title||t('quiz.practiceTitle')}>{attempt?.title||t('quiz.practiceTitle')}</Title><div className="quiz-practice-meta">{attempt?.creator&&<p className="quiz-creator" title={t('quiz.creator')+' · '+attempt.creator}>{t('quiz.creator')} · {attempt.creator}</p>}{answering&&<span className="quiz-autosave" role="status" aria-label={saveLabel} title={saveLabel}><Save size={14} aria-hidden="true"/>{busy?label('保存中…','Saving…'):dirty?label('未保存','Unsaved'):label('已保存','Saved')}</span>}</div></div>{!page&&<div className="quiz-player-heading-actions">{answering&&<QuizSoundMenu language={language} audio={audio}/>}<Button type="button" variant="ghost" className="quiz-player-close" aria-label={t(attempt?.assignmentId?'quiz.backToHub':'quiz.exitPractice')} disabled={busy} onClick={()=>void close()}><X size={20} aria-hidden="true"/></Button></div>}</div>{!page&&<DialogDescription className="sr-only">{t('quiz.practiceTitle')}</DialogDescription>}
+  {page&&answering&&<div className="tikquiz-audio-bar"><QuizSoundMenu language={language} audio={audio} showTrack/></div>}
   {loading&&<p role="status">{t('quiz.loading')}</p>}
   {error&&<div className="quiz-error" role="alert" data-error-popup-ignore><p>{t(error==='quiz.conflict'?'quiz.attemptConflict':error)}</p>{dirty&&<p>{label('未保存的作答仍保留在这里。','Your unsaved answers are still here.')}</p>}<Button variant="outline" onClick={retry} disabled={busy}>{t(blockedRefresh(error)?'quiz.refresh':'quiz.retry')}</Button>{dirty&&<Button variant="ghost" disabled={busy} onClick={()=>setRecoveryConfirm('leave')}>{label('离开选项','Leave options')}</Button>}</div>}
   {attempt&&!loading&&<>
