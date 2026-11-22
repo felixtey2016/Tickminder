@@ -70,33 +70,37 @@ function ReviewOriginalQuestion({question,answer,result,status,language}:{
  question:QuizQuestion;answer:QuizAnswer|undefined;result:PracticeResult|undefined;
  status:PracticeResult['status']|undefined;language:QuizReadingLanguage;
 }){
- const selectedIndex=question.options.findIndex(option=>option.id===answer?.optionId);
- const selected=question.options[selectedIndex];
  const correctOptionId=result?.key?.correctOptionId??result?.correctOptionId;
- const correctIndex=question.options.findIndex(option=>option.id===correctOptionId);
- const expected=question.options.length?(correctIndex>=0?String.fromCharCode(65+correctIndex):''):resultAnswer(question,result,language);
- const value=selected?quizReadText(selected.text,language):answerText(question,answer,language);
+ const expected=question.options.length?'':resultAnswer(question,result,language);
  const tone=filled(answer)&&(status==='correct'||status==='incorrect')?' is-'+status:'';
  return <div className="quiz-review-original">
   <h4>{t('quiz.originalQuestion')}</h4>
   <QuizMath text={quizReadText(question.prompt,language)}/>
   {question.imageId&&<QuizPicture id={question.imageId} alt={t('quiz.promptImage')}/>}
   {question.extraImageIds.map(id=><QuizPicture key={id} id={id} alt={t('quiz.promptImage')}/>)}
-  <dl className="quiz-review-answers">
+  {question.options.length>0?<ol className="quiz-review-options">{question.options.map((option,index)=>{
+   const selected=option.id===answer?.optionId;
+   const revealCorrect=status==='incorrect'&&option.id===correctOptionId;
+   const letter=String.fromCharCode(65+index);
+   return <li key={option.id} className={'quiz-review-option'+(selected?tone:revealCorrect?' is-correct':'')}>
+    <div className="quiz-review-option-text"><strong>{letter}.</strong><QuizMath text={quizReadText(option.text,language)}/></div>
+    {option.imageId&&<QuizPicture id={option.imageId} alt={t('quiz.optionImage')+' '+letter}/>}
+    {selected&&<span className="quiz-review-selected-mark">{t('quiz.reviewYourAnswer')}</span>}
+    {revealCorrect&&<span className="quiz-review-correct-mark"><Check size={14} aria-hidden="true"/>{t('quiz.reviewCorrectAnswer')}</span>}
+   </li>;
+  })}</ol>:<dl className="quiz-review-answers">
    <div className="quiz-review-answer-row">
     <dt>{t('quiz.reviewYourAnswer')}</dt>
     <dd className={'quiz-review-submitted-answer'+tone}>
-     {selected&&<strong>{String.fromCharCode(65+selectedIndex)}. </strong>}
-     {value&&<QuizMath text={value}/>}
-     {!selected&&answer?.text&&answer.unit&&<> <QuizMath text={answer.unit}/></>}
-     {selected?.imageId&&<QuizPicture id={selected.imageId} alt={t('quiz.optionImage')+' '+String.fromCharCode(65+selectedIndex)}/>}
+     <QuizMath text={answerText(question,answer,language)}/>
+     {answer?.text&&answer.unit&&<> <QuizMath text={answer.unit}/></>}
     </dd>
    </div>
    {expected&&<div className="quiz-review-answer-row">
     <dt>{t('quiz.reviewCorrectAnswer')}</dt>
     <dd className="quiz-review-correct-answer"><QuizMath text={expected}/></dd>
    </div>}
-  </dl>
+  </dl>}
  </div>;
 }
 

@@ -259,11 +259,14 @@ try{
     await solution.locator('summary').click();
     const original=solution.locator('.quiz-review-original');
     await original.getByText('Question 1',{exact:true}).waitFor();
-    const submitted=original.locator('.quiz-review-submitted-answer');
+    const options=original.locator('.quiz-review-options > li');
+    check(await options.count()===4,'the expanded review includes all original options');
+    const submitted=options.filter({has:p.getByText('Your answer',{exact:true})});
     check((await submitted.innerText()).startsWith(wrongFirst?'B.':'A.'),'the review shows the learner\'s original choice');
     check(await submitted.evaluate((el,wrong)=>{const sample=document.createElement('span');sample.style.color=wrong?'var(--ui-danger-text)':'var(--ui-success-text)';el.append(sample);const matches=getComputedStyle(el).color===getComputedStyle(sample).color;sample.remove();return matches;},wrongFirst),'the original answer uses the correct feedback color');
-    check(await original.locator('.quiz-review-correct-answer').innerText()==='A','the review only identifies the correct option by its letter');
-    check(await original.locator('.quiz-review-answer-row').count()===2&&(await original.getByText('Answer D',{exact:true}).count())===0,'unused options are omitted from the expanded review');
+    check(await submitted.evaluate((el,wrong)=>el.classList.contains(wrong?'is-incorrect':'is-correct'),wrongFirst),'the learner\'s choice has the matching outcome style');
+    check(await options.first().getByText('Correct answer',{exact:true}).isVisible()===wrongFirst,'only an incorrect response adds a marker to the right choice');
+    check(await options.last().getByText('Answer D',{exact:true}).isVisible(),'unselected options are still readable');
     await solution.locator('.quiz-solution-steps').getByText('Worked example for the original question.').waitFor();
    }
    const streak=results.getByText(/Longest streak/);
