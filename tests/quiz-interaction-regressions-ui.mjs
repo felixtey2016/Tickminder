@@ -37,6 +37,7 @@ async function open(params={},options={}){
    return start.apply(this,args);
   };
   if(setting==='muted')localStorage.setItem('tickminder.quiz.sound.fixture-user',JSON.stringify({music:true,effects:false}));
+  if(setting==='zero')localStorage.setItem('tickminder.quiz.sound.fixture-user',JSON.stringify({music:true,effects:true,effectsVolume:0}));
  },options.soundProbe);
  const errors=[],writes=[],shareTargetQueries=[],saveStarted=deferred(),releaseSave=deferred(),draftStarted=deferred(),releaseDraft=deferred(),checkStarted=deferred();
  let attempt=structuredClone(initialAttempt),draft=structuredClone(quiz),saveFailed=false,shareFailed=false;
@@ -183,27 +184,36 @@ try{
    await p.waitForFunction(()=>window.fixtureSounds.length===1);
    const correct=await p.evaluate(()=>window.fixtureSounds[0]);
    check(Math.abs(correct.duration-.5)<.001,'server-confirmed correct choice plays the supplied correct WAV');
-   check(Math.abs(correct.gain-.07)<.001,'correct feedback is attenuated before it reaches the speakers');
+   check(Math.abs(correct.gain-.07)<.001,'correct feedback uses the balanced default volume');
+   await speaker.tap();
+   const musicVolume=p.getByRole('slider',{name:'Background music volume'});
+   const effectsVolume=p.getByRole('slider',{name:'Answer sounds volume'});
+   check(await musicVolume.inputValue()==='24'&&await effectsVolume.inputValue()==='25','volume controls start at the previous balanced settings');
+   await musicVolume.fill('31');
+   await effectsVolume.fill('50');
+   check(await music.getAttribute('aria-checked')==='false','adjusting volume does not turn music back on');
+   await speaker.tap();
    await p.getByRole('button',{name:'Next question',exact:true}).tap();
    await p.locator('.quiz-option-button').nth(1).tap();
    await p.waitForFunction(()=>window.fixtureSounds.length===2);
    const incorrect=await p.evaluate(()=>window.fixtureSounds[1]);
    check(Math.abs(incorrect.duration-.46)<.001,'server-confirmed incorrect choice plays the supplied wrong WAV');
-   check(Math.abs(incorrect.gain-.055)<.001,'the louder incorrect waveform receives additional attenuation');
+   check(Math.abs(incorrect.gain-.11)<.001,'changing the answer sounds volume changes the gain applied to the next cue');
    await speaker.tap();
    await effects.tap();
    await p.reload();
    await speaker.tap();
    check(await music.getAttribute('aria-checked')==='false'&&await effects.getAttribute('aria-checked')==='false','both preferences survive reopening the quiz');
+   check(await musicVolume.inputValue()==='31'&&await effectsVolume.inputValue()==='50','both volume levels survive reopening the quiz');
    check((await p.evaluate(()=>window.fixtureSounds.length))===0,'resuming a graded question does not replay effects');
    await f.close();
   }
-  for(const options of [{soundProbe:'muted'},{soundProbe:'record',deferred:true}]){
+  for(const options of [{soundProbe:'muted'},{soundProbe:'zero'},{soundProbe:'record',deferred:true}]){
    const f=await open({mode:'practice',lang:'en'},options),p=f.page;
    await p.locator('.quiz-option-button').first().click();
    await (options.deferred?f.saveStarted:f.checkStarted);
    await p.waitForFunction(()=>document.querySelector('.quiz-autosave')?.textContent?.includes('Saved'));
-   check((await p.evaluate(()=>window.fixtureSounds.length))===0,'muted or deferred answering does not play a correctness cue');
+   check((await p.evaluate(()=>window.fixtureSounds.length))===0,'muted, zero-volume, or deferred answering does not play a correctness cue');
    await f.close();
   }
   {

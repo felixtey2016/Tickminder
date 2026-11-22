@@ -120,7 +120,7 @@ export default function TikQuizEntry({initialPath, account, language, changeLang
   const catalogue = can('quizzes.view');
   const assignments = role !== 'parent' && can('quizAssignments.view');
   const history = catalogue || assignments;
-  const defaultTab = assignments ? 'assigned' : 'bank';
+  const defaultTab = catalogue || !assignments ? 'bank' : 'assigned';
   const url = new URL(location.href, window.location.origin);
   const route = tikQuizRoute(url.pathname) || {section: 'home'};
   const section = route.section === 'home' ? defaultTab : route.section;
@@ -143,10 +143,10 @@ export default function TikQuizEntry({initialPath, account, language, changeLang
     } else go(fallback, {replace: true});
   }
   const nav = [
-    {section: 'assigned', label: author ? label('已布置', 'Assigned work') : t('quiz.assignedTab'), visible: assignments},
-    {section: 'bank', label: t('quiz.catalogTab'), visible: catalogue},
-    {section: 'mine', label: t('quiz.mineTab'), visible: catalogue && author},
+    {section: 'bank', label: 'Quiz', visible: catalogue},
     {section: 'history', label: author ? label('作答记录', 'Answer records') : t('quiz.historyTab'), visible: history},
+    {section: 'assigned', label: label('测验任务', 'Assignments'), visible: assignments},
+    {section: 'mine', label: t('quiz.mineTab'), visible: catalogue && author},
   ] as const;
   function activeContent() {
     if ((section === 'play' || section === 'results') && route.id) {

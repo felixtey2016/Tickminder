@@ -15,7 +15,7 @@ export const QUIZ_MUSIC_TRACKS = [
 type Track = typeof QUIZ_MUSIC_TRACKS[number];
 export type QuizMusicId = Track['id'];
 type Status = 'off' | 'paused' | 'loading' | 'playing' | 'blocked' | 'error';
-type Settings = {enabled: boolean; repeat: boolean};
+type Settings = {enabled: boolean; repeat: boolean; volume: number};
 type Controls = {
   sync: (settings: Settings) => void;
   select: (id: QuizMusicId) => void;
@@ -23,11 +23,11 @@ type Controls = {
 };
 const idle = {track: null, status: 'off'} as const;
 
-export function useQuizMusic(session: string | null, enabled: boolean, repeat: boolean) {
+export function useQuizMusic(session: string | null, enabled: boolean, repeat: boolean, volume: number) {
   const [view, setView] = useState<{track: Track | null; status: Status}>(idle);
   const controls = useRef<Controls | null>(null);
-  const settings = useRef<Settings>({enabled, repeat});
-  settings.current = {enabled, repeat};
+  const settings = useRef<Settings>({enabled, repeat, volume});
+  settings.current = {enabled, repeat, volume};
 
   useEffect(() => {
     if (!session) {
@@ -37,7 +37,11 @@ export function useQuizMusic(session: string | null, enabled: boolean, repeat: b
 
     const audio = document.createElement('audio');
     audio.preload = 'none';
-    audio.volume = 0.24;
+    audio.volume = 0.5;
+    // Some mobile browsers ignore HTML media volume. Stream through a gain node there.
+    const needsGain = audio.volume !== 0.5;
+    let output: {context: AudioContext; gain: GainNode} | undefined;
+    let level = 0;
     const played = new Set<QuizMusicId>();
     let track: Track | null = null;
     let status: Status = 'off';
@@ -69,9 +73,24 @@ export function useQuizMusic(session: string | null, enabled: boolean, repeat: b
       load(remaining[Math.floor(Math.random() * remaining.length)] || QUIZ_MUSIC_TRACKS[0]);
     }
 
-    function start() {
-      if (!isEnabled || disposed || document.hidden || status === 'loading' || status === 'playing') return;
+    function start(fromGesture = false) {
+      if (!isEnabled || !level || disposed || document.hidden || status === 'loading' || status === 'playing') return;
       if (!track) shuffle();
+      if (needsGain && !output) {
+        if (!fromGesture) { publish('blocked'); return; }
+        const Audio = window.AudioContext ?? (window as Window & {webkitAudioContext?: typeof AudioContext}).webkitAudioContext;
+        if (Audio) {
+          const context = new Audio();
+          try {
+            const gain = context.createGain();
+            gain.gain.value = level;
+            gain.connect(context.destination);
+            context.createMediaElementSource(audio).connect(gain);
+            output = {context, gain};
+          } catch { void context.close().catch(() => {}); }
+        }
+      }
+      if (output && output.context.state !== 'running') void output.context.resume().catch(() => {});
       const requested = ++generation;
       publish('loading');
       void audio.play().then(() => {
@@ -88,12 +107,16 @@ export function useQuizMusic(session: string | null, enabled: boolean, repeat: b
       audio.pause();
     }
 
-    function sync(next: Settings) {
-      const enabledChanged = isEnabled !== next.enabled;
+    function sync(next: Settings, fromGesture = false) {
+      const wasPlayable = isEnabled && level > 0;
       isEnabled = next.enabled;
+      level = next.volume / 100;
       audio.loop = next.repeat;
-      if (!enabledChanged) return;
-      if (isEnabled) start();
+      if (output) output.gain.gain.value = level;
+      else if (!needsGain) audio.volume = level;
+      const playable = isEnabled && level > 0;
+      if (wasPlayable === playable) return;
+      if (playable) start(fromGesture);
       else pause('off');
     }
 
@@ -102,12 +125,13 @@ export function useQuizMusic(session: string | null, enabled: boolean, repeat: b
       if (!next) return;
       isEnabled = true;
       if (track?.id !== id || status === 'error' || audio.ended) load(next);
-      start();
+      if (level) start(true);
+      else publish('off');
     }
 
     function resume() {
       if (status === 'error' && track) load(track);
-      start();
+      start(true);
     }
 
     function advance() {
@@ -132,7 +156,9 @@ export function useQuizMusic(session: string | null, enabled: boolean, repeat: b
       else onPageShow();
     }
     function onGesture(event: MouseEvent) {
-      if (event.isTrusted && status === 'blocked') start();
+      if (!event.isTrusted) return;
+      if (status === 'blocked') start(true);
+      else if (status === 'playing' && output && output.context.state !== 'running') void output.context.resume().catch(() => {});
     }
 
     audio.addEventListener('ended', advance);
@@ -142,7 +168,7 @@ export function useQuizMusic(session: string | null, enabled: boolean, repeat: b
     document.addEventListener('click', onGesture);
     window.addEventListener('pagehide', onPageHide);
     window.addEventListener('pageshow', onPageShow);
-    controls.current = {sync, select, resume};
+    controls.current = {sync: next => sync(next, true), select, resume};
     setView(idle);
     sync(settings.current);
 
@@ -160,12 +186,13 @@ export function useQuizMusic(session: string | null, enabled: boolean, repeat: b
       audio.pause();
       audio.removeAttribute('src');
       audio.load();
+      if (output) void output.context.close().catch(() => {});
     };
   }, [session]);
 
   useEffect(() => {
-    controls.current?.sync({enabled, repeat});
-  }, [enabled, repeat]);
+    controls.current?.sync({enabled, repeat, volume});
+  }, [enabled, repeat, volume]);
 
   return {
     ...view,

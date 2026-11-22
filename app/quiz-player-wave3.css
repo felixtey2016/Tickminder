@@ -12,7 +12,12 @@
  background:var(--ui-surface);color:var(--ui-text);border-color:var(--ui-border);border-radius:8px;
 }
 .quiz-sound-setting {display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;padding:8px 0;cursor:pointer;}
-.quiz-sound-setting+.quiz-sound-setting {border-top:1px solid var(--ui-border);}
+.quiz-sound-channel {padding-bottom:4px;}
+.quiz-sound-channel+.quiz-sound-channel {border-top:1px solid var(--ui-border);}
+.quiz-sound-volume {display:grid;grid-template-columns:minmax(0,1fr) 4ch;align-items:center;gap:10px;}
+.quiz-sound-volume input[type=range] {width:100%;min-height:36px;margin:0;accent-color:var(--ui-accent);cursor:pointer;}
+.quiz-sound-volume input[type=range]:focus-visible {outline:2px solid var(--ui-accent);outline-offset:1px;border-radius:4px;}
+.quiz-sound-volume span {color:var(--ui-muted);text-align:end;font-size:13px;font-variant-numeric:tabular-nums;}
 .quiz-sound-setting small {display:block;margin-top:3px;color:var(--ui-muted);font-size:12px;}
 .quiz-player-wave3 .quiz-player-heading h2 {font-size:20px;line-height:1.4;font-weight:650;}
 .quiz-player-wave3 .quiz-practice-title[data-slot="dialog-title"],.quiz-player-wave3 .quiz-practice-meta .quiz-creator {white-space:normal;overflow:visible;overflow-wrap:anywhere;}

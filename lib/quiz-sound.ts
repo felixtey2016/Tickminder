@@ -7,11 +7,15 @@ const clips={correct:'/quiz-audio/correct.wav',incorrect:'/quiz-audio/incorrect.
 type Feedback=keyof typeof clips;
 // Balance the two cues with each other and with the background music.
 const feedbackGain:Record<Feedback,number>={correct:0.07,incorrect:0.055};
-type Preferences={music:boolean;effects:boolean;repeat:boolean};
-const defaults:Preferences={music:true,effects:true,repeat:false};
+type SoundChannel='music'|'effects';
+type Preferences={music:boolean;effects:boolean;repeat:boolean;musicVolume:number;effectsVolume:number};
+const defaults:Preferences={music:true,effects:true,repeat:false,musicVolume:24,effectsVolume:25};
+const volumePercent=(value:unknown,fallback:number)=>typeof value==='number'&&Number.isFinite(value)?Math.max(0,Math.min(100,Math.round(value))):fallback;
+const effectLevel=(feedback:Feedback,volume:number)=>feedbackGain[feedback]*volume/defaults.effectsVolume;
 type Player={
  context:AudioContext;
  gain:GainNode;
+ feedback?:Feedback;
  abort:AbortController;
  buffers:Partial<Record<Feedback,Promise<AudioBuffer|null>>>;
  source:AudioBufferSourceNode|null;
@@ -21,7 +25,11 @@ type Player={
 function readPreferences(key:string):Preferences{
  try{
   const saved=JSON.parse(localStorage.getItem(key)||'null');
-  return {music:saved?.music!==false,effects:saved?.effects!==false,repeat:saved?.repeat===true};
+  return {
+   music:saved?.music!==false,effects:saved?.effects!==false,repeat:saved?.repeat===true,
+   musicVolume:volumePercent(saved?.musicVolume,defaults.musicVolume),
+   effectsVolume:volumePercent(saved?.effectsVolume,defaults.effectsVolume),
+  };
  }catch{return defaults;}
 }
 
@@ -48,7 +56,7 @@ export function useQuizSound(accountId:string|undefined,attemptId?:string){
  const player=useRef<Player|null>(null);
  const [saved,setSaved]=useState<{key:string|null;preferences:Preferences}>({key:null,preferences:defaults});
  const preferences=saved.key===key?saved.preferences:defaults;
- const music=useQuizMusic(key&&key===saved.key&&attemptId?key+':'+attemptId:null,preferences.music,preferences.repeat);
+ const music=useQuizMusic(key&&key===saved.key&&attemptId?key+':'+attemptId:null,preferences.music,preferences.repeat,preferences.musicVolume);
  const current=useRef(defaults);
 
  function release(){
@@ -70,11 +78,19 @@ export function useQuizSound(accountId:string|undefined,attemptId?:string){
   if(key)try{localStorage.setItem(key,JSON.stringify(next));}catch{/* Keep the preference for this session. */}
  }
 
- function change(setting:keyof Preferences,enabled:boolean){
+ function change(setting:SoundChannel|'repeat',enabled:boolean){
   const next={...current.current,[setting]:enabled};
   savePreferences(next);
-  if(setting==='music'||setting==='repeat')music.sync({enabled:next.music,repeat:next.repeat});
+  if(setting==='music'||setting==='repeat')music.sync({enabled:next.music,repeat:next.repeat,volume:next.musicVolume});
   if(setting==='effects'&&!enabled)release();
+ }
+
+ function changeVolume(channel:SoundChannel,value:number){
+  const setting=channel==='music'?'musicVolume':'effectsVolume';
+  const next={...current.current,[setting]:volumePercent(value,current.current[setting])};
+  savePreferences(next);
+  if(channel==='music')music.sync({enabled:next.music,repeat:next.repeat,volume:next.musicVolume});
+  else if(player.current?.feedback)player.current.gain.gain.value=effectLevel(player.current.feedback,next.effectsVolume);
  }
 
  function selectTrack(id:QuizMusicId){
@@ -84,7 +100,7 @@ export function useQuizSound(accountId:string|undefined,attemptId?:string){
 
  // Call from the answer gesture, before the asynchronous grading request.
  function prepareEffect(){
-  if(!current.current.effects)return;
+  if(!current.current.effects||!current.current.effectsVolume)return;
   try{
    const Audio=window.AudioContext??(window as Window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext;
    if(!Audio)return;
@@ -103,15 +119,16 @@ export function useQuizSound(accountId:string|undefined,attemptId?:string){
 
  async function playEffect(feedback:Feedback){
   const audio=player.current;
-  if(!audio||!current.current.effects||document.hidden)return;
+  if(!audio||!current.current.effects||!current.current.effectsVolume||document.hidden)return;
   const playbackId=++audio.playbackId;
   const buffer=await loadClip(audio,feedback);
-  if(!buffer||player.current!==audio||playbackId!==audio.playbackId||audio.context.state!=='running'||document.hidden)return;
+  if(!buffer||player.current!==audio||playbackId!==audio.playbackId||audio.context.state!=='running'||!current.current.effectsVolume||document.hidden)return;
   try{
    audio.source?.stop();
    const source=audio.context.createBufferSource();
    source.buffer=buffer;
-   audio.gain.gain.value=feedbackGain[feedback];
+   audio.feedback=feedback;
+   audio.gain.gain.value=effectLevel(feedback,current.current.effectsVolume);
    source.connect(audio.gain);
    source.onended=()=>{source.disconnect();if(audio.source===source)audio.source=null;};
    source.start();
@@ -119,5 +136,5 @@ export function useQuizSound(accountId:string|undefined,attemptId?:string){
   }catch{/* A sound can be skipped without affecting scoring. */}
  }
 
- return {preferences,change,prepareEffect,playEffect,music,selectTrack};
+ return {preferences,change,changeVolume,prepareEffect,playEffect,music,selectTrack};
 }
