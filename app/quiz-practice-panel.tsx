@@ -49,7 +49,7 @@ function QuizTimerFields({mode,minutes,onModeChange,onMinutesChange}:{
 }
 
 export function QuizPracticeStart({source,onClose,onOpen}:{source:PracticeSource;onClose:()=>void;onOpen:(id:string)=>void}){
- const [immediate,setImmediate]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ const [immediate,setImmediate]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const [timerMode,setTimerMode]=useState<TimerMode>('untimed'),[minutes,setMinutes]=useState('30');
  const operation=useRef<Record<string,unknown>|null>(null),a=source.assignment;
  async function start(){
@@ -72,7 +72,7 @@ export function QuizPracticeStart({source,onClose,onOpen}:{source:PracticeSource
  const feedback=source.assignmentId?Boolean(source.immediate):immediate;
  return <Dialog open onOpenChange={open=>{if(!open&&!busy)onClose();}}><DialogContent className="quiz-practice-dialog quiz-player-wave3" overlayClassName="content-edit-overlay"><DialogTitle>{source.assignmentId?(getLanguage()==='zh'?'作答须知':'Before you begin'):t('quiz.practiceSettings')}</DialogTitle><DialogDescription>{source.title}</DialogDescription>
   {a&&<dl className="quiz-assignment-meta"><div><dt>{t('quiz.assignmentKind')}</dt><dd>{t('quiz.kind.'+a.kind)}</dd></div><div><dt>{t('quiz.openAt')}</dt><dd>{a.startsAt?displayDate(a.startsAt,getLanguage()):t('quiz.noOpenDate')}</dd></div><div><dt>{t('quiz.dueAt')}</dt><dd>{a.effectiveDueAt?displayDate(a.effectiveDueAt,getLanguage()):t('quiz.noDueDate')}</dd></div><div><dt>{t('quiz.assignmentTimer')}</dt><dd>{a.timeLimitSeconds===null?t('quiz.untimed'):a.timeLimitSeconds/60+' '+t('quiz.minutes')}</dd></div><div><dt>{t('quiz.attemptLimit')}</dt><dd>{a.remainingAttempts===null?t('quiz.unlimitedAttempts'):t('quiz.attemptsRemaining').replace('{count}',String(a.remainingAttempts))}</dd></div></dl>}
-  {source.assignmentId?<p className="quiz-feedback-mode">{t(feedback?'quiz.feedbackImmediate':'quiz.feedbackDeferred')}</p>:<fieldset className="quiz-practice-mode"><legend>{t('quiz.feedbackMode')}</legend><label className="quiz-check"><input type="radio" name="practice-feedback" checked={!immediate} disabled={Boolean(operation.current)} onChange={()=>setImmediate(false)}/>{t('quiz.feedbackEnd')}</label><label className="quiz-check"><input type="radio" name="practice-feedback" checked={immediate} disabled={Boolean(operation.current)} onChange={()=>setImmediate(true)}/>{t('quiz.feedbackImmediate')}</label></fieldset>}
+  {source.assignmentId?<p className="quiz-feedback-mode">{t(feedback?'quiz.feedbackImmediate':'quiz.feedbackDeferred')}</p>:<fieldset className="quiz-practice-mode"><legend>{t('quiz.feedbackMode')}</legend><label className="quiz-check"><input type="radio" name="practice-feedback" checked={immediate} disabled={Boolean(operation.current)} onChange={()=>setImmediate(true)}/>{t('quiz.feedbackImmediate')}</label><label className="quiz-check"><input type="radio" name="practice-feedback" checked={!immediate} disabled={Boolean(operation.current)} onChange={()=>setImmediate(false)}/>{t('quiz.feedbackEnd')}</label></fieldset>}
   {!source.assignmentId&&<details className="quiz-allocation-options">
    <summary>{t('quiz.advancedOptions')}</summary>
    <fieldset className="quiz-allocation-fields" disabled={busy||Boolean(operation.current)}>

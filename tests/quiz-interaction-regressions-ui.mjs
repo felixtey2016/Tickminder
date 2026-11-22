@@ -48,7 +48,9 @@ async function open(params={},options={}){
    options:content.questions[0].options.map((option,position)=>({...option,id:'streak-option-'+index+'-'+position})),
   }));
   attempt.content.questions=questions;
-  attempt.questionCount=attempt.totalScore=attempt.rawTotalScore=questions.length;
+  if(options.weighted)questions[0].points=2;
+  attempt.questionCount=questions.length;
+  attempt.totalScore=attempt.rawTotalScore=questions.reduce((sum,question)=>sum+question.points,0);
   const checked=questions.slice(0,options.resumeStreak||0);
   attempt.checkedQuestionIds=checked.map(question=>question.id);
   attempt.answers=Object.fromEntries(checked.map(question=>[question.id,{optionId:question.options[0].id}]));
@@ -136,7 +138,7 @@ async function editDraft(f,lang){const p=f.page;await p.getByTestId('quiz-tab-mi
 try{
  await build({absWorkingDir:root,stdin:{contents:entry,resolveDir:root,sourcefile:'quiz-interactions-fixture.tsx',loader:'tsx'},bundle:true,platform:'browser',format:'esm',jsx:'automatic',outfile:path.join(temporary,'ui.js'),assetNames:'fixture-assets/[name]-[hash]',loader:{'.woff':'file','.woff2':'file','.ttf':'file'},alias:{'@':root},logLevel:'silent'});
  const globals=await postcss([(tw.default||tw)({base:root})]).process(fs.readFileSync(path.join(root,'app/globals.css'),'utf8'),{from:path.join(root,'app/globals.css')}),css=globals.css+'\n'+fs.readFileSync(path.join(temporary,'ui.css'),'utf8');
- server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http://localhost').pathname;if(pathname==='/ui.js'){res.setHeader('content-type','text/javascript');res.end(fs.readFileSync(path.join(temporary,'ui.js')));return;}if(pathname==='/ui.css'){res.setHeader('content-type','text/css');res.end(css);return;}if(pathname.startsWith('/fixture-assets/')){const file=path.resolve(temporary,'.'+pathname);if(file.startsWith(temporary+path.sep)&&fs.existsSync(file)){res.end(fs.readFileSync(file));return;}}if(/^\/quiz-audio\/(correct|incorrect)\.wav$/.test(pathname)){res.setHeader('content-type','audio/wav');res.end(fs.readFileSync(path.join(root,'public',pathname)));return;}if(/^\/tickquiz-streak\/(3|5|10|perfect)\.webp$/.test(pathname)){res.setHeader('content-type','image/webp');res.end(fs.readFileSync(path.join(root,'public',pathname)));return;}if(pathname.includes('.')){res.writeHead(404);res.end();return;}res.setHeader('content-type','text/html');res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui.css"></head><body><div id="root"></div><script type="module" src="/ui.js"></script></body></html>');});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));origin='http://127.0.0.1:'+server.address().port;
+ server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http://localhost').pathname;if(pathname==='/ui.js'){res.setHeader('content-type','text/javascript');res.end(fs.readFileSync(path.join(temporary,'ui.js')));return;}if(pathname==='/ui.css'){res.setHeader('content-type','text/css');res.end(css);return;}if(pathname.startsWith('/fixture-assets/')){const file=path.resolve(temporary,'.'+pathname);if(file.startsWith(temporary+path.sep)&&fs.existsSync(file)){res.end(fs.readFileSync(file));return;}}if(/^\/quiz-audio\/(correct|incorrect)\.wav$/.test(pathname)){res.setHeader('content-type','audio/wav');res.end(fs.readFileSync(path.join(root,'public',pathname)));return;}if(/^\/tickquiz-streak\/(3|5|10|perfect|correct)\.webp$/.test(pathname)){res.setHeader('content-type','image/webp');res.end(fs.readFileSync(path.join(root,'public',pathname)));return;}if(pathname.includes('.')){res.writeHead(404);res.end();return;}res.setHeader('content-type','text/html');res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui.css"></head><body><div id="root"></div><script type="module" src="/ui.js"></script></body></html>');});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));origin='http://127.0.0.1:'+server.address().port;
  browser=await chromium.launch({headless:true,...process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{},args:['--no-sandbox']});
  // Slow autosave is held by a deterministic gate. A physical tap does not wait
  // for disabled controls, unlike locator.click(), reproducing the user's tap.
@@ -197,6 +199,7 @@ try{
    check(await overlay.count()===0,'resuming does not replay old milestones');
    await choose(0);
    await overlay.getByText('Congratulations! 3 in a row!').waitFor();
+   await p.locator('.quiz-correct-mascot[src$="/correct.webp"]').waitFor();
    const layer=await overlay.evaluate(el=>{const box=el.getBoundingClientRect();return {viewport:box.y===0&&box.height===innerHeight&&box.width===innerWidth,scrolled:scrollY>0,pointers:getComputedStyle(el).pointerEvents};});
    check(layer.viewport&&layer.scrolled&&layer.pointers==='none','the celebration covers the current viewport without intercepting input after scrolling');
    await overlay.locator('img:not([hidden])').waitFor();
@@ -225,18 +228,47 @@ try{
    check(await overlay.locator('.quiz-streak-confetti span').count()===14,'ten correct answers show falling confetti on desktop');
    await f.close();
   }
-  for(const releaseAnswers of [true,false]){
-   const f=await open({mode:'practice',lang:'en',layout:'page'},{self:true,deferred:true,streakQuestions:3,releaseAnswers}),p=f.page;
+  {
+   const f=await open({mode:'practice',lang:'en',layout:'page'},{self:true,streakQuestions:12,resumeStreak:10}),p=f.page;
+   const overlay=p.locator('.quiz-streak-card-compact');
+   await p.locator('.quiz-option-button').first().click();
+   await overlay.getByText('Congratulations! 11 in a row!').waitFor();
+   check(await overlay.locator('img').getAttribute('src')==='/tickquiz-streak/correct.webp','above ten streaks reuse the answer mascot');
+   await p.getByRole('button',{name:'Next question',exact:true}).click();
+   await p.locator('.quiz-option-button').first().click();
+   await overlay.getByText('Congratulations! 12 in a row!').waitFor();
+   check(await overlay.locator('img').getAttribute('src')==='/tickquiz-streak/correct.webp','the exact new streak appears with the same mascot');
+   check(await p.locator('.quiz-completion-overlay .quiz-streak-confetti span').count()===38,'a final milestone shares the larger completion confetti');
+   await f.close();
+  }
+  for(const [releaseAnswers,weighted] of [[true,false],[false,false],[true,true]]){
+   const f=await open({mode:'practice',lang:'en',layout:'page'},{self:true,deferred:true,streakQuestions:3,releaseAnswers,weighted,solutions:{'streak-question-0':'Worked example for the original question.'}}),p=f.page;
    for(let n=0;n<3;n++){
     await p.locator('.quiz-option-button').first().click();
     if(n<2)await p.getByRole('button',{name:'Next question',exact:true}).click();
    }
    const results=p.locator('.quiz-result-summary');await results.waitFor();
-   check(await p.locator('.quiz-streak-overlay').count()===0,'deferred feedback never plays a mid-answer celebration');
+   check(await p.locator('.quiz-streak-card').count()===0,'deferred feedback does not show a mid-answer celebration');
+   check(await p.locator('.quiz-completion-overlay .quiz-streak-confetti span').count()===38,'new submissions receive completion confetti regardless of result release');
+   const ring=results.getByRole('img',{name:/3/});
+   check(await ring.isVisible()===releaseAnswers,'correctness ring follows result release');
+   if(releaseAnswers){
+    check(await results.getByText(/^Score/).isVisible()===weighted,'a separate score is only displayed when it adds information');
+    const solution=p.locator('.quiz-question-results details').first();
+    check(await solution.locator('.quiz-review-original').count()===0,'the original question is only rendered when the review expands');
+    await solution.locator('summary').click();
+    const original=solution.locator('.quiz-review-original');
+    await original.getByText('Question 1',{exact:true}).waitFor();
+    check(await original.locator('.quiz-review-options > li').count()===4,'the expanded solution includes the stem and all original options');
+    await solution.locator('.quiz-solution-steps').getByText('Worked example for the original question.').waitFor();
+   }
    const streak=results.getByText(/Longest streak/);
    check(await streak.isVisible()===releaseAnswers,'results show a streak only after individual answers are released');
    check(await results.getByText('All answers correct!').isVisible()===releaseAnswers,'the perfect-score art follows the same release policy');
    if(releaseAnswers)check((await streak.innerText()).includes('3 correct in a row'),'the results summarize the complete streak');
+   await p.reload();
+   await p.locator('.quiz-result-summary').waitFor();
+   check(await p.locator('.quiz-completion-overlay').count()===0,'reload does not replay completion confetti');
    await f.close();
   }
   for(const limit of [null,7]){
@@ -246,6 +278,8 @@ try{
    const timer=dialog.getByRole('combobox',{name:'Attempt time limit'});
    await dialog.waitFor();
    check(!await timer.isVisible(),'the practice timer is collapsed by default');
+   const feedback=dialog.getByRole('radio');
+   check(await feedback.first().isChecked()&&(await feedback.first().getAttribute('name'))==='practice-feedback','the first practice feedback option is selected by default');
    if(limit){
     await dialog.getByText('Advanced options',{exact:true}).tap();
     check(await timer.inputValue()==='untimed','the default practice has no countdown');
@@ -259,7 +293,7 @@ try{
    }
    await dialog.getByRole('button',{name:'Start answering'}).tap();
    await dialog.waitFor({state:'hidden'});
-   check(f.writes[0].action==='start'&&f.writes[0].timeLimitSeconds===(limit?limit*60:null),'starting sends the chosen self-practice time limit');
+   check(f.writes[0].action==='start'&&f.writes[0].immediate===true&&f.writes[0].timeLimitSeconds===(limit?limit*60:null),'starting sends the chosen self-practice time limit');
    await f.close();
   }
   {
@@ -517,7 +551,8 @@ try{
    await p.locator('.quiz-result-summary').waitFor();
    const overview=p.locator('.quiz-question-results');
    if(releaseAnswers){
-    check((await p.locator('.quiz-correct-count').innerText())==='1 / 2 questions correct','completed practice shows count of correct questions');
+    check(await p.locator('.quiz-correct-ring').getAttribute('aria-label')==='1 / 2 questions correct','completed practice shows an accessible count of correct questions');
+    check(await p.locator('.quiz-correct-ring-fill').evaluate(circle=>circle.style.getPropertyValue('--quiz-ring-offset'))==='50','the ring fills halfway for one correct answer out of two');
     check(await overview.locator('li').count()===2,'every question appears in the completed results');
     check(await overview.locator('li').first().locator('.quiz-result-mark.correct').count()===1,'the first question shows correct');
     check(await overview.locator('li').last().locator('.quiz-result-mark.incorrect').count()===1,'the second question shows incorrect');
@@ -531,7 +566,7 @@ try{
     await overview.locator('.quiz-solution-steps .mfrac').waitFor();
     await p.screenshot({path:path.join(evidence,'optional-solutions-results.png')});
    }else{
-    check(await overview.count()===0&&await p.locator('.quiz-correct-count,.quiz-solution').count()===0,'score release by itself keeps question results and steps private');
+    check(await overview.count()===0&&await p.locator('.quiz-correct-ring,.quiz-solution').count()===0,'score release by itself keeps question results and steps private');
    }
    await f.close();
   }
