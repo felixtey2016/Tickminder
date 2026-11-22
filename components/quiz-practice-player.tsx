@@ -9,14 +9,14 @@ import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/u
 import {QuizMath} from '@/components/quiz-math';
 import {QuizPicture} from '@/components/quiz-picture';
 import {QuizSoundMenu} from '@/components/quiz-sound-menu';
-import {QuizCompletionCelebration,QuizCorrectRing,QuizStreakCelebration,quizStreakImage,quizStreakMilestone} from '@/components/quiz-streak-celebration';
+import {QuizAnswerMascot,QuizCompletionCelebration,QuizCorrectRing,QuizStreakCelebration,quizStreakImage,quizStreakMilestone} from '@/components/quiz-streak-celebration';
 import {TickQuizBrand} from '@/components/tickquiz-brand';
 import {t,type Language} from '@/lib/i18n';
 import {practiceApi,practiceError} from '@/lib/quiz-practice-client';
 import {quizDurationSeconds,formatQuizDuration} from '@/lib/quiz-duration';
 import {quizQuestionLanguages,quizReadText,quizReadingLanguageLabel,type QuizAnswer,type QuizQuestion,type QuizReadingLanguage} from '@/lib/quiz';
 import type {PracticeAttempt,PracticeResult} from '@/lib/quiz-practice-types';
-import {useQuizSound} from '@/lib/quiz-sound';
+import {quizResultSound,useQuizSound} from '@/lib/quiz-sound';
 
 const filled=(answer:QuizAnswer|undefined)=>Boolean(answer?.optionId||answer?.text?.trim());
 const same=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
@@ -143,15 +143,18 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
  const clearCelebration=useCallback(()=>setStreakCelebration(null),[]);
  const [completionCelebration,setCompletionCelebration]=useState(false);
  const clearCompletion=useCallback(()=>setCompletionCelebration(false),[]);
- const [correctFeedbackId,setCorrectFeedbackId]=useState<string|null>(null);
+ const [answerFeedbackId,setAnswerFeedbackId]=useState<string|null>(null);
+ const pendingResultCue=useRef<string|null>(null);
  const preloadedStreakImages=useRef(new Set<string>());
  useEffect(()=>{
   if(!answering||!attempt?.immediate)return;
-  const src=quizStreakImage('correct');
-  if(preloadedStreakImages.current.has(src))return;
-  preloadedStreakImages.current.add(src);
-  const image=new Image();
-  image.src=src;
+  for(const feedback of ['correct','incorrect'] as const){
+   const src=quizStreakImage(feedback);
+   if(preloadedStreakImages.current.has(src))continue;
+   preloadedStreakImages.current.add(src);
+   const image=new Image();
+   image.src=src;
+  }
  },[answering,attempt?.immediate]);
  const preloadMilestone=useMemo(()=>attempt?.status==='in_progress'&&attempt.canAnswer&&attempt.immediate&&attempt.checkedQuestionIds.length<attempt.questionCount
   ?quizStreakMilestone(checkedQuizStreak(attempt)+1):undefined,[attempt]);
@@ -165,8 +168,17 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
  },[preloadMilestone]);
  const requestCompletesSelf=Boolean(pending.current&&!attempt?.assignmentId&&pending.current.body.deferCompletion!==true&&attempt?.content.questions.every(question=>filled(pending.current!.snapshot[question.id])&&(!attempt.immediate||attempt.manualQuestionIds.includes(question.id)||attempt.checkedQuestionIds.includes(question.id)||pending.current!.body.action==='check'&&pending.current!.body.questionId===question.id)));
  const dateFormatter=useMemo(()=>displayFormatter(language==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),[language]);
+ function playReleasedResult(next:PracticeAttempt){
+  const questions=next.content.questions;
+  if(pendingResultCue.current!==next.id||next.status!=='submitted'||!next.scoreVisible||!next.answersVisible||next.pendingManual||!questions.length)return false;
+  pendingResultCue.current=null;
+  const results=new Map(next.results.map(result=>[result.questionId,result]));
+  const correct=questions.filter(question=>outcome(question,results.get(question.id))==='correct').length;
+  void audio.playEffect(quizResultSound(correct,questions.length));
+  return true;
+ }
  function syncClock(value:string|undefined){if(value&&Number.isFinite(Date.parse(value))){serverOffset.current=Date.parse(value)-Date.now();setClockOffset(serverOffset.current);}}
- async function load(){queuedCheck.current=null;setCheckingQuestionId(null);clearCelebration();clearCompletion();setCorrectFeedbackId(null);setLoading(true);setError('');try{const {attempt:next,serverNow}=await practiceApi<{attempt:PracticeAttempt;serverNow?:string}>({attemptId});if(!mounted.current)return;syncClock(serverNow);current.current=next;local.current=next.answers;localFlags.current=next.flaggedQuestionIds;setAttempt(next);setAnswers(next.answers);setFlags(next.flaggedQuestionIds);const resumeIndex=next.status==='in_progress'&&next.canAnswer?Math.max(0,next.content.questions.findIndex(question=>question.id===next.currentQuestionId)):0;setIndex(resumeIndex);localQuestion.current=next.content.questions[resumeIndex]?.id||null;setDirty(false);pending.current=null;deadlineSent.current=false;exitRequested.current=false;}catch(e){if(mounted.current)setError(practiceError(e));}finally{if(mounted.current)setLoading(false);}}
+ async function load(){queuedCheck.current=null;setCheckingQuestionId(null);clearCelebration();clearCompletion();setAnswerFeedbackId(null);setLoading(true);setError('');try{const {attempt:next,serverNow}=await practiceApi<{attempt:PracticeAttempt;serverNow?:string}>({attemptId});if(!mounted.current)return;syncClock(serverNow);playReleasedResult(next);current.current=next;local.current=next.answers;localFlags.current=next.flaggedQuestionIds;setAttempt(next);setAnswers(next.answers);setFlags(next.flaggedQuestionIds);const resumeIndex=next.status==='in_progress'&&next.canAnswer?Math.max(0,next.content.questions.findIndex(question=>question.id===next.currentQuestionId)):0;setIndex(resumeIndex);localQuestion.current=next.content.questions[resumeIndex]?.id||null;setDirty(false);pending.current=null;deadlineSent.current=false;exitRequested.current=false;}catch(e){if(mounted.current)setError(practiceError(e));}finally{if(mounted.current)setLoading(false);}}
  useEffect(()=>{mounted.current=true;void load();return()=>{mounted.current=false;};},[attemptId]);
  useEffect(()=>{if(!attempt?.deadlineAt||done){setRemaining(null);return;}const update=()=>setRemaining(Math.max(0,Math.ceil((Date.parse(attempt.deadlineAt!)-Date.now()-clockOffset)/1000)));update();const id=window.setInterval(update,500);return()=>clearInterval(id);},[attempt?.deadlineAt,done,clockOffset]);
  useEffect(()=>{const unload=(event:BeforeUnloadEvent)=>{if(dirty||saving.current||pending.current){event.preventDefault();event.returnValue='';}},navigate=(event:Event)=>{if(dirty||saving.current||pending.current){event.preventDefault();if(dirty&&!saving.current&&!pending.current)void mutate('save');}};window.addEventListener('beforeunload',unload);window.addEventListener('tickminder-navigate',navigate);return()=>{window.removeEventListener('beforeunload',unload);window.removeEventListener('tickminder-navigate',navigate);};},[dirty]);
@@ -178,16 +190,19 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
    const {attempt:next,serverNow}=await practiceApi<{attempt:PracticeAttempt;serverNow?:string}>({},request.body);succeeded=true;if(!mounted.current)return false;syncClock(serverNow);if(request.body.automatic===true&&next.status==='in_progress')deadlineSent.current=false;
    const before=current.current;
    if(before?.id===next.id&&before.canAnswer&&before.status==='in_progress'&&next.status==='submitted'&&!exitRequested.current&&!document.hidden){
-    clearCelebration();setCorrectFeedbackId(null);setCompletionCelebration(true);
+    clearCelebration();setAnswerFeedbackId(null);setCompletionCelebration(true);pendingResultCue.current=next.id;
    }
+   const playedResult=playReleasedResult(next);
    const checked=request.body.questionId;
    if(request.body.action==='check'&&typeof checked==='string'&&before?.id===next.id&&before.immediate&&
       !exitRequested.current&&!before.checkedQuestionIds.includes(checked)&&next.checkedQuestionIds.includes(checked)){
     const outcome=next.results.find(result=>result.questionId===checked)?.status;
-    if(outcome==='correct'||outcome==='incorrect')void audio.playEffect(outcome);
-    if(outcome==='incorrect'){clearCelebration();setCorrectFeedbackId(null);}
+    if(outcome==='correct'||outcome==='incorrect'){
+     if(!playedResult)void audio.playEffect(outcome);
+     if(localQuestion.current===checked&&!document.hidden)setAnswerFeedbackId(checked);
+    }
+    if(outcome==='incorrect')clearCelebration();
     if(outcome==='correct'&&next.checkedQuestionIds.at(-1)===checked&&!document.hidden){
-     if(localQuestion.current===checked)setCorrectFeedbackId(checked);
      const milestone=quizStreakMilestone(checkedQuizStreak(next));
      if(milestone)setStreakCelebration({questionId:checked,milestone});
     }
@@ -229,6 +244,7 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
  useEffect(()=>{if(remaining!==0||done||!attempt?.canAnswer||busy||error||deadlineSent.current)return;if(current.current?.deadlineAt&&Date.parse(current.current.deadlineAt)>Date.now()+serverOffset.current)return;deadlineSent.current=true;void mutate('submit',{automatic:true});},[remaining,done,attempt?.revision,busy,error,clockOffset]);
  function updateAnswer(q:QuizQuestion,value:QuizAnswer){
   if(answerDisabled||queuedCheck.current===q.id||current.current?.checkedQuestionIds.includes(q.id)||pending.current&&!saving.current||pending.current?.body.action==='check')return;
+  if(!current.current?.immediate)audio.prepareEffect(false);
   local.current={...local.current,[q.id]:value};
   setAnswers(local.current);setDirty(true);setError('');
   if(value.optionId)confirmAnswer(q.id);
@@ -242,7 +258,7 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
   onClose();
  }
  function changeQuestion(position:number){
-  const next=Math.max(0,Math.min(position,(current.current?.content.questions.length||1)-1));if(next!==index)setCorrectFeedbackId(null);setIndex(next);
+  const next=Math.max(0,Math.min(position,(current.current?.content.questions.length||1)-1));if(next!==index)setAnswerFeedbackId(null);setIndex(next);
   if(page&&next!==index)requestAnimationFrame(()=>document.querySelector('.tikquiz-question-card')?.scrollIntoView({block:'start'}));
   const a=current.current;if(!a?.canAnswer||a.status!=='in_progress')return;
   const questionId=a.content.questions[next]?.id||null;if(questionId!==localQuestion.current){localQuestion.current=questionId;setDirty(true);}
@@ -275,8 +291,9 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
  const primaryLanguage=attempt?.content.primaryLanguage||'zh';
  const languages=q?quizQuestionLanguages(q,primaryLanguage):[];
  const questionLanguage=languages.includes(preferredLanguage)?preferredLanguage:languages[0]||'primary';
- const freshCorrect=answering&&q?.id===correctFeedbackId&&result?.status==='correct';
- const mascot=freshCorrect?<img className="quiz-correct-mascot" src={quizStreakImage('correct')} alt="" width="34" height="34"/>:null;
+ const freshFeedback=answering&&q?.id===answerFeedbackId&&(result?.status==='correct'||result?.status==='incorrect');
+ const streak=freshFeedback&&result?.status==='correct'&&attempt?checkedQuizStreak(attempt):0;
+ const mascot=freshFeedback?<QuizAnswerMascot streak={streak} confetti={!quizStreakMilestone(streak)}/>:null;
  const saveLabel=t(busy?'quiz.savingAnswers':dirty?'quiz.unsaved':'quiz.answersSaved');
  const backgroundSave=Boolean(saving.current&&pending.current?.body.action==='save');
  const body=<>
@@ -295,7 +312,7 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
      {canShowRing&&<QuizCorrectRing correct={correctCount} total={questions.length}/>}
      <div className="quiz-result-stats">
       {attempt.scoreVisible&&attempt.score!==null?<>{showSeparateScore&&<p><strong>{t(attempt.pendingManual?'quiz.provisionalScore':'quiz.score')} {attempt.score} / {attempt.totalScore}</strong></p>}{longestStreak!==null&&<p>{t('quiz.longestStreak').replace('{count}',String(longestStreak))}</p>}{showCorrectCount&&questions.length>0&&correctCount===questions.length&&<p className="quiz-streak-perfect"><img src={quizStreakImage('perfect')} alt="" width="48" height="48" loading="lazy"/><strong>{t('quiz.streakPerfect')}</strong></p>}{attempt.rawScore!==null&&attempt.rawTotalScore!==attempt.totalScore&&<p>{t('quiz.rawScore')} · {attempt.rawScore} / {attempt.rawTotalScore}</p>}{attempt.pendingManual>0&&<p>{t('quiz.resultPending')}</p>}</>:<p>{t('quiz.scoreNotReleased')}</p>}{!attempt.answersVisible&&<p>{t('quiz.answersNotReleased')}</p>}{attempt.late&&<p className="quiz-assignment-blocked">{t('quiz.late')}</p>}{attempt.submissionReason==='timer'&&<p>{t('quiz.autoSubmittedTimer')}</p>}{attempt.submissionReason==='deadline'&&<p>{t('quiz.autoSubmittedDeadline')}</p>}{timeTaken!==null&&<p className="quiz-time-taken" data-testid="quiz-time-taken"><Timer size={16} aria-hidden="true"/><strong>{t('quiz.timeTaken')}</strong><time dateTime={'PT'+timeTaken+'S'}>{formatQuizDuration(timeTaken)}</time></p>}{attempt.submittedAt&&<time dateTime={attempt.submittedAt}>{dateFormatter.format(new Date(attempt.submittedAt))} GMT+8</time>}</div></div></div></section>}
-   {done&&(!attempt.scoreVisible||!attempt.answersVisible)&&<Button variant="outline" disabled={loading||busy} onClick={()=>void load()}>{t('quiz.refresh')}</Button>}
+   {done&&(!attempt.scoreVisible||!attempt.answersVisible)&&<Button variant="outline" disabled={loading||busy} onClick={()=>{if(pendingResultCue.current)audio.prepareEffect(false);void load();}}>{t('quiz.refresh')}</Button>}
    {done&&attempt.scoreVisible&&attempt.answersVisible&&<label className="quiz-check"><input type="checkbox" checked={wrongOnly} onChange={e=>{setWrongOnly(e.target.checked);setIndex(0);}}/>{t('quiz.wrongQuestions')}</label>}
    {showQuestionResults&&reviewQuestions.length>0&&<section className="quiz-question-results" aria-label={t('quiz.questionResults')}>
     <h3>{t('quiz.questionResults')}</h3>
@@ -336,7 +353,7 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
        <button type="button" className="quiz-option-button" disabled={answerDisabled} aria-pressed={selected} onClick={()=>updateAnswer(q,{optionId:option.id})}>
         <span className="quiz-option-letter">{letter}</span>
         <QuizMath text={quizReadText(option.text,questionLanguage)}/>
-        {correct&&mascot}
+        {selected&&mascot}
         {incorrect?<X size={20} className="quiz-option-result-icon" aria-hidden="true"/>:(selected||correct)&&<Check size={20} className="quiz-option-result-icon" aria-hidden="true"/>}
         {(correct||incorrect)&&<span className="sr-only">{t(correct?'quiz.correctAnswer':'quiz.incorrectResult')}</span>}
        </button>
@@ -359,7 +376,7 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
    {answering&&attempt.assignmentId&&<div className="quiz-practice-submit"><p className="quiz-note" role="status">{t((unanswered?'quiz.remainingToSubmit':'quiz.readyToSubmit')).replace('{count}',String(unanswered))}</p>{q&&index!==reviewQuestions.length-1&&<Button variant="outline" disabled={unanswered>0||busy||Boolean(pending.current)} onClick={()=>setConfirm(true)}>{t('quiz.submitPractice')}</Button>}</div>}
    {done&&<div className="quiz-practice-submit"><Button onClick={onClose}>{t('quiz.closeResults')}</Button></div>}
   </>}
-  <Dialog open={confirm&&Boolean(attempt?.assignmentId)} onOpenChange={setConfirm}><DialogContent className="quiz-confirm-dialog quiz-player-wave3"><DialogTitle>{t('quiz.submitPractice')}</DialogTitle><DialogDescription>{t('quiz.formalSubmitConfirm')}</DialogDescription>{unanswered>0&&<p className="quiz-note">{t('quiz.allAnswersRequired')}</p>}<div className="quiz-confirm-actions"><Button variant="outline" disabled={busy} onClick={()=>setConfirm(false)}>{t('quiz.cancel')}</Button><Button disabled={unanswered>0||busy||Boolean(pending.current)} onClick={()=>{if(unanswered)return;setConfirm(false);void mutate('submit');}}>{t('quiz.confirmSubmit')}</Button></div></DialogContent></Dialog>
+  <Dialog open={confirm&&Boolean(attempt?.assignmentId)} onOpenChange={setConfirm}><DialogContent className="quiz-confirm-dialog quiz-player-wave3"><DialogTitle>{t('quiz.submitPractice')}</DialogTitle><DialogDescription>{t('quiz.formalSubmitConfirm')}</DialogDescription>{unanswered>0&&<p className="quiz-note">{t('quiz.allAnswersRequired')}</p>}<div className="quiz-confirm-actions"><Button variant="outline" disabled={busy} onClick={()=>setConfirm(false)}>{t('quiz.cancel')}</Button><Button disabled={unanswered>0||busy||Boolean(pending.current)} onClick={()=>{if(unanswered)return;audio.prepareEffect(false);setConfirm(false);void mutate('submit');}}>{t('quiz.confirmSubmit')}</Button></div></DialogContent></Dialog>
   <Dialog open={Boolean(recoveryConfirm)} onOpenChange={open=>{if(!open)setRecoveryConfirm(null);}}><DialogContent className="quiz-confirm-dialog quiz-player-wave3"><DialogTitle>{label('还有未保存的作答','Some answers have not been saved')}</DialogTitle><DialogDescription>{recoveryConfirm==='reload'?label('重新载入会放弃未保存的修改，并读取最近保存的记录。','Reloading discards unsaved changes and reads the latest saved record.'):label('可以先返回重试保存。直接离开会失去尚未保存的修改。','Return to retry saving. Leaving now will lose changes that have not been saved.')}</DialogDescription><div className="quiz-confirm-actions"><Button variant="outline" onClick={()=>setRecoveryConfirm(null)}>{label('保留作答','Keep my answers')}</Button><Button variant="destructive" onClick={()=>{const action=recoveryConfirm;setRecoveryConfirm(null);pending.current=null;exitRequested.current=false;if(action==='reload')void load();else onClose();}}>{recoveryConfirm==='reload'?label('放弃修改并重新载入','Discard changes and reload'):label('不保存并离开','Leave without saving')}</Button></div></DialogContent></Dialog>
  </>;
  if(page)return <section className="quiz-player-dialog quiz-practice-player quiz-practice-compact quiz-player-wave3 tikquiz-practice-page">{body}</section>;

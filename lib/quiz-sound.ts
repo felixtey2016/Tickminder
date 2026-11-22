@@ -3,10 +3,21 @@
 import {useEffect,useRef,useState} from 'react';
 import {useQuizMusic,type QuizMusicId} from './quiz-music';
 
-const clips={correct:'/quiz-audio/correct.wav',incorrect:'/quiz-audio/incorrect.wav'} as const;
+const clips={
+ correct:'/quiz-audio/correct.wav',incorrect:'/quiz-audio/incorrect.wav',
+ resultLow:'/quiz-audio/result-low.mp3',resultMid:'/quiz-audio/result-mid.mp3',
+ resultHigh:'/quiz-audio/result-high.mp3',resultTop:'/quiz-audio/result-top.mp3',
+} as const;
 type Feedback=keyof typeof clips;
 // Balance the two cues with each other and with the background music.
-const feedbackGain:Record<Feedback,number>={correct:0.07,incorrect:0.055};
+const feedbackGain:Record<Feedback,number>={correct:0.07,incorrect:0.055,resultLow:0.085,resultMid:0.085,resultHigh:0.085,resultTop:0.085};
+export function quizResultSound(correct:number,total:number):Feedback {
+ const scaled=correct*100;
+ if(scaled>=total*90)return 'resultTop';
+ if(scaled>=total*80)return 'resultHigh';
+ if(scaled>=total*50)return 'resultMid';
+ return 'resultLow';
+}
 type SoundChannel='music'|'effects';
 type Preferences={music:boolean;effects:boolean;repeat:boolean;musicVolume:number;effectsVolume:number};
 const defaults:Preferences={music:true,effects:true,repeat:false,musicVolume:24,effectsVolume:25};
@@ -99,7 +110,7 @@ export function useQuizSound(accountId:string|undefined,attemptId?:string){
  }
 
  // Call from the answer gesture, before the asynchronous grading request.
- function prepareEffect(){
+ function prepareEffect(preloadAnswers=true){
   if(!current.current.effects||!current.current.effectsVolume)return;
   try{
    const Audio=window.AudioContext??(window as Window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext;
@@ -112,8 +123,7 @@ export function useQuizSound(accountId:string|undefined,attemptId?:string){
    }
    const audio=player.current;
    if(audio.context.state!=='running')void audio.context.resume().catch(()=>{});
-   void loadClip(audio,'correct');
-   void loadClip(audio,'incorrect');
+   if(preloadAnswers){void loadClip(audio,'correct');void loadClip(audio,'incorrect');}
   }catch{/* Audio availability must never interrupt an answer. */}
  }
 

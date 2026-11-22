@@ -13,13 +13,15 @@ export function quizStreakMilestone(count:number) {
   return count > 10 || milestones.includes(count) ? count : undefined;
 }
 
-export function quizStreakImage(milestone:number|'perfect'|'correct') {
-  const image = typeof milestone === 'number' && milestone > 10 ? 'correct' : milestone;
+export function quizStreakImage(milestone:number|'perfect'|'correct'|'incorrect') {
+  const image = typeof milestone !== 'number' ? milestone : milestone >= 10 ? 10 : milestone >= 5 ? 5 : milestone >= 3 ? 3 : 'correct';
   return '/tickquiz-streak/' + image + '.webp';
 }
 
+function confettiPieces(streak:number){return streak>=10?22:streak>=5?14:streak>=3?8:4;}
+
 function Confetti({pieces}:{pieces:number}) {
-  return <div className="quiz-streak-confetti">
+  return <span className="quiz-streak-confetti" aria-hidden="true">
     {Array.from({length:pieces},(_,index) => <span key={index} style={{
       '--strip-x': ((index * 29 + 6) % 100) + '%',
       '--strip-color': confettiColors[index % confettiColors.length],
@@ -27,7 +29,14 @@ function Confetti({pieces}:{pieces:number}) {
       '--strip-delay': (index % 7 * 40) + 'ms',
       '--strip-rotation': (index % 2 ? 200 : -160) + 'deg',
     } as CSSProperties}/>)}
-  </div>;
+  </span>;
+}
+
+export function QuizAnswerMascot({streak,confetti}:{streak:number;confetti:boolean}) {
+  return <span className="quiz-answer-mascot" aria-hidden="true">
+    {streak>0&&confetti&&<Confetti pieces={confettiPieces(streak)}/>}
+    <img className="quiz-correct-mascot" src={quizStreakImage(streak || 'incorrect')} alt="" width="34" height="34"/>
+  </span>;
 }
 
 function useCelebrationTimeout(onEnd:()=>void,duration:number) {
@@ -47,7 +56,7 @@ export function QuizStreakCelebration({milestone,onEnd,withConfetti}:{milestone:
     <span className="sr-only" role="status">{message}</span>
     {createPortal(
       <div className="quiz-streak-overlay" aria-hidden="true">
-        {milestone === 10 && withConfetti && <Confetti pieces={14}/>}
+        {withConfetti && <Confetti pieces={confettiPieces(milestone)}/>}
         <div className={'quiz-streak-card'+(compact?' quiz-streak-card-compact':'')}>
           {milestone >= 5 && !compact && <div className="quiz-streak-stars">
             {stars.map(([x,y],index) => <span key={index} style={{
@@ -67,7 +76,7 @@ export function QuizStreakCelebration({milestone,onEnd,withConfetti}:{milestone:
 export function QuizCompletionCelebration({onEnd}:{onEnd:()=>void}) {
   useCelebrationTimeout(onEnd,1950);
   return createPortal(
-    <div className="quiz-streak-overlay quiz-completion-overlay" aria-hidden="true"><Confetti pieces={38}/></div>,
+    <div className="quiz-streak-overlay quiz-completion-overlay" aria-hidden="true"><Confetti pieces={72}/></div>,
     document.body,
   );
 }
