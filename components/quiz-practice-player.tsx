@@ -66,24 +66,37 @@ function SolutionDetails({solution,label,children}:{solution:string;label?:React
  </details>;
 }
 
-function ReviewOriginalQuestion({question,answer,result,language}:{question:QuizQuestion;answer:QuizAnswer|undefined;result:PracticeResult|undefined;language:QuizReadingLanguage}){
+function ReviewOriginalQuestion({question,answer,result,status,language}:{
+ question:QuizQuestion;answer:QuizAnswer|undefined;result:PracticeResult|undefined;
+ status:PracticeResult['status']|undefined;language:QuizReadingLanguage;
+}){
+ const selectedIndex=question.options.findIndex(option=>option.id===answer?.optionId);
+ const selected=question.options[selectedIndex];
  const correctOptionId=result?.key?.correctOptionId??result?.correctOptionId;
+ const correctIndex=question.options.findIndex(option=>option.id===correctOptionId);
+ const expected=question.options.length?(correctIndex>=0?String.fromCharCode(65+correctIndex):''):resultAnswer(question,result,language);
+ const value=selected?quizReadText(selected.text,language):answerText(question,answer,language);
+ const tone=filled(answer)&&(status==='correct'||status==='incorrect')?' is-'+status:'';
  return <div className="quiz-review-original">
   <h4>{t('quiz.originalQuestion')}</h4>
   <QuizMath text={quizReadText(question.prompt,language)}/>
   {question.imageId&&<QuizPicture id={question.imageId} alt={t('quiz.promptImage')}/>}
   {question.extraImageIds.map(id=><QuizPicture key={id} id={id} alt={t('quiz.promptImage')}/>)}
-  {question.options.length>0?<ol className="quiz-review-options">{question.options.map((option,index)=>{
-   const correct=option.id===correctOptionId,selected=option.id===answer?.optionId;
-   return <li key={option.id}>
-    <div className="quiz-review-option-label"><strong>{String.fromCharCode(65+index)}.</strong><QuizMath text={quizReadText(option.text,language)}/></div>
-    {option.imageId&&<QuizPicture id={option.imageId} alt={t('quiz.optionImage')+' '+String.fromCharCode(65+index)}/>}
-    {(correct||selected)&&<div className={'quiz-review-option-mark'+(correct?' is-correct':'')}>{[selected?t('quiz.yourAnswer'):'',correct?t('quiz.correctAnswer'):''].filter(Boolean).join(' · ')}</div>}
-   </li>;
-  })}</ol>:<>
-   <p>{t('quiz.yourAnswer')} · <QuizMath text={answerText(question,answer,language)}/></p>
-   {resultAnswer(question,result,language)&&<p>{t('quiz.correctAnswer')} · <QuizMath text={resultAnswer(question,result,language)}/></p>}
-  </>}
+  <dl className="quiz-review-answers">
+   <div className="quiz-review-answer-row">
+    <dt>{t('quiz.reviewYourAnswer')}</dt>
+    <dd className={'quiz-review-submitted-answer'+tone}>
+     {selected&&<strong>{String.fromCharCode(65+selectedIndex)}. </strong>}
+     {value&&<QuizMath text={value}/>}
+     {!selected&&answer?.text&&answer.unit&&<> <QuizMath text={answer.unit}/></>}
+     {selected?.imageId&&<QuizPicture id={selected.imageId} alt={t('quiz.optionImage')+' '+String.fromCharCode(65+selectedIndex)}/>}
+    </dd>
+   </div>
+   {expected&&<div className="quiz-review-answer-row">
+    <dt>{t('quiz.reviewCorrectAnswer')}</dt>
+    <dd className="quiz-review-correct-answer"><QuizMath text={expected}/></dd>
+   </div>}
+  </dl>
  </div>;
 }
 
@@ -296,7 +309,7 @@ export default function QuizPracticePlayer({attemptId,language,onClose,onChanged
      const reviewLanguages=quizQuestionLanguages(question,primaryLanguage);
      const reviewLanguage=reviewLanguages.includes(preferredLanguage)?preferredLanguage:reviewLanguages[0]||'primary';
      return <li key={question.id}>{solution?<SolutionDetails solution={solution} label={title}>
-      <ReviewOriginalQuestion question={question} answer={answers[question.id]} result={saved} language={reviewLanguage}/>
+      <ReviewOriginalQuestion question={question} answer={answers[question.id]} result={saved} status={status} language={reviewLanguage}/>
      </SolutionDetails>:title}</li>;
     })}</ol>
    </section>}

@@ -14,6 +14,8 @@ const pairs:Record<string,[string,string]>={
  'quiz.streakCelebration':['连续答对 {count} 题！','Congratulations! {count} in a row!'],
  'quiz.longestStreak':['最长连续答对 {count} 题','Longest streak · {count} correct in a row'],
  'quiz.correctCountLabel':['答对题数','Correct answers'],
+ 'quiz.reviewYourAnswer':['你的答案','Your answer'],
+ 'quiz.reviewCorrectAnswer':['正确答案','Correct answer'],
  'quiz.originalQuestion':['原题','Original question'],
  'quiz.solutionSteps':['解题步骤','Solution steps'],
  'quiz.streakPerfect':['全部答对！','All answers correct!'],

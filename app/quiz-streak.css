@@ -165,13 +165,14 @@
 
 .quiz-review-original {min-width:0;padding:12px;}
 .quiz-review-original h4, .quiz-review-steps h4 {margin:0 0 6px;font-size:14px;font-weight:700;}
-.quiz-review-original :is(.quiz-math-text,li) {overflow-wrap:anywhere;}
-.quiz-review-options {display:grid;gap:8px;margin:10px 0 0;padding:0;list-style:none;}
-.quiz-question-results .quiz-review-options > li {padding:8px 10px;}
-.quiz-review-option-label {display:flex;align-items:baseline;gap:7px;}
-.quiz-review-option-label > span {min-width:0;}
-.quiz-review-option-mark {padding-top:3px;color:var(--ui-muted);font-size:.8rem;}
-.quiz-review-option-mark.is-correct {color:var(--ui-success-text);}
+.quiz-review-original .quiz-math-text {overflow-wrap:anywhere;}
+.quiz-review-answers {display:grid;gap:8px;margin:12px 0 0;}
+.quiz-review-answer-row {display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;}
+.quiz-review-answer-row dt {font-size:.85rem;color:var(--ui-muted);}
+.quiz-review-answer-row dd {min-width:0;margin:0;overflow-wrap:anywhere;}
+.quiz-review-submitted-answer.is-correct {color:var(--ui-success-text);}
+.quiz-review-submitted-answer.is-incorrect {color:var(--ui-danger-text);}
+.quiz-review-correct-answer {font-weight:650;}
 
 @media (max-width: 460px) {
   .quiz-result-overview {grid-template-columns:minmax(0,108px) minmax(0,1fr);gap:10px;}

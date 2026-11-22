@@ -241,10 +241,10 @@ try{
    check(await p.locator('.quiz-completion-overlay .quiz-streak-confetti span').count()===38,'a final milestone shares the larger completion confetti');
    await f.close();
   }
-  for(const [releaseAnswers,weighted] of [[true,false],[false,false],[true,true]]){
+  for(const [releaseAnswers,weighted,wrongFirst] of [[true,false,false],[false,false,false],[true,true,true]]){
    const f=await open({mode:'practice',lang:'en',layout:'page'},{self:true,deferred:true,streakQuestions:3,releaseAnswers,weighted,solutions:{'streak-question-0':'Worked example for the original question.'}}),p=f.page;
    for(let n=0;n<3;n++){
-    await p.locator('.quiz-option-button').first().click();
+    await p.locator('.quiz-option-button').nth(wrongFirst&&n===0?1:0).click();
     if(n<2)await p.getByRole('button',{name:'Next question',exact:true}).click();
    }
    const results=p.locator('.quiz-result-summary');await results.waitFor();
@@ -259,13 +259,17 @@ try{
     await solution.locator('summary').click();
     const original=solution.locator('.quiz-review-original');
     await original.getByText('Question 1',{exact:true}).waitFor();
-    check(await original.locator('.quiz-review-options > li').count()===4,'the expanded solution includes the stem and all original options');
+    const submitted=original.locator('.quiz-review-submitted-answer');
+    check((await submitted.innerText()).startsWith(wrongFirst?'B.':'A.'),'the review shows the learner\'s original choice');
+    check(await submitted.evaluate((el,wrong)=>{const sample=document.createElement('span');sample.style.color=wrong?'var(--ui-danger-text)':'var(--ui-success-text)';el.append(sample);const matches=getComputedStyle(el).color===getComputedStyle(sample).color;sample.remove();return matches;},wrongFirst),'the original answer uses the correct feedback color');
+    check(await original.locator('.quiz-review-correct-answer').innerText()==='A','the review only identifies the correct option by its letter');
+    check(await original.locator('.quiz-review-answer-row').count()===2&&(await original.getByText('Answer D',{exact:true}).count())===0,'unused options are omitted from the expanded review');
     await solution.locator('.quiz-solution-steps').getByText('Worked example for the original question.').waitFor();
    }
    const streak=results.getByText(/Longest streak/);
    check(await streak.isVisible()===releaseAnswers,'results show a streak only after individual answers are released');
-   check(await results.getByText('All answers correct!').isVisible()===releaseAnswers,'the perfect-score art follows the same release policy');
-   if(releaseAnswers)check((await streak.innerText()).includes('3 correct in a row'),'the results summarize the complete streak');
+   check(await results.getByText('All answers correct!').isVisible()===(releaseAnswers&&!wrongFirst),'the perfect-score art only appears on a released perfect score');
+   if(releaseAnswers)check((await streak.innerText()).includes((wrongFirst?'2':'3')+' correct in a row'),'the results summarize the complete streak');
    await p.reload();
    await p.locator('.quiz-result-summary').waitFor();
    check(await p.locator('.quiz-completion-overlay').count()===0,'reload does not replay completion confetti');
