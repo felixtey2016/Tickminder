@@ -8,7 +8,7 @@ import {Dialog,DialogContent,DialogDescription,DialogTitle} from '@/components/u
 import QuizPlayer from '@/components/quiz-player';
 import {QuizPicture} from '@/components/quiz-picture';
 import {QuizMath} from '@/components/quiz-math';
-import {checkQuiz,newQuestion,quizImageIds,quizReadText,QUIZ_LANGUAGES,QUIZ_LANGUAGE_NAMES,type Difficulty,type QuizCatalog,type QuizContent,type QuizDraft,type QuizKey,type QuizLanguage,type QuizQuestion,type QuizReadingLanguage,type QuizType,type QuizVisibility} from '@/lib/quiz';
+import {checkQuiz,newQuestion,quizImageIds,quizReadText,QUIZ_LANGUAGES,QUIZ_LANGUAGE_NAMES,type Difficulty,type QuizCatalog,type QuizContent,type QuizDraft,type QuizKey,type QuizLanguage,type QuizQuestion,type QuizReadingLanguage,type QuizType} from '@/lib/quiz';
 import {groupFetch} from '@/lib/group-client';
 import {readApiJson,showActionToast} from '@/lib/action-feedback';
 import {getLanguage,t} from '@/lib/i18n';
@@ -16,7 +16,7 @@ import {uploadQuizImages} from '@/lib/quiz-upload';
 import {useAcademicCatalogue} from '@/lib/use-academic-catalogue';
 import {findCatalogueSyllabus,findCatalogueSubject,findCatalogueGrade,catalogueGradeValid} from '@/lib/academic-catalogue';
 import {checkQuizAcademic} from '@/lib/quiz-academic';
-import QuizPublicationPanel,{type QuizSharingState} from './quiz-publication-panel';
+import QuizPublicationPanel,{type QuizSharingSelection,type QuizSharingState} from './quiz-publication-panel';
 import '@/lib/quiz-upgrade-i18n';
 import './quiz-editor-wave3.css';
 
@@ -29,7 +29,7 @@ const copy=<T,>(value:T):T=>JSON.parse(JSON.stringify(value)) as T;
 const payloadStamp=(draft:LocalQuiz)=>JSON.stringify({id:draft.id,revision:draft.revision,sourceKey:draft.sourceKey,content:draft.content,keys:draft.keys});
 const contentStamp=(draft:LocalQuiz)=>JSON.stringify({content:draft.content,keys:draft.keys});
 function errorCode(error:unknown){return error instanceof Error&&error.message.startsWith('quiz.')?error.message:error instanceof TypeError?'quiz.network':'quiz.unavailable';}
-async function api<T extends {error?:string}>(url:string,init?:RequestInit){const response=await groupFetch(url,init);const data=await readApiJson<T>(response);if(!response.ok)throw new Error(data.error||'quiz.unavailable');return data;}
+async function api<T extends {error?:string}>(url:string,init?:RequestInit){const response=await groupFetch(url,init);const data=await readApiJson<T>(response);if(!response.ok)throw Object.assign(new Error(data.error||'quiz.unavailable'),{status:response.status});return data;}
 function Field({label,children,wide=false}:{label:string;children:ReactNode;wide?:boolean}){const labelId=useId();return <label className={'quiz-field'+(wide?' quiz-field-wide':'')}><span id={labelId}>{label}</span>{isValidElement(children)?cloneElement(children as ReactElement<{'aria-labelledby'?:string}>,{'aria-labelledby':labelId}):children}</label>;}
 
 export default function QuizEditor({initial,onBack,onSaved}:{initial:LocalQuiz;onBack:()=>void;onSaved:(draft:LocalQuiz,reason:'draft'|'sharing')=>void}){
@@ -51,11 +51,11 @@ export default function QuizEditor({initial,onBack,onSaved}:{initial:LocalQuiz;o
  const [confirmation,setConfirmation]=useState<Confirmation|null>(null);
  const confirmationOpener=useRef<HTMLElement|null>(null);
  const [preview,setPreview]=useState<QuizContent|null>(null);
- const [visibility,setVisibility]=useState<QuizVisibility>(initial.visibility);
  const [sharingDirty,setSharingDirty]=useState(false);
  const [answerInputs,setAnswerInputs]=useState<Record<string,string>>({});
  const [imageSources,setImageSources]=useState<Record<string,string>>({});
  const saveOperation=useRef<{stamp:string;id:string}|null>(null);
+ const shareOperation=useRef<{stamp:string;id:string}|null>(null);
  const uploadCache=useRef(new Map<string,string>());
  const operationActive=useRef(false);
  const savedContent=useRef<QuizContent|null>(initial.revision?copy(initial.content):null);
@@ -134,25 +134,58 @@ export default function QuizEditor({initial,onBack,onSaved}:{initial:LocalQuiz;o
   const next={...current,content:{...current.content,questions:current.content.questions.map(q=>({...q,imageId:replace(q.imageId),extraImageIds:q.extraImageIds.map(id=>replace(id)!),options:q.options.map(o=>({...o,imageId:replace(o.imageId)}))}))}};
   setDraft(next);return next;
  }
+ async function persistDraft(){
+  // Validate content before uploading any imported images. Temporary ZIP paths
+  // are replaced only for this local validation; the server receives real IDs.
+  const validation=copy(draft.content);const pending=draft.pendingImages;
+  const temporary=(id:string|null)=>id&&pending?.has(id)?'pending_image':id;
+  validation.questions=validation.questions.map(q=>({...q,imageId:temporary(q.imageId),extraImageIds:q.extraImageIds.map(id=>temporary(id)!),options:q.options.map(o=>({...o,imageId:temporary(o.imageId)}))}));
+  if(!catalogue)throw new Error('quiz.catalogueUnavailable');
+  checkQuizAcademic(catalogue,validation,savedContent.current);
+  checkQuiz(validation,draft.keys);
+  const prepared=await prepareImages(draft),checked=checkQuiz(prepared.content,prepared.keys);checked.content=checkQuizAcademic(catalogue,checked.content,savedContent.current);const normalised={...prepared,content:checked.content,keys:checked.keys};
+  const stamp=payloadStamp(normalised);if(saveOperation.current?.stamp!==stamp)saveOperation.current={stamp,id:crypto.randomUUID()};
+  const result=await api<SaveReply>('/api/quizzes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:normalised.maintenanceImport||normalised.content.bankKind==='platform'?'maintenanceImport':'save',id:normalised.id,revision:normalised.revision,content:normalised.content,keys:normalised.keys,sourceKey:normalised.sourceKey,operationId:saveOperation.current.id})});
+  let saved:LocalQuiz;
+  if(result.existingImport){saved=await api<LocalQuiz & {error?:string}>('/api/quizzes?id='+encodeURIComponent(result.id));saved.sourceKey=normalised.sourceKey;setActiveId(saved.content.questions[0]?.id||'');setAnswerInputs({});}
+  else saved={...normalised,id:result.id,revision:result.revision,pendingImages:undefined,importWarnings:undefined};
+  savedContent.current=copy(saved.content);setDraft(saved);setSavedStamp(contentStamp(saved));
+  const status=result.existingImport?'quiz.importExisting':'quiz.saved';
+  setStatus(status);saveOperation.current=null;
+  return {saved,status,existingImport:result.existingImport};
+ }
+
  async function save(){
-  if(locked||operationActive.current)return;operationActive.current=true;setBusy('save');setError('');setStatus('');setUploadProgress(null);
+  if(locked||operationActive.current)return;
+  operationActive.current=true;setBusy('save');setError('');setStatus('');setUploadProgress(null);
   try{
-   // Validate content before uploading any imported images. Temporary ZIP paths
-   // are replaced only for this local validation; the server receives real IDs.
-   const validation=copy(draft.content);const pending=draft.pendingImages;
-   const temporary=(id:string|null)=>id&&pending?.has(id)?'pending_image':id;
-   validation.questions=validation.questions.map(q=>({...q,imageId:temporary(q.imageId),extraImageIds:q.extraImageIds.map(id=>temporary(id)!),options:q.options.map(o=>({...o,imageId:temporary(o.imageId)}))}));
-   if(!catalogue)throw new Error('quiz.catalogueUnavailable');
-   checkQuizAcademic(catalogue,validation,savedContent.current);
-   checkQuiz(validation,draft.keys);
-   const prepared=await prepareImages(draft),checked=checkQuiz(prepared.content,prepared.keys);checked.content=checkQuizAcademic(catalogue,checked.content,savedContent.current);const normalised={...prepared,content:checked.content,keys:checked.keys};
-   const stamp=payloadStamp(normalised);if(saveOperation.current?.stamp!==stamp)saveOperation.current={stamp,id:crypto.randomUUID()};
-   const result=await api<SaveReply>('/api/quizzes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:normalised.maintenanceImport||normalised.content.bankKind==='platform'?'maintenanceImport':'save',id:normalised.id,revision:normalised.revision,content:normalised.content,keys:normalised.keys,sourceKey:normalised.sourceKey,operationId:saveOperation.current.id})});
-   let saved:LocalQuiz;
-   if(result.existingImport){saved=await api<LocalQuiz & {error?:string}>('/api/quizzes?id='+encodeURIComponent(result.id));saved.sourceKey=normalised.sourceKey;setActiveId(saved.content.questions[0]?.id||'');setAnswerInputs({});}
-   else saved={...normalised,id:result.id,revision:result.revision,pendingImages:undefined,importWarnings:undefined};
-   savedContent.current=copy(saved.content);setDraft(saved);setSavedStamp(contentStamp(saved));if(result.existingImport){setVisibility(saved.visibility);}setStatus(result.existingImport?'quiz.importExisting':'quiz.saved');saveOperation.current=null;onSaved(saved,'draft');showActionToast('success',t(result.existingImport?'quiz.importExisting':'quiz.saved'));
-  }catch(e){setError(errorCode(e));}finally{operationActive.current=false;setBusy(null);setUploadProgress(null);}
+   const {saved,status}=await persistDraft();
+   onSaved(saved,'draft');showActionToast('success',t(status));
+  }catch(error){setError(errorCode(error));}
+  finally{operationActive.current=false;setBusy(null);setUploadProgress(null);}
+ }
+
+ async function saveSharing(selection:QuizSharingSelection){
+  if(!mayShare||operationActive.current||((dirty||!draft.revision)&&!mayEdit))throw new Error('quiz.forbidden');
+  operationActive.current=true;setBusy('share');setError('');setStatus('');setUploadProgress(null);
+  try{
+   let current=draft;
+   if(dirty||!current.revision){
+    const saved=await persistDraft();
+    // The import service can open a different existing quiz with the same source.
+    if(saved.existingImport)throw new Error('quiz.importExisting');
+    current=saved.saved;
+   }
+   const body={action:'share',id:current.id,revision:current.revision,...selection};
+   const stamp=JSON.stringify(body);
+   if(shareOperation.current?.stamp!==stamp)shareOperation.current={stamp,id:crypto.randomUUID()};
+   await api('/api/quizzes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,operationId:shareOperation.current.id})});
+   const {visibility,sharedRevision,sharingMode,sharingRevision,recipientIds,creator}=await api<QuizSharingState & {error?:string}>('/api/quizzes?id='+encodeURIComponent(current.id));
+   const sharing={visibility,sharedRevision,sharingMode,sharingRevision,recipientIds,creator};
+   shareOperation.current=null;
+   const updated={...current,...sharing};setDraft(updated);setSharingDirty(false);onSaved(updated,'sharing');
+   return sharing;
+  }finally{operationActive.current=false;setBusy(null);setUploadProgress(null);}
  }
  function openPreview(){if(operationActive.current)return;if(!draft.revision||!savedContent.current){setError('quiz.saveFirst');return;}setError('');setPreview(copy(savedContent.current));}
 
@@ -249,7 +282,7 @@ export default function QuizEditor({initial,onBack,onSaved}:{initial:LocalQuiz;o
    </fieldset>
   </article>:<div className="quiz-question-card quiz-question-empty"><p>{t('quiz.createFirst')}</p></div>}</div>
   </section>
-  {mayShare&&<section className="quiz-editor-section" role="tabpanel" id={sectionId+'-panel-sharing'} aria-labelledby={sectionId+'-tab-sharing'} hidden={section!=='sharing'}><QuizPublicationPanel id={draft.id} revision={draft.revision} visibility={draft.visibility} sharedRevision={draft.sharedRevision} disabled={Boolean(busy)||dirty} onDirtyChange={setSharingDirty} onChanged={(next,shared,sharing)=>{setVisibility(next);setSharingDirty(false);setDraft(value=>({...value,...sharing,visibility:next,sharedRevision:shared}));onSaved({...draft,...sharing,visibility:next,sharedRevision:shared},'sharing');}}/></section>}
+  {mayShare&&<section className="quiz-editor-section" role="tabpanel" id={sectionId+'-panel-sharing'} aria-labelledby={sectionId+'-tab-sharing'} hidden={section!=='sharing'}><QuizPublicationPanel key={draft.id} id={draft.id} revision={draft.revision} visibility={draft.visibility} sharedRevision={draft.sharedRevision} disabled={Boolean(busy)||(dirty&&!mayEdit)} savesQuestions={dirty||!draft.revision} onDirtyChange={setSharingDirty} onSave={saveSharing}/></section>}
   <footer className="quiz-editor-footer"><div className="quiz-editor-footer-summary"><span>{t('quiz.questions')} {draft.content.questions.length} · {t('quiz.total')} {total}</span><small>{text('预览使用已保存版本','Preview uses the saved version')}</small></div><div className="quiz-editor-tools"><Button type="button" variant="outline" disabled={Boolean(busy)||!draft.revision} onClick={()=>void openPreview()}><Eye size={17}/>{text('作答预览','Preview')}</Button>{mayEdit&&<Button type="button" disabled={Boolean(busy)||!dirty} onClick={()=>void save()}><Save size={17}/>{t(busy==='save'?'quiz.saving':'quiz.save')}</Button>}</div></footer>
   {confirmation&&<Dialog open onOpenChange={open=>{if(!open)setConfirmation(null);}}><DialogContent className="quiz-confirm-dialog" overlayClassName="content-edit-overlay" onOpenAutoFocus={()=>{confirmationOpener.current=document.activeElement instanceof HTMLElement?document.activeElement:null;}} onCloseAutoFocus={event=>{if(confirmationOpener.current?.isConnected){event.preventDefault();confirmationOpener.current.focus();}}}><DialogTitle>{confirmation.title}</DialogTitle><DialogDescription>{confirmation.description}</DialogDescription><div className="quiz-editor-tools"><Button type="button" variant="outline" onClick={()=>setConfirmation(null)}>{t('quiz.cancel')}</Button><Button type="button" onClick={()=>{const action=confirmation.run;setConfirmation(null);action();}}>{confirmation.accept}</Button></div></DialogContent></Dialog>}
   {preview&&<QuizPlayer content={preview} creator={draft.creator} onClose={()=>setPreview(null)}/>}

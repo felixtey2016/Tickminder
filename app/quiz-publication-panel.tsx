@@ -10,19 +10,20 @@ import '@/lib/quiz-upgrade-i18n';
 import '@/lib/quiz-sharing-i18n';
 
 type SharingMode='private'|'public'|'selected';
+export type QuizSharingSelection={visibility:SharingMode;recipientIds:string[];sharingRevision:number};
 type Person={id:string;name:string;role:string;studentName?:string;teacherName?:string};
 export type QuizSharingState={visibility:QuizVisibility;sharedRevision:number|null;sharingMode?:SharingMode|'organisation';sharingRevision?:number;recipientIds?:string[];creator?:string};
 type Targets={items:Person[];hasMore:boolean;selected?:Person[];selectedIds?:string[];scope?:'students'|'group';legacyOrganisation?:boolean};
 const text=(zh:string,en:string)=>getLanguage()==='zh'?zh:en;
 const modeFor=(value:string):SharingMode=>value==='public'?'public':value==='private'?'private':'selected';
 const stamp=(mode:SharingMode,ids:string[])=>JSON.stringify([mode,mode==='selected'?[...ids].sort():[]]);
-async function api<T>(url:string,body?:unknown,signal?:AbortSignal):Promise<T>{const response=await groupFetch(url,{cache:'no-store',signal,...(body?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}:{})});const data=await readApiJson<T&{error?:string}>(response);if(!response.ok)throw Object.assign(Error(data.error||'quiz.unavailable'),{status:response.status});return data;}
+async function api<T>(url:string,signal?:AbortSignal):Promise<T>{const response=await groupFetch(url,{cache:'no-store',signal});const data=await readApiJson<T&{error?:string}>(response);if(!response.ok)throw Object.assign(Error(data.error||'quiz.unavailable'),{status:response.status});return data;}
 
-export default function QuizPublicationPanel({id,revision,visibility,sharedRevision,disabled,onChanged,onDirtyChange}:{id:string;revision:number;visibility:QuizVisibility;sharedRevision:number|null;disabled:boolean;onChanged:(visibility:QuizVisibility,sharedRevision:number|null,state?:QuizSharingState)=>void;onDirtyChange?:(dirty:boolean)=>void}){
- const [scope,setScope]=useState<SharingMode>(modeFor(visibility)),[selected,setSelected]=useState<string[]>([]),[saved,setSaved]=useState<QuizSharingState|null>(null);
+export default function QuizPublicationPanel({id,revision,visibility,sharedRevision,disabled,savesQuestions,onSave,onDirtyChange}:{id:string;revision:number;visibility:QuizVisibility;sharedRevision:number|null;disabled:boolean;savesQuestions:boolean;onSave:(selection:QuizSharingSelection)=>Promise<QuizSharingState>;onDirtyChange?:(dirty:boolean)=>void}){
+ const [scope,setScope]=useState<SharingMode>(modeFor(visibility)),[selected,setSelected]=useState<string[]>([]),[saved,setSaved]=useState<QuizSharingState|null>(()=>revision?null:{visibility,sharedRevision});
  const [people,setPeople]=useState<Record<string,Person>>({}),[items,setItems]=useState<Person[]>([]),[audience,setAudience]=useState<'students'|'group'>('students'),[legacy,setLegacy]=useState(false);
  const [search,setSearch]=useState(''),[query,setQuery]=useState(''),[hasMore,setHasMore]=useState(false),[loading,setLoading]=useState(Boolean(revision)),[targetsLoading,setTargetsLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[targetsError,setTargetsError]=useState('');
- const operation=useRef<{stamp:string;id:string}|null>(null),generation=useRef(0),targetGeneration=useRef(0),dirtyRef=useRef(false),inFlight=useRef(false),onDirty=useRef(onDirtyChange),searchId=useId();
+ const generation=useRef(0),targetGeneration=useRef(0),dirtyRef=useRef(false),inFlight=useRef(false),onDirty=useRef(onDirtyChange),searchId=useId();
  onDirty.current=onDirtyChange;
  const dirty=Boolean(saved&&stamp(scope,selected)!==stamp(modeFor(saved.sharingMode||saved.visibility),saved.recipientIds||[]));
  dirtyRef.current=dirty;
@@ -34,28 +35,31 @@ export default function QuizPublicationPanel({id,revision,visibility,sharedRevis
   try{const data=await api<QuizSharingState>('/api/quizzes?id='+encodeURIComponent(id));if(token!==generation.current)return;setSaved(data);if(!dirtyRef.current){setScope(modeFor(data.sharingMode||data.visibility));setSelected(data.recipientIds||[]);}setLegacy(data.sharingMode==='organisation');}
   catch(error){if(token===generation.current){setError(error instanceof Error?error.message:'quiz.unavailable');alertActionFailure(error);}}finally{if(token===generation.current)setLoading(false);}
  }
- useEffect(()=>{dirtyRef.current=false;setSaved(null);setSelected([]);setPeople({});setItems([]);setSearch('');setQuery('');return()=>{generation.current++;};},[id]);
- useEffect(()=>{void load();},[id,revision]);
+ useEffect(()=>{void load();return()=>{generation.current++;};},[id]);
  async function targets(offset=0,signal?:AbortSignal){
-  if(!revision||scope!=='selected')return;const token=++targetGeneration.current;setTargetsLoading(true);setTargetsError('');
-  try{const data=await api<Targets>('/api/quiz-share-targets?'+new URLSearchParams({quizId:id,search:query,offset:String(offset)}),undefined,signal);if(token!==targetGeneration.current||signal?.aborted)return;setItems(old=>offset?[...old,...data.items].filter((person,index,all)=>all.findIndex(other=>other.id===person.id)===index):data.items);setHasMore(data.hasMore);setAudience(data.scope||'students');mergePeople([...data.items,...(data.selected||[])]);if(data.legacyOrganisation!==undefined)setLegacy(data.legacyOrganisation);}
+  if(scope!=='selected')return;const token=++targetGeneration.current;setTargetsLoading(true);setTargetsError('');
+  try{const data=await api<Targets>('/api/quiz-share-targets?'+new URLSearchParams({...(revision?{quizId:id}:{}),search:query,offset:String(offset)}),signal);if(token!==targetGeneration.current||signal?.aborted)return;setItems(old=>offset?[...old,...data.items].filter((person,index,all)=>all.findIndex(other=>other.id===person.id)===index):data.items);setHasMore(data.hasMore);setAudience(data.scope||'students');mergePeople([...data.items,...(data.selected||[])]);if(data.legacyOrganisation!==undefined)setLegacy(data.legacyOrganisation);}
   catch(error){if(token===targetGeneration.current&&!signal?.aborted){setTargetsError(error instanceof Error?error.message:'quiz.unavailable');alertActionFailure(error);}}finally{if(token===targetGeneration.current)setTargetsLoading(false);}
  }
- useEffect(()=>{if(scope!=='selected')return;const controller=new AbortController();setItems([]);setHasMore(false);void targets(0,controller.signal);return()=>{targetGeneration.current++;controller.abort();};},[id,scope,query,revision]);
+ useEffect(()=>{if(scope!=='selected')return;const controller=new AbortController();setItems([]);setHasMore(false);void targets(0,controller.signal);return()=>{targetGeneration.current++;controller.abort();};},[id,scope,query]);
  function toggle(person:Person,checked:boolean){mergePeople([person]);setSelected(old=>checked?[...new Set([...old,person.id])]:old.filter(value=>value!==person.id));}
  const missing=selected.filter(value=>!people[value]);
  async function save(){
-  if(inFlight.current||disabled||busy||loading||!saved||!revision||scope==='selected'&&(!selected.length||missing.length||targetsLoading||targetsError))return;
-  const body={action:'share',id,revision,sharingRevision:saved.sharingRevision||0,visibility:scope,recipientIds:scope==='selected'?selected:[]},signature=JSON.stringify(body);if(operation.current?.stamp!==signature)operation.current={stamp:signature,id:crypto.randomUUID()};inFlight.current=true;setBusy(true);setError('');
-  try{await api('/api/quizzes',{...body,operationId:operation.current.id});const next=await api<QuizSharingState>('/api/quizzes?id='+encodeURIComponent(id));operation.current=null;dirtyRef.current=false;setSaved(next);setScope(modeFor(next.sharingMode||next.visibility));setSelected(next.recipientIds||[]);setLegacy(next.sharingMode==='organisation');onDirty.current?.(false);onChanged(next.visibility,next.sharedRevision,next);showActionToast('success',t('quiz.shareUpdated'));}
+  if(inFlight.current||disabled||busy||loading||!saved||scope==='selected'&&(!selected.length||missing.length||targetsLoading||targetsError))return;
+  inFlight.current=true;setBusy(true);setError('');
+  try{
+   const next=await onSave({visibility:scope,recipientIds:scope==='selected'?[...selected].sort():[],sharingRevision:saved.sharingRevision||0});
+   dirtyRef.current=false;setSaved(next);setScope(modeFor(next.sharingMode||next.visibility));setSelected(next.recipientIds||[]);
+   setLegacy(next.sharingMode==='organisation');onDirty.current?.(false);showActionToast('success',t('quiz.shareUpdated'));
+  }
   catch(error){setError(error instanceof Error?error.message:'quiz.unavailable');alertActionFailure(error);if((error as {status?:number})?.status===409)await load();}finally{inFlight.current=false;setBusy(false);}
  }
- const inactive=disabled||busy||loading||!revision||Boolean(error&&!saved);
+ const inactive=disabled||busy||loading||Boolean(error&&!saved);
  const roleLabel=(role:string)=>({student:text('学生','Student'),teacher:text('老师','Teacher'),admin:text('管理员','Administrator'),parent:text('家长','Parent')}[role]||text('人员','Person'));
  return <section className="quiz-panel quiz-share-panel quiz-audience-panel" data-testid="quiz-sharing-panel">
   <h3>{text('谁可以看到这份 Quiz','Who can see this quiz')}</h3>
   {saved?.creator&&<p className="quiz-share-creator"><span>{t('quiz.creator')}</span><strong>{saved.creator}</strong></p>}
-  {!revision&&<p className="quiz-note">{text('先保存题目，再设置可见范围。','Save the quiz before setting its visibility.')}</p>}
+  {savesQuestions&&<p className="quiz-note">{text('保存共享设置时，会同时保存题目。','Saving sharing settings also saves the questions.')}</p>}
   {loading&&<p role="status">{t('quiz.loading')}</p>}
   <fieldset className="quiz-sharing-options" disabled={inactive}><legend className="sr-only">{t('quiz.share')}</legend>{(['public','private','selected'] as const).map(value=><label key={value} className={'quiz-sharing-option'+(scope===value?' is-selected':'')}><input type="radio" name={'quiz-scope-'+id} value={value} checked={scope===value} onChange={()=>setScope(value)}/><span><strong>{value==='public'?text('公开','Public'):value==='private'?text('不公开','Private'):text('只给指定人员看','Selected people')}</strong><small>{value==='public'?text('其他集团的用户也能在题库看到。','Users from other organisations can also find it in the library.'):value==='private'?text('保留为我的 Quiz；已有测验分配按原规则处理。','Keep it in My quizzes. Existing assignments follow their saved access.'):text('只有选择的人员可从题库查看。','Only the people you select can find it in the library.')}</small></span></label>)}</fieldset>
   {legacy&&<p className="quiz-note quiz-sharing-legacy">{text('这份 Quiz 仍沿用原来的集团共享范围。选择新的范围并保存后才会更改；指定人员时请重新选人。','This quiz still uses its previous organisation sharing. Saving a new setting replaces it; choose the people explicitly for selected access.')}</p>}

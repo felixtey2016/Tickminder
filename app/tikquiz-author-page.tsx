@@ -67,7 +67,10 @@ export default function TikQuizAuthorPage({section, id, bank, language, onClose,
     {draft
       ? preview
         ? <Preview key={draft.id} content={draft.content} creator={draft.creator} onClose={onClose} presentation="page"/>
-        : <Editor key={draft.id} initial={draft} onBack={onClose} onSaved={(_, reason) => { if (reason === 'draft') onSave(); }}/>
+        : <Editor key={draft.id} initial={draft} onBack={onClose} onSaved={(saved, reason) => {
+          if (reason === 'draft') onSave();
+          else if (section !== 'edit') onEdit(saved.id);
+        }}/>
       : section === 'import'
         ? <Import language={language} presentation="page" onClose={onClose} onImport={async file => { setDraft(await importedQuizDraft(file)); return true; }}/>
         : section === 'compose'

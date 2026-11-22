@@ -33,8 +33,8 @@ async function open(params={},options={}){
   AudioBufferSourceNode.prototype.start=function(...args){window.fixtureSounds.push(this.buffer.duration);return start.apply(this,args);};
   if(setting==='muted')localStorage.setItem('tickminder.quiz.sound.fixture-user',JSON.stringify({music:true,effects:false}));
  },options.soundProbe);
- const errors=[],writes=[],saveStarted=deferred(),releaseSave=deferred(),draftStarted=deferred(),releaseDraft=deferred(),checkStarted=deferred();
- let attempt=structuredClone(initialAttempt),draft=structuredClone(quiz),saveFailed=false;
+ const errors=[],writes=[],shareTargetQueries=[],saveStarted=deferred(),releaseSave=deferred(),draftStarted=deferred(),releaseDraft=deferred(),checkStarted=deferred();
+ let attempt=structuredClone(initialAttempt),draft=structuredClone(quiz),saveFailed=false,shareFailed=false;
  if(options.multilingual){
   const question=attempt.content.questions[0];
   question.prompt={en:'English test question?',ms:'Soalan dalam Bahasa Melayu?',zh:'这是一道华文题？'};
@@ -42,6 +42,7 @@ async function open(params={},options={}){
  }
  if(options.self)attempt.assignmentId=null;if(options.single){attempt.content.questions=attempt.content.questions.slice(0,1);attempt.questionCount=1;attempt.totalScore=1;attempt.rawTotalScore=1;}
  if(options.text){attempt.content.questions[0]={...attempt.content.questions[0],type:'blank',options:[]};}
+ if(options.baseNumbers)attempt.content.questions[0].options.forEach((option,index)=>{option.text.primary='$'+['2561_6','1045_6','5320_6','4152_6'][index]+'$';});
  if(options.fractions){
   const question=attempt.content.questions[0];
   question.prompt.primary='Write $\\frac{63}{99}$ in its simplest form.';
@@ -65,8 +66,13 @@ async function open(params={},options={}){
    expanded.syllabuses[0].subjects.push({id:'science',name:'Science',aliases:[],active:true});
    return reply(expanded);
   }
+  if(u.pathname==='/api/quiz-share-targets'){
+   shareTargetQueries.push(u.searchParams.get('quizId'));
+   return reply({items:[{id:'linked-student',name:'Linked Student',role:'student'}],hasMore:false,scope:'students'});
+  }
+  if(u.pathname.startsWith('/api/quiz-music/'))return route.fulfill({status:404});
   if(u.pathname==='/api/quizzes'){
-   if(route.request().method()==='POST'){const body=route.request().postDataJSON();writes.push(body);if(body.action==='save'||body.action==='maintenanceImport'){draftStarted.resolve(body);if(options.holdDraft)await releaseDraft.promise;if(options.failDraft)return reply({error:'quiz.unavailable'},503);draft={...draft,content:body.content,keys:body.keys,revision:draft.revision+1};return reply({id:quizId,revision:draft.revision});}if(body.action==='share'){draft={...draft,visibility:body.visibility,sharingMode:body.visibility,sharingRevision:draft.sharingRevision+1,sharedRevision:draft.revision};return reply({ok:true});}errors.push('unexpected quiz action '+body.action);return reply({error:'quiz.unavailable'},503);}
+   if(route.request().method()==='POST'){const body=route.request().postDataJSON();writes.push(body);if(body.action==='save'||body.action==='maintenanceImport'){draftStarted.resolve(body);if(options.holdDraft)await releaseDraft.promise;if(options.failDraft)return reply({error:'quiz.unavailable'},503);draft={...draft,id:body.id,content:body.content,keys:body.keys,revision:body.revision+1};return reply({id:draft.id,revision:draft.revision});}if(body.action==='share'){if(options.failShareOnce&&!shareFailed){shareFailed=true;return reply({error:'quiz.unavailable'},503);}draft={...draft,visibility:body.visibility,sharingMode:body.visibility,sharingRevision:draft.sharingRevision+1,sharedRevision:draft.revision,recipientIds:body.recipientIds};return reply({ok:true});}errors.push('unexpected quiz action '+body.action);return reply({error:'quiz.unavailable'},503);}
    if(u.searchParams.has('id'))return reply(draft);
    return reply({items:[{id:quizId,title:draft.content.title,subject:'Mathematics',exam:'SPM',difficulty:'mixed',questionCount:2,totalScore:2,visibility:draft.visibility,bank:false,creator:'Fixture Teacher',organisation:'Fixture Group',canEdit:true,canShare:true,revision:draft.revision,sharedRevision:draft.sharedRevision}],hasMore:false,facets:{subjects:['Mathematics'],levels:[],chapters:[],maintenanceImport:Boolean(options.importZip),manageQuizzes:false,canModerate:false}});
   }
@@ -99,7 +105,7 @@ async function open(params={},options={}){
   errors.push('unexpected API '+u.pathname);return reply({error:'fixture.unexpected'},500);
  });
  page.on('pageerror',error=>errors.push(error.message));await page.goto(origin+'/?'+new URLSearchParams(params));
- return{page,writes,saveStarted:saveStarted.promise,releaseSave:()=>releaseSave.resolve(),draftStarted:draftStarted.promise,releaseDraft:()=>releaseDraft.resolve(),checkStarted:checkStarted.promise,attempt:()=>attempt,expire:()=>{attempt.deadlineAt=new Date(Date.now()-1000).toISOString();},close:async()=>{releaseSave.resolve();releaseDraft.resolve();check(!errors.length,errors.join('; '));await context.close();}};
+ return{page,writes,shareTargetQueries,saveStarted:saveStarted.promise,releaseSave:()=>releaseSave.resolve(),draftStarted:draftStarted.promise,releaseDraft:()=>releaseDraft.resolve(),checkStarted:checkStarted.promise,attempt:()=>attempt,expire:()=>{attempt.deadlineAt=new Date(Date.now()-1000).toISOString();},close:async()=>{releaseSave.resolve();releaseDraft.resolve();check(!errors.length,errors.join('; '));await context.close();}};
 }
 async function tap(page,locator){await locator.scrollIntoViewIfNeeded();const b=await locator.boundingBox();assert(b);await page.mouse.click(b.x+b.width/2,b.y+b.height/2);}
 async function startBackgroundSave(f){await f.page.locator('.quiz-flag-question').click();await f.saveStarted;}
@@ -261,6 +267,54 @@ try{
    await f.close();
   }
   {const f=await open({lang:'en'},{failDraft:true}),p=f.page,save=await editDraft(f,'en');await save.click();await p.locator('.quiz-editor [role=alert]').waitFor();check(await p.getByLabel('Quiz title',{exact:true}).inputValue()==='Updated fixture quiz','failed draft save keeps edited content');check(await p.locator('.quiz-editor').isVisible(),'failed draft never navigates');await f.close();}
+  {
+   const f=await open({lang:'en'},{touch:true,failShareOnce:true}),p=f.page;
+   await p.getByTestId('quiz-tab-mine').tap();
+   await p.getByTestId('quiz-create').first().tap();
+   const sharingTab=p.getByRole('tab',{name:'Sharing',exact:true});
+   await sharingTab.tap();
+   const panel=p.getByTestId('quiz-sharing-panel');
+   await panel.getByRole('radio',{name:/Selected people/}).check();
+   const recipient=panel.getByRole('checkbox',{name:/Linked Student/});
+   await recipient.check();
+   check(f.shareTargetQueries.length===1&&f.shareTargetQueries[0]===null,'new quiz can choose linked students before a draft exists');
+   const publish=panel.getByRole('button',{name:'Save sharing settings',exact:true});
+   await publish.tap();
+   await panel.getByRole('alert').waitFor();
+   check(f.writes.length===0,'an invalid new quiz cannot be saved or published');
+   await p.getByRole('tab',{name:'Settings',exact:true}).tap();
+   await p.getByLabel('Quiz title',{exact:true}).fill('Share an unsaved quiz');
+   await p.getByTestId('quiz-editor-syllabus').selectOption('spm');
+   await p.getByTestId('quiz-editor-subject').selectOption('math');
+   await p.getByTestId('quiz-editor-grade').selectOption('Form 4');
+   await p.getByTestId('quiz-editor-topic').fill('Numbers');
+   await p.getByRole('tab',{name:/^Questions/}).tap();
+   await p.getByTestId('quiz-editor-prompt').fill('What is two plus two?');
+   const options=p.locator('.quiz-option-editor textarea');
+   for(let index=0;index<4;index++)await options.nth(index).fill(String(index+4));
+   await sharingTab.tap();
+   check(await recipient.isChecked(),'recipient selection survives switching editor tabs');
+   const rejected=p.waitForResponse(response=>response.status()===503&&response.request().postDataJSON()?.action==='share');
+   await publish.tap();
+   await rejected;
+   await panel.getByRole('alert').waitFor();
+   const [saved,failed]=f.writes;
+   check(f.writes.length===2&&saved.action==='save'&&saved.revision===0&&failed.action==='share'&&failed.revision===1&&failed.id===saved.id,'publishing a new quiz first saves the draft and shares its stored revision');
+   check(failed.visibility==='selected'&&failed.recipientIds.join(',')==='linked-student'&&await recipient.isChecked(),'a failed share retains the selected audience');
+   const confirmed=p.waitForResponse(response=>response.ok()&&response.request().method()==='GET'&&new URL(response.url()).searchParams.get('id')===saved.id);
+   await publish.tap();
+   await confirmed;
+   await panel.getByRole('alert').waitFor({state:'hidden'});
+   check(f.writes.length===3&&f.writes[2].action==='share'&&f.writes[2].operationId===failed.operationId,'retry shares the saved draft with the same operation ID');
+   await f.close();
+  }
+  {
+   const f=await open({mode:'practice',lang:'en'},{baseNumbers:true,touch:true,width:320}),p=f.page;
+   const numerals=p.locator('.quiz-option-button .quiz-formula-inline');
+   await numerals.nth(3).waitFor();
+   check(await numerals.evaluateAll(items=>items.length===4&&items.every(item=>getComputedStyle(item).scrollbarWidth==='none'&&item.querySelector('msub'))),'base-number options retain subscripts without visible scrollbars');
+   await f.close();
+  }
   {const f=await open({lang:'en'}),p=f.page;await p.getByTestId('quiz-tab-mine').click();await p.locator('.quiz-item-more-trigger').first().click();await p.getByRole('button',{name:'Edit',exact:true}).click();await p.getByRole('tab',{name:'Sharing',exact:true}).click();const panel=p.getByTestId('quiz-sharing-panel');await panel.getByRole('radio',{name:/Public/}).check();const refreshed=p.waitForResponse(r=>r.url().includes('/api/quizzes?id=')&&r.request().method()==='GET');await panel.getByRole('button',{name:'Save sharing settings',exact:true}).click();await refreshed;await panel.locator('.quiz-sharing-options:not([disabled])').waitFor();check(await p.locator('.quiz-editor').isVisible(),'updating sharing does not close the editor');check(f.writes.some(body=>body.action==='share'),'sharing flow was actually saved');await f.close();}
   {
    const f=await open({lang:'zh'},{touch:true}),p=f.page;
@@ -379,9 +433,9 @@ try{
    await p.locator('.quiz-player-question .mfrac').nth(1).waitFor();
    const wide=await p.locator('.quiz-player-question .quiz-formula-inline').evaluate(formula=>{
     formula.scrollLeft=50;
-    return {left:formula.scrollLeft,width:formula.clientWidth,scrollWidth:formula.scrollWidth,vertical:getComputedStyle(formula).overflowY};
+    return {left:formula.scrollLeft,width:formula.clientWidth,scrollWidth:formula.scrollWidth,vertical:getComputedStyle(formula).overflowY,scrollbar:getComputedStyle(formula).scrollbarWidth};
    });
-   check(wide.left>0&&wide.scrollWidth>wide.width&&wide.vertical==='hidden','a long fraction stays horizontally scrollable: '+JSON.stringify(wide));
+   check(wide.left>0&&wide.scrollWidth>wide.width&&wide.vertical==='hidden'&&wide.scrollbar==='none','a long fraction stays horizontally scrollable without a visible scrollbar: '+JSON.stringify(wide));
    await f.close();
   }
  }
