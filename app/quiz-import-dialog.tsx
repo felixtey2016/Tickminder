@@ -6,7 +6,8 @@ import {alertActionFailure} from '@/lib/action-feedback';
 import {t,type Language} from '@/lib/i18n';
 import './quiz-editor-wave3.css';
 
-export default function QuizImportDialog({language,disabled=false,onImport,onClose}:{language:Language;disabled?:boolean;onImport:(file:File)=>Promise<boolean>;onClose:()=>void}){
+export default function QuizImportDialog({language,disabled=false,onImport,onClose,presentation='dialog'}:{language:Language;disabled?:boolean;onImport:(file:File)=>Promise<boolean>;onClose:()=>void;presentation?:'page'|'dialog'}){
+ const page=presentation==='page',Title=page?'h1':DialogTitle,Description=page?'p':DialogDescription;
  const input=useRef<HTMLInputElement>(null),dragDepth=useRef(0),inFlight=useRef(false);
  const [busy,setBusy]=useState(false),[dragging,setDragging]=useState(false),[error,setError]=useState(''),[errorDetails,setErrorDetails]=useState('');
  const text=(zh:string,en:string)=>language==='zh'?zh:en,working=disabled||busy;
@@ -20,7 +21,7 @@ export default function QuizImportDialog({language,disabled=false,onImport,onClo
   if(file.size>20*1024*1024){failure(new Error(text('ZIP 文件不能超过 20 MB。','ZIP files must be 20 MB or smaller.')));return;}
   if(!file.size){failure(new Error(text('ZIP 文件为空。','The ZIP file is empty.')));return;}
   inFlight.current=true;setBusy(true);
-  try{if(await onImport(file))onClose();else failure(new Error('quiz.importFailed'));}catch(value){failure(value);}finally{inFlight.current=false;setBusy(false);}
+  try{if(await onImport(file)){if(!page)onClose();}else failure(new Error('quiz.importFailed'));}catch(value){failure(value);}finally{inFlight.current=false;setBusy(false);}
  }
  const filesDrag=(event:DragEvent)=>Array.from(event.dataTransfer.types).includes('Files');
  function resetDrag(){dragDepth.current=0;setDragging(false);}
@@ -28,9 +29,9 @@ export default function QuizImportDialog({language,disabled=false,onImport,onClo
  function dragOver(event:DragEvent<HTMLButtonElement>){if(!filesDrag(event))return;event.preventDefault();event.stopPropagation();event.dataTransfer.dropEffect=working?'none':'copy';}
  function dragLeave(event:DragEvent<HTMLButtonElement>){if(!dragDepth.current)return;event.preventDefault();event.stopPropagation();dragDepth.current=Math.max(0,dragDepth.current-1);if(!dragDepth.current)setDragging(false);}
  function drop(event:DragEvent<HTMLButtonElement>){if(!filesDrag(event))return;event.preventDefault();event.stopPropagation();resetDrag();void importFiles(Array.from(event.dataTransfer.files));}
- return <Dialog open onOpenChange={open=>{if(!open&&!working)onClose();}}><DialogContent className="quiz-import-dialog" overlayClassName="content-edit-overlay" data-testid="quiz-import-dialog" closeDisabled={working} onDragOver={event=>{if(filesDrag(event))event.preventDefault();}} onDrop={event=>{if(filesDrag(event))event.preventDefault();}}>
-  <DialogTitle>{t('quiz.import')}</DialogTitle>
-  <DialogDescription>{text('导入后先打开私人草稿，检查后再保存。','Opens a private draft for review before you save.')}</DialogDescription>
+ const body=<>
+  <Title>{t('quiz.import')}</Title>
+  <Description>{text('导入后先打开私人草稿，检查后再保存。','Opens a private draft for review before you save.')}</Description>
   <input ref={input} data-testid="quiz-import-file" type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden disabled={working} onChange={event=>{const files=Array.from(event.currentTarget.files||[]);event.currentTarget.value='';if(files.length)void importFiles(files);}}/>
   <button type="button" className={'quiz-import-dropzone'+(dragging?' is-dragging':'')} data-testid="quiz-import-dropzone" disabled={working} onClick={()=>input.current?.click()} onDragEnter={dragEnter} onDragOver={dragOver} onDragLeave={dragLeave} onDragEnd={resetDrag} onDrop={drop}>
    {working?<Loader2 size={28} className="quiz-import-spinner" aria-hidden="true"/>:<Upload size={28} aria-hidden="true"/>}<strong>{working?t('quiz.importing'):text('选择 ZIP 文件','Choose ZIP file')}</strong><span>{text('也可将文件拖到这里','Or drag and drop it here')}</span><small>ZIP · 20 MB max · {text('一次一个文件','One file at a time')}</small>
@@ -47,5 +48,7 @@ export default function QuizImportDialog({language,disabled=false,onImport,onClo
    <pre aria-label={text('ZIP 文件结构','ZIP structure')}>questions.txt{'\n'}images/  ({text('选填','optional')})</pre>
    <div className="quiz-import-downloads"><a href="/downloads/tickminder-quiz-ai-prompt.txt" download data-testid="quiz-import-prompt-download"><Download size={16} aria-hidden="true"/>{text('下载 AI 提示词','Download AI prompt')}</a><a href="/downloads/tickminder-quiz-example.zip" download data-testid="quiz-import-sample-download"><Download size={16} aria-hidden="true"/>{text('示例 ZIP','Example ZIP')}</a></div>
   </div></details>
- </DialogContent></Dialog>;
+ </>;
+ if(page)return <section className="quiz-import-dialog tikquiz-form-page" data-testid="quiz-import-dialog"><button type="button" className="tikquiz-form-back" disabled={working} onClick={onClose}>{t('quiz.back')}</button>{body}</section>;
+ return <Dialog open onOpenChange={open=>{if(!open&&!working)onClose();}}><DialogContent className="quiz-import-dialog" overlayClassName="content-edit-overlay" data-testid="quiz-import-dialog" closeDisabled={working} onDragOver={event=>{if(filesDrag(event))event.preventDefault();}} onDrop={event=>{if(filesDrag(event))event.preventDefault();}}>{body}</DialogContent></Dialog>;
 }

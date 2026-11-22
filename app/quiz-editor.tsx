@@ -5,7 +5,8 @@ import {cloneElement,isValidElement,useEffect,useId,useMemo,useRef,useState,type
 import {ArrowDown,ArrowLeft,ArrowUp,Check,Copy,Eye,ImagePlus,Plus,Save,Trash2} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Dialog,DialogContent,DialogDescription,DialogTitle} from '@/components/ui/dialog';
-import QuizPlayer,{QuizPicture} from '@/components/quiz-player';
+import QuizPlayer from '@/components/quiz-player';
+import {QuizPicture} from '@/components/quiz-picture';
 import {QuizMath} from '@/components/quiz-math';
 import {checkQuiz,newQuestion,quizImageIds,quizReadText,QUIZ_LANGUAGES,QUIZ_LANGUAGE_NAMES,type Difficulty,type QuizCatalog,type QuizContent,type QuizDraft,type QuizKey,type QuizLanguage,type QuizQuestion,type QuizReadingLanguage,type QuizType,type QuizVisibility} from '@/lib/quiz';
 import {groupFetch} from '@/lib/group-client';

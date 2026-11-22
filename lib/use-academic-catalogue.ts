@@ -43,9 +43,10 @@ async function load(scope: CatalogueScope, force = false, supersede = false): Pr
   return pending;
 }
 
-export function useAcademicCatalogue(scope: CatalogueScope) {
+export function useAcademicCatalogue(scope: CatalogueScope, enabled = true) {
   const [,render] = useState(0);
   useEffect(() => {
+    if (!enabled) return;
     const entry = entries[scope], listener = () => render(value => value + 1);
     entry.listeners.add(listener);
     void load(scope);
@@ -56,7 +57,7 @@ export function useAcademicCatalogue(scope: CatalogueScope) {
     document.addEventListener("visibilitychange", refresh);
     window.addEventListener("tickminder:catalogue-changed", changed);
     return () => { entry.listeners.delete(listener); window.clearInterval(timer); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); window.removeEventListener("tickminder:catalogue-changed", changed); };
-  }, [scope]);
+  }, [scope, enabled]);
   const reload = useCallback(() => load(scope, true, true), [scope]);
   const entry = entries[scope];
   return {catalogue:entry.catalogue,loading:entry.loading || !entry.catalogue && !entry.error,error:entry.error,reload};

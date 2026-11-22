@@ -1,4 +1,5 @@
 import { quizLinkIdFromPath } from "./quiz-link";
+import { tikQuizRoute } from "./tikquiz-route";
 
 export type WorkspaceRole = "admin" | "teacher" | "student" | "parent" | "pending";
 
@@ -29,7 +30,7 @@ export function isWorkspacePath(pathname: string): boolean { return knownPaths.h
 
 export function workspaceViewFromPath(pathname: string, role: WorkspaceRole): string | null {
   const path = cleanPath(pathname);
-  if (quizLinkIdFromPath(path)) return "quizzes";
+  if (tikQuizRoute(pathname)) return "quizzes";
   if (path === "/courses") return "calendar";
   const mapping = role === "parent" ? PARENT_PATHS : WORKSPACE_PATHS;
   const view = Object.keys(mapping).find(view => mapping[view] === path) || null;
@@ -61,14 +62,16 @@ export function workspaceNeedsCore(view: string): boolean {
 // One same-origin allow-list for login/recovery return paths. Invalid assignment
 // presence is retained so it cannot silently turn into unrelated self-practice.
 export function safeWorkspaceReturnPath(pathname: string, search: string, language: "zh" | "en"): string {
-  const quizId = quizLinkIdFromPath(pathname), params = new URLSearchParams();
+  const quizId = quizLinkIdFromPath(pathname), params = new URLSearchParams(), input = new URLSearchParams(search);
+  const route = tikQuizRoute(pathname);
   if (quizId) {
-    const assignments = new URLSearchParams(search).getAll("assignment");
+    const assignments = input.getAll("assignment");
     if (assignments.length > 8 || assignments.some(value => value.length > 254)) params.append("assignment", "invalid");
     else for (const value of assignments) params.append("assignment", value);
   }
+  if ((route?.section === 'preview' || route?.section === 'edit') && input.get('bank') === '1') params.set('bank', '1');
   params.set("lang", language);
-  const path = quizId ? "/quiz/" + quizId : isWorkspacePath(pathname) ? cleanPath(pathname) : "/";
+  const path = quizId ? "/quiz/" + quizId : isWorkspacePath(pathname) || route ? cleanPath(pathname) : "/";
   return path + "?" + params;
 }
 

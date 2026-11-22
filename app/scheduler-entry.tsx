@@ -13,6 +13,8 @@ import type {SchedulerAuth} from "./scheduler";
 import {readClientAuth,acceptClientAuth} from '@/lib/client-auth-read';
 import {installPrivateReadEvents,getPrivateReadSnapshot} from '@/lib/private-read-lifecycle';
 import {PrivateReadInvalidatedError} from '@/lib/private-read-flight';
+import {workspaceIdentityKey} from '@/lib/workspace-page-data';
+import type {Account} from '@/lib/workspace-client-types';
 
 // Authentication is deliberately outside the management bundle. An anonymous
 // visitor only downloads the login/recovery UI; the workspace starts after auth.
@@ -20,6 +22,16 @@ const Workspace = dynamic(() => import("./scheduler").then(module => module.Sche
   ssr: false,
   loading: ({error}) => <WorkspaceStartup error={error}/>,
 });
+const TikQuiz = dynamic(() => import("./tikquiz-entry"), {
+  ssr: false,
+  loading: ({error}) => <WorkspaceStartup error={error}/>,
+});
+
+function quizAccountReady(account: Account | null | undefined): account is Account {
+  return Boolean(account && !account.mustChangePassword && account.nameConfirmedAt &&
+    !account.requiresAccountSetup && account.role !== 'pending' && !account.groupUnavailable &&
+    !(account.role === 'student' && account.requiresStudentPhone) && !account.showGoogleLinkOnboarding);
+}
 function WorkspaceStartup({error}:{error?:Error|null}){
   useEffect(()=>{if(error)reportClientException(error,"render_failure");},[error]);
   return <main className="workspace-startup" aria-busy={!error}>
@@ -42,7 +54,7 @@ async function authRequest(body?:Record<string,unknown>,signal?:AbortSignal):Pro
   if(!acceptClientAuth(value,responseEpoch))return readClientAuth(signal);
   return value;
 }
-export function SchedulerEntry({initialQuizId}:{initialQuizId?:string}={}){
+export function SchedulerEntry({initialQuizId,quizPath}:{initialQuizId?:string;quizPath?:string}={}){
   const [auth,setAuth]=useState<SchedulerAuth|null>(null);
   const [language,setLanguageState]=useState<Language>("zh"),[ready,setReady]=useState(false);
   const [message,setMessage]=useState(""),[busy,setBusy]=useState(false),[retry,setRetry]=useState(0);
@@ -55,7 +67,11 @@ export function SchedulerEntry({initialQuizId}:{initialQuizId?:string}={}){
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
   useEffect(installPrivateReadEvents,[]);
   const authRef=useRef(auth);authRef.current=auth;
-  useEffect(()=>{const refresh=()=>{if(authRef.current?.account)return;void readClientAuth().then(next=>{if(alive.current)acceptAuth(next);}).catch(error=>{if(alive.current&&!(error instanceof PrivateReadInvalidatedError))setMessage(alertActionFailure(error));});};window.addEventListener('timelyo:auth-refresh',refresh);return()=>window.removeEventListener('timelyo:auth-refresh',refresh);},[acceptAuth]);
+  const legacyView = ready ? new URLSearchParams(window.location.search).get('view') : null;
+  const quizDestination = quizPath || (legacyView === 'quizzes' || legacyView === 'quizBank' ? '/quizzes/bank' : undefined);
+  const quizOwnsSession = useRef(false);
+  quizOwnsSession.current = Boolean(quizDestination && quizAccountReady(auth?.account));
+  useEffect(()=>{const refresh=()=>{if(authRef.current?.account&&!quizOwnsSession.current)return;void readClientAuth().then(next=>{if(alive.current)acceptAuth(next);}).catch(error=>{if(alive.current&&!(error instanceof PrivateReadInvalidatedError))setMessage(alertActionFailure(error));});};window.addEventListener('timelyo:auth-refresh',refresh);return()=>window.removeEventListener('timelyo:auth-refresh',refresh);},[acceptAuth]);
   useEffect(()=>{const next=readBrowserLanguagePreference();setLanguage(next);setLanguageState(next);setReady(true);},[]);
   useEffect(()=>{
     const controller=new AbortController();setMessage("");
@@ -99,5 +115,6 @@ export function SchedulerEntry({initialQuizId}:{initialQuizId?:string}={}){
     return <main className="auth-loading"><AuthLanguageSwitcher language={language} change={changeLanguage}/><p role="alert">{message}</p><button type="button" onClick={()=>setRetry(value=>value+1)}>{t("重试")}</button></main>;
   }
   if(!auth.account)return <LoginForm googleButton={googleButton} clientId={auth.clientId} login={(username,password)=>signIn({username,password})} busy={busy} message={message} language={language} changeLanguage={changeLanguage} invitedGroup={invitedGroup}/>;
-  return <Workspace initialQuizId={initialQuizId} initialAuth={auth} onAuthChange={acceptAuth}/>;
+  if(quizDestination && quizAccountReady(auth.account))return <TikQuiz key={workspaceIdentityKey(auth.account)} initialPath={quizDestination} account={auth.account} language={language} changeLanguage={changeLanguage}/>;
+  return <Workspace initialQuizId={initialQuizId} quizPath={quizDestination} initialAuth={auth} onAuthChange={acceptAuth}/>;
 }

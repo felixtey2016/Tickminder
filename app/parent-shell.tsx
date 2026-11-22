@@ -118,6 +118,7 @@ function ParentShellContent({account,language,changeLanguage,logout,refreshIdent
 
   function choose(next:ParentShellView){
     if(next!==view&&!navigationAllowed())return;
+    if(next==='quizzes'&&next!==view){window.location.assign(workspaceUrl(next,'parent',window.location.search));return;}
     setNavigation(null);setTarget(null);setPendingNotice('');setView(next);
     if(initialQuizId&&next!=='quizzes')onLinkedQuizExit?.();
     if(next!==view)window.scrollTo(0,0);

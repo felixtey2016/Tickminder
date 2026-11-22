@@ -1,0 +1,342 @@
+.tikquiz-shell {
+  min-height: 100dvh;
+  background: var(--ui-canvas, var(--background));
+  color: var(--ui-text);
+}
+.tikquiz-header, .tikquiz-player-header {
+  background: var(--ui-surface);
+  border-bottom: 1px solid var(--ui-border);
+  padding-inline: max(16px, env(safe-area-inset-left));
+}
+.tikquiz-header-inner, .tikquiz-player-header-inner {
+  max-width: 1120px;
+  min-height: 72px;
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.tikquiz-logo {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-width: 0;
+  border-radius: 10px;
+  padding: 4px 8px;
+}
+.tikquiz-logo img {
+  display: block;
+  width: clamp(97px, 29vw, 171px);
+  height: auto;
+  object-fit: contain;
+}
+.dark .tikquiz-logo {
+  background: #eee8fb;
+}
+.tikquiz-header-actions, .tikquiz-player-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tikquiz-header-actions .language-switch, .tikquiz-header-actions .appearance-toggle {
+  margin: 0;
+  flex: none;
+}
+.tikquiz-header-actions .appearance-toggle {
+  width: 44px;
+  min-height: 44px;
+}
+.tikquiz-app-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  text-decoration: none;
+  white-space: nowrap;
+  font-size: .875rem;
+  font-weight: 600;
+}
+.tikquiz-app-link:hover {
+  background: var(--ui-surface-muted);
+}
+.tikquiz-content {
+  max-width: 1168px;
+  margin-inline: auto;
+  padding: 22px 24px max(24px, env(safe-area-inset-bottom));
+}
+.tikquiz-content-player {
+  max-width: none;
+  padding: 0;
+}
+.tikquiz-nav {
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  width: fit-content;
+  max-width: 100%;
+  margin-bottom: 20px;
+  overflow-x: auto;
+  border: 1px solid var(--ui-border);
+  border-radius: 13px;
+  background: var(--ui-surface);
+}
+.tikquiz-nav a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 5px 14px;
+  border-radius: 8px;
+  color: var(--ui-muted);
+  text-decoration: none;
+  white-space: nowrap;
+  font-size: .875rem;
+}
+.tikquiz-nav a:hover {
+  background: var(--ui-surface-muted);
+  color: var(--ui-text);
+}
+.tikquiz-nav a[aria-current="page"] {
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent-text, var(--ui-accent));
+  font-weight: 650;
+}
+.tikquiz-shell :is(a, summary):focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+}
+.tikquiz-content > .quiz-workspace {
+  margin-inline: auto;
+}
+.tikquiz-loading {
+  margin-block: 24px;
+  color: var(--ui-muted);
+}
+.tikquiz-route-state, .tikquiz-form-page {
+  display: grid;
+  gap: 14px;
+  max-width: 900px;
+  margin-inline: auto;
+  padding: clamp(16px, 4vw, 28px);
+  border: 1px solid var(--ui-border);
+  border-radius: 14px;
+  background: var(--ui-surface);
+}
+.tikquiz-route-state > button, .tikquiz-form-page > button {
+  justify-self: start;
+}
+.tikquiz-form-page h1, .tikquiz-practice-page .quiz-practice-title {
+  margin: 0;
+  color: var(--ui-text);
+  font-size: clamp(1.3rem, 3.4vw, 1.85rem);
+  line-height: 1.25;
+  font-weight: 720;
+  overflow-wrap: anywhere;
+}
+.tikquiz-form-page > p, .tikquiz-preview-description {
+  color: var(--ui-muted);
+}
+.tikquiz-preview-description .quiz-player-creator {
+  display: block;
+}
+.tikquiz-form-page .quiz-compose-body {
+  padding: 0;
+  overflow: visible;
+}
+.tikquiz-practice-page {
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+}
+.tikquiz-player-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.tikquiz-player-header-inner {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+}
+.tikquiz-player-header-inner > .tikquiz-logo {
+  justify-self: center;
+}
+.tikquiz-player-header-inner button {
+  min-height: 44px;
+}
+.tikquiz-player-header-actions {
+  justify-content: end;
+}
+.tikquiz-shell .tikquiz-practice-page > :not(.tikquiz-player-header) {
+  width: min(1120px, calc(100% - 48px));
+  margin-inline: auto;
+}
+.tikquiz-shell .tikquiz-practice-page > .quiz-player-heading {
+  position: static;
+  margin-block: 26px 16px;
+  background: transparent;
+}
+.tikquiz-practice-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.tikquiz-question-card {
+  min-width: 0;
+  scroll-margin-top: 86px;
+  padding: clamp(14px, 3vw, 28px);
+  border: 1px solid var(--ui-border);
+  border-radius: 16px;
+  background: var(--ui-surface);
+}
+.tikquiz-practice-page .quiz-attempt-navigation {
+  min-width: 0;
+  margin: 0;
+  padding: 4px 12px;
+  border-radius: 12px;
+  background: var(--ui-surface);
+}
+.tikquiz-practice-page .quiz-attempt-navigation > summary {
+  font-weight: 650;
+  color: var(--ui-text);
+}
+.tikquiz-practice-page .quiz-attempt-navigation nav button {
+  border-radius: 7px;
+}
+.tikquiz-practice-page .quiz-attempt-navigation nav button.is-current {
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent-text, var(--ui-accent));
+}
+.tikquiz-practice-page .quiz-player-question h3 {
+  font-size: clamp(1.15rem, 3.6vw, 1.45rem);
+  line-height: 1.5;
+}
+.tikquiz-practice-page .quiz-answer-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+.tikquiz-practice-page .quiz-answer-cell {
+  border-radius: 11px;
+}
+.tikquiz-practice-page .quiz-option-button {
+  min-height: 55px;
+  padding: 10px 12px;
+  text-align: start;
+}
+.tikquiz-practice-page .quiz-answer-cell.is-incorrect {
+  box-shadow: none;
+}
+.tikquiz-practice-page .quiz-practice-question-bar {
+  min-height: 38px;
+}
+.tikquiz-practice-page .quiz-question-position {
+  color: var(--ui-muted);
+  font-weight: 550;
+}
+.tikquiz-practice-page progress {
+  height: 6px;
+  border-radius: 999px;
+}
+.tikquiz-practice-page .quiz-result-summary,
+.tikquiz-practice-page .quiz-attempt-result-list {
+  margin-bottom: 14px;
+  border-radius: 12px;
+}
+.tikquiz-shell .tikquiz-practice-page .quiz-time-taken :is(strong, time) {
+  font-size: .875rem;
+}
+.tikquiz-practice-page .quiz-solution {
+  min-width: 0;
+}
+.tikquiz-practice-page .quiz-solution-steps {
+  overflow-wrap: anywhere;
+}
+@media (min-width: 900px) {
+  .tikquiz-practice-layout {
+    grid-template-columns: minmax(0, 1fr) 270px;
+    gap: 20px;
+  }
+  .tikquiz-practice-page .quiz-attempt-navigation {
+    grid-column: 2;
+    grid-row: 1;
+    position: sticky;
+    top: 88px;
+  }
+  .tikquiz-practice-page .quiz-attempt-navigation nav {
+    max-height: min(56dvh, 440px);
+  }
+  .tikquiz-question-card {
+    grid-column: 1;
+    grid-row: 1;
+  }
+}
+@media (max-width: 620px) {
+  .tikquiz-header-inner, .tikquiz-player-header-inner {
+    min-height: 61px;
+  }
+  .tikquiz-header-actions {
+    gap: 6px;
+  }
+  .tikquiz-header-actions .language-switch {
+    padding-inline: 2px;
+  }
+  .tikquiz-content:not(.tikquiz-content-player) {
+    padding: 14px 12px max(20px, env(safe-area-inset-bottom));
+  }
+  .tikquiz-app-link {
+    gap: 5px;
+    padding-inline: 8px;
+  }
+  .tikquiz-app-link span {
+    max-width: 108px;
+    white-space: normal;
+    line-height: 1.15;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+  .tikquiz-nav {
+    width: 100%;
+    margin-bottom: 12px;
+    gap: 2px;
+  }
+  .tikquiz-nav a {
+    flex: 1 0 auto;
+    padding-inline: 9px;
+  }
+  .tikquiz-shell .tikquiz-practice-page > :not(.tikquiz-player-header) {
+    width: calc(100% - 24px);
+  }
+  .tikquiz-shell .tikquiz-practice-page > .quiz-player-heading {
+    margin-block: 16px 12px;
+  }
+  .tikquiz-question-card {
+    scroll-margin-top: 70px;
+  }
+  .tikquiz-practice-page .quiz-player-nav {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin-bottom: -14px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    background: var(--ui-surface);
+  }
+}
+@media (max-width: 375px) {
+  .tikquiz-header-inner {
+    gap: 5px;
+  }
+  .tikquiz-header:not(.tikquiz-player-header) .tikquiz-logo {
+    padding-inline: 2px;
+  }
+  .tikquiz-app-link span {
+    width: 1px;
+    height: 1px;
+    position: absolute;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+}

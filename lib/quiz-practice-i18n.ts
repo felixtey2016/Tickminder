@@ -10,6 +10,8 @@ const pairs:Record<string,[string,string]>={
  'quiz.responseType':['记录类型','Response type'],
  'quiz.allResponses':['全部记录','All responses'],
  'quiz.answeredProgress':['已答 {answered} / {total}','Answered {answered} / {total}'],
+ 'quiz.timeElapsed':['已用时间','Elapsed time'],
+ 'quiz.timeTaken':['完成用时','Time taken'],
 
  'quiz.discardPractice':['删除练习记录','Delete practice record'],
  'quiz.discardPracticeConfirm':['删除「{title}」这次未完成的自主练习记录？已保存的答案将无法继续作答，题库中的测验会保留。','Delete this unfinished practice record for “{title}”? You will not be able to resume its saved answers. The Quiz remains in the library.'],

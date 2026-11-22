@@ -1,5 +1,5 @@
 'use client';
-import {useEffect,useState} from 'react';
+import {lazy,useEffect,useState} from 'react';
 import {ArrowLeft,Play,RotateCcw} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {groupFetch} from '@/lib/group-client';
@@ -8,11 +8,13 @@ import {t,type Language} from '@/lib/i18n';
 import type {QuizContent} from '@/lib/quiz';
 import type {PracticeAssignment,PracticeAttemptSummary,PracticeState} from '@/lib/quiz-practice-types';
 import {quizAssignmentFromSearch,validQuizLinkId} from '@/lib/quiz-link';
-import QuizPracticePanel,{QuizPracticeStart,type PracticeSource} from './quiz-practice-panel';
+import type {PracticeSource} from './quiz-practice-panel';
 import './quiz-player-wave3.css';
 
+const QuizPracticePanel=lazy(()=>import('./quiz-practice-panel'));
+const QuizPracticeStart=lazy(()=>import('./quiz-practice-panel').then(module=>({default:module.QuizPracticeStart})));
 type Preview={id:string;creator:string;content:QuizContent};
-export default function QuizLinkLanding({quizId,role,language,reload=0,onClose,onOpen}:{quizId:string;role:'student'|'teacher'|'admin'|'parent';language:Language;reload?:number;onClose:()=>void;onOpen:(attemptId:string)=>void}){
+export default function QuizLinkLanding({quizId,role,language,reload=0,onClose,onOpen,onAssignmentDetails}:{quizId:string;role:'student'|'teacher'|'admin'|'parent';language:Language;reload?:number;onClose:()=>void;onOpen:(attemptId:string,submitted?:boolean)=>void;onAssignmentDetails?:(id:string)=>void}){
  const [preview,setPreview]=useState<Preview|null>(null),[assignment,setAssignment]=useState<PracticeAssignment|null>(null),[attempt,setAttempt]=useState<PracticeAttemptSummary|null>(null);
  const [loading,setLoading]=useState(true),[failure,setFailure]=useState<'access'|'login'|'network'|null>(null),[retry,setRetry]=useState(0),[starting,setStarting]=useState(false),[records,setRecords]=useState(false);
  const label=(zh:string,en:string)=>language==='zh'?zh:en,bank=role==='student'||role==='parent',staff=role==='teacher'||role==='admin';
@@ -61,7 +63,7 @@ export default function QuizLinkLanding({quizId,role,language,reload=0,onClose,o
     {assignment?.effectiveDueAt&&<p className="quiz-card-date">{t('quiz.dueAt')} · {new Intl.DateTimeFormat(language==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',dateStyle:'medium',timeStyle:'short'}).format(new Date(assignment.effectiveDueAt))} GMT+8</p>}
     {assignment&&!staff&&!resume&&!assignment.canStart&&<p role="status">{t(assignment.startBlockedReason||'quiz.assignmentClosed')}</p>}
    </div>
-   <div className="quiz-item-actions">{assignment&&staff?<Button onClick={()=>setRecords(true)}>{label('查看学生作答','View student responses')}</Button>:resume?<Button onClick={()=>onOpen(resume.id)} data-testid="quiz-link-resume"><RotateCcw size={17}/>{t('quiz.resume')}</Button>:(!assignment||assignment.canStart)&&<Button onClick={()=>setStarting(true)} data-testid="quiz-link-start"><Play size={17}/>{assignment?label('开始作业','Start assignment'):t('quiz.practice')}</Button>}{assignment&&attempt?.status==='submitted'&&!staff&&<Button variant="outline" onClick={()=>onOpen(attempt.id)}>{t('quiz.review')}</Button>}</div>
+   <div className="quiz-item-actions">{assignment&&staff?<Button onClick={()=>onAssignmentDetails?onAssignmentDetails(assignment.id):setRecords(true)}>{label('查看学生作答','View student responses')}</Button>:resume?<Button onClick={()=>onOpen(resume.id)} data-testid="quiz-link-resume"><RotateCcw size={17}/>{t('quiz.resume')}</Button>:(!assignment||assignment.canStart)&&<Button onClick={()=>setStarting(true)} data-testid="quiz-link-start"><Play size={17}/>{assignment?label('开始作业','Start assignment'):t('quiz.practice')}</Button>}{assignment&&attempt?.status==='submitted'&&!staff&&<Button variant="outline" onClick={()=>onOpen(attempt.id,true)}>{t('quiz.review')}</Button>}</div>
   </article>}
   {starting&&source&&<QuizPracticeStart source={source} onClose={()=>setStarting(false)} onOpen={id=>{setStarting(false);onOpen(id);}}/>}
  </section>;

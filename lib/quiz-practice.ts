@@ -252,15 +252,27 @@ export async function accommodatePractice(a:Account,data:Record<string,unknown>)
 }
 
 export async function practiceState(a:Account,url:URL):Promise<PracticeState>{
- const scope=url.searchParams.get('scope'),ownInProgress=url.searchParams.get('ownInProgress')==='1',quizId=url.searchParams.get('quizId');
- if(scope&&!['self','assigned'].includes(scope)||url.searchParams.has('ownInProgress')&&!['0','1'].includes(url.searchParams.get('ownInProgress')||''))return invalid();
+ const scope=url.searchParams.get('scope'),ownInProgress=url.searchParams.get('ownInProgress')==='1',quizId=url.searchParams.get('quizId'),panel=url.searchParams.get('panel');
+ if(scope&&!['self','assigned'].includes(scope)||url.searchParams.has('ownInProgress')&&!['0','1'].includes(url.searchParams.get('ownInProgress')||'')||panel&&!['assigned','history'].includes(panel))return invalid();
  if(quizId)id(quizId);
- const extraAttemptSql=(scope==='self'?' AND pa.assignment_id IS NULL':scope==='assigned'?' AND pa.assignment_id IS NOT NULL':'')+(ownInProgress?" AND pa.status='in_progress'":'')+(quizId?' AND pa.quiz_id=?':'');
  const db=learningDb(),g=group(a),student=a.role==='student',learner=student||a.role==='parent',offset=Math.floor(Math.max(0,Math.min(10000,Number(url.searchParams.get('offset'))||0))),assignmentId=url.searchParams.get('assignmentId'),clock=new Date().toISOString();if(assignmentId)id(assignmentId);
- const permission=adminPermissionPredicate(a,'quizAssignments.view'),access=ownInProgress?ownAccess(a):allAccess(a),review=reviewGuard(a),grade=reviewGuard(a,'pa','quizAssignments.grade'),[assignmentRead,attemptRead]=await Promise.all([
-  db.prepare(`SELECT qa.*,v.content_json,c.title AS classroomTitle,coalesce(author.teacher_name,author.name) AS teacherName FROM quiz_practice_assignments qa JOIN quiz_versions v ON v.id=qa.version_id JOIN accounts author ON author.id=qa.created_by LEFT JOIN classrooms c ON c.id=qa.classroom_id AND c.group_id=qa.group_id WHERE qa.group_id=? AND (${permission.sql}) ${student?`AND qa.withdrawn_at IS NULL AND ${assignmentEligibleSql('qa','?')} AND ${assignmentSourceSql()}`:a.role==='parent'?'AND 0':"AND (qa.created_by=? OR ?='admin')"} ${assignmentId?'AND qa.id=?':''} ${ownInProgress?'AND 0':''} ORDER BY qa.created_at DESC LIMIT 100`).bind(g,...permission.args,...(student?[a.studentName]:a.role==='parent'?[]:[a.id,a.role]),...(assignmentId?[assignmentId]:[])).all<AssignmentRow>(),
-  db.prepare(`SELECT ${attemptFields},CASE WHEN (${review.sql}) THEN 1 ELSE 0 END AS may_review,CASE WHEN (${grade.sql}) THEN 1 ELSE 0 END AS may_grade ${attemptJoins} WHERE pa.discarded_at IS NULL AND ${access.sql} ${assignmentId?'AND pa.assignment_id=?':''} ${extraAttemptSql} ORDER BY pa.started_at DESC,pa.id LIMIT 41 OFFSET ?`).bind(...review.values,...grade.values,...access.values,...(assignmentId?[assignmentId]:[]),...(quizId?[quizId]:[]),offset).all<AttemptRow>()
- ]),assignments=assignmentRead.results,attemptRows=attemptRead.results;
+ // Assigned work needs roster summaries and only the student's resumable self-practice cards.
+ const assignedPanel=panel==='assigned'&&!assignmentId,historyPanel=panel==='history'&&!assignmentId;
+ const onlyProgress=ownInProgress||assignedPanel;
+ const extraAttemptSql=(scope==='self'||assignedPanel?' AND pa.assignment_id IS NULL':scope==='assigned'?' AND pa.assignment_id IS NOT NULL':'')+(onlyProgress?" AND pa.status='in_progress'":'')+(quizId?' AND pa.quiz_id=?':'');
+ const permission=adminPermissionPredicate(a,'quizAssignments.view'),access=onlyProgress?ownAccess(a):allAccess(a),review=reviewGuard(a),grade=reviewGuard(a,'pa','quizAssignments.grade');
+ const readAssignments=async (assignmentIds?:string[]):Promise<AssignmentRow[]>=>{
+  if(ownInProgress||a.role==='parent'||assignmentIds?.length===0)return [];
+  return db.prepare(`SELECT qa.*,v.content_json,c.title AS classroomTitle,coalesce(author.teacher_name,author.name) AS teacherName FROM quiz_practice_assignments qa JOIN quiz_versions v ON v.id=qa.version_id JOIN accounts author ON author.id=qa.created_by LEFT JOIN classrooms c ON c.id=qa.classroom_id AND c.group_id=qa.group_id WHERE qa.group_id=? AND (${permission.sql}) ${student?`AND qa.withdrawn_at IS NULL AND ${assignmentEligibleSql('qa','?')} AND ${assignmentSourceSql()}`:"AND (qa.created_by=? OR ?='admin')"} ${assignmentId?'AND qa.id=?':''} ${assignmentIds?'AND qa.id IN (SELECT value FROM json_each(?))':''} ORDER BY qa.created_at DESC LIMIT 100`).bind(g,...permission.args,...(student?[a.studentName]:[a.id,a.role]),...(assignmentId?[assignmentId]:[]),...(assignmentIds?[JSON.stringify(assignmentIds)]:[])).all<AssignmentRow>().then(value=>value.results);
+ };
+ const readAttempts=async ():Promise<AttemptRow[]>=>{
+  if(assignedPanel&&!student)return [];
+  return db.prepare(`SELECT ${attemptFields},CASE WHEN (${review.sql}) THEN 1 ELSE 0 END AS may_review,CASE WHEN (${grade.sql}) THEN 1 ELSE 0 END AS may_grade ${attemptJoins} WHERE pa.discarded_at IS NULL AND ${access.sql} ${assignmentId?'AND pa.assignment_id=?':''} ${extraAttemptSql} ORDER BY pa.started_at DESC,pa.id LIMIT 41 OFFSET ?`).bind(...review.values,...grade.values,...access.values,...(assignmentId?[assignmentId]:[]),...(quizId?[quizId]:[]),offset).all<AttemptRow>().then(value=>value.results);
+ };
+ const [initialAssignments,attemptRows]=await Promise.all([historyPanel?[]:readAssignments(),readAttempts()]);
+ // History needs assignment policy only for a student's retake, for this page of attempts.
+ const retakeAssignments=historyPanel&&student?[...new Set(attemptRows.slice(0,40).flatMap(row=>row.assignment_id?[row.assignment_id]:[]))]:[];
+ const assignments=historyPanel?await readAssignments(retakeAssignments):initialAssignments;
  // A history/list read needs keys only for the rare live attempts that actually
  // expire. Submitted and unexpired rows never transfer answer keys from D1.
  const expiring=(await Promise.all(attemptRows.slice(0,40).filter(hasExpired).map(async row=>({row,result:expiration(a,row,await attemptKeys(row))})))).filter(item=>item.result!==null),stale=new Set<string>();

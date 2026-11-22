@@ -40,5 +40,19 @@ equal(route.safeWorkspaceReturnPath("/quiz/"+quiz,"?assignment="+"x".repeat(255)
 equal(route.safeWorkspaceReturnPath("/settings","?lang=zh&returnTo=https://evil.invalid","en"),"/settings?lang=en","settings return survives login");
 equal(route.safeWorkspaceReturnPath("//evil.invalid","?lang=en","zh"),"/?lang=zh","external redirect rejected");
 equal(route.safeWorkspaceReturnPath("/not-a-page","","zh"),"/?lang=zh","unknown return rejected");
+for(const section of ["bank","mine","assigned","history","new","import","compose"]){
+ const path="/quizzes/"+section;
+ equal(route.workspaceViewFromPath(path,"teacher"),"quizzes","TikQuiz route "+section);
+ equal(route.safeWorkspaceReturnPath(path,"?returnTo=https://evil.invalid","en"),path+"?lang=en","TikQuiz return "+section);
+}
+for(const section of ["assigned","edit","preview","play","results"]){
+ const path="/quizzes/"+section+"/"+quiz;
+ equal(route.workspaceViewFromPath(path,"student"),"quizzes","TikQuiz detail "+section);
+ equal(route.safeWorkspaceReturnPath(path,"?returnTo=https://evil.invalid","en"),path+"?lang=en","TikQuiz detail return "+section);
+}
+equal(route.safeWorkspaceReturnPath("/quizzes/preview/"+quiz,"?bank=1&next=https://evil.invalid","zh"),"/quizzes/preview/"+quiz+"?bank=1&lang=zh","bank preview stays in scope after auth");
+for(const path of ["/quizzes/bank//","/quizzes/play/no","/quizzes/results/"+quiz+"/extra"]){
+ equal(route.safeWorkspaceReturnPath(path,"","en"),"/?lang=en","invalid TikQuiz path "+path);
+}
 console.log(JSON.stringify({passed:true,checks}));
 

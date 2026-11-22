@@ -13,12 +13,14 @@ import {Popover,PopoverContent,PopoverTrigger} from '@/components/ui/popover';
 import {t,type Language} from '@/lib/i18n';
 import {groupFetch} from '@/lib/group-client';
 import {readApiJson,showActionToast} from '@/lib/action-feedback';
-import {emptyQuiz,newQuestion,type QuizContent} from '@/lib/quiz';
+import type {QuizContent} from '@/lib/quiz';
 import type {LocalQuiz} from './quiz-editor';
+import {importedQuizDraft,newQuizDraft} from './quiz-drafts';
 import QuizCopyLinkButton from './quiz-copy-link-button';
 import {isQuizLinkId} from '@/lib/quiz-link';
 import type {PracticeAttemptSummary,PracticeState} from '@/lib/quiz-practice-types';
-import QuizPracticePanel,{QuizAllocateDialog,QuizPracticeStart,type PracticeSource} from './quiz-practice-panel';
+import type {PracticeSource} from './quiz-practice-panel';
+import {tikQuizPath} from '@/lib/tikquiz-route';
 import {useAcademicCatalogue} from '@/lib/use-academic-catalogue';
 import {findCatalogueSyllabus,findCatalogueSubject} from '@/lib/academic-catalogue';
 import './quiz.css';
@@ -34,6 +36,18 @@ const QuizLinkLanding=lazy(()=>import('./quiz-link-landing'));
 const QuizEditor=lazy(()=>import('./quiz-editor'));
 const QuizPlayer=lazy(()=>import('@/components/quiz-player'));
 const QuizPracticePlayer=lazy(()=>import('@/components/quiz-practice-player'));
+const QuizPracticePanel=lazy(()=>import('./quiz-practice-panel'));
+const QuizAllocateDialog=lazy(()=>import('./quiz-practice-panel').then(module=>({default:module.QuizAllocateDialog})));
+const QuizPracticeStart=lazy(()=>import('./quiz-practice-panel').then(module=>({default:module.QuizPracticeStart})));
+
+type QuizTab = 'bank' | 'mine' | 'assigned' | 'history' | 'manage';
+type Standalone = {
+ tab: QuizTab;
+ assignmentId?: string;
+ open: (href: string) => void;
+ changeTab: (href: string) => void;
+ openAttempt: (id: string, submitted?: boolean) => void;
+};
 
 type Catalog={kind:'subtopic'|'chapter_overall'|'level_overall';level:string;chapterCode:string;chapterTitle:string;subtopicCode:string;subtopicTitle:string;setNumber:number};
 type Item={id:string;title:string;subject:string;exam:string;grade?:string|null;topic?:string|null;difficulty:string;questionCount:number;totalScore:number;visibility:string;sharingMode?:'private'|'public'|'selected'|'organisation';creator:string;organisation:string;bank?:boolean;canEdit:boolean|number;canShare?:boolean|number;canDelete?:boolean|number;revision?:number;sharedRevision:number|null;bankKind?:'platform'|'creator';catalog?:Catalog|null;updatedAt?:string;createdAt?:string};
@@ -74,14 +88,16 @@ function QuizItemMenu({children}:{children:ReactNode}){
  </Popover>;
 }
 
-export default function QuizWorkspace({view,language,role='teacher',initialQuizId,onLinkedQuizExit}:{view:'quizzes'|'quizBank';language:Language;role?:'student'|'teacher'|'admin'|'parent';initialQuizId?:string;onLinkedQuizExit?:()=>void}){
+export default function QuizWorkspace({view,language,role='teacher',initialQuizId,onLinkedQuizExit,standalone}:{view:'quizzes'|'quizBank';language:Language;role?:'student'|'teacher'|'admin'|'parent';initialQuizId?:string;onLinkedQuizExit?:()=>void;standalone?:Standalone}){
  const can=useAdminAction();
  const author=role==='teacher'||role==='admin';
  const [linkedQuizId,setLinkedQuizId]=useState<string|null>(()=>isQuizLinkId(initialQuizId)?initialQuizId:null);
  useEffect(()=>{if(isQuizLinkId(initialQuizId))setLinkedQuizId(initialQuizId);},[initialQuizId]);
  const catalogueAllowed=can('quizzes.view'),assignmentsAllowed=can('quizAssignments.view');
- const {catalogue,loading:catalogueLoading,error:catalogueError,reload:reloadCatalogue}=useAcademicCatalogue('quiz');
- const [tab,setTab,replaceTab]=usePageHistoryState<'bank'|'mine'|'assigned'|'history'|'manage'>('quiz.tab',role!=='parent'&&view!=='quizBank'&&assignmentsAllowed?'assigned':'bank');
+ const [historyTab,setTab,replaceTab]=usePageHistoryState<QuizTab>('quiz.tab',role!=='parent'&&view!=='quizBank'&&assignmentsAllowed?'assigned':'bank');
+ const tab=standalone?.tab||historyTab;
+ const bank=tab==='bank',catalogTab=catalogueAllowed&&(bank||tab==='mine'||tab==='manage');
+ const {catalogue,loading:catalogueLoading,error:catalogueError,reload:reloadCatalogue}=useAcademicCatalogue('quiz',!standalone||catalogTab);
  const [filtersOpen,setFiltersOpen]=useState(false);
  const toolbarMore=useRef<HTMLDetailsElement>(null);
  const [composeOpen,setComposeOpen]=useState(false),[reviewOpen,setReviewOpen]=useState(false),[reporting,setReporting]=useState<string|null>(null);
@@ -101,16 +117,15 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
  const facetCache=useRef(new Map<string,Facets>());
  const dateFormatter=useMemo(()=>displayFormatter(language==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}),[language]);
  function dateLabel(value:string|undefined){if(!value||!Number.isFinite(Date.parse(value)))return null;return <time dateTime={value}>{t('quiz.updatedAt')} {dateFormatter.format(new Date(value))} GMT+8</time>;}
- const bank=tab==='bank',catalogTab=catalogueAllowed&&(bank||tab==='mine'||tab==='manage');
  const suspended=Boolean(importOpen||linkedQuizId||editor||opening||preview||practiceSource||allocation||attemptId);
  const tabs:typeof tab[]=(author?['assigned','bank','mine','history',...(facets.manageQuizzes?['manage' as const]:[])]:role==='parent'?['bank','history']:['assigned','bank','history']).filter(value=>value==='assigned'?assignmentsAllowed:value==='history'?(catalogueAllowed||assignmentsAllowed):catalogueAllowed) as typeof tab[];
- useEffect(()=>{if(!tabs.includes(tab)&&tabs[0])setTab(tabs[0]);},[tab,tabs.join(',')]);
+ useEffect(()=>{if(!standalone&&!tabs.includes(tab)&&tabs[0])setTab(tabs[0]);},[standalone,tab,tabs.join(',')]);
  useEffect(()=>{
-  if(!catalogueAllowed||linkedQuizId||attemptId)return;
+  if(!catalogueAllowed||(standalone&&(!catalogTab||tab==='manage'))||linkedQuizId||attemptId)return;
   const controller=new AbortController();
   void api<PracticeState&{error?:string}>('/api/quiz-practice?ownInProgress=1&scope=self',{signal:controller.signal,cache:'no-store'}).then(data=>{if(!controller.signal.aborted)setOwnPending(data.attempts.filter(attempt=>!attempt.assignmentId&&attempt.canAnswer));}).catch(()=>{/* Exact lookup before starting still handles a failed summary request. */});
   return()=>controller.abort();
- },[catalogueAllowed,linkedQuizId,attemptId,reload]);
+ },[catalogueAllowed,Boolean(standalone),catalogTab,tab,linkedQuizId,attemptId,reload]);
  const selectedSyllabus=catalogue?findCatalogueSyllabus(catalogue,filters.syllabus):null;
  const chapters=useMemo(()=>facets.chapters.filter(chapter=>(chapter.subject===filters.subject||Boolean(selectedSyllabus&&findCatalogueSubject(selectedSyllabus,filters.subject)?.name===chapter.subject))&&(!filters.level||chapter.level===filters.level)),[facets.chapters,filters.subject,filters.level,selectedSyllabus]);
  const subjectOptions=selectedSyllabus?selectedSyllabus.subjects.filter(s=>s.active):catalogue?[...new Map(catalogue.syllabuses.filter(s=>s.active).flatMap(s=>s.subjects.filter(x=>x.active)).map(s=>[s.id,s])).values()]:[];
@@ -123,8 +138,8 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
  function closeTools(){toolbarMore.current?.removeAttribute('open');}
 
  useEffect(()=>{
-  if(['bank','history'].includes(window.history.state?.timelyoQuizTab)){replaceTab(window.history.state.timelyoQuizTab);const next={...window.history.state};delete next.timelyoQuizTab;window.history.replaceState(next,'');}
- },[replaceTab]);
+  if(!standalone&&['bank','history'].includes(window.history.state?.timelyoQuizTab)){replaceTab(window.history.state.timelyoQuizTab);const next={...window.history.state};delete next.timelyoQuizTab;window.history.replaceState(next,'');}
+ },[replaceTab,Boolean(standalone)]);
  useEffect(()=>{
   const close=(event:MouseEvent)=>{if(event.target instanceof Node&&!toolbarMore.current?.contains(event.target))closeTools();};
   document.addEventListener('click',close);return()=>document.removeEventListener('click',close);
@@ -151,8 +166,17 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
 
  function clearFilters(){setSearchInput('');setFilters({...EMPTY_FILTERS});}
  function cancelOpening(){openGeneration.current++;openAbort.current?.abort();setOpening(null);}
- function changeTab(next:typeof tab){closeTools();cancelOpening();setAssignedFocus(undefined);setTab(next);setActionError('');setActionRetry(null);}
+ function changeTab(next:typeof tab){closeTools();cancelOpening();setAssignedFocus(undefined);if(standalone)standalone.changeTab(tikQuizPath(next));else setTab(next);setActionError('');setActionRetry(null);}
+ const openAttempt=standalone?.openAttempt||setAttemptId;
+ function openAssignment(id:string){
+  if(standalone)standalone.open(tikQuizPath('assigned',id));
+  else {setAssignedFocus(id);setTab('assigned');}
+ }
  async function open(item:Item,previewOnly=false){
+  if(standalone){
+   standalone.open(tikQuizPath(previewOnly?'preview':'edit',item.id)+(itemBank(item)?'?bank=1':''));
+   return;
+  }
   openAbort.current?.abort();const controller=new AbortController(),token=++openGeneration.current;openAbort.current=controller;setOpening({item,mode:previewOnly?'preview':'edit',token,error:''});setActionError('');setActionRetry(null);
   try{const data=await api<LocalQuiz&{error?:string}>('/api/quizzes?id='+encodeURIComponent(item.id)+(itemBank(item)?'&bank=1':'')+(previewOnly?'&preview=1':''),{signal:controller.signal});if(token!==openGeneration.current)return;if(previewOnly)setPreview({content:data.content,creator:item.creator});else setEditor({...data,bank:false,maintenanceImport:Boolean(facets.maintenanceImport&&data.sourceKey)});setOpening(null);}
   catch(error){if(token===openGeneration.current&&!controller.signal.aborted)setOpening({item,mode:previewOnly?'preview':'edit',token,error:errorCode(error)});}
@@ -165,6 +189,7 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
   try{
    if(!operation.resultId){const data=await api<{id:string;error?:string}>('/api/quizzes',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'duplicate',...operation})});operation.resultId=data.id;}
    facetCache.current.clear();if(token!==openGeneration.current){setReload(value=>value+1);return;}
+   if(standalone){copyOperations.current.delete(operationKey);standalone.open(tikQuizPath('edit',operation.resultId));return;}
    const draft=await api<LocalQuiz&{error?:string}>('/api/quizzes?id='+encodeURIComponent(operation.resultId),{signal:controller.signal});if(token!==openGeneration.current)return;copyOperations.current.delete(operationKey);setTab('mine');setEditor({...draft,bank:false});setOpening(null);setReload(value=>value+1);if(!can('quizzes.edit'))showActionToast('success','quiz.copiedDraft');
   }catch(error){if(token===openGeneration.current&&!controller.signal.aborted)setOpening({item,mode:'copy',token,error:errorCode(error)});}finally{actionLocks.current.delete(lock);setBusy(value=>value===lock?null:value);}
  }
@@ -175,17 +200,17 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
    const state=await api<PracticeState&{error?:string}>('/api/quiz-practice?ownInProgress=1&scope=self&quizId='+encodeURIComponent(source.id),{cache:'no-store',signal:controller.signal});
    if(token!==openGeneration.current||controller.signal.aborted)return;
    const pending=state.attempts.find(attempt=>!attempt.assignmentId&&attempt.canAnswer);
-   if(pending)setAttemptId(pending.id);else setPracticeSource(source);
+   if(pending)openAttempt(pending.id);else setPracticeSource(source);
   }catch(error){if(token===openGeneration.current&&!controller.signal.aborted){setActionError(errorCode(error));setActionRetry(()=>()=>void beginPractice(source));}}
   finally{actionLocks.current.delete(lock);setBusy(value=>value===lock?null:value);}
  }
  async function importFile(file:File):Promise<boolean>{
   if(!author||!can("quizzes.import")||!facets.maintenanceImport)throw new Error('quiz.forbidden');
   if(actionLocks.current.has('import'))throw new Error('quiz.uploadBusy');actionLocks.current.add('import');setBusy('import');cancelOpening();setActionError('');setActionRetry(null);
-  try{if(file.size>20*1024*1024)throw new Error('ZIP maximum: 20 MB');const {importQuizZip}=await import('@/lib/quiz-import'),result=await importQuizZip(new Uint8Array(await file.arrayBuffer()),file.name);setTab('mine');clearFilters();setImportOpen(false);setEditor({id:crypto.randomUUID(),revision:0,visibility:'private',sharedRevision:null,canEdit:true,maintenanceImport:true,content:result.content,keys:result.keys,sourceKey:result.sourceKey,pendingImages:result.images,importWarnings:result.warnings});return true;}
+  try{const draft=await importedQuizDraft(file);setTab('mine');clearFilters();setImportOpen(false);setEditor(draft);return true;}
   finally{actionLocks.current.delete('import');setBusy(value=>value==='import'?null:value);}
  }
- function create(){if(!can("quizzes.create"))return;cancelOpening();const next=newQuestion('mcq','multilingual'),content=emptyQuiz();content.primaryLanguage=language==='zh'?'zh':'en';content.questions=[next.question];setTab('mine');clearFilters();setActionError('');setActionRetry(null);setEditor({id:crypto.randomUUID(),revision:0,visibility:'private',sharedRevision:null,canEdit:true,content,keys:[next.key]});}
+ function create(){if(!can('quizzes.create'))return;if(standalone){standalone.open(tikQuizPath('new'));return;}cancelOpening();setTab('mine');clearFilters();setActionError('');setActionRetry(null);setEditor(newQuizDraft(language));}
  async function deleteQuiz(){if(!can("quizzes.delete")||!deleting||actionLocks.current.has('delete'))return;actionLocks.current.add('delete');setBusy('delete');setActionError('');if(!deleteOperation.current)deleteOperation.current={id:deleting.id,operationId:crypto.randomUUID()};try{await api<{ok:boolean;error?:string}>('/api/quizzes',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'delete',...deleteOperation.current,...(deleting.revision?{revision:deleting.revision}:{})})});facetCache.current.clear();setDeleting(null);deleteOperation.current=null;setReload(value=>value+1);}catch(error){setActionError(errorCode(error));}finally{actionLocks.current.delete('delete');setBusy(value=>value==='delete'?null:value);}}
  function itemCard(item:Item){
   const source:PracticeSource={id:item.id,title:item.title,subject:item.subject,bank:itemBank(item)},copyBusy=busy==='copy:'+(itemBank(item)?'bank:':'mine:')+item.id,deleteBusy=busy==='delete'&&deleting?.id===item.id;
@@ -213,13 +238,13 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
  if(opening&&opening.mode!=='preview')return <section className="quiz-editor quiz-opening" aria-busy={!opening.error}><header className="quiz-editor-header"><Button variant="outline" onClick={cancelOpening}><ArrowLeft size={17}/>{t('quiz.back')}</Button><div className="quiz-editor-title"><h2>{opening.item.title}</h2><p>{t(opening.mode==='copy'?'quiz.copying':'quiz.loading')}</p></div></header>{openingBody()}</section>;
  return <div className="quiz-workspace quiz-library-wave3" data-testid="quiz-hub">
   <div className={'quiz-hub-navigation'+(author?' is-author':'')}>
-  <div className="quiz-workspace-head"><h2 className="sr-only">{t('quiz.hubTitle')}</h2><div>{author&&!catalogTab&&catalogueAllowed&&<Button adminGrant="quizAssignments.assign" data-testid="quiz-choose-assignment" onClick={()=>changeTab("bank")}><UsersRound size={17}/>{compactLabel("布置测验","Assign quiz")}</Button>}{author&&catalogTab&&<Button adminGrant="quizzes.create" variant="outline" className="quiz-create-button" data-testid="quiz-create" disabled={busy==='import'} onClick={create}><Plus size={17}/>{t('quiz.createQuiz')}</Button>}<details className="quiz-toolbar-more" ref={toolbarMore} onKeyDown={event=>{if(event.key==='Escape'){closeTools();event.currentTarget.querySelector('summary')?.focus();}}}><summary aria-label={t('更多操作')} title={t('更多操作')} data-testid="quiz-tools-more"><MoreHorizontal size={20}/></summary><div className="quiz-toolbar-menu" onClick={event=>{if((event.target as HTMLElement).closest('button'))closeTools();}}>{author&&<>{!catalogTab&&<Button adminGrant="quizzes.create" variant="ghost" data-testid="quiz-create" onClick={create}><Plus size={17}/>{t("quiz.createQuiz")}</Button>}{facets.maintenanceImport&&<Button adminGrant="quizzes.import" variant="ghost" data-testid="quiz-import" disabled={busy==='import'} onClick={()=>setImportOpen(true)}><Upload size={17}/>{t('quiz.import')}</Button>}<Button adminGrant="quizzes.duplicate" variant="ghost" disabled={busy!==null} onClick={()=>setComposeOpen(true)}>{t('quiz.compose')}</Button></>}<Button variant="ghost" onClick={()=>setReviewOpen(true)}>{t(facets.canModerate?'quiz.moderation':'quiz.reviewReports')}</Button>{facets.canModerate&&<Button variant="ghost" disabled={busy!==null} onClick={()=>{setBusy('seed');void api<{id:string;error?:string}>('/api/quiz-seed',{method:'POST',headers:{'content-type':'application/json'},body:'{}'}).then(result=>api<LocalQuiz&{error?:string}>('/api/quizzes?id='+encodeURIComponent(result.id))).then(data=>{setTab('mine');setEditor(data);}).catch(error=>setActionError(errorCode(error))).finally(()=>setBusy(null));}}>{t('quiz.seedDraft')}</Button>}</div></details></div></div>
+  <div className="quiz-workspace-head"><h2 className="sr-only">{t('quiz.hubTitle')}</h2><div>{author&&!catalogTab&&catalogueAllowed&&<Button adminGrant="quizAssignments.assign" data-testid="quiz-choose-assignment" onClick={()=>changeTab("bank")}><UsersRound size={17}/>{compactLabel("布置测验","Assign quiz")}</Button>}{author&&catalogTab&&<Button adminGrant="quizzes.create" variant="outline" className="quiz-create-button" data-testid="quiz-create" disabled={busy==='import'} onClick={create}><Plus size={17}/>{t('quiz.createQuiz')}</Button>}<details className="quiz-toolbar-more" ref={toolbarMore} onKeyDown={event=>{if(event.key==='Escape'){closeTools();event.currentTarget.querySelector('summary')?.focus();}}}><summary aria-label={t('更多操作')} title={t('更多操作')} data-testid="quiz-tools-more"><MoreHorizontal size={20}/></summary><div className="quiz-toolbar-menu" onClick={event=>{if((event.target as HTMLElement).closest('button'))closeTools();}}>{author&&<>{!catalogTab&&<Button adminGrant="quizzes.create" variant="ghost" data-testid="quiz-create" onClick={create}><Plus size={17}/>{t("quiz.createQuiz")}</Button>}{facets.maintenanceImport&&<Button adminGrant="quizzes.import" variant="ghost" data-testid="quiz-import" disabled={busy==='import'} onClick={()=>standalone?standalone.open(tikQuizPath('import')):setImportOpen(true)}><Upload size={17}/>{t('quiz.import')}</Button>}<Button adminGrant="quizzes.duplicate" variant="ghost" disabled={busy!==null} onClick={()=>standalone?standalone.open(tikQuizPath('compose')):setComposeOpen(true)}>{t('quiz.compose')}</Button></>}<Button variant="ghost" onClick={()=>standalone?standalone.open(tikQuizPath('moderation')):setReviewOpen(true)}>{t(facets.canModerate?'quiz.moderation':'quiz.reviewReports')}</Button>{standalone&&facets.manageQuizzes&&tab!=='manage'&&<Button variant="ghost" onClick={()=>changeTab('manage')}>{t('quiz.manageTab')}</Button>}{facets.canModerate&&<Button variant="ghost" disabled={busy!==null} onClick={()=>{setBusy('seed');void api<{id:string;error?:string}>('/api/quiz-seed',{method:'POST',headers:{'content-type':'application/json'},body:'{}'}).then(async result=>{if(standalone){standalone.open(tikQuizPath('edit',result.id));return;}const data=await api<LocalQuiz&{error?:string}>('/api/quizzes?id='+encodeURIComponent(result.id));setTab('mine');setEditor(data);}).catch(error=>setActionError(errorCode(error))).finally(()=>setBusy(null));}}>{t('quiz.seedDraft')}</Button>}</div></details></div></div>
 
-  <HorizontalMenu><div className="quiz-hub-tabs" role="tablist" aria-label={t('quiz.hubTitle')} onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const index=tabs.indexOf(tab),next=event.key==='Home'?tabs[0]:event.key==='End'?tabs[tabs.length-1]:tabs[(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length];changeTab(next);document.getElementById('quiz-tab-'+next)?.focus();}}>{tabs.map(value=><button type="button" role="tab" key={value} className="quiz-hub-tab" id={'quiz-tab-'+value} data-testid={'quiz-tab-'+value} aria-selected={tab===value} tabIndex={tab===value?0:-1} aria-controls="quiz-hub-panel" onClick={()=>changeTab(value)}>{tabLabel(value)}</button>)}</div></HorizontalMenu>
+  {!standalone&&<HorizontalMenu><div className="quiz-hub-tabs" role="tablist" aria-label={t('quiz.hubTitle')} onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const index=tabs.indexOf(tab),next=event.key==='Home'?tabs[0]:event.key==='End'?tabs[tabs.length-1]:tabs[(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length];changeTab(next);document.getElementById('quiz-tab-'+next)?.focus();}}>{tabs.map(value=><button type="button" role="tab" key={value} className="quiz-hub-tab" id={'quiz-tab-'+value} data-testid={'quiz-tab-'+value} aria-selected={tab===value} tabIndex={tab===value?0:-1} aria-controls="quiz-hub-panel" onClick={()=>changeTab(value)}>{tabLabel(value)}</button>)}</div></HorizontalMenu>}
   </div>
-  <section id="quiz-hub-panel" role="tabpanel" aria-labelledby={'quiz-tab-'+tab}>
-   {catalogueError&&<div className="quiz-error" role="alert"><span>{t('quiz.catalogueUnavailable')}</span><Button variant="outline" onClick={()=>void reloadCatalogue()}>{t('quiz.retry')}</Button></div>}
-   {!catalogTab?<QuizPracticePanel mode={tab==='assigned'?'assigned':'history'} role={role} language={language} reload={reload} initialAssignmentId={tab==='assigned'?assignedFocus:undefined} onAssignmentBack={()=>setAssignedFocus(undefined)} onOpen={setAttemptId} onStart={setPracticeSource} onBrowseLibrary={catalogueAllowed?()=>changeTab("bank"):undefined}/>:<>
+  <section id="quiz-hub-panel" role={standalone?undefined:'tabpanel'} aria-labelledby={standalone?undefined:'quiz-tab-'+tab} aria-label={standalone?tabLabel(tab):undefined}>
+   {(catalogTab||!standalone)&&catalogueError&&<div className="quiz-error" role="alert"><span>{t('quiz.catalogueUnavailable')}</span><Button variant="outline" onClick={()=>void reloadCatalogue()}>{t('quiz.retry')}</Button></div>}
+   {!catalogTab?<Suspense fallback={loadingState()}><QuizPracticePanel mode={tab==='assigned'?'assigned':'history'} role={role} language={language} reload={reload} initialAssignmentId={tab==='assigned'?standalone?.assignmentId||assignedFocus:undefined} onAssignmentBack={()=>standalone?standalone.changeTab(tikQuizPath('assigned')):setAssignedFocus(undefined)} onAssignmentSelect={standalone?openAssignment:undefined} separateRoutes={Boolean(standalone)} onOpen={openAttempt} onStart={setPracticeSource} onBrowseLibrary={catalogueAllowed?()=>changeTab("bank"):undefined}/></Suspense>:<>
     <form className="quiz-catalog-filters" onSubmit={event=>{event.preventDefault();setFilters(old=>({...old,search:searchInput.trim()}));}}>
      <div className="quiz-filter-bar">
      <FilterField label={t('quiz.searchPlaceholder')} className="quiz-catalog-search">{id=><div className="quiz-search-input"><Search size={17} aria-hidden="true"/><input id={id} value={searchInput} maxLength={100} placeholder={t('quiz.searchPlaceholder')} onChange={event=>setSearchInput(event.target.value)}/></div>}</FilterField>
@@ -248,8 +273,8 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
   {composeOpen&&<Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizComposeDialog onClose={()=>setComposeOpen(false)} onCreated={id=>{setComposeOpen(false);setTab('mine');facetCache.current.clear();void api<LocalQuiz&{error?:string}>('/api/quizzes?id='+encodeURIComponent(id)).then(data=>setEditor(data)).catch(error=>setActionError(errorCode(error)));setReload(value=>value+1);}}/></Suspense>}
   {reporting&&<Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizReportDialog quizId={reporting} onClose={()=>setReporting(null)}/></Suspense>}
   {preview&&<Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizPlayer content={preview.content} creator={preview.creator} onClose={()=>setPreview(null)}/></Suspense>}
-  {practiceSource&&<QuizPracticeStart source={practiceSource} onClose={()=>setPracticeSource(null)} onOpen={id=>{setPracticeSource(null);setAttemptId(id);setReload(value=>value+1);}}/>}
-  {allocation&&can("quizAssignments.assign")&&<QuizAllocateDialog source={allocation} onClose={()=>setAllocation(null)} onAssigned={id=>{setAllocation(null);setAssignedFocus(id);setTab('assigned');setReload(value=>value+1);}}/>}
+  {practiceSource&&<Suspense fallback={loadingState()}><QuizPracticeStart source={practiceSource} onClose={()=>setPracticeSource(null)} onOpen={id=>{setPracticeSource(null);openAttempt(id);setReload(value=>value+1);}}/></Suspense>}
+  {allocation&&can("quizAssignments.assign")&&<Suspense fallback={loadingState()}><QuizAllocateDialog source={allocation} onClose={()=>setAllocation(null)} onAssigned={id=>{setAllocation(null);openAssignment(id);setReload(value=>value+1);}}/></Suspense>}
   {attemptId&&<Suspense fallback={<p role="status">{t('quiz.loading')}</p>}><QuizPracticePlayer attemptId={attemptId} language={language} onClose={()=>{setAttemptId(null);setReload(value=>value+1);}} onChanged={()=>setReload(value=>value+1)}/></Suspense>}
   <Dialog open={Boolean(deleting)&&can("quizzes.delete")} onOpenChange={open=>{if(!open&&busy!=='delete'){setDeleting(null);deleteOperation.current=null;}}}><DialogContent className="quiz-confirm-dialog quiz-library-dialog"><DialogTitle>{t('quiz.deleteQuiz')}</DialogTitle><DialogDescription>{t('quiz.deleteQuizConfirm').replace('{title}',deleting?.title||'')}</DialogDescription>{actionError&&deleting&&<p className="quiz-error" role="alert">{t(actionError)}</p>}<div className="quiz-confirm-actions"><Button variant="outline" disabled={busy==='delete'} onClick={()=>{setDeleting(null);deleteOperation.current=null;}}>{t('quiz.cancel')}</Button><Button adminGrant="quizzes.delete" variant="destructive" disabled={busy==='delete'} onClick={()=>void deleteQuiz()}>{t('quiz.removeConfirm')}</Button></div></DialogContent></Dialog>
  </div>;

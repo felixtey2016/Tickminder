@@ -20,6 +20,11 @@
 .quiz-player-wave3 .quiz-player-close:hover {background:var(--ui-surface-muted);color:var(--ui-text);}
 .quiz-player-wave3 .quiz-practice-meta {gap:8px 16px;margin-top:4px;flex-wrap:wrap;}
 .quiz-player-wave3 .quiz-player-top {font-size:14px;gap:8px 12px;}
+.quiz-elapsed-timer, .quiz-player-wave3 .quiz-result-summary .quiz-time-taken {
+ display:flex;align-items:center;gap:6px;color:var(--ui-muted);font-variant-numeric:tabular-nums;
+}
+.quiz-elapsed-timer {white-space:nowrap;}
+.quiz-player-wave3 .quiz-result-summary .quiz-time-taken time {color:var(--ui-text);font-weight:650;}
 .quiz-player-wave3 .quiz-player-question {padding:18px 0;background:transparent;border:0;border-radius:0;}
 .quiz-player-wave3 .quiz-player-question h3 {font-size:20px;font-weight:550;line-height:1.6;}
 .quiz-player-wave3 progress {height:4px;accent-color:var(--ui-accent);background:var(--ui-border);margin:12px 0 8px;border:0;border-radius:2px;overflow:hidden;}
