@@ -35,6 +35,9 @@
   let facetRequest;
   let facets;
   let searchTimer;
+  let academicOptions;
+  let academicRequest;
+  const customOption = '\u0001';
   let editing = null;
   let busy = false;
 
@@ -240,6 +243,43 @@
     void loadPage(true);
   }
 
+  function editorValue(key) {
+    const value = form.elements[key].value;
+    return value === customOption ? $('custom-' + key).value.trim() : value;
+  }
+  function renderSelect(key, choices, value, pendingCustom = false) {
+    const select = form.elements[key];
+    const custom = value ? !choices.includes(value) : pendingCustom;
+    select.replaceChildren(new Option(t('不指定','None'), ''), ...choices.map(name => new Option(name, name)),
+      new Option(t('自定义…','Custom…'), customOption));
+    select.value = custom ? customOption : value;
+    $('custom-' + key).value = custom ? value : '';
+    $('custom-' + key + '-row').hidden = !custom;
+  }
+  function subjectsFor(category) {
+    const syllabus = academicOptions?.find(option => option.name === category);
+    return syllabus?.subjects ?? [...new Set((academicOptions ?? []).flatMap(option => option.subjects))];
+  }
+  function renderAcademicChoices(category, subject, preserveInput = false) {
+    renderSelect('category', (academicOptions ?? []).map(option => option.name), category, preserveInput && form.elements.category.value === customOption);
+    renderSelect('subject', subjectsFor(category), subject, preserveInput && form.elements.subject.value === customOption);
+  }
+  async function loadAcademicChoices() {
+    if (academicOptions || academicRequest) return;
+    $('retry-academic').hidden = true;
+    status('academic-status', t('正在载入课程目录…', 'Loading the course catalogue…'));
+    academicRequest = request('/api/watch-preview/academic-options');
+    try {
+      const {syllabuses} = await academicRequest;
+      if (!Array.isArray(syllabuses)) throw new Error('Invalid course catalogue');
+      academicOptions = syllabuses;
+      renderAcademicChoices(editorValue('category'), editorValue('subject'), true);
+      status('academic-status', '');
+    } catch {
+      status('academic-status', t('课程目录暂时无法载入。','Course catalogue unavailable.'));
+      $('retry-academic').hidden = false;
+    } finally {academicRequest = null;}
+  }
   function openEditor(video) {
     editing = video || null;
     form.reset();
@@ -248,10 +288,11 @@
     $('editor-title').textContent = video ? t('编辑视频','Edit video') : t('添加视频','Add video');
     $('save-video').textContent = video ? t('保存','Save') : t('添加视频','Add video');
     $('remove-video').hidden = !video;
+    renderAcademicChoices(video?.category || '', video?.subject || '');
     if (video) {
       form.elements.title.value = video.title;
       form.elements.url.value = (video.kind === 'short' ? 'https://www.youtube.com/shorts/' : 'https://youtu.be/') + video.youtubeId;
-      for (const [key] of fields) form.elements[key].value = video[key];
+      form.elements.chapter.value = video.chapter;
     }
     editor.showModal();
   }
@@ -299,6 +340,25 @@
     if (expanded) void loadFacets();
   });
   $('clear-filters').addEventListener('click',clearFilters);
+  $('optional-fields').addEventListener('toggle', () => {
+    if ($('optional-fields').open) void loadAcademicChoices();
+  });
+  $('retry-academic').addEventListener('click', () => void loadAcademicChoices());
+  form.elements.category.addEventListener('change', () => {
+    const selected = form.elements.category.value;
+    const custom = selected === customOption;
+    $('custom-category-row').hidden = !custom;
+    const choices = subjectsFor(selected);
+    const subject = editorValue('subject');
+    const customSubject = form.elements.subject.value === customOption;
+    renderSelect('subject', choices, customSubject || choices.includes(subject) ? subject : '', customSubject);
+    if (custom) $('custom-category').focus();
+  });
+  form.elements.subject.addEventListener('change', () => {
+    const custom = form.elements.subject.value === customOption;
+    $('custom-subject-row').hidden = !custom;
+    if (custom) $('custom-subject').focus();
+  });
   $('add-video').addEventListener('click',() => openEditor());
   $('close-editor').addEventListener('click',() => {if (!busy) editor.close();});
   $('cancel-remove').addEventListener('click',() => {if (!busy) removal.close();});
@@ -313,7 +373,7 @@
     event.preventDefault();
     void withSaveError('editor-error', async () => {
       const data = Object.fromEntries(new FormData(form));
-      await save({...data, action: editing ? 'edit' : 'create', id:editing?.id});
+      await save({...data, category:editorValue('category'), subject:editorValue('subject'), action: editing ? 'edit' : 'create', id:editing?.id});
       editor.close();
       afterChange(t('视频已保存。','Video saved.'));
     });

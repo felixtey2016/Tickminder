@@ -6,7 +6,10 @@ import {
   watchToken, watchVideoDetail, watchVideoFacets, watchVideoList,
 } from '@/lib/watch-preview-server';
 import {watchPreviewPage} from '@/lib/watch-preview-page';
-import {validWatchVideoId, watchCatalogParams, watchVideoFields} from '@/lib/watch-preview-video';
+import {validWatchVideoId, watchCatalogParams, watchVideoFields, watchVideoFilters} from '@/lib/watch-preview-video';
+
+import {readAcademicCatalogue} from '@/lib/academic-catalogue-server';
+import {catalogueKey} from '@/lib/academic-catalogue';
 
 const headers = {'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer',
   'X-Content-Type-Options': 'nosniff', 'X-Robots-Tag': 'noindex, nofollow', 'X-Frame-Options': 'DENY'};
@@ -27,6 +30,22 @@ function watchEntry(config: WatchPreviewConfig, params: URLSearchParams, id: str
 }
 async function viewer(request: Request, config: WatchPreviewConfig) {
   return config.splitOrigin ? currentWatchSession(request) : currentWatchAdmin();
+}
+
+async function watchAcademicOptions() {
+  const catalogues = await Promise.all([readAcademicCatalogue('quiz'), readAcademicCatalogue('student')]);
+  const options = new Map<string, {name:string; subjects:Map<string,string>}>();
+  for (const {syllabuses} of catalogues) for (const {name, active, subjects} of syllabuses) {
+    if (!active || name.length > watchVideoFilters.category) continue;
+    const key = catalogueKey(name);
+    const option = options.get(key) ?? {name, subjects:new Map<string,string>()};
+    options.set(key, option);
+    for (const subject of subjects) if (subject.active && subject.name.length <= watchVideoFilters.subject) {
+      const subjectKey = catalogueKey(subject.name);
+      if (!option.subjects.has(subjectKey)) option.subjects.set(subjectKey, subject.name);
+    }
+  }
+  return [...options.values()].map(({name, subjects}) => ({name, subjects:[...subjects.values()]}));
 }
 
 export async function GET(request: Request, {params}: Context) {
@@ -69,7 +88,7 @@ export async function GET(request: Request, {params}: Context) {
         ...(requestedTheme ? [themeCookie(requestedTheme)] : []),
       ]);
     }
-    if (!page && action !== 'catalog' && action !== 'facets') return json({error:'notFound'},404);
+    if (!page && action !== 'catalog' && action !== 'facets' && action !== 'academic-options') return json({error:'notFound'},404);
     if (action === 'view' && videoId) return redirect(watchEntry(config, catalogParams, videoId));
     if (action === 'video' && !videoId) return json({error:'notFound'},404);
     const entering = action === 'view' && url.searchParams.get('enter') === '1';
@@ -82,6 +101,7 @@ export async function GET(request: Request, {params}: Context) {
     }
     if (!admin) return json({error:'adminOnly'},403);
     if (action === 'catalog') return json(await watchVideoList(admin.groupId, catalogParams));
+    if (action === 'academic-options') return json({syllabuses:await watchAcademicOptions()});
     if (action === 'facets') return json({facets:await watchVideoFacets(admin.groupId)});
     if (requestedTheme) return redirect(watchEntry(config, catalogParams, videoId), [themeCookie(requestedTheme)]);
     const video = action === 'video' && videoId ? await watchVideoDetail(admin.groupId, videoId) : undefined;

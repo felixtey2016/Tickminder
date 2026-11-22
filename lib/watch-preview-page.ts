@@ -32,8 +32,8 @@ export function watchPreviewPage(language: Language, managementUrl: string, entr
  <meta name="color-scheme" content="light dark">
  <title>${catalog ? 'TickPlay' : title + ' · TickPlay'}</title>
  <link rel="icon" href="${watchPreviewBranding.favicon}" type="image/png" sizes="64x64">
- <link rel="stylesheet" href="/watch-preview.css?v=tickplay">
- <script defer src="/watch-preview.js?v=2"></script>
+ <link rel="stylesheet" href="/watch-preview.css?v=tickplay-options">
+ <script defer src="/watch-preview.js?v=3"></script>
 </head>
 <body>
  <header class="watch-bar">
@@ -102,8 +102,12 @@ export function watchPreviewPage(language: Language, managementUrl: string, entr
     <label>${t('YouTube 链接','YouTube link')}<input name="url" type="url" inputmode="url" maxlength="500" required></label>
     <details id="optional-fields">
      <summary>${t('分类、科目与章节（选填）','Category, subject and chapter (optional)')}</summary>
-     <label>${t('分类','Category')}<input name="category" maxlength="48"></label>
-     <label>${t('科目','Subject')}<input name="subject" maxlength="48"></label>
+     <p id="academic-status" class="muted" role="status" hidden></p>
+     <button type="button" id="retry-academic" class="quiet-button" hidden>${t('重试','Retry')}</button>
+     <label>${t('分类 / 课程体系','Category / curriculum')}<select name="category"></select></label>
+     <label id="custom-category-row" hidden>${t('自定义分类','Custom category')}<input id="custom-category" maxlength="48"></label>
+     <label>${t('科目','Subject')}<select name="subject"></select></label>
+     <label id="custom-subject-row" hidden>${t('自定义科目','Custom subject')}<input id="custom-subject" maxlength="48"></label>
      <label>${t('章节','Chapter')}<input name="chapter" maxlength="80"></label>
     </details>
     <p id="editor-error" class="inline-error" role="alert" hidden></p>

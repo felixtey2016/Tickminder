@@ -6,7 +6,7 @@ import {reportUnexpectedError} from './lib/diagnostics-server';
 import {watchPreviewBranding,watchPreviewConfig,watchPreviewLegacyLocation,type WatchPreviewBindings} from './lib/watch-preview-config';
 const sources=new Set(['/api/action','/api/class-sessions','/api/invoices','/api/invoice-finance','/api/invoice-attendance-corrections','/api/parents','/api/manage','/api/groups']);
 const watchPaths=new Set([
- '/api/watch-preview/catalog','/api/watch-preview/facets','/api/watch-preview/redeem',
+ '/api/watch-preview/catalog','/api/watch-preview/facets','/api/watch-preview/academic-options','/api/watch-preview/redeem',
  '/watch-preview.css','/watch-preview.js',watchPreviewBranding.logo,watchPreviewBranding.favicon,
 ]);
 const app=handler as ExportedHandler;
