@@ -83,8 +83,11 @@ async function open(params={},options={}){
    return reply({items:[{id:quizId,title:draft.content.title,subject:'Mathematics',exam:'SPM',difficulty:'mixed',questionCount:2,totalScore:2,visibility:draft.visibility,bank:false,creator:'Fixture Teacher',organisation:'Fixture Group',canEdit:true,canShare:true,revision:draft.revision,sharedRevision:draft.sharedRevision}],hasMore:false,facets:{subjects:['Mathematics'],levels:[],chapters:[],maintenanceImport:Boolean(options.importZip),manageQuizzes:false,canModerate:false}});
   }
   if(u.pathname==='/api/quiz-practice'){
+   if(u.searchParams.has('targets'))return reply({classrooms:[],students:[{studentName:'Linked Student',subjects:['Mathematics']}]});
    if(route.request().method()==='GET')return reply(u.searchParams.has('attemptId')?{attempt,serverNow:new Date().toISOString()}:{assignments:[],attempts:[],hasMore:false,serverNow:new Date().toISOString()});
    const body=route.request().postDataJSON();writes.push(body);
+   if(body.action==='assign')return reply({id:body.id});
+   if(body.action==='start')return reply({attempt,serverNow:new Date().toISOString()});
    if(body.action==='save'){saveStarted.resolve(body);if(options.holdSave)await releaseSave.promise;if(options.failSave&&(!options.failSaveOnce||!saveFailed)){saveFailed=true;return reply({error:options.failSave},options.failSave==='quiz.network'?503:409);}}
    check(body.revision===attempt.revision,'request uses latest saved revision');
    attempt={...attempt,answers:{...attempt.answers,...body.answers},flaggedQuestionIds:body.flaggedQuestionIds||[],currentQuestionId:body.currentQuestionId||attempt.currentQuestionId,revision:attempt.revision+1};
@@ -169,6 +172,50 @@ try{
   await f.close();
  }
  if(!baseline){
+  for(const limit of [null,7]){
+   const f=await open({lang:'en'},{touch:true,width:320}),p=f.page;
+   await p.getByTestId('quiz-card-practice').first().tap();
+   const dialog=p.getByRole('dialog',{name:'Practice settings'});
+   const timer=dialog.getByRole('combobox',{name:'Attempt time limit'});
+   await dialog.waitFor();
+   check(!await timer.isVisible(),'the practice timer is collapsed by default');
+   if(limit){
+    await dialog.getByText('Advanced options',{exact:true}).tap();
+    check(await timer.inputValue()==='untimed','the default practice has no countdown');
+    await timer.selectOption('timed');
+    const minutes=dialog.getByRole('spinbutton',{name:'Minutes'});
+    await minutes.fill('0');
+    await dialog.getByRole('button',{name:'Start answering'}).tap();
+    await dialog.getByRole('alert').waitFor();
+    check(!f.writes.length,'invalid minutes are reported before starting a quiz');
+    await minutes.fill(String(limit));
+   }
+   await dialog.getByRole('button',{name:'Start answering'}).tap();
+   await dialog.waitFor({state:'hidden'});
+   check(f.writes[0].action==='start'&&f.writes[0].timeLimitSeconds===(limit?limit*60:null),'starting sends the chosen self-practice time limit');
+   await f.close();
+  }
+  {
+   const f=await open({lang:'en'},{touch:true,width:320}),p=f.page;
+   await p.getByTestId('quiz-assign-to-students').first().tap();
+   const dialog=p.getByRole('dialog',{name:'Assign to students'});
+   await dialog.getByRole('checkbox',{name:/Linked Student/}).check();
+   const timer=dialog.getByRole('combobox',{name:'Attempt time limit'});
+   check(!await timer.isVisible(),'teacher options start collapsed');
+   await dialog.getByText('Advanced options',{exact:true}).tap();
+   const shuffle=dialog.getByRole('checkbox',{name:'Shuffle questions',exact:true});
+   const steps=dialog.getByRole('checkbox',{name:'Allow students to view solution steps'});
+   check(await timer.inputValue()==='untimed'&&!await shuffle.isChecked()&&!await steps.isChecked(),'timer, shuffling and solutions opt in for a new assignment');
+   await timer.selectOption('timed');
+   await dialog.getByRole('spinbutton',{name:'Minutes'}).fill('12');
+   await shuffle.check();
+   await steps.check();
+   await dialog.getByRole('button',{name:'Assign practice'}).tap();
+   await p.getByRole('heading',{name:'Assigned to students'}).waitFor();
+   const body=f.writes.find(body=>body.action==='assign');
+   check(body.settings.timeLimitSeconds===720&&body.settings.shuffleQuestions===true&&body.settings.shuffleOptions===false&&body.settings.showSolutions===true,'assignment saves independent teacher-selected policies');
+   await f.close();
+  }
   {
    const f=await open({mode:'practice',lang:'en',theme:'dark'},{touch:true,soundProbe:'record'}),p=f.page;
    const speaker=p.getByRole('button',{name:'Sound settings',exact:true});

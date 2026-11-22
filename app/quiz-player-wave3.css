@@ -115,6 +115,8 @@
 .quiz-player-wave3 .quiz-note {font-size:14px;line-height:1.6;margin:8px 0;}
 .quiz-player-wave3 .quiz-feedback-mode {font-size:14px;color:var(--ui-text);margin:8px 0;}
 .quiz-player-wave3 :is(.quiz-allocation-options,.quiz-target-students,.quiz-source-tabs,.quiz-allocation-fields) {border-color:var(--ui-border);background:transparent;}
+.quiz-player-wave3 .quiz-allocation-options>summary {color:var(--ui-accent);}
+.quiz-assignment-extra-rules {margin-block:4px 14px;}
 .quiz-player-wave3 .quiz-target-students .quiz-check {min-height:44px;border-color:var(--ui-border);background:var(--ui-surface);color:var(--ui-text);}
 .quiz-player-wave3 .quiz-target-students small {color:var(--ui-muted);}
 .quiz-player-wave3 .quiz-source-tab {background:transparent;color:var(--ui-muted);border-color:var(--ui-border);}

@@ -1,7 +1,7 @@
 import type {QuizAnswer,QuizContent,QuizKey} from '@/lib/quiz';
 export type QuizAssignmentKind='practice'|'quiz'|'homework';
 export type QuizReleasePolicy='submission'|'deadline'|'manual';
-export type QuizAssignmentSettings={kind:QuizAssignmentKind;startsAt:string|null;dueAt:string|null;timeLimitSeconds:number|null;maxAttempts:number|null;latePolicy:'reject'|'allow';scoreMax:number|null;scoreRelease:QuizReleasePolicy;answerRelease:QuizReleasePolicy};
+export type QuizAssignmentSettings={kind:QuizAssignmentKind;startsAt:string|null;dueAt:string|null;timeLimitSeconds:number|null;maxAttempts:number|null;latePolicy:'reject'|'allow';scoreMax:number|null;scoreRelease:QuizReleasePolicy;answerRelease:QuizReleasePolicy;shuffleQuestions:boolean;shuffleOptions:boolean;showSolutions:boolean};
 export type PracticeResult={questionId:string;status:'correct'|'incorrect'|'manual'|'graded';points:number|null;feedback?:string;correctOptionId?:string;solution?:string;key?:Pick<QuizKey,'correctOptionId'|'accepted'|'unit'|'explanation'|'rubric'>};
 export type PracticeAttempt={id:string;currentQuestionId:string|null;answeredCount:number;questionCount:number;quizId:string;assignmentId:string|null;versionId:string;title:string;subject:string;creator?:string;studentName:string|null;accountId:string;kind:QuizAssignmentKind;immediate:boolean;revision:number;status:'in_progress'|'submitted';startedAt:string;deadlineAt:string|null;submittedAt:string|null;updatedAt:string;submissionReason:'student'|'timer'|'deadline'|null;late:boolean;attemptNumber:number;score:number|null;totalScore:number;rawScore:number|null;rawTotalScore:number;scoreVisible:boolean;answersVisible:boolean;pendingManual:number;canGrade:boolean;canAnswer:boolean;manualQuestionIds:string[];content:QuizContent;answers:Record<string,QuizAnswer>;flaggedQuestionIds:string[];checkedQuestionIds:string[];results:PracticeResult[]};
 export type PracticeAttemptSummary=Omit<PracticeAttempt,'content'|'answers'|'flaggedQuestionIds'|'checkedQuestionIds'|'results'|'manualQuestionIds'>;
@@ -15,7 +15,7 @@ export type PracticeState={assignments:PracticeAssignment[];attempts:PracticeAtt
 // GET (?assignmentId=... teacher reports and events, ?offset=...) => PracticeState.
 // GET ?ownInProgress=1 returns only the current actor's pending attempts (self and assigned).
 // Optional scope=self|assigned and quizId narrow attempts before pagination; all live access guards still apply.
-// POST start: {action:'start',operationId,quizId?,bank?,assignmentId?,immediate?}.
+// POST start: {action:'start',operationId,quizId?,bank?,assignmentId?,immediate?,timeLimitSeconds?} (last field is for self-practice).
 // POST save/check/submit: {action,operationId,attemptId,revision,answers,flaggedQuestionIds?,questionId?,currentQuestionId?} => {attempt}.
 // POST assign: {action:'assign',operationId,id,quizId,bank,classroomId? OR studentNames?,immediate?,settings?:QuizAssignmentSettings} => {id}.
 // POST release: {action:'release',operationId,assignmentId,revision,release:'scores'|'answers'|'both'} => {ok:true}.

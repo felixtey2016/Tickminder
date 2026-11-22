@@ -78,23 +78,27 @@ function viewSummary(a:Account,row:AttemptRow,reviewer:boolean):PracticeAttemptS
  return {id:row.id,quizId:row.quiz_id,assignmentId:row.assignment_id,versionId:row.version_id,currentQuestionId,answeredCount,questionCount:order.questions.length,title:content.title,subject:content.subject,creator:row.creator,studentName:row.student_name,accountId:row.account_id,kind:policy.kind,immediate:Boolean(row.immediate),revision:row.revision,status:row.status,startedAt:row.started_at,deadlineAt:effectiveQuizDeadline(row.deadline_at,policy,row.recipient_due_at),submittedAt:row.submitted_at,updatedAt:row.updated_at,submissionReason:row.submission_reason,late:Boolean(row.late),attemptNumber:row.attempt_number||1,score:scoreVisible?scaledQuizScore(row.score,row.total_score,policy.scoreMax):null,totalScore:policy.scoreMax??row.total_score,rawScore:scoreVisible?row.score:null,rawTotalScore:row.total_score,scoreVisible,answersVisible,pendingManual:row.pending_manual,canGrade:done&&reviewer&&(row.may_grade===undefined||Boolean(row.may_grade)),canAnswer:row.account_id===a.id&&row.student_name===(a.role==='student'?a.studentName:null)};
 }
 async function viewAttempt(a:Account,row:AttemptRow):Promise<PracticeAttempt>{
- const summary=viewSummary(a,row,await mayReview(a,row)),content=orderedPracticeContent(JSON.parse(row.content_json),row.order_json),keys=await attemptKeys(row),checked=JSON.parse(row.checked_json) as string[];
+ const reviewer=await mayReview(a,row),policy=settings(row);
+ const summary=viewSummary(a,row,reviewer),content=orderedPracticeContent(JSON.parse(row.content_json),row.order_json),keys=await attemptKeys(row),checked=JSON.parse(row.checked_json) as string[];
+ const showSolutions=reviewer||policy.showSolutions;
  const checkedIds=new Set(checked),keyByQuestion=new Map(keys.map(key=>[key.questionId,key]));
  const results=(JSON.parse(row.results_json) as PracticeResult[]).flatMap(result=>{
   const key=keyByQuestion.get(result.questionId),wasChecked=checkedIds.has(result.questionId);
   const checkedChoice=row.immediate&&wasChecked&&key?.mode==='choice'?key:null;
   const correctOptionId=checkedChoice?.correctOptionId;
-  const solution=summary.answersVisible?'':checkedChoice?.explanation?.trim();
+  const solution=showSolutions&&!summary.answersVisible?checkedChoice?.explanation?.trim():undefined;
   if(!summary.answersVisible&&!correctOptionId&&!(row.status==='in_progress'&&wasChecked))return [];
   return [{
    ...result,
    ...(!summary.scoreVisible&&row.status==='submitted'?{points:null}:{}),
    ...(correctOptionId?{correctOptionId}:{}),
    ...(solution?{solution}:{}),
-   ...(summary.answersVisible&&key?{key:{correctOptionId:key.correctOptionId,accepted:key.accepted,unit:key.unit,explanation:key.explanation,rubric:key.rubric}}:{}),
+   ...(summary.answersVisible&&key?{key:{correctOptionId:key.correctOptionId,accepted:key.accepted,unit:key.unit,explanation:showSolutions?key.explanation:'',rubric:key.rubric}}:{}),
   }];
  });
- return {...summary,content:{...content,timeLimitSeconds:settings(row).timeLimitSeconds},answers:JSON.parse(row.answers_json),flaggedQuestionIds:JSON.parse(row.flagged_json||'[]'),checkedQuestionIds:checked,manualQuestionIds:keys.filter(k=>k.mode==='manual').map(k=>k.questionId),results};
+ // A self-practice timer is fixed when the attempt starts, independently of the authored version.
+ const timeLimitSeconds=row.assignment_id?policy.timeLimitSeconds:row.deadline_at?Math.round((Date.parse(row.deadline_at)-Date.parse(row.started_at))/1000):null;
+ return {...summary,content:{...content,timeLimitSeconds},answers:JSON.parse(row.answers_json),flaggedQuestionIds:JSON.parse(row.flagged_json||'[]'),checkedQuestionIds:checked,manualQuestionIds:keys.filter(k=>k.mode==='manual').map(k=>k.questionId),results};
 }
 function assignmentSnapshot(row:AttemptRow):SqlGuard{return row.assignment_id?{sql:'EXISTS(SELECT 1 FROM quiz_practice_assignments snapshot WHERE snapshot.id=? AND snapshot.revision=?)',values:[row.assignment_id,row.assignment_revision]}:{sql:'1',values:[]};}
 function expiration(a:Account,row:AttemptRow,keys:QuizKey[],discardOwnHistory=false){
@@ -168,12 +172,12 @@ export async function startPractice(a:Account,data:Record<string,unknown>){
   const count=await db.prepare('SELECT count(*) AS count FROM quiz_practice_attempts WHERE group_id=? AND assignment_id=? AND student_name=?').bind(g,assignmentId,a.studentName).first<{count:number}>();if(max!==null&&(count?.count||0)>=max)throw new QuizError('quiz.attemptLimit',409);
   live={sql:`EXISTS(SELECT 1 FROM quiz_practice_assignments qa JOIN quiz_practice_recipients live_r ON live_r.assignment_id=qa.id AND live_r.group_id=qa.group_id AND live_r.student_name=? WHERE qa.id=? AND qa.group_id=? AND qa.revision=? AND qa.withdrawn_at IS NULL AND ${assignmentEligibleSql('qa','live_r.student_name')} AND ${assignmentSourceSql()}) AND NOT EXISTS(SELECT 1 FROM quiz_practice_attempts p WHERE p.group_id=? AND p.assignment_id=? AND p.student_name=? AND p.status='in_progress' AND p.discarded_at IS NULL) ${max===null?'':'AND (SELECT count(*) FROM quiz_practice_attempts p WHERE p.group_id=? AND p.assignment_id=? AND p.student_name=?)<?'}`,values:[a.studentName,assignmentId,g,qa.revision,g,assignmentId,a.studentName,...(max===null?[]:[g,assignmentId,a.studentName,max])]};
  }else{
-  if(data.immediate!==undefined&&typeof data.immediate!=='boolean')return invalid();const bank=['student','parent'].includes(a.role)||data.bank===true,source=await readQuiz(a,id(data.quizId),bank);content=source.content;versionId=source.v.id;quizId=source.q.id;immediate=data.immediate===true;policy=assignmentSettings(undefined,content);
+  if(data.immediate!==undefined&&typeof data.immediate!=='boolean')return invalid();const bank=['student','parent'].includes(a.role)||data.bank===true,source=await readQuiz(a,id(data.quizId),bank);content=source.content;versionId=source.v.id;quizId=source.q.id;immediate=data.immediate===true;policy=assignmentSettings({timeLimitSeconds:data.timeLimitSeconds},content);
   const active=await db.prepare("SELECT id FROM quiz_practice_attempts WHERE group_id=? AND account_id=? AND quiz_id=? AND assignment_id IS NULL AND status='in_progress' AND discarded_at IS NULL ORDER BY started_at DESC,id DESC LIMIT 1").bind(g,a.id,quizId).first<{id:string}>();if(active){const resumed=await getPracticeAttempt(a,active.id);if(resumed.attempt.status==='in_progress')return resumeOperation(a,data,active.id);}
   const shared=quizSharedAccess(a,'sq','sv');
   live={sql:`EXISTS(SELECT 1 FROM quizzes sq JOIN quiz_versions sv ON sv.quiz_id=sq.id JOIN tuition_groups sg ON sg.id=sq.group_id AND sg.active=1 WHERE sq.id=? AND sv.id=? AND sq.deleted_at IS NULL AND sq.public_blocked_at IS NULL AND ((${bank?0:1}=1 AND sq.group_id=? AND sq.owner_id=? AND sv.revision=sq.revision) OR ${shared.sql})) AND NOT EXISTS(SELECT 1 FROM quiz_practice_attempts p WHERE p.group_id=? AND p.account_id=? AND p.quiz_id=? AND p.assignment_id IS NULL AND p.status='in_progress' AND p.discarded_at IS NULL)`,values:[quizId,versionId,g,a.id,...shared.args,g,a.id,quizId]};
  }
- const order=makePracticeOrder(content),selectedContent=orderedPracticeContent(content,JSON.stringify(order)),now=new Date().toISOString(),attemptId=crypto.randomUUID(),deadline=policy.timeLimitSeconds?new Date(Date.parse(now)+policy.timeLimitSeconds*1000).toISOString():null,total=Math.round(selectedContent.questions.reduce((n,q)=>n+q.points,0)*100)/100;
+ const order=makePracticeOrder({...content,shuffleQuestions:policy.shuffleQuestions,shuffleOptions:policy.shuffleOptions}),selectedContent=orderedPracticeContent(content,JSON.stringify(order)),now=new Date().toISOString(),attemptId=crypto.randomUUID(),deadline=policy.timeLimitSeconds?new Date(Date.parse(now)+policy.timeLimitSeconds*1000).toISOString():null,total=Math.round(selectedContent.questions.reduce((n,q)=>n+q.points,0)*100)/100;
  const insert=db.prepare(`INSERT INTO quiz_practice_attempts(id,group_id,account_id,student_name,quiz_id,version_id,assignment_id,immediate,order_json,started_at,deadline_at,updated_at,total_score,operation_id,request_hash,attempt_number) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,(SELECT count(*)+1 FROM quiz_practice_attempts numbered WHERE numbered.group_id=? AND numbered.quiz_id=? AND numbered.assignment_id IS ? AND ${assignmentId?'numbered.student_name=?':'numbered.account_id=?'}) WHERE ${practiceAuthority} AND ${live.sql}`).bind(attemptId,g,a.id,a.role==='student'?a.studentName:null,quizId,versionId,assignmentId,immediate?1:0,JSON.stringify(order),now,deadline,now,total,replay.operation,replay.hash,g,quizId,assignmentId,assignmentId?a.studentName:a.id,...practiceAuthorityValues(a),...live.values),guard=operationGuard(replay.operation);
  try{const result=await db.batch([insert,operationStatement(a,replay.operation,replay.hash,attemptId,'start',now),eventStatement(a,replay.operation,g,assignmentId,attemptId,'start',null,{startedAt:now,personalDeadlineAt:deadline,versionId},now,guard),...adminPermissionStatements(a,'quizzes.view')]);if(!result[0].meta.changes)throw new QuizError('quiz.conflict',409);}catch(error){if(adminPermissionFailure(error))throw error;const retry=await operationReplay(a,data);if(retry.prior)return getPracticeAttempt(a,retry.prior.record_id);throw error;}return getPracticeAttempt(a,attemptId);
 }

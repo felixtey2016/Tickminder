@@ -88,6 +88,29 @@ const defaultSubmitted=(await post({action:'submit',attemptId:assignedAttempt.id
 assert.equal(defaultSubmitted.answersVisible,true);
 assert.equal(defaultSubmitted.results.find(result=>result.questionId===choice.id).key.explanation,choiceSolution);
 assert.equal(defaultSubmitted.results.find(result=>result.questionId===c.questions[2].id).key.explanation,'','previous questions can still have no steps');
+const controlled={...direct,id:op(),operationId:op(),settings:{kind:'practice',timeLimitSeconds:180,shuffleQuestions:false,shuffleOptions:false,showSolutions:false}};
+assert.equal((await post({...controlled,id:op(),operationId:op(),settings:{...controlled.settings,showSolutions:'true'}},teacher)).status,400);
+assert.equal((await post(controlled,teacher)).status,200);
+const controlledStart=await post({action:'start',assignmentId:controlled.id,timeLimitSeconds:null,showSolutions:true,shuffleQuestions:true,operationId:op()},student);
+assert.equal(controlledStart.status,200,JSON.stringify(controlledStart.data));
+const teacherAttempt=controlledStart.data.attempt;
+assert.equal(Date.parse(teacherAttempt.deadlineAt)-Date.parse(teacherAttempt.startedAt),180000,'the student cannot override the teacher timer');
+const orderedIds=teacherAttempt.content.questions.map(q=>[q.id,q.options.map(o=>o.id)]);
+assert.deepEqual(orderedIds,c.questions.map(q=>[q.id,q.options.map(o=>o.id)]),'teacher can override the authored shuffling defaults');
+const checkedWithoutSteps=(await post({...check,attemptId:teacherAttempt.id,revision:teacherAttempt.revision,operationId:op()},student)).data.attempt;
+assert.equal(checkedWithoutSteps.results[0].correctOptionId,choiceKey.correctOptionId,'correctness feedback still works');
+assert.equal(JSON.stringify(checkedWithoutSteps).includes(choiceSolution),false,'disabled steps are withheld in immediate feedback');
+const submittedWithoutSteps=(await post({action:'submit',attemptId:teacherAttempt.id,revision:checkedWithoutSteps.revision,answers,operationId:op()},student)).data.attempt;
+assert.equal(submittedWithoutSteps.answersVisible,true);
+assert.equal(JSON.stringify(submittedWithoutSteps).includes(choiceSolution),false,'answer release never overrides disabled steps');
+assert.equal((await get('?attemptId='+teacherAttempt.id,teacher)).data.attempt.results.find(q=>q.questionId===choice.id).key.explanation,choiceSolution,'teacher can still review the original steps');
+const allowed={...controlled,id:op(),operationId:op(),immediate:false,settings:{...controlled.settings,showSolutions:true,answerRelease:'manual'}};
+assert.equal((await post(allowed,teacher)).status,200);
+const allowedStart=(await post({action:'start',assignmentId:allowed.id,operationId:op()},student)).data.attempt;
+const beforeRelease=(await post({action:'submit',attemptId:allowedStart.id,revision:allowedStart.revision,answers,operationId:op()},student)).data.attempt;
+assert.equal(JSON.stringify(beforeRelease).includes(choiceSolution),false,'enabled steps are still held until release in deferred mode');
+assert.equal((await post({action:'release',assignmentId:allowed.id,revision:1,release:'answers',operationId:op()},teacher)).status,200);
+assert.equal((await get('?attemptId='+allowedStart.id,student)).data.attempt.results.find(q=>q.questionId===choice.id).key.explanation,choiceSolution);
 sqlite.prepare('UPDATE classrooms SET archived=1 WHERE id=?').run(classroom);assert.equal((await post({action:'start',assignmentId,operationId:op()},student)).status,404,'archived classes cannot start');sqlite.prepare('UPDATE classrooms SET archived=0 WHERE id=?').run(classroom);
 beforeBatch=()=>sqlite.prepare('UPDATE accounts SET disabled_at=? WHERE id=?').run(now,student.id);r=await post({action:'start',quizId,bank:true,operationId:op()},student);assert.equal(r.status,409,'disabled race mutation guard');sqlite.prepare('UPDATE accounts SET disabled_at=NULL WHERE id=?').run(student.id);
 // Source withdrawal/deletion prevents new starts while historical attempt keys and image grants survive.
@@ -97,6 +120,15 @@ sqlite.prepare("UPDATE quizzes SET visibility='private',shared_revision=NULL,del
 // Live authority is checked inside writes, even if an account/class changes after the initial read.
 
 const timed={...c,title:'计时数学',timeLimitSeconds:60},timedId=op();actor=teacher;await server.saveQuiz(actor,{id:timedId,revision:0,operationId:op(),content:timed,keys});await server.shareQuiz(actor,{id:timedId,revision:1,operationId:op(),visibility:'public'});r=await post({action:'start',quizId:timedId,bank:true,operationId:op()},student);assert.equal(r.status,200,JSON.stringify(r.data));const timedAttempt=r.data.attempt;assert.equal(Date.parse(timedAttempt.deadlineAt)-Date.parse(timedAttempt.startedAt),60000);assert.equal((await get('?attemptId='+timedAttempt.id,student)).data.attempt.deadlineAt,timedAttempt.deadlineAt);
+assert.equal((await post({action:'start',quizId:timedId,bank:true,timeLimitSeconds:59,operationId:op()},student2)).status,400,'sub-minute overrides are rejected');
+const untimed=(await post({action:'start',quizId:timedId,bank:true,timeLimitSeconds:null,operationId:op()},student2)).data.attempt;
+assert.equal(untimed.deadlineAt,null,'an explicit self-practice choice wins over the legacy authored timer');
+assert.equal(untimed.content.timeLimitSeconds,null);
+const resumed=(await post({action:'start',quizId:timedId,bank:true,timeLimitSeconds:120,operationId:op()},student2)).data.attempt;
+assert.equal(resumed.id,untimed.id);assert.equal(resumed.deadlineAt,null,'resuming does not replace the timer');
+const personal=(await post({action:'start',quizId:timedId,bank:true,timeLimitSeconds:300,operationId:op()},foreign)).data.attempt;
+assert.equal(Date.parse(personal.deadlineAt)-Date.parse(personal.startedAt),300000,'fresh self-practice can choose its own duration');
+assert.equal((await get('?attemptId='+personal.id,foreign)).data.attempt.content.timeLimitSeconds,300,'the saved duration is returned after reload');
 // Trigger correctly forbids changing a deadline. Expiry test uses a fixed server clock after start.
 const RealDate=Date,clock=Date.parse(timedAttempt.deadlineAt)+1000;globalThis.Date=class extends RealDate{constructor(...v){super(...(v.length?v:[clock]));}static now(){return clock;}};r=await post({action:'save',attemptId:timedAttempt.id,revision:1,answers:{[choice.id]:{optionId:choiceKey.correctOptionId}},operationId:op()},student);globalThis.Date=RealDate;assert.equal(r.status,200);assert.equal(r.data.attempt.status,'submitted');assert.deepEqual(r.data.attempt.answers,{},'late answers not accepted');
 // JSON prototype keys and invalid options never enter an attempt.
