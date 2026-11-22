@@ -5,10 +5,13 @@ import {useQuizMusic,type QuizMusicId} from './quiz-music';
 
 const clips={correct:'/quiz-audio/correct.wav',incorrect:'/quiz-audio/incorrect.wav'} as const;
 type Feedback=keyof typeof clips;
+// Balance the two cues with each other and with the background music.
+const feedbackGain:Record<Feedback,number>={correct:0.07,incorrect:0.055};
 type Preferences={music:boolean;effects:boolean;repeat:boolean};
 const defaults:Preferences={music:true,effects:true,repeat:false};
 type Player={
  context:AudioContext;
+ gain:GainNode;
  abort:AbortController;
  buffers:Partial<Record<Feedback,Promise<AudioBuffer|null>>>;
  source:AudioBufferSourceNode|null;
@@ -85,7 +88,13 @@ export function useQuizSound(accountId:string|undefined,attemptId?:string){
   try{
    const Audio=window.AudioContext??(window as Window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext;
    if(!Audio)return;
-   const audio=player.current??={context:new Audio(),abort:new AbortController(),buffers:{},source:null,playbackId:0};
+   if(!player.current){
+    const context=new Audio();
+    const gain=context.createGain();
+    gain.connect(context.destination);
+    player.current={context,gain,abort:new AbortController(),buffers:{},source:null,playbackId:0};
+   }
+   const audio=player.current;
    if(audio.context.state!=='running')void audio.context.resume().catch(()=>{});
    void loadClip(audio,'correct');
    void loadClip(audio,'incorrect');
@@ -102,7 +111,8 @@ export function useQuizSound(accountId:string|undefined,attemptId?:string){
    audio.source?.stop();
    const source=audio.context.createBufferSource();
    source.buffer=buffer;
-   source.connect(audio.context.destination);
+   audio.gain.gain.value=feedbackGain[feedback];
+   source.connect(audio.gain);
    source.onended=()=>{source.disconnect();if(audio.source===source)audio.source=null;};
    source.start();
    audio.source=source;

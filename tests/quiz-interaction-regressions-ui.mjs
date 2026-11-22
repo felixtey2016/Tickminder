@@ -29,8 +29,13 @@ async function open(params={},options={}){
  const context=await browser.newContext({viewport:{width:options.width||390,height:844},reducedMotion:'reduce',...(options.touch?{hasTouch:true,isMobile:true}:{})}),page=await context.newPage();page.setDefaultTimeout(10000);
  if(options.soundProbe)await page.addInitScript(setting=>{
   window.fixtureSounds=[];
-  const start=AudioBufferSourceNode.prototype.start;
-  AudioBufferSourceNode.prototype.start=function(...args){window.fixtureSounds.push(this.buffer.duration);return start.apply(this,args);};
+  const outputs=new WeakMap();
+  const {connect,start}=AudioBufferSourceNode.prototype;
+  AudioBufferSourceNode.prototype.connect=function(output,...args){outputs.set(this,output);return connect.call(this,output,...args);};
+  AudioBufferSourceNode.prototype.start=function(...args){
+   window.fixtureSounds.push({duration:this.buffer.duration,gain:outputs.get(this)?.gain?.value??1});
+   return start.apply(this,args);
+  };
   if(setting==='muted')localStorage.setItem('tickminder.quiz.sound.fixture-user',JSON.stringify({music:true,effects:false}));
  },options.soundProbe);
  const errors=[],writes=[],shareTargetQueries=[],saveStarted=deferred(),releaseSave=deferred(),draftStarted=deferred(),releaseDraft=deferred(),checkStarted=deferred();
@@ -176,11 +181,15 @@ try{
    await speaker.tap();
    await p.locator('.quiz-option-button').first().tap();
    await p.waitForFunction(()=>window.fixtureSounds.length===1);
-   check(Math.abs((await p.evaluate(()=>window.fixtureSounds[0]))-.5)<.001,'server-confirmed correct choice plays the supplied correct WAV');
+   const correct=await p.evaluate(()=>window.fixtureSounds[0]);
+   check(Math.abs(correct.duration-.5)<.001,'server-confirmed correct choice plays the supplied correct WAV');
+   check(Math.abs(correct.gain-.07)<.001,'correct feedback is attenuated before it reaches the speakers');
    await p.getByRole('button',{name:'Next question',exact:true}).tap();
    await p.locator('.quiz-option-button').nth(1).tap();
    await p.waitForFunction(()=>window.fixtureSounds.length===2);
-   check(Math.abs((await p.evaluate(()=>window.fixtureSounds[1]))-.46)<.001,'server-confirmed incorrect choice plays the supplied wrong WAV');
+   const incorrect=await p.evaluate(()=>window.fixtureSounds[1]);
+   check(Math.abs(incorrect.duration-.46)<.001,'server-confirmed incorrect choice plays the supplied wrong WAV');
+   check(Math.abs(incorrect.gain-.055)<.001,'the louder incorrect waveform receives additional attenuation');
    await speaker.tap();
    await effects.tap();
    await p.reload();
