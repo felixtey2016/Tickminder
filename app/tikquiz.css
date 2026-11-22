@@ -25,34 +25,10 @@
   border-radius: 10px;
   padding: 4px 8px;
 }
-.tikquiz-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: clamp(29px, 9vw, 56px);
-  white-space: nowrap;
-}
-.tikquiz-brand-mascot {
-  flex: none;
-  height: 100%;
-  aspect-ratio: 277 / 260;
-  overflow: hidden;
-}
-.tikquiz-brand-mascot img {
+.tikquiz-logo img {
   display: block;
-  width: auto;
-  max-width: none;
-  height: 100%;
-}
-.tikquiz-brand-name {
-  color: #382475;
-  font-size: clamp(15px, 4.5vw, 32px);
-  font-weight: 800;
-  line-height: 1;
-  letter-spacing: -.045em;
-}
-.tikquiz-brand-name span {
-  color: #a05e00;
+  width: clamp(101px, 30vw, 174px);
+  height: auto;
 }
 .dark .tikquiz-logo {
   background: #eee8fb;
