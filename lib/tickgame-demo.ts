@@ -51,9 +51,9 @@ export async function launchTickGame() {
 const types: Record<string,string> = {
   html:'text/html; charset=utf-8', js:'text/javascript; charset=utf-8', wasm:'application/wasm', json:'application/json',
   zip:'application/zip', pdf:'application/pdf', png:'image/png', webp:'image/webp', jpg:'image/jpeg', jpeg:'image/jpeg',
-  webm:'video/webm', mp3:'audio/mpeg', ogg:'audio/ogg', opus:'audio/ogg', m4a:'audio/mp4', mp4:'video/mp4',
+  webm:'video/webm', mp3:'audio/mpeg', ogg:'audio/ogg', wav:'audio/wav', opus:'audio/ogg', m4a:'audio/mp4', mp4:'video/mp4',
 };
-const csp = "default-src 'self' blob: data:; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' blob:; worker-src 'self' blob:; form-action 'none'; object-src 'none'; base-uri 'none'; frame-ancestors " + tickGameAppOrigins.join(' ');
+const csp = "default-src 'self' blob: data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' blob:; worker-src 'self' blob:; form-action 'none'; object-src 'none'; base-uri 'none'; frame-ancestors " + tickGameAppOrigins.join(' ');
 
 export async function tickGameAsset(request: Request, bucket?: R2Bucket) {
   const url = new URL(request.url);
