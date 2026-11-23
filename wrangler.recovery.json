@@ -29,6 +29,10 @@
     {
       "pattern": "tickgame.tickminder.com",
       "custom_domain": true
+    },
+    {
+      "pattern": "play-tickgame.tickminder.com",
+      "custom_domain": true
     }
   ],
   "assets": {

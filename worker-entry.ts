@@ -1,4 +1,4 @@
-import {gameOrigin,tickGameAppOrigins,tickGameAsset} from './lib/tickgame-demo';
+import {catalogOrigin,gameOrigin,tickGameAppOrigins,tickGameAsset,tickGameCatalogRoute} from './lib/tickgame-demo';
 import handler from 'vinext/server/fetch-handler';
 import {runParentNotificationTick} from './lib/parent-delivery';
 import {maintainNotificationHistory,NOTIFICATION_MAINTENANCE_CRON} from './lib/notification-maintenance';
@@ -17,6 +17,11 @@ export default {
   const requestedUrl=new URL(request.url);
   if(requestedUrl.pathname==='/api/tickgame/launch'&&!tickGameAppOrigins.includes(requestedUrl.origin))return new Response(null,{status:404,headers:{'Cache-Control':'no-store'}});
   if(requestedUrl.origin===gameOrigin) return tickGameAsset(request,(bindings as Cloudflare.Env).TICKGAME_ASSETS);
+  if(requestedUrl.origin===catalogOrigin){
+    const route=await tickGameCatalogRoute(request,(bindings as Cloudflare.Env).TICKGAME_ASSETS);
+    if(route instanceof Response)return route;
+    request=new Request(route,request) as typeof request;
+  }
   const context=newDiagnosticContext(request,bindings as DiagnosticsBindings,promise=>ctx.waitUntil(promise));
   return withDiagnosticContext(context,async()=>{
    let response:Response;

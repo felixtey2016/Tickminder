@@ -1,10 +1,13 @@
 import {env} from 'cloudflare:workers';
 
-export const gameOrigin = 'https://tickgame.tickminder.com';
+export const catalogOrigin = 'https://tickgame.tickminder.com';
+export const gameOrigin = 'https://play-tickgame.tickminder.com';
 export const gamePrefix = 'sej-f4-bab-1/1.7.1/';
 export const gameTitle = 'Sejarah Tingkatan 4 · Bab 1';
 const keyPath = 'private/session-signing-key';
 const cookie = '__Host-tickgame-session';
+export const catalogCookie = '__Host-tickgame-catalog';
+type TicketPurpose = 'launch'|'play'|'enter'|'catalog';
 export const tickGameAppOrigins = ['https://www.tickminder.com', 'https://tickminder.com'];
 const encoder = new TextEncoder();
 const launchLifetime = 90;
@@ -20,13 +23,13 @@ async function signingKey(bucket: R2Bucket) {
   return key;
 }
 
-async function issue(key: CryptoKey, purpose: 'launch'|'play', life: number) {
+async function issue(key: CryptoKey, purpose: TicketPurpose, life: number) {
   const payload = purpose + '.' + (Math.floor(Date.now()/1000)+life) + '.' + crypto.randomUUID();
   const signature = await crypto.subtle.sign('HMAC',key,encoder.encode(payload));
   return payload + '.' + btoa(String.fromCharCode(...new Uint8Array(signature))).replace(/=+$/g,'').replace(/\+/g,'-').replace(/\//g,'_');
 }
 
-async function valid(key: CryptoKey, value: string, purpose: 'launch'|'play', lifetime: number) {
+async function valid(key: CryptoKey, value: string, purpose: TicketPurpose, lifetime: number) {
   const parts = value.split('.');
   const now = Math.floor(Date.now()/1000);
   const expires = Number(parts[1]);
@@ -39,8 +42,7 @@ async function valid(key: CryptoKey, value: string, purpose: 'launch'|'play', li
 const privateHeaders = {'Cache-Control':'private, no-store','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff'};
 const missing = () => new Response('Not found',{status:404,headers:privateHeaders});
 
-export async function launchTickGame() {
-  const bucket = env.TICKGAME_ASSETS;
+export async function launchTickGame(bucket = env.TICKGAME_ASSETS) {
   if (!bucket) return missing();
   const key = await signingKey(bucket);
   if (!key) return missing();
@@ -53,7 +55,7 @@ const types: Record<string,string> = {
   zip:'application/zip', pdf:'application/pdf', png:'image/png', webp:'image/webp', jpg:'image/jpeg', jpeg:'image/jpeg',
   webm:'video/webm', mp3:'audio/mpeg', ogg:'audio/ogg', wav:'audio/wav', opus:'audio/ogg', m4a:'audio/mp4', mp4:'video/mp4',
 };
-const csp = "default-src 'self' blob: data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' blob:; worker-src 'self' blob:; form-action 'none'; object-src 'none'; base-uri 'none'; frame-ancestors " + tickGameAppOrigins.join(' ');
+const csp = "default-src 'self' blob: data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' blob:; worker-src 'self' blob:; form-action 'none'; object-src 'none'; base-uri 'none'; frame-ancestors " + catalogOrigin;
 
 export async function tickGameAsset(request: Request, bucket?: R2Bucket) {
   const url = new URL(request.url);
@@ -97,4 +99,50 @@ export async function tickGameAsset(request: Request, bucket?: R2Bucket) {
   if (path.endsWith('.pdf')) headers.set('Content-Disposition','attachment');
   if (range) headers.set('Content-Range','bytes '+range.offset+'-'+(range.offset+range.length-1)+'/'+range.size);
   return new Response('body' in object ? object.body as ReadableStream : null,{status:range ? 206 : 200,headers});
+}
+
+function sessionCookie(name: string, value: string) {
+  return name+'='+value+'; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age='+sessionLifetime;
+}
+
+export async function openTickGameCatalog(language: 'en'|'zh') {
+  const bucket = env.TICKGAME_ASSETS;
+  const key = bucket && await signingKey(bucket);
+  if (!key) return null;
+  const ticket = await issue(key,'enter',launchLifetime);
+  return catalogOrigin+'/enter?lang='+language+'&ticket='+ticket;
+}
+
+export async function hasTickGameCatalogSession(value?: string, bucket = env.TICKGAME_ASSETS) {
+  if (!bucket || !value || value.length>150) return false;
+  const key = await signingKey(bucket);
+  return Boolean(key && await valid(key,value,'catalog',sessionLifetime));
+}
+
+export async function tickGameCatalogRoute(request: Request, bucket?: R2Bucket) {
+  const url = new URL(request.url);
+  if (request.method!=='GET' && request.method!=='HEAD') return missing();
+  const language = url.searchParams.get('lang')==='en'?'en':'zh';
+  const next = tickGameAppOrigins[0]+'/manage/tickgame?lang='+language;
+  if (url.pathname === '/enter') {
+    const ticket = url.searchParams.get('ticket');
+    if (!bucket || !ticket || ticket.length>150) return missing();
+    const key = await signingKey(bucket);
+    if (!key || !await valid(key,ticket,'enter',launchLifetime)) return missing();
+    const session = await issue(key,'catalog',sessionLifetime);
+    return new Response(null,{status:303,headers:{...privateHeaders,
+      Location:'/?lang='+language,'Set-Cookie':sessionCookie(catalogCookie,session)}});
+  }
+  if (url.pathname === '/play') {
+    const value = request.headers.get('cookie')?.match(/(?:^|;\s*)__Host-tickgame-catalog=([^;]+)/)?.[1];
+    return await hasTickGameCatalogSession(value,bucket) ? launchTickGame(bucket) : missing();
+  }
+  const section = url.pathname.replace(/\/$/,'');
+  if (section === '' || section === '/sejarah') {
+    url.pathname = '/manage/tickgame'+section;
+    return url;
+  }
+  if (url.pathname.startsWith('/_next/') || ['/branding/tickgame-logo.webp','/tickminder-logo.svg'].includes(url.pathname)) return url;
+  if (url.pathname === '/signin') return new Response(null,{status:303,headers:{...privateHeaders,Location:next}});
+  return missing();
 }
