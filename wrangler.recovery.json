@@ -25,6 +25,10 @@
     {
       "pattern": "tickplay.tickminder.com",
       "custom_domain": true
+    },
+    {
+      "pattern": "tickgame.tickminder.com",
+      "custom_domain": true
     }
   ],
   "assets": {
@@ -46,6 +50,10 @@
     {
       "binding": "DIAGNOSTICS",
       "bucket_name": "tickminder-diagnostics"
+    },
+    {
+      "binding": "TICKGAME_ASSETS",
+      "bucket_name": "tickgame-assets"
     }
   ],
   "vars": {

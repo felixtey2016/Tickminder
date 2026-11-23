@@ -3,6 +3,9 @@ import {notFound} from "next/navigation";
 import {currentBusinessAccount} from "@/lib/auth";
 import {AppearanceToggle} from "@/components/appearance-toggle";
 import "@/components/legal-document.css";
+import "@/components/tickgame-demo.css";
+import {TickGamePlayer} from "@/components/tickgame-player";
+import {gameTitle} from "@/lib/tickgame-demo";
 
 export const metadata: Metadata = {title: "TickGame · Tickminder", robots: {index: false, follow: false}};
 
@@ -26,7 +29,7 @@ export default async function TickGamePage({searchParams}: {searchParams: Promis
     <article className="legal-paper">
       <div className="legal-document-head">
         <h1><img src="/branding/tickgame-logo.webp" width={176} height={176} alt="TickGame"/></h1>
-        <p className="legal-summary">{language === "zh" ? "暂无游戏" : "No games yet"}</p>
+        <TickGamePlayer title={gameTitle} language={language}/>
       </div>
     </article>
   </main>;

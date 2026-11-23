@@ -1,6 +1,7 @@
 declare namespace Cloudflare {
   interface Env {
     ASSETS?: Fetcher;
+    TICKGAME_ASSETS?: R2Bucket;
     DB?: D1Database;
     BUCKET?: R2Bucket;
     DIAGNOSTICS?: R2Bucket;

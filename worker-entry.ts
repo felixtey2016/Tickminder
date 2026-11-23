@@ -1,3 +1,4 @@
+import {gameOrigin,tickGameAppOrigins,tickGameAsset} from './lib/tickgame-demo';
 import handler from 'vinext/server/fetch-handler';
 import {runParentNotificationTick} from './lib/parent-delivery';
 import {maintainNotificationHistory,NOTIFICATION_MAINTENANCE_CRON} from './lib/notification-maintenance';
@@ -13,6 +14,9 @@ const app=handler as ExportedHandler;
 type DiagnosticsBindings={DIAGNOSTICS?:R2Bucket;CF_VERSION_METADATA?:{id?:string}};
 export default {
  async fetch(request:Parameters<NonNullable<ExportedHandler['fetch']>>[0],bindings:unknown,ctx:ExecutionContext){
+  const requestedUrl=new URL(request.url);
+  if(requestedUrl.pathname==='/api/tickgame/launch'&&!tickGameAppOrigins.includes(requestedUrl.origin))return new Response(null,{status:404,headers:{'Cache-Control':'no-store'}});
+  if(requestedUrl.origin===gameOrigin) return tickGameAsset(request,(bindings as Cloudflare.Env).TICKGAME_ASSETS);
   const context=newDiagnosticContext(request,bindings as DiagnosticsBindings,promise=>ctx.waitUntil(promise));
   return withDiagnosticContext(context,async()=>{
    let response:Response;

@@ -1,0 +1,12 @@
+.tickgame-demo {
+  display: grid;
+  gap: 1rem;
+}
+.tickgame-demo iframe {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 210px;
+  border: 0;
+  border-radius: 8px;
+  background: #100e14;
+}
