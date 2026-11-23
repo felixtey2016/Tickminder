@@ -2,7 +2,8 @@
 
 import {displayFormatter} from '@/lib/display-preferences';
 import { useEffect, useState } from "react";
-import { BookOpen, CalendarDays, ChevronRight, ClipboardCheck, Clock3, LibraryBig, NotebookPen, type LucideIcon } from "lucide-react";
+import {ProductEntryLogo} from '@/components/product-entry-logo';
+import { BookOpen, CalendarDays, ChevronRight, ClipboardCheck, Clock3, LibraryBig, type LucideIcon } from "lucide-react";
 import { sessionLessonTitle } from "@/lib/class-session-display";
 import { getLanguage, t, registerTranslations } from "@/lib/i18n";
 import { canAdminAction, canAdminView } from "@/lib/admin-permission-client";
@@ -114,6 +115,6 @@ export function HomeDashboard({ role, name, accountId, groupId, identityKey, onN
     {onOpenTask&&canAdminView(permissionAccount,'classrooms')&&canAdminAction(permissionAccount,'tasks.view')&&<TaskInbox role={role} onOpen={onOpenTask}/>}
     {canAdminView(permissionAccount, "calendar") ? <HomeToday role={role} data={summary} loading={loading} error={error} reload={reload} onNavigate={onNavigate}/> : error && <div className="home-compact-error" role="alert"><p>{error}</p><Button variant="outline" onClick={reload}>{t('重试')}</Button></div>}
     {overview.length > 0 && <section className="home-compact-tasks" aria-labelledby="home-tasks-heading"><h2 id="home-tasks-heading" className="home-compact-section-label">{t(role === "student" ? "待办与学习" : "待办与教学")}</h2><div className="home-compact-task-list">{overview.map(card => <button type="button" className={"home-compact-task " + (card.isPlan ? "is-plan" : "")} key={card.label} onClick={() => onNavigate(card.destination)}><card.Icon size={20} aria-hidden="true"/><span className="home-compact-task-copy"><strong>{t(card.label)}</strong>{card.isPlan && <span className="home-compact-plan-name">{card.value}</span>}{card.detail && <small>{card.detail}</small>}</span>{!card.isPlan && <b>{card.value}</b>}<span className="home-compact-task-action">{t(card.destination === "homework" ? "打开功课" : card.destination === "lessons" ? "记录出勤" : card.destination === "attention" ? "处理出席" : "查看计划")}<ChevronRight size={16} aria-hidden="true"/></span></button>)}</div></section>}
-    {role === "student" && <nav className="home-compact-shortcuts" aria-label={t("常用功能")}><Button variant="outline" onClick={()=>onNavigate("quizzes")}><NotebookPen size={19} aria-hidden="true"/>Quiz<ChevronRight size={16} aria-hidden="true"/></Button><Button variant="outline" onClick={()=>onNavigate("materials")}><LibraryBig size={19} aria-hidden="true"/>{t("教学资料")}<ChevronRight size={16} aria-hidden="true"/></Button></nav>}
+    {role === "student" && <nav className="home-compact-shortcuts" aria-label={t("常用功能")}><Button variant="outline" onClick={()=>onNavigate("quizzes")}><ProductEntryLogo product="quiz"/><ChevronRight size={16} aria-hidden="true"/></Button><Button variant="outline" onClick={()=>onNavigate("materials")}><LibraryBig size={19} aria-hidden="true"/>{t("教学资料")}<ChevronRight size={16} aria-hidden="true"/></Button></nav>}
   </section>;
 }

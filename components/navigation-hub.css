@@ -53,3 +53,7 @@
  /* Reserve the rail while a dialog or busy state temporarily hides navigation. */
  .app-shell.shell-wave1.four-entry-shell :is(.app-body,.app-body.menu-open,.parent-shell-body){box-sizing:border-box;padding-inline-start:var(--primary-rail-width)}
 }
+
+.product-entry-brand{display:flex;align-items:center;min-width:0;flex:1}
+.product-entry-brand img{display:block;width:auto;height:auto;max-width:min(100%,116px);max-height:42px;object-fit:contain}
+.dark .product-entry-brand img{background:#f6f1ff;border-radius:5px;padding:3px 5px}

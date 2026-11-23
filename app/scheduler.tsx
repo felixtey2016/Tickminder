@@ -38,7 +38,7 @@ import "@/lib/compact-layout-i18n";
 
 import { PageState } from "@/components/page-state";
 import { actionFailureMessage } from "@/lib/action-feedback";
-import { BarChart3, CalendarClock, ContactRound, LibraryBig, ListChecks, UserRound, UsersRound, SquarePen, ArrowLeftRight, Building2, NotebookPen, Play } from "lucide-react";
+import { BarChart3, CalendarClock, ContactRound, LibraryBig, ListChecks, UserRound, UsersRound, SquarePen, ArrowLeftRight, Building2, NotebookPen } from "lucide-react";
 import { BRAND_NAME } from "@/lib/brand";
 import { LegalLinks } from "@/components/legal-links";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -62,6 +62,7 @@ import { GoogleLinkOnboarding } from './google-link-onboarding';
 import { StudentContactOnboarding } from './student-contact-onboarding';
 
 import { MobileBottomNavigation } from '@/components/mobile-bottom-navigation';
+import {ProductEntryLogo} from '@/components/product-entry-logo';
 import { NavigationHub, type NavigationHubSection } from '@/components/navigation-hub';
 import { primaryEntries, primaryArea, isPrimaryHub, hubGroups } from '@/lib/four-entry-navigation';
 import { ShellPreferences } from '@/components/shell-preferences';
@@ -544,8 +545,7 @@ function WatchPreviewLink({entry,language,home=false}:{entry:string;language:Lan
     url.searchParams.set('lang',language);
     url.searchParams.set('theme',resolvedTheme==='dark'?'dark':'light');
     return <a className="navigation-hub-item" href={url.href} data-testid={home?'watch-home-entry':'watch-admin-preview'}>
-        <span className="navigation-hub-icon"><Play size={22} aria-hidden="true"/></span>
-        <span className="navigation-hub-copy"><strong>{language==='zh'?'TickPlay 视频库':'TickPlay video library'}</strong></span>
+        <ProductEntryLogo product="play"/>
     </a>;
 }
 function BrandLogo({ small = false }: { small?: boolean }) { return <span className={`brand-logo ${small ? "small" : ""}`}><img src="/tickminder-logo.svg" width={small ? 40 : 80} height={small ? 40 : 80} alt={BRAND_NAME} /></span>; }

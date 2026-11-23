@@ -1,6 +1,7 @@
 'use client';
 import {useId,type ReactNode} from 'react';
 import {ChevronRight,type LucideIcon} from 'lucide-react';
+import {ProductEntryLogo} from './product-entry-logo';
 import './navigation-hub.css';
 
 export type NavigationHubItem={id:string;label:string;description?:string;Icon:LucideIcon;badge?:ReactNode};
@@ -16,8 +17,10 @@ export function NavigationHub({title,description,sections,onChoose,leading,child
    <h2 id={`${id}-${section.id}`}>{section.title}</h2>
    <div className={'navigation-hub-items navigation-hub-'+(section.layout||'grid')}>
     {section.items.map(({id:itemId,label,description:detail,Icon,badge})=><button key={itemId} type="button" className="navigation-hub-item" data-testid={'hub-'+itemId} onClick={()=>onChoose(itemId)}>
-     <span className="navigation-hub-icon"><Icon size={22} aria-hidden="true"/></span>
-     <span className="navigation-hub-copy"><strong>{label}</strong>{detail&&<small>{detail}</small>}</span>
+     {itemId==='quizzes'?<ProductEntryLogo product="quiz"/>:<>
+      <span className="navigation-hub-icon"><Icon size={22} aria-hidden="true"/></span>
+      <span className="navigation-hub-copy"><strong>{label}</strong>{detail&&<small>{detail}</small>}</span>
+     </>}
      {badge&&<span className="navigation-hub-badge">{badge}</span>}
      <ChevronRight className="navigation-hub-chevron" size={18} aria-hidden="true"/>
     </button>)}
