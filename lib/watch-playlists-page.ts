@@ -23,7 +23,7 @@ export function watchPlaylistMarkup(options: PlaylistSection, base: string, para
     const pageLink = (cursor: string, direction: string, label: string) => {
       const page = new URLSearchParams(params);
       page.set(direction, cursor);
-      return `<a class="quiet-button" href="${e(path+'?'+page)}">${label}</a>`;
+      return `<a class="quiet-button" ${direction==='after'?'data-watch-more':''} href="${e(path+'?'+page)}">${label}</a>`;
     };
     const cards = playlists.map(item => `<a class="playlist-card" href="${e(path+'/'+item.id+'?'+params)}">
       <h2>${e(item.title)}</h2><span aria-hidden="true">›</span></a>`).join('');
@@ -31,15 +31,17 @@ export function watchPlaylistMarkup(options: PlaylistSection, base: string, para
      <h1 id="playlist-title">${t('播放清单','Playlists')}</h1>
      ${options.canEditPlaylists ? action(t('创建播放清单','Create playlist')) : ''}
     </div>
-    ${cards ? `<div class="playlist-grid">${cards}</div>` : `<p class="empty-library">${t('还没有播放清单。','No playlists yet.')}</p>`}
+    ${cards ? `<div class="playlist-grid" data-watch-batch>${cards}</div>` : `<p class="empty-library">${t('还没有播放清单。','No playlists yet.')}</p>`}
     ${previousCursor || nextCursor ? `<nav class="catalog-pages" aria-label="${t('播放清单分页','Playlist pages')}">
      ${previousCursor ? pageLink(previousCursor, 'before', t('‹ 上一页','‹ Previous')) : ''}
-     ${nextCursor ? pageLink(nextCursor, 'after', t('下一页 ›','Next ›')) : ''}
-    </nav>` : ''}
+     ${nextCursor ? pageLink(nextCursor, 'after', t('加载更多','Load more')) : ''}
+    </nav><p id="watch-batch-status" class="muted" role="status"></p>` : ''}
     </section>`;
   } else if (playlist) {
     const query = new URLSearchParams(params);
     query.set('playlist', playlist.id);
+    const next = new URLSearchParams(params);
+    if (playlist.nextPosition !== null) next.set('position',String(playlist.nextPosition));
     const videos = playlist.videos.map(video => `<li data-video-id="${video.id}">
       <a class="playlist-card" href="${e(base+'/videos/'+video.id+'?'+query)}">
        <img src="https://i.ytimg.com/vi/${e(video.youtubeId)}/mqdefault.jpg" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" width="96" height="54">
@@ -50,8 +52,9 @@ export function watchPlaylistMarkup(options: PlaylistSection, base: string, para
       <h1 id="playlist-title">${e(playlist.title)}</h1>
       ${options.canEditPlaylists ? action(t('编辑播放清单','Edit playlist')) : ''}
      </div>
-     ${videos ? `<ol class="playlist-videos">${videos}</ol>`
+     ${videos ? `<ol class="playlist-videos" data-watch-batch>${videos}</ol>`
        : `<p class="empty-library">${t('这个播放清单暂时没有视频。','This playlist has no available videos.')}</p>`}
+     ${playlist.nextPosition !== null ? `<div class="catalog-pages"><a class="quiet-button" data-watch-more href="${e(path+'/'+playlist.id+'?'+next)}">${t('加载更多','Load more')}</a></div><p id="watch-batch-status" class="muted" role="status"></p>` : ''}
     </section>`;
   } else {
     return `<section>${back}<h1 id="playlist-title">${t('找不到播放清单','Playlist unavailable')}</h1></section>`;

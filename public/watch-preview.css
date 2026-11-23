@@ -344,3 +344,21 @@ dialog::backdrop { background: rgba(19,12,33,.52); -webkit-backdrop-filter: blur
 .playlist-picker input[type="checkbox"] {width:19px;height:19px;min-height:0;padding:0;margin:0;flex:none;accent-color:var(--accent);}
 .playlist-picker label {cursor:pointer;}
 #playlist-picker-status:empty {display:none;}
+
+.watch-account-tabs,.watch-reaction-buttons {display:flex;flex-wrap:wrap;gap:8px;}
+.watch-account-tabs {margin-bottom:18px;}
+.watch-account-tabs .quiet-button,.watch-reaction-buttons .quiet-button,#watch-social-more,#watch-mark-read {background:var(--glass);border-color:var(--edge);}
+.watch-account-tabs [aria-current="page"],.watch-reaction-buttons [aria-pressed="true"] {background:var(--accent-soft);border-color:var(--control-edge);color:var(--accent);}
+.watch-personal-profile,.watch-feed-card {background:var(--panel);border:1px solid var(--edge);border-radius:15px;padding:14px 16px;overflow-wrap:anywhere;}
+.watch-feed {display:grid;gap:10px;margin-block:14px;}
+.watch-notification {display:grid;gap:5px;}
+.watch-notification.is-unread {border-inline-start:4px solid var(--accent);}
+.watch-notification:hover {border-color:var(--control-edge);}
+.watch-video-social {margin-top:22px;display:grid;gap:12px;}
+.watch-video-social #watch-comment-form {display:grid;gap:7px;}
+.watch-video-social #watch-comment-form button {justify-self:end;}
+.watch-video-social textarea {font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--control-edge);border-radius:12px;padding:12px;resize:vertical;max-width:100%;}
+.watch-comment-heading {display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;}
+.watch-feed-card time {font-size:.8rem;}
+.watch-comment-body {white-space:pre-wrap;margin:8px 0 10px;}
+#watch-social-status:empty,#watch-social-action-status:empty {display:none;}

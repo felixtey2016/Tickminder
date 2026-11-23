@@ -113,13 +113,19 @@
     if (cursor) link.searchParams.set(direction, cursor);
     return link.href;
   }
-  function renderResults({videos, previousCursor, nextCursor}, url) {
-    grid.replaceChildren(...videos.map(video => card(video, url.search)));
-    grid.dataset.solo = String(videos.length === 1);
+  function renderResults({videos, previousCursor, nextCursor}, url, append) {
+    if (!append) grid.replaceChildren();
+    const existing = new Set([...grid.querySelectorAll('.video-open')].map(link=>link.pathname));
+    for (const video of videos) {
+      const child = card(video,url.search);
+      if (!existing.has(child.firstElementChild.pathname)) grid.append(child);
+    }
+    grid.dataset.solo = String(grid.children.length === 1);
     const paged = url.searchParams.has('before') || url.searchParams.has('after');
     const filtered = ['q', 'kind', ...fields.map(([key]) => key)].some(key => url.searchParams.has(key));
-    $('result-count').textContent = t('本页 ' + videos.length + ' 条', videos.length + ' on this page');
-    if (!videos.length) {
+    const shown = grid.querySelectorAll('.video-card').length;
+    $('result-count').textContent = t('已显示 ' + shown + ' 条', shown + ' shown');
+    if (!shown) {
       const empty = element('div','empty-library');
       empty.append(element('h3','',filtered || paged ? t('没有符合条件的视频','No matching videos') : t('还没有视频','No videos yet')));
       if (paged) {
@@ -131,15 +137,16 @@
       }
       grid.append(empty);
     }
-    for (const [id, direction, cursor] of [['previous-page', 'before', previousCursor], ['next-page', 'after', nextCursor]]) {
+    for (const [id, direction, cursor] of [['previous-page', 'before', append ? null : previousCursor], ['next-page', 'after', nextCursor]]) {
       const link = $(id);
       link.hidden = !cursor;
       if (cursor) link.href = pageLink(url, direction, cursor);
     }
-    $('catalog-pages').hidden = !previousCursor && !nextCursor;
+    $('catalog-pages').hidden = (append || !previousCursor) && !nextCursor;
   }
 
-  async function loadPage(resetPage = false, message = '') {
+  async function loadPage(resetPage = false, message = '', after) {
+    if (after && pageRequest) return;
     clearTimeout(searchTimer);
     pageRequest?.abort();
     const controller = new AbortController();
@@ -155,15 +162,17 @@
       else url.searchParams.delete(key);
     }
     if (url.href !== location.href) history.replaceState(null, '', url);
+    const source = new URL(url);
+    if (after) {source.searchParams.delete('before');source.searchParams.set('after',after);}
     grid.setAttribute('aria-busy', 'true');
     status('notice', message);
     try {
-      const result = await request(api + url.search, {signal: controller.signal});
-      if (!controller.signal.aborted) renderResults(result, url);
+      const result = await request(api + source.search, {signal: controller.signal});
+      if (!controller.signal.aborted) renderResults(result, url, Boolean(after));
     } catch (error) {
       if (!controller.signal.aborted) status('notice', error.message);
     } finally {
-      if (pageRequest === controller) grid.setAttribute('aria-busy', 'false');
+      if (pageRequest === controller) {pageRequest = null;grid.setAttribute('aria-busy', 'false');}
     }
   }
 
@@ -320,6 +329,12 @@
     }
   }
 
+  $('next-page').addEventListener('click',event=>{
+    if(event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+    event.preventDefault();
+    const cursor = new URL(event.currentTarget.href).searchParams.get('after');
+    if(cursor)void loadPage(false,'',cursor);
+  });
   $('search-form').addEventListener('submit', event => {
     event.preventDefault();
     void loadPage(true);

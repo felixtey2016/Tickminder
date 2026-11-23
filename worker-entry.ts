@@ -6,8 +6,8 @@ import {reportUnexpectedError} from './lib/diagnostics-server';
 import {watchPreviewBranding,watchPreviewConfig,watchPreviewLegacyLocation,type WatchPreviewBindings} from './lib/watch-preview-config';
 const sources=new Set(['/api/action','/api/class-sessions','/api/invoices','/api/invoice-finance','/api/invoice-attendance-corrections','/api/parents','/api/manage','/api/groups']);
 const watchPaths=new Set([
- '/api/watch-preview/catalog','/api/watch-preview/playlists','/api/watch-preview/facets','/api/watch-preview/academic-options','/api/watch-preview/redeem',
- '/watch-preview.css','/watch-preview.js','/watch-playlists.js',watchPreviewBranding.logo,watchPreviewBranding.favicon,
+ '/api/watch-preview/catalog','/api/watch-preview/playlists','/api/watch-preview/playlist-editor','/api/watch-preview/social','/api/watch-preview/facets','/api/watch-preview/academic-options','/api/watch-preview/redeem',
+ '/watch-preview.css','/watch-preview.js','/watch-playlists.js','/watch-social.js','/watch-more.js',watchPreviewBranding.logo,watchPreviewBranding.favicon,
 ]);
 const app=handler as ExportedHandler;
 type DiagnosticsBindings={DIAGNOSTICS?:R2Bucket;CF_VERSION_METADATA?:{id?:string}};
@@ -31,8 +31,13 @@ export default {
         const basePath=watch.entryPath.replace(/\/$/,'');
         const videoPrefix=basePath+'/videos/';
         const playlistPath=basePath+'/playlists';
+        const personal=new Map([['/account','account'],['/account/videos','my-videos'],['/favorites','favorites'],['/notifications','notifications']]);
+        const section=personal.get(url.pathname.slice(basePath.length).replace(/\/$/,''));
         if(url.pathname===watch.entryPath||(!watch.splitOrigin&&url.pathname==='/watch/')){
           url.pathname='/api/watch-preview/view';
+          request=new Request(url,request) as typeof request;
+        }else if(section&&url.pathname.startsWith(basePath+'/')){
+          url.pathname='/api/watch-preview/'+section;
           request=new Request(url,request) as typeof request;
         }else if(url.pathname===playlistPath || url.pathname===playlistPath+'/'){
           url.pathname='/api/watch-preview/playlists';

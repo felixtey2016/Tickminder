@@ -21,6 +21,8 @@
   let cursor = null;
   let request;
   let timer;
+  let selectionRequest;
+  let selectionReady = true;
   let busy = false;
 
   function element(tag, label) {
@@ -68,7 +70,7 @@
       return row;
     }));
     if (!chosen.length) selection.append(element('li',t('请选择要加入的视频。','Choose videos to add.')));
-    save.disabled = busy || !chosen.length;
+    save.disabled = busy || !selectionReady || !chosen.length;
   }
 
   function renderPicker() {
@@ -79,7 +81,7 @@
       const input = element('input');
       input.type = 'checkbox';
       input.checked = selectedIds.has(video.id);
-      input.disabled = busy || !input.checked && chosen.length >= 100;
+      input.disabled = busy || !selectionReady || !input.checked && chosen.length >= 100;
       input.addEventListener('change', () => {
         if (input.checked) chosen.push(video);
         else chosen = chosen.filter(item => item.id !== video.id);
@@ -159,17 +161,32 @@
   $('open-playlist-editor').addEventListener('click', () => {
     form.reset();
     form.elements.title.value = detail ? $('playlist-title').textContent : '';
-    chosen = [...(detail?.querySelectorAll('[data-video-id]') || [])].map(row => ({
-      id:row.dataset.videoId,title:row.querySelector('strong').textContent,
-    }));
+    chosen = [];
+    selectionReady = !detail;
     showError();
     renderOrder();
     dialog.showModal();
+    if (detail) {
+      const controller = new AbortController();
+      selectionRequest = controller;
+      showError(t('正在加载播放顺序…','Loading the play order…'));
+      fetch('/api/watch-preview/playlist-editor?playlist='+detail.dataset.id,{cache:'no-store',signal:controller.signal})
+        .then(response=>{if(!response.ok)throw Error();return response.json();})
+        .then(({videos})=>{
+          if(controller.signal.aborted)return;
+          chosen = videos;
+          selectionReady = true;
+          showError();
+          renderOrder();
+          renderPicker();
+        })
+        .catch(()=>{if(!controller.signal.aborted)showError(t('播放顺序加载失败，请关闭后重试。','Could not load the play order. Close and try again.'));});
+    }
     void loadVideos();
   });
   close.addEventListener('click', () => dialog.close());
   dialog.addEventListener('cancel',event => {if (busy) event.preventDefault();});
-  dialog.addEventListener('close', () => {clearTimeout(timer); request?.abort();});
+  dialog.addEventListener('close', () => {clearTimeout(timer); request?.abort(); selectionRequest?.abort();});
   search.addEventListener('input', () => {
     clearTimeout(timer);
     request?.abort();
@@ -178,7 +195,7 @@
   more.addEventListener('click', () => void loadVideos(cursor));
   form.addEventListener('submit', event => {
     event.preventDefault();
-    if (!chosen.length) return;
+    if (!selectionReady || !chosen.length) return;
     const title = form.elements.title.value.trim();
     if (!title) {
       showError(t('请输入清单名称。','Enter a playlist name.'));

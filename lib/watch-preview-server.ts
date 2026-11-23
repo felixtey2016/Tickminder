@@ -30,7 +30,7 @@ function db() {
   return env.DB;
 }
 
-export type WatchViewer = {groupId: string; accountId: string; role: 'admin' | 'teacher' | 'student'};
+export type WatchViewer = {groupId: string; accountId: string; name: string; role: 'admin' | 'teacher' | 'student'};
 
 export async function currentWatchViewer(): Promise<(WatchViewer & {sourceHash:string}) | null> {
   const actor = await currentBusinessAccount();
@@ -40,7 +40,7 @@ export async function currentWatchViewer(): Promise<(WatchViewer & {sourceHash:s
   const allowed = role !== 'admin' || isOwnerAccount(actor) || (await adminAuthority(actor, actor.groupId)).isGroupChief;
   const sourceHash = boundAccountSessionHash(actor);
   if (!allowed || !sourceHash) return null;
-  return {groupId: actor.groupId, accountId: actor.id, role, sourceHash};
+  return {groupId: actor.groupId, accountId: actor.id, name:actor.name, role, sourceHash};
 }
 
 // Each Watch request checks the backing session and live group membership.
@@ -83,7 +83,7 @@ export async function redeemWatchHandoff(token: string, challenge: string) {
 export async function currentWatchSession(request: Request) {
   const token = watchCookie(request, WATCH_COOKIE);
   if (!validWatchToken(token)) return null;
-  return db().prepare(`SELECT w.group_id AS groupId,a.id AS accountId,a.role
+  return db().prepare(`SELECT w.group_id AS groupId,a.id AS accountId,a.name,a.role
     FROM watch_preview_sessions w JOIN sessions current_session ON current_session.token_hash=w.source_hash
     JOIN accounts a ON a.id=current_session.account_id
     WHERE w.token_hash=? AND w.purpose='watch' AND w.expires_at>? AND EXISTS(SELECT 1 ${linkedViewer})`)
@@ -146,13 +146,17 @@ export async function watchVideoFacets(groupId: string) {
   }]));
 }
 
-export async function createWatchVideo(groupId: string, input: NonNullable<ReturnType<typeof watchVideoFields>>) {
-  const result = await db().prepare(`INSERT INTO watch_preview_videos(id,group_id,youtube_id,title,category,subject,chapter,kind,created_at)
-    VALUES(?,?,?,?,?,?,?,?,?)
-    ON CONFLICT(group_id,youtube_id) DO NOTHING RETURNING ${videoFields}`)
-    .bind(crypto.randomUUID(), groupId, input.youtubeId, input.title, input.category, input.subject,
-      input.chapter, input.kind, new Date().toISOString()).first<WatchVideo>();
-  return result;
+export async function createWatchVideo(groupId: string, accountId: string, input: NonNullable<ReturnType<typeof watchVideoFields>>) {
+  const id = crypto.randomUUID();
+  const database = db();
+  const [created] = await database.batch<WatchVideo>([
+    database.prepare(`INSERT INTO watch_preview_videos(id,group_id,youtube_id,title,category,subject,chapter,kind,created_at)
+      VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(group_id,youtube_id) DO NOTHING RETURNING ${videoFields}`)
+      .bind(id,groupId,input.youtubeId,input.title,input.category,input.subject,input.chapter,input.kind,new Date().toISOString()),
+    database.prepare('INSERT INTO watch_video_owners(video_id,group_id,account_id) SELECT id,group_id,? FROM watch_preview_videos WHERE id=? AND group_id=?')
+      .bind(accountId,id,groupId),
+  ]);
+  return created.results[0] ?? null;
 }
 
 export async function editWatchVideo(groupId: string, id: string, input: NonNullable<ReturnType<typeof watchVideoFields>>) {

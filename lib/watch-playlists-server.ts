@@ -3,7 +3,7 @@ import {watchVideoSelect, type WatchViewer} from './watch-preview-server';
 import {validWatchVideoId, watchVideoCursor, type WatchVideo} from './watch-preview-video';
 
 export type WatchPlaylist = {id: string; title: string; createdAt: string; revision: number; createdBy: string};
-export type WatchPlaylistDetail = WatchPlaylist & {videos: WatchVideo[]};
+export type WatchPlaylistDetail = WatchPlaylist & {videos: WatchVideo[]; nextPosition:number|null};
 const fields = 'id,title,created_at AS createdAt,revision,created_by AS createdBy';
 const pageSize = 24;
 
@@ -34,16 +34,18 @@ export async function watchPlaylists(groupId: string, params: URLSearchParams) {
   };
 }
 
-export async function watchPlaylistDetail(groupId: string, id: string): Promise<WatchPlaylistDetail | null> {
+export async function watchPlaylistDetail(groupId: string, id: string, offset = 0, editing = false): Promise<WatchPlaylistDetail | null> {
+  const limit = editing ? 100 : 12;
   const database = db();
   const [metadata, videos] = await database.batch([
     database.prepare(`SELECT ${fields} FROM watch_playlists WHERE group_id=? AND id=?`).bind(groupId, id),
     database.prepare(`SELECT ${watchVideoSelect('v.')} FROM watch_playlists p, json_each(p.video_ids) item
       JOIN watch_preview_videos v ON v.id=item.value AND v.group_id=p.group_id
-      WHERE p.group_id=? AND p.id=? ORDER BY item.key`).bind(groupId, id),
+      WHERE p.group_id=? AND p.id=? ORDER BY item.key LIMIT ? OFFSET ?`).bind(groupId, id, limit+1, offset),
   ]);
   const playlist = metadata.results[0] as WatchPlaylist | undefined;
-  return playlist ? {...playlist, videos: videos.results as WatchVideo[]} : null;
+  return playlist ? {...playlist, videos:videos.results.slice(0,limit) as WatchVideo[],
+    nextPosition:videos.results.length>limit?offset+limit:null} : null;
 }
 
 export function watchPlaylistEdit(value: unknown) {

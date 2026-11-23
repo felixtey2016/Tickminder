@@ -6,6 +6,9 @@ import {
   watchToken, watchVideoDetail, watchVideoFacets, watchVideoList,
 } from '@/lib/watch-preview-server';
 import {canEditWatchPlaylist, removeWatchPlaylist, saveWatchPlaylist, watchPlaylistDetail, watchPlaylistEdit, watchPlaylists} from '@/lib/watch-playlists-server';
+import {addWatchComment, markWatchNotificationsRead, removeWatchComment, setWatchCommentLike, setWatchVideoReaction,
+  watchCommentText, watchNotifications, watchPersonalVideos, watchVideoActivity} from '@/lib/watch-social-server';
+import {watchPersonalSection} from '@/lib/watch-social-page';
 import {watchPreviewPage} from '@/lib/watch-preview-page';
 import {validWatchVideoId, watchCatalogParams, watchVideoFields, watchVideoFilters} from '@/lib/watch-preview-video';
 
@@ -26,13 +29,15 @@ function redirect(url: string, cookies: string[] = []) {
   return new Response(null, {status:303,headers:responseHeaders});
 }
 function watchEntry(config: WatchPreviewConfig, params: URLSearchParams, videoId: string | null = null,
-  playlistId: string | null = null, playlists = false) {
+  playlistId: string | null = null, playlists = false, personal: ReturnType<typeof watchPersonalSection> = null) {
   const url = new URL(config.entry);
   const base = config.entryPath.replace(/\/$/, '');
   url.search = params.toString();
   if (videoId) {
     url.pathname = base + '/videos/' + videoId;
     if (playlistId) url.searchParams.set('playlist', playlistId);
+  } else if (personal) {
+    url.pathname = base + (personal === 'my-videos' ? '/account/videos' : '/' + personal);
   } else if (playlists || playlistId) {
     url.pathname = base + '/playlists' + (playlistId ? '/' + playlistId : '');
   }
@@ -71,7 +76,8 @@ export async function GET(request: Request, {params}: Context) {
   const videoId = validWatchVideoId(id) ? id : null;
   const requestedTheme = readTheme(url.searchParams.get('theme'));
   const {action} = await params;
-  const page = ['view','video','playlists','playlist'].includes(action);
+  const personal = watchPersonalSection(['authorize','redeem'].includes(action) ? url.searchParams.get('panel') : action);
+  const page = Boolean(personal) || ['view','video','playlists','playlist'].includes(action);
   const rawPlaylistId = url.searchParams.get('playlist');
   const playlistId = validWatchVideoId(rawPlaylistId) ? rawPlaylistId : null;
   const playlistIndex = action === 'playlists' || ['authorize','redeem'].includes(action) && url.searchParams.get('section') === 'playlists';
@@ -79,6 +85,7 @@ export async function GET(request: Request, {params}: Context) {
   if (videoId) handoffParams.set('video', videoId);
   if (playlistId) handoffParams.set('playlist', playlistId);
   if (playlistIndex) handoffParams.set('section', 'playlists');
+  if (personal) handoffParams.set('panel', personal);
   if (requestedTheme) handoffParams.set('theme', requestedTheme);
   try {
     if (action === 'authorize' && config.splitOrigin && config.appOrigins.has(url.origin)) {
@@ -97,13 +104,13 @@ export async function GET(request: Request, {params}: Context) {
       if (!validWatchToken(code) || !validWatchToken(challenge)) return json({error:'invalidLink'},401);
       const session = await redeemWatchHandoff(code, challenge);
       if (!session) return json({error:'invalidLink'},401);
-      return redirect(watchEntry(config, catalogParams, videoId, playlistId, playlistIndex), [
+      return redirect(watchEntry(config, catalogParams, videoId, playlistId, playlistIndex, personal), [
         setWatchCookie(CHALLENGE_COOKIE, '', 0),
         setWatchCookie(WATCH_COOKIE, session, WATCH_MAX_AGE),
         ...(requestedTheme ? [themeCookie(requestedTheme)] : []),
       ]);
     }
-    if (!page && action !== 'catalog' && action !== 'facets' && action !== 'academic-options') return json({error:'notFound'},404);
+    if (!page && !['catalog','facets','academic-options','social','playlist-editor'].includes(action)) return json({error:'notFound'},404);
     if (action === 'view' && videoId) return redirect(watchEntry(config, catalogParams, videoId));
     if ((action === 'video' && !videoId) || (action === 'playlist' && !playlistId)) return json({error:'notFound'},404);
     const entering = action === 'view' && url.searchParams.get('enter') === '1';
@@ -116,21 +123,38 @@ export async function GET(request: Request, {params}: Context) {
     }
     if (!account) return json({error:'signIn'},403);
     if (action === 'catalog') return json(await watchVideoList(account.groupId, catalogParams));
+    if (action === 'social') {
+      const after = catalogParams.get('after');
+      if (url.searchParams.get('section') === 'notifications') return json(await watchNotifications(account, after));
+      if (url.searchParams.get('section') === 'favorites') return json(await watchPersonalVideos(account, after, true));
+      if (url.searchParams.get('section') === 'my-videos') return json(await watchPersonalVideos(account, after, false));
+      if (!videoId) return json({error:'notFound'},404);
+      const activity = await watchVideoActivity(account, videoId, after);
+      return activity ? json(activity) : json({error:'notFound'},404);
+    }
+    if (action === 'playlist-editor') {
+      if (!playlistId || !canEditWatchPlaylist(account)) return json({error:'forbidden'},403);
+      const playlist = await watchPlaylistDetail(account.groupId, playlistId, 0, true);
+      if (!playlist || !canEditWatchPlaylist(account, playlist)) return json({error:'notFound'},404);
+      return json({videos:playlist.videos.map(({id,title})=>({id,title}))});
+    }
     if (action === 'academic-options') {
       if (account.role !== 'admin') return json({error:'forbidden'},403);
       return json({syllabuses:await watchAcademicOptions()});
     }
     if (action === 'facets') return json({facets:await watchVideoFacets(account.groupId)});
-    if (requestedTheme) return redirect(watchEntry(config, catalogParams, videoId, playlistId, playlistIndex), [themeCookie(requestedTheme)]);
+    if (requestedTheme) return redirect(watchEntry(config, catalogParams, videoId, playlistId, playlistIndex, personal), [themeCookie(requestedTheme)]);
     const video = action === 'video' && videoId ? await watchVideoDetail(account.groupId, videoId) : undefined;
     const playlists = action === 'playlists' ? await watchPlaylists(account.groupId, catalogParams) : undefined;
-    const playlist = action === 'playlist' && playlistId ? await watchPlaylistDetail(account.groupId, playlistId) : undefined;
+    const position = Number(url.searchParams.get('position'));
+    const offset = Number.isSafeInteger(position) && position >= 0 && position <= 100 ? position : 0;
+    const playlist = action === 'playlist' && playlistId ? await watchPlaylistDetail(account.groupId, playlistId, offset) : undefined;
     const theme = readTheme(watchCookie(request, themeName));
     const catalogUrl = watchEntry(config, catalogParams, null, videoId ? playlistId : null);
     const html = watchPreviewPage(lang, appOrigin + (account.role === 'admin' ? '/manage' : '/'), config.entryPath, catalogUrl, theme, video, {
       canEditVideos: account.role === 'admin',
       canEditPlaylists: playlist !== null && canEditWatchPlaylist(account, playlist),
-      playlists, playlist, params:catalogParams,
+      playlists, playlist, params:catalogParams, personal, name:account.name || '',
     });
     const framePolicy = video ? 'https://www.youtube-nocookie.com' : "'none'";
     return new Response(html, {status:video === null || playlist === null ? 404 : 200, headers:{
@@ -147,20 +171,39 @@ export async function POST(request: Request, {params}: Context) {
   const config = watchPreviewConfig(env);
   const url = new URL(request.url);
   const {action} = await params;
-  if (!config || url.origin !== config.watch || !['catalog','playlists'].includes(action)) return json({error:'notFound'},404);
+  if (!config || url.origin !== config.watch || !['catalog','playlists','social'].includes(action)) return json({error:'notFound'},404);
   if (request.headers.get('origin') !== config.watch) return json({error:'forbidden'},403);
   try {
     const account = await viewer(request, config);
     if (!account) return json({error:'signIn'},403);
-    if (action === 'catalog' ? account.role !== 'admin' : !canEditWatchPlaylist(account)) return json({error:'forbidden'},403);
+    if ((action === 'catalog' && account.role !== 'admin') || (action === 'playlists' && !canEditWatchPlaylist(account))) return json({error:'forbidden'},403);
     const limit = action === 'catalog' ? 4096 : 8192;
-    const invalid = action === 'catalog' ? 'invalidVideo' : 'invalidPlaylist';
+    const invalid = action === 'catalog' ? 'invalidVideo' : action === 'playlists' ? 'invalidPlaylist' : 'invalidActivity';
     if (Number(request.headers.get('content-length') ?? '0') > limit) return json({error:invalid},400);
     const raw = await request.text();
     if (raw.length > limit) return json({error:invalid},400);
     let body;
     try {body = JSON.parse(raw);} catch {return json({error:invalid},400);}
     const mode = body?.action;
+    if (action === 'social') {
+      if (mode === 'readNotifications') {
+        await markWatchNotificationsRead(account);
+        return json({ok:true});
+      }
+      if (!validWatchVideoId(body?.videoId)) return json({error:invalid},400);
+      if ((mode === 'like' || mode === 'favorite') && typeof body.selected === 'boolean') {
+        await setWatchVideoReaction(account, body.videoId, mode, body.selected);
+      } else if (mode === 'comment') {
+        const content = watchCommentText(body.text);
+        if (!content || !validWatchVideoId(body.id)) return json({error:invalid},400);
+        if (!await addWatchComment(account, body.videoId, body.id, content)) return json({error:'notFound'},404);
+      } else if (mode === 'likeComment' && validWatchVideoId(body.id) && typeof body.selected === 'boolean') {
+        await setWatchCommentLike(account, body.videoId, body.id, body.selected);
+      } else if (mode === 'removeComment' && validWatchVideoId(body.id)) {
+        if (!await removeWatchComment(account, body.videoId, body.id)) return json({error:'notFound'},404);
+      } else return json({error:invalid},400);
+      return json({ok:true});
+    }
     if (action === 'playlists') {
       if (!['create','edit','remove'].includes(mode)) return json({error:invalid},400);
       const existing = mode === 'create' ? undefined : {id:body.id, revision:body.revision};
@@ -179,7 +222,7 @@ export async function POST(request: Request, {params}: Context) {
     if (mode !== 'create' && mode !== 'edit') return json({error:'invalidVideo'},400);
     const input = watchVideoFields(body);
     if (!input) return json({error:'invalidVideo'},400);
-    const video = mode === 'create' ? await createWatchVideo(account.groupId, input) : await editWatchVideo(account.groupId, body.id, input);
+    const video = mode === 'create' ? await createWatchVideo(account.groupId, account.accountId, input) : await editWatchVideo(account.groupId, body.id, input);
     return video ? json({video}) : json({error:'alreadyAdded'},409);
   } catch {
     return json({error:'unavailable'},503);
