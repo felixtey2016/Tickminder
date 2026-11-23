@@ -5,12 +5,11 @@ export function TickGameShell({language,backTo,children}: {
   backTo?:"subjects"|"sejarah";
   children:React.ReactNode;
 }) {
-  const links = {
-    subjects: ["/",language==="zh" ? "全部科目" : "All subjects"],
-    sejarah: ["/sejarah",language==="zh" ? "返回 Sejarah" : "Back to Sejarah"],
-    manage: ["https://www.tickminder.com/manage",language==="zh" ? "返回 Tickminder" : "Back to Tickminder"],
-  } as const;
-  const [href,label] = links[backTo || "manage"];
+  const destinations = {subjects: "/", sejarah: "/sejarah"};
+  const href = backTo ? destinations[backTo] : "https://www.tickminder.com/manage";
+  const label = backTo
+    ? (language==="zh" ? "返回" : "Back")
+    : (language==="zh" ? "返回 Tickminder" : "Back to Tickminder");
   return <main className="legal-shell legal-reader tickgame-shell" lang={language==="zh" ? "zh-CN" : "en"} data-testid="tickgame-admin-page">
     <header className="legal-topbar">
       <a href={`/?lang=${language}`} className="legal-brand tickgame-brand">
@@ -19,7 +18,7 @@ export function TickGameShell({language,backTo,children}: {
       </a>
       <div className="legal-topbar-tools">
         <AppearanceToggle language={language}/>
-        <a className="legal-back" href={`${href}?lang=${language}`}>{label}</a>
+        <a className="legal-back tickgame-back" href={`${href}?lang=${language}`}>{label}</a>
       </div>
     </header>
     <article className="legal-paper">{children}</article>

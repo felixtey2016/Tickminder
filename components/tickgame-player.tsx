@@ -1,13 +1,11 @@
 "use client";
 
 import {useEffect,useRef,useState} from 'react';
-import type {MouseEvent} from 'react';
 import {Maximize,Minimize} from 'lucide-react';
 
 type GameOrientation = ScreenOrientation & {lock?: (orientation: "landscape") => Promise<void>};
 
 export function TickGamePlayer({title,language}:{title:string;language:'zh'|'en'}) {
-  const [playing,setPlaying]=useState(false);
   const [expanded,setExpanded]=useState(false);
   const player=useRef<HTMLDivElement>(null);
   const orientationLocked=useRef(false);
@@ -31,12 +29,6 @@ export function TickGamePlayer({title,language}:{title:string;language:'zh'|'en'
       if (orientationLocked.current) screen.orientation?.unlock?.();
     };
   },[]);
-
-  function start(event: MouseEvent<HTMLAnchorElement>) {
-    if (event.metaKey||event.ctrlKey||event.shiftKey||event.altKey) return;
-    event.preventDefault();
-    setPlaying(true);
-  }
 
   async function toggleFullScreen() {
     const element=player.current;
@@ -67,17 +59,15 @@ export function TickGamePlayer({title,language}:{title:string;language:'zh'|'en'
 
   return <section className="tickgame-demo">
     <h2>{title}</h2>
-    {playing
-      ? <div ref={player} className={expanded?'tickgame-player tickgame-player-expanded':'tickgame-player'}>
-          <div className="tickgame-player-screen">
-          <div className="tickgame-player-controls">
-            <button className="tickgame-fullscreen-button" type="button" onClick={toggleFullScreen} aria-pressed={expanded}>
-              {expanded?<Minimize size={18} aria-hidden="true"/>:<Maximize size={18} aria-hidden="true"/>}{label}
-            </button>
-          </div>
-          <iframe title={title} src="/play" sandbox="allow-scripts allow-same-origin allow-downloads" allowFullScreen referrerPolicy="no-referrer"/>
-          </div>
+    <div ref={player} className={expanded?'tickgame-player tickgame-player-expanded':'tickgame-player'}>
+      <div className="tickgame-player-screen">
+        <div className="tickgame-player-controls">
+          <button className="tickgame-fullscreen-button" type="button" onClick={toggleFullScreen} aria-pressed={expanded}>
+            {expanded?<Minimize size={18} aria-hidden="true"/>:<Maximize size={18} aria-hidden="true"/>}{label}
+          </button>
         </div>
-      : <a className="legal-back" href="/play" onClick={start}>{language==='zh'?'开始试玩':'Play the demo'}</a>}
+        <iframe title={title} src="/play" sandbox="allow-scripts allow-same-origin allow-downloads" allowFullScreen referrerPolicy="no-referrer"/>
+      </div>
+    </div>
   </section>;
 }
