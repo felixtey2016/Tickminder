@@ -60,6 +60,6 @@
 
 .navigation-hub-shortcuts{display:flex;flex-wrap:wrap;gap:12px}
 .navigation-hub-item.navigation-hub-shortcut{justify-self:start;width:max-content;max-width:100%;min-height:68px;padding:9px 16px}
-.product-entry-brand-play{gap:12px}
-.product-entry-brand-play strong{font-size:1rem;line-height:1.25}
-.product-entry-brand-play img,.dark .product-entry-brand-play img{width:48px;height:48px;max-width:none;max-height:none;flex:none;padding:0;background:none;border-radius:10px}
+.product-entry-brand-compact{gap:12px}
+.product-entry-brand-compact strong{font-size:1rem;line-height:1.25}
+.product-entry-brand-compact img,.dark .product-entry-brand-compact img{width:48px;height:48px;max-width:none;max-height:none;flex:none;padding:0;background:none;border-radius:10px}

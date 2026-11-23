@@ -38,7 +38,7 @@ import "@/lib/compact-layout-i18n";
 
 import { PageState } from "@/components/page-state";
 import { actionFailureMessage } from "@/lib/action-feedback";
-import { BarChart3, CalendarClock, ContactRound, LibraryBig, ListChecks, UserRound, UsersRound, SquarePen, ArrowLeftRight, Building2, NotebookPen, Gamepad2 } from "lucide-react";
+import { BarChart3, CalendarClock, ContactRound, LibraryBig, ListChecks, UserRound, UsersRound, SquarePen, ArrowLeftRight, Building2, NotebookPen } from "lucide-react";
 import { BRAND_NAME } from "@/lib/brand";
 import { LegalLinks } from "@/components/legal-links";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -789,8 +789,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state:legacyState, 
         ? <WatchPreviewLink entry={account.watchPreview} language={language}/> : null;
     const gameEntry = activeView === 'manageHub' && role === 'admin' ? (
         <a className="navigation-hub-item navigation-hub-shortcut" href={`/manage/tickgame?lang=${language}`} data-testid="tickgame-admin-entry">
-            <span className="navigation-hub-icon"><Gamepad2 size={24} aria-hidden="true"/></span>
-            <span className="navigation-hub-copy"><strong>TickGame</strong></span>
+            <ProductEntryLogo product="game"/>
         </a>
     ) : null;
     const shortcuts = watchEntry || gameEntry

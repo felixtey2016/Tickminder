@@ -1,6 +1,5 @@
 import type {Metadata} from "next";
 import {notFound} from "next/navigation";
-import {Gamepad2} from "lucide-react";
 import {currentBusinessAccount} from "@/lib/auth";
 import {AppearanceToggle} from "@/components/appearance-toggle";
 import "@/components/legal-document.css";
@@ -26,8 +25,7 @@ export default async function TickGamePage({searchParams}: {searchParams: Promis
     </header>
     <article className="legal-paper">
       <div className="legal-document-head">
-        <Gamepad2 size={34} aria-hidden="true"/>
-        <h1>TickGame</h1>
+        <h1><img src="/branding/tickgame-logo.webp" width={176} height={176} alt="TickGame"/></h1>
         <p className="legal-summary">{language === "zh" ? "暂无游戏" : "No games yet"}</p>
       </div>
     </article>
