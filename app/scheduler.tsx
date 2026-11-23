@@ -38,7 +38,7 @@ import "@/lib/compact-layout-i18n";
 
 import { PageState } from "@/components/page-state";
 import { actionFailureMessage } from "@/lib/action-feedback";
-import { BarChart3, CalendarClock, ContactRound, LibraryBig, ListChecks, UserRound, UsersRound, SquarePen, ArrowLeftRight, Building2, NotebookPen } from "lucide-react";
+import { BarChart3, CalendarClock, ContactRound, LibraryBig, ListChecks, UserRound, UsersRound, SquarePen, ArrowLeftRight, Building2, NotebookPen, Gamepad2 } from "lucide-react";
 import { BRAND_NAME } from "@/lib/brand";
 import { LegalLinks } from "@/components/legal-links";
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -544,7 +544,7 @@ function WatchPreviewLink({entry,language,home=false}:{entry:string;language:Lan
     const url=new URL(entry);
     url.searchParams.set('lang',language);
     url.searchParams.set('theme',resolvedTheme==='dark'?'dark':'light');
-    return <a className="navigation-hub-item watch-entry-link" href={url.href} data-testid={home?'watch-home-entry':'watch-admin-preview'}>
+    return <a className="navigation-hub-item navigation-hub-shortcut" href={url.href} data-testid={home?'watch-home-entry':'watch-admin-preview'}>
         <ProductEntryLogo product="play"/>
     </a>;
 }
@@ -787,14 +787,22 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state:legacyState, 
     let pageContent: React.ReactNode = null;
     const watchEntry=activeView==='manageHub'&&role==='admin'&&account.watchPreview
         ? <WatchPreviewLink entry={account.watchPreview} language={language}/> : null;
-    if(activeHub){pageContent=<NavigationHub sections={sections} onChoose={choose} leading={watchEntry}>
+    const gameEntry = activeView === 'manageHub' && role === 'admin' ? (
+        <a className="navigation-hub-item navigation-hub-shortcut" href={`/manage/tickgame?lang=${language}`} data-testid="tickgame-admin-entry">
+            <span className="navigation-hub-icon"><Gamepad2 size={24} aria-hidden="true"/></span>
+            <span className="navigation-hub-copy"><strong>TickGame</strong></span>
+        </a>
+    ) : null;
+    const shortcuts = watchEntry || gameEntry
+        ? <div className="navigation-hub-shortcuts">{watchEntry}{gameEntry}</div> : null;
+    if(activeHub){pageContent=<NavigationHub sections={sections} onChoose={choose} leading={shortcuts}>
         {(activeView==='manageHub'||activeView==='myHub')&&<><div className="navigation-hub-actions" data-testid="hub-utility-actions">
             {account.groupId==='next-genn-edu'&&<a href="/whatsapp" data-testid="hub-whatsapp"><ServiceBrandIcon service="whatsapp"/><span>{language==='zh'?'连接 WhatsApp':'Connect WhatsApp'}</span></a>}
             <Button type="button" variant="outline" data-testid="hub-refresh" onClick={()=>void reload()}><RefreshCw size={18} aria-hidden="true"/><span>{t('刷新')}</span></Button>
             <Button type="button" variant="outline" data-testid="hub-signout" onClick={()=>void logout()}><LogOut size={18} aria-hidden="true"/><span>{t('退出登录')}</span></Button>
         </div><LegalLinks language={language} className="navigation-hub-legal"/></>}
         {activeView==='financeHub'&&<PageState kind="empty" title={language==='zh'?'暂无财务权限':'Finance access unavailable'} description={language==='zh'?'请联系集团管理员开通。':'Contact your group administrator for access.'}/>}
-        {activeView!=='financeHub'&&!sections.length&&!watchEntry&&<PageState kind="empty" title={language==='zh'?'暂无可用功能':'No available features'}/>}
+        {activeView!=='financeHub'&&!sections.length&&!shortcuts&&<PageState kind="empty" title={language==='zh'?'暂无可用功能':'No available features'}/>}
     </NavigationHub>;}
     else if((activeView==="groups"&&account.isOwner)||(activeView==="groupInfo"&&role==="admin")){pageContent=<div className="settings-compact"><GroupConsole isOwner={Boolean(account.isOwner)} mode={activeView==="groupInfo"?"information":"platform"} currentGroupId={account.groupId}/>{activeView==="groupInfo"&&canAdminAction(account,"terms.view")&&<div className="settings-tools">{projection.loading&&!projection.data?<PageState kind="loading" title="正在加载…"/>:projection.data&&<TermManager terms={state.terms||[]} mutate={classroomMutate} busy={busy}/>}</div>}</div>;}
     else if (activeView==='quizzes'&&(role==='teacher'||role==='admin'||role==='student')) {

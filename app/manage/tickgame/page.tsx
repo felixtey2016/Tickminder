@@ -1,0 +1,35 @@
+import type {Metadata} from "next";
+import {notFound} from "next/navigation";
+import {Gamepad2} from "lucide-react";
+import {currentBusinessAccount} from "@/lib/auth";
+import {AppearanceToggle} from "@/components/appearance-toggle";
+import "@/components/legal-document.css";
+
+export const metadata: Metadata = {title: "TickGame · Tickminder", robots: {index: false, follow: false}};
+
+export default async function TickGamePage({searchParams}: {searchParams: Promise<{lang?: string}>}) {
+  const account = await currentBusinessAccount();
+  if (account?.role !== "admin") notFound();
+
+  const language = (await searchParams).lang === "en" ? "en" : "zh";
+  const back = language === "zh" ? "返回管理" : "Back to Manage";
+  return <main className="legal-shell legal-reader" lang={language === "zh" ? "zh-CN" : "en"} data-testid="tickgame-admin-page">
+    <header className="legal-topbar">
+      <a href={`/manage?lang=${language}`} className="legal-brand">
+        <img src="/tickminder-logo.svg" width={36} height={36} alt=""/>
+        <strong>Tickminder</strong>
+      </a>
+      <div className="legal-topbar-tools">
+        <AppearanceToggle language={language}/>
+        <a className="legal-back" href={`/manage?lang=${language}`}>{back}</a>
+      </div>
+    </header>
+    <article className="legal-paper">
+      <div className="legal-document-head">
+        <Gamepad2 size={34} aria-hidden="true"/>
+        <h1>TickGame</h1>
+        <p className="legal-summary">{language === "zh" ? "暂无游戏" : "No games yet"}</p>
+      </div>
+    </article>
+  </main>;
+}
