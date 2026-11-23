@@ -70,7 +70,8 @@ function HomeToday({ role, data, loading, error, reload, onNavigate }: { role: R
   </section>;
 }
 
-export function HomeDashboard({ role, name, accountId, groupId, identityKey, onNavigate, onOpenTask, onSummary }: {
+export function HomeDashboard({ role, name, accountId, groupId, identityKey, onNavigate, onOpenTask, onSummary, watchLink }: {
+  watchLink?: import("react").ReactNode;
   role: Role; name: string; accountId: string; groupId: string | null; identityKey:string;
   onNavigate: (destination: string) => void;
   onOpenTask?: (classroomId:string,taskId:string)=>void;
@@ -108,6 +109,7 @@ export function HomeDashboard({ role, name, accountId, groupId, identityKey, onN
       {role === "student" ? <div className="home-compact-welcome"><Mascot pose="hello" size={56}/><div><h1>{t("你好")}{name ? (getLanguage() === "zh" ? "，" : ", ") + name : ""}</h1><p>{t("今天也一起进步一点点。")}</p></div></div> : <h1>{t("你好")}{name ? (getLanguage() === "zh" ? "，" : ", ") + name : ""}</h1>}
       <time dateTime={today}>{new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", { timeZone: "Asia/Kuala_Lumpur", month: "long", day: "numeric", weekday: "short" }).format(new Date(now))}</time>
     </header>
+    {watchLink}
     {role==='student'&&<QuizHomeProgress onViewAll={()=>onNavigate('quizHistory')}/>}
     {onOpenTask&&canAdminView(permissionAccount,'classrooms')&&canAdminAction(permissionAccount,'tasks.view')&&<TaskInbox role={role} onOpen={onOpenTask}/>}
     {canAdminView(permissionAccount, "calendar") ? <HomeToday role={role} data={summary} loading={loading} error={error} reload={reload} onNavigate={onNavigate}/> : error && <div className="home-compact-error" role="alert"><p>{error}</p><Button variant="outline" onClick={reload}>{t('重试')}</Button></div>}

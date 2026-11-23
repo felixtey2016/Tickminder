@@ -324,3 +324,23 @@ dialog::backdrop { background: rgba(19,12,33,.52); -webkit-backdrop-filter: blur
 @media (prefers-reduced-transparency: reduce) {
   .watch-bar, .segmented, .filter-button, .search-field, .icon-button, .back-link { background: var(--panel); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
+
+.watch-section-nav {display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px;}
+.watch-section-nav [aria-current="page"] {background:var(--accent-soft);color:var(--accent);border-color:var(--control-edge);}
+.watch-section-nav a {background:var(--glass);border-color:var(--edge);}
+.playlist-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;}
+.playlist-videos,.playlist-picker,.playlist-selection {list-style:none;margin:0;padding:0;display:grid;gap:8px;}
+.playlist-card {display:flex;align-items:center;gap:12px;min-height:56px;padding:12px 16px;background:var(--panel);border:1px solid var(--edge);border-radius:15px;overflow-wrap:anywhere;}
+.playlist-card:hover {border-color:var(--control-edge);color:var(--accent);}
+.playlist-card span:last-child {margin-inline-start:auto;color:var(--accent);}
+.playlist-card img {width:96px;height:auto;flex:none;aspect-ratio:16/9;object-fit:cover;border-radius:7px;background:var(--accent-soft);}
+.playlist-detail-heading {margin-top:14px;}
+.playlist-detail-heading h1 {overflow-wrap:anywhere;}
+.playlist-editor-fields,.playlist-editor-section {display:grid;gap:12px;}
+.playlist-selection li,.playlist-picker label {display:flex;align-items:center;gap:8px;min-height:44px;padding:4px 8px;border:1px solid var(--edge);border-radius:10px;overflow-wrap:anywhere;}
+.playlist-selection li > span,.playlist-picker label > span {min-width:0;}
+.playlist-order-actions {display:flex;gap:2px;margin-inline-start:auto;flex:none;}
+.playlist-order-actions .quiet-button {min-width:38px;min-height:40px;padding:2px;font-size:1.15rem;}
+.playlist-picker input[type="checkbox"] {width:19px;height:19px;min-height:0;padding:0;margin:0;flex:none;accent-color:var(--accent);}
+.playlist-picker label {cursor:pointer;}
+#playlist-picker-status:empty {display:none;}

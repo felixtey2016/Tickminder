@@ -538,15 +538,14 @@ export function Scheduler({initialQuizId,quizPath,initialAuth,onAuthChange}:{ini
     const admin = account.role === "admin";
     return <AdminPermissionContext.Provider value={account}><Workspace key={identityKey} initialQuizId={linkedQuizId} onLinkedQuizExit={exitLinkedQuiz} account={account} state={state} ensureScope={ensureScope} setActiveScopes={setActiveScopes} message={message} setMessage={setMessage} reload={reload} logout={logout} modal={modal} setModal={setModal} mutate={mutate} learningMutate={learningMutate} classroomMutate={classroomMutate} busy={busy} calendarDate={calendarDate} setCalendarDate={setCalendarDate} calendarRange={calendarRange} onCalendarRangeChange={onCalendarRangeChange} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} language={language} changeLanguage={changeLanguage}/></AdminPermissionContext.Provider>;
 }
-function WatchPreviewLink({entry,language}:{entry:string;language:Language}) {
+function WatchPreviewLink({entry,language,home=false}:{entry:string;language:Language;home?:boolean}) {
     const {resolvedTheme}=useTheme();
     const url=new URL(entry);
     url.searchParams.set('lang',language);
     url.searchParams.set('theme',resolvedTheme==='dark'?'dark':'light');
-    return <a className="navigation-hub-item" href={url.href} data-testid="watch-admin-preview">
+    return <a className="navigation-hub-item" href={url.href} data-testid={home?'watch-home-entry':'watch-admin-preview'}>
         <span className="navigation-hub-icon"><Play size={22} aria-hidden="true"/></span>
-        <span className="navigation-hub-copy"><strong>{language==='zh'?'TickPlay 视频库':'TickPlay video library'}</strong>
-        <small>{language==='zh'?'管理员预览':'Admin preview'}</small></span>
+        <span className="navigation-hub-copy"><strong>{language==='zh'?'TickPlay 视频库':'TickPlay video library'}</strong></span>
     </a>;
 }
 function BrandLogo({ small = false }: { small?: boolean }) { return <span className={`brand-logo ${small ? "small" : ""}`}><img src="/tickminder-logo.svg" width={small ? 40 : 80} height={small ? 40 : 80} alt={BRAND_NAME} /></span>; }
@@ -804,7 +803,7 @@ function Workspace({ initialQuizId,onLinkedQuizExit,account, state:legacyState, 
     else if (activeView === "home" && role === "pending") {
         pageContent = <section className="panel pending-home"><h2>{t(account.assignmentStatus === "ACTIVE" ? "账号已启用" : "等待分配")}</h2><p>{t("管理员分配身份后，课程、功课及班级会显示在这里。")}</p>{account.pendingExpiresAt && <p className="notice">{t("待分配期限")} · {new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-GB",{timeZone:"Asia/Kuala_Lumpur",dateStyle:"medium",timeStyle:"short"}).format(new Date(account.pendingExpiresAt))}<br/>{t("新注册账号在 7 天内未启用或绑定，会到期清理。请联系管理员。")}</p>}<Button variant="outline" onClick={()=>choose("myAccount")}>{t("我的账号")}</Button></section>;
     } else if (activeView === "home" && role !== "pending") {
-        pageContent = <HomeDashboard identityKey={identityKey} role={role} name={account.name} accountId={account.id || ""} groupId={account.groupId || null} onSummary={acceptHomeSummary} onNavigate={destination=>{if(destination==='quizHistory'){if(!canView('quizzes')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;window.location.assign('/quizzes/history');}else choose(destination);}} onOpenTask={(classroomId,taskId)=>{if(!canView('classrooms')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;setClassroomTaskTarget({classroomId,taskId});choose('classrooms');}}/>;
+        pageContent = <HomeDashboard identityKey={identityKey} role={role} name={account.name} accountId={account.id || ""} groupId={account.groupId || null} onSummary={acceptHomeSummary} watchLink={account.watchPreview&&(role==='teacher'||role==='student')?<WatchPreviewLink home entry={account.watchPreview} language={language}/>:undefined} onNavigate={destination=>{if(destination==='quizHistory'){if(!canView('quizzes')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;window.location.assign('/quizzes/history');}else choose(destination);}} onOpenTask={(classroomId,taskId)=>{if(!canView('classrooms')||!window.dispatchEvent(new Event('tickminder-navigate',{cancelable:true})))return;setClassroomTaskTarget({classroomId,taskId});choose('classrooms');}}/>;
     } else if (activeView === "notifications") {
         pageContent = <NotificationWorkspace key={`${account.groupId}:${role}`} role={role} language={language} learningMutate={learningMutate} courseMutate={mutate} onLesson={lesson=>setModal({type:'edit',lesson})} busy={busy}/>;
     } else if (activeView === "myAccount") {

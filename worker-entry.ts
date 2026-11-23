@@ -6,8 +6,8 @@ import {reportUnexpectedError} from './lib/diagnostics-server';
 import {watchPreviewBranding,watchPreviewConfig,watchPreviewLegacyLocation,type WatchPreviewBindings} from './lib/watch-preview-config';
 const sources=new Set(['/api/action','/api/class-sessions','/api/invoices','/api/invoice-finance','/api/invoice-attendance-corrections','/api/parents','/api/manage','/api/groups']);
 const watchPaths=new Set([
- '/api/watch-preview/catalog','/api/watch-preview/facets','/api/watch-preview/academic-options','/api/watch-preview/redeem',
- '/watch-preview.css','/watch-preview.js',watchPreviewBranding.logo,watchPreviewBranding.favicon,
+ '/api/watch-preview/catalog','/api/watch-preview/playlists','/api/watch-preview/facets','/api/watch-preview/academic-options','/api/watch-preview/redeem',
+ '/watch-preview.css','/watch-preview.js','/watch-playlists.js',watchPreviewBranding.logo,watchPreviewBranding.favicon,
 ]);
 const app=handler as ExportedHandler;
 type DiagnosticsBindings={DIAGNOSTICS?:R2Bucket;CF_VERSION_METADATA?:{id?:string}};
@@ -28,9 +28,18 @@ export default {
         return new Response(null,{status:destination?302:404,headers});
       }
       if(url.origin===watch.watch){
-        const videoPrefix=watch.entryPath.replace(/\/$/,'')+'/videos/';
+        const basePath=watch.entryPath.replace(/\/$/,'');
+        const videoPrefix=basePath+'/videos/';
+        const playlistPath=basePath+'/playlists';
         if(url.pathname===watch.entryPath||(!watch.splitOrigin&&url.pathname==='/watch/')){
           url.pathname='/api/watch-preview/view';
+          request=new Request(url,request) as typeof request;
+        }else if(url.pathname===playlistPath || url.pathname===playlistPath+'/'){
+          url.pathname='/api/watch-preview/playlists';
+          request=new Request(url,request) as typeof request;
+        }else if(url.pathname.startsWith(playlistPath+'/')){
+          url.searchParams.set('playlist',url.pathname.slice(playlistPath.length+1));
+          url.pathname='/api/watch-preview/playlist';
           request=new Request(url,request) as typeof request;
         }else if(url.pathname.startsWith(videoPrefix)){
           url.searchParams.set('video',url.pathname.slice(videoPrefix.length));

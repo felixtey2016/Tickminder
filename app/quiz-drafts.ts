@@ -15,7 +15,7 @@ export async function importedQuizDraft(file: File): Promise<LocalQuiz> {
   const {importQuizZip} = await import('@/lib/quiz-import');
   const result = await importQuizZip(new Uint8Array(await file.arrayBuffer()), file.name);
   return {
-    id: crypto.randomUUID(), revision: 0, visibility: 'private', sharedRevision: null,
+    id: crypto.randomUUID(), revision: 0, visibility: 'public', sharedRevision: null,
     canEdit: true, maintenanceImport: true, content: result.content, keys: result.keys,
     sourceKey: result.sourceKey, pendingImages: result.images, importWarnings: result.warnings,
   };

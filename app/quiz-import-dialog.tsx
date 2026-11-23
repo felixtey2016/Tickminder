@@ -31,7 +31,7 @@ export default function QuizImportDialog({language,disabled=false,onImport,onClo
  function drop(event:DragEvent<HTMLButtonElement>){if(!filesDrag(event))return;event.preventDefault();event.stopPropagation();resetDrag();void importFiles(Array.from(event.dataTransfer.files));}
  const body=<>
   <Title>{t('quiz.import')}</Title>
-  <Description>{text('导入后先打开私人草稿，检查后再保存。','Opens a private draft for review before you save.')}</Description>
+  <Description>{text('导入后检查题目再保存。可见范围预选公开，可在共享设置修改。','Review the questions before saving. Public is preselected and can be changed in Sharing.')}</Description>
   <input ref={input} data-testid="quiz-import-file" type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden disabled={working} onChange={event=>{const files=Array.from(event.currentTarget.files||[]);event.currentTarget.value='';if(files.length)void importFiles(files);}}/>
   <button type="button" className={'quiz-import-dropzone'+(dragging?' is-dragging':'')} data-testid="quiz-import-dropzone" disabled={working} onClick={()=>input.current?.click()} onDragEnter={dragEnter} onDragOver={dragOver} onDragLeave={dragLeave} onDragEnd={resetDrag} onDrop={drop}>
    {working?<Loader2 size={28} className="quiz-import-spinner" aria-hidden="true"/>:<Upload size={28} aria-hidden="true"/>}<strong>{working?t('quiz.importing'):text('选择 ZIP 文件','Choose ZIP file')}</strong><span>{text('也可将文件拖到这里','Or drag and drop it here')}</span><small>ZIP · 20 MB max · {text('一次一个文件','One file at a time')}</small>

@@ -16,7 +16,7 @@ import {uploadQuizImages} from '@/lib/quiz-upload';
 import {useAcademicCatalogue} from '@/lib/use-academic-catalogue';
 import {findCatalogueSyllabus,findCatalogueSubject,findCatalogueGrade,catalogueGradeValid} from '@/lib/academic-catalogue';
 import {checkQuizAcademic} from '@/lib/quiz-academic';
-import QuizPublicationPanel,{type QuizSharingSelection,type QuizSharingState} from './quiz-publication-panel';
+import QuizPublicationPanel,{type QuizSharingPlan,type QuizSharingSelection,type QuizSharingState} from './quiz-publication-panel';
 import '@/lib/quiz-upgrade-i18n';
 import './quiz-editor-wave3.css';
 
@@ -51,7 +51,7 @@ export default function QuizEditor({initial,onBack,onSaved}:{initial:LocalQuiz;o
  const [confirmation,setConfirmation]=useState<Confirmation|null>(null);
  const confirmationOpener=useRef<HTMLElement|null>(null);
  const [preview,setPreview]=useState<QuizContent|null>(null);
- const [sharingDirty,setSharingDirty]=useState(false);
+ const [sharingPlan,setSharingPlan]=useState<QuizSharingPlan|null>(null);
  const [answerInputs,setAnswerInputs]=useState<Record<string,string>>({});
  const [imageSources,setImageSources]=useState<Record<string,string>>({});
  const saveOperation=useRef<{stamp:string;id:string}|null>(null);
@@ -65,7 +65,10 @@ export default function QuizEditor({initial,onBack,onSaved}:{initial:LocalQuiz;o
  const sections=[{id:'settings',label:text('测验设置','Settings')},{id:'questions',label:text('题目编辑','Questions')},...(mayShare?[{id:'sharing',label:text('共享设置','Sharing')}]:[])] as {id:'settings'|'questions'|'sharing';label:string}[];
  const locked=Boolean(busy)||!mayEdit;
  const dirty=contentStamp(draft)!==savedStamp;
- const visibilityDirty=sharingDirty;
+ const visibilityDirty=mayShare&&Boolean(sharingPlan?.dirty);
+ const defaultUploadPublic=mayShare&&Boolean(initial.maintenanceImport&&!initial.revision)&&!draft.sharingRevision;
+ const previouslyShared=sharingPlan?.shared??(draft.visibility==='public'||draft.sharingMode==='selected');
+ const applySharing=visibilityDirty||defaultUploadPublic||mayShare&&dirty&&previouslyShared;
  const dirtyRef=useRef(dirty||visibilityDirty);
  dirtyRef.current=dirty||visibilityDirty;
  const active=draft.content.questions.find(q=>q.id===activeId)||draft.content.questions[0];
@@ -156,36 +159,28 @@ export default function QuizEditor({initial,onBack,onSaved}:{initial:LocalQuiz;o
  }
 
  async function save(){
-  if(locked||operationActive.current)return;
+  if(operationActive.current||!dirty&&!applySharing||dirty&&!mayEdit||applySharing&&!sharingPlan?.ready)return;
   operationActive.current=true;setBusy('save');setError('');setStatus('');setUploadProgress(null);
   try{
-   const {saved,status}=await persistDraft();
+   const result=dirty?await persistDraft():{saved:draft,status:'quiz.saved',existingImport:false};
+   let {saved,status}=result;
+   if(applySharing&&sharingPlan&&!result.existingImport){
+    saved=await saveSharing(saved,sharingPlan.selection);
+    status='quiz.shareUpdated';
+   }
    onSaved(saved,'draft');showActionToast('success',t(status));
   }catch(error){setError(errorCode(error));}
   finally{operationActive.current=false;setBusy(null);setUploadProgress(null);}
  }
 
- async function saveSharing(selection:QuizSharingSelection){
-  if(!mayShare||operationActive.current||((dirty||!draft.revision)&&!mayEdit))throw new Error('quiz.forbidden');
-  operationActive.current=true;setBusy('share');setError('');setStatus('');setUploadProgress(null);
-  try{
-   let current=draft;
-   if(dirty||!current.revision){
-    const saved=await persistDraft();
-    // The import service can open a different existing quiz with the same source.
-    if(saved.existingImport)throw new Error('quiz.importExisting');
-    current=saved.saved;
-   }
+
+ async function saveSharing(current:LocalQuiz,selection:QuizSharingSelection):Promise<LocalQuiz>{
    const body={action:'share',id:current.id,revision:current.revision,...selection};
    const stamp=JSON.stringify(body);
    if(shareOperation.current?.stamp!==stamp)shareOperation.current={stamp,id:crypto.randomUUID()};
-   await api('/api/quizzes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,operationId:shareOperation.current.id})});
-   const {visibility,sharedRevision,sharingMode,sharingRevision,recipientIds,creator}=await api<QuizSharingState & {error?:string}>('/api/quizzes?id='+encodeURIComponent(current.id));
-   const sharing={visibility,sharedRevision,sharingMode,sharingRevision,recipientIds,creator};
+   const sharing=await api<QuizSharingState & {error?:string}>('/api/quizzes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,operationId:shareOperation.current.id})});
    shareOperation.current=null;
-   const updated={...current,...sharing};setDraft(updated);setSharingDirty(false);onSaved(updated,'sharing');
-   return sharing;
-  }finally{operationActive.current=false;setBusy(null);setUploadProgress(null);}
+   return {...current,...sharing,recipientIds:selection.recipientIds};
  }
  function openPreview(){if(operationActive.current)return;if(!draft.revision||!savedContent.current){setError('quiz.saveFirst');return;}setError('');setPreview(copy(savedContent.current));}
 
@@ -280,8 +275,8 @@ export default function QuizEditor({initial,onBack,onSaved}:{initial:LocalQuiz;o
    </fieldset>
   </article>:<div className="quiz-question-card quiz-question-empty"><p>{t('quiz.createFirst')}</p></div>}</div>
   </section>
-  {mayShare&&<section className="quiz-editor-section" role="tabpanel" id={sectionId+'-panel-sharing'} aria-labelledby={sectionId+'-tab-sharing'} hidden={section!=='sharing'}><QuizPublicationPanel key={draft.id} id={draft.id} revision={draft.revision} visibility={draft.visibility} sharedRevision={draft.sharedRevision} disabled={Boolean(busy)||(dirty&&!mayEdit)} savesQuestions={dirty||!draft.revision} onDirtyChange={setSharingDirty} onSave={saveSharing}/></section>}
-  <footer className="quiz-editor-footer"><div className="quiz-editor-footer-summary"><span>{t('quiz.questions')} {draft.content.questions.length} · {t('quiz.total')} {total}</span><small>{text('预览使用已保存版本','Preview uses the saved version')}</small></div><div className="quiz-editor-tools"><Button type="button" variant="outline" disabled={Boolean(busy)||!draft.revision} onClick={()=>void openPreview()}><Eye size={17}/>{text('作答预览','Preview')}</Button>{mayEdit&&<Button type="button" disabled={Boolean(busy)||!dirty} onClick={()=>void save()}><Save size={17}/>{t(busy==='save'?'quiz.saving':'quiz.save')}</Button>}</div></footer>
+  {mayShare&&<section className="quiz-editor-section" role="tabpanel" id={sectionId+'-panel-sharing'} aria-labelledby={sectionId+'-tab-sharing'} hidden={section!=='sharing'}><QuizPublicationPanel key={draft.id} id={draft.id} revision={draft.revision} visibility={draft.visibility} sharedRevision={draft.sharedRevision} disabled={Boolean(busy)||(dirty&&!mayEdit)} savesQuestions={dirty||!draft.revision} onChange={setSharingPlan}/></section>}
+  <footer className="quiz-editor-footer"><div className="quiz-editor-footer-summary"><span>{t('quiz.questions')} {draft.content.questions.length} · {t('quiz.total')} {total}</span><small>{text('预览使用已保存版本','Preview uses the saved version')}</small></div><div className="quiz-editor-tools"><Button type="button" variant="outline" disabled={Boolean(busy)||!draft.revision} onClick={()=>void openPreview()}><Eye size={17}/>{text('作答预览','Preview')}</Button>{(mayEdit||mayShare)&&<Button type="button" disabled={Boolean(busy)||!dirty&&!applySharing||dirty&&!mayEdit||applySharing&&!sharingPlan?.ready} onClick={()=>void save()}><Save size={17}/>{t(busy==='save'?'quiz.saving':'quiz.save')}</Button>}</div></footer>
   {confirmation&&<Dialog open onOpenChange={open=>{if(!open)setConfirmation(null);}}><DialogContent className="quiz-confirm-dialog" overlayClassName="content-edit-overlay" onOpenAutoFocus={()=>{confirmationOpener.current=document.activeElement instanceof HTMLElement?document.activeElement:null;}} onCloseAutoFocus={event=>{if(confirmationOpener.current?.isConnected){event.preventDefault();confirmationOpener.current.focus();}}}><DialogTitle>{confirmation.title}</DialogTitle><DialogDescription>{confirmation.description}</DialogDescription><div className="quiz-editor-tools"><Button type="button" variant="outline" onClick={()=>setConfirmation(null)}>{t('quiz.cancel')}</Button><Button type="button" onClick={()=>{const action=confirmation.run;setConfirmation(null);action();}}>{confirmation.accept}</Button></div></DialogContent></Dialog>}
   {preview&&<QuizPlayer content={preview} creator={draft.creator} onClose={()=>setPreview(null)}/>}
  </section>;

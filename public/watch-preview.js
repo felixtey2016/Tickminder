@@ -66,7 +66,8 @@
       const messages = {
         alreadyAdded: t('此链接已加入视频库。', 'This link is already in the library.'),
         invalidVideo: t('请输入标题和有效的 YouTube 链接。', 'Enter a title and a valid YouTube link.'),
-        adminOnly: t('管理员会话已失效，请从管理页重新进入。', 'Your admin session expired. Reopen Watch from Manage.'),
+        signIn: t('会话已失效，请从 Tickminder 重新进入。','Your session expired. Reopen TickPlay from Tickminder.'),
+        forbidden: t('没有管理视频的权限。','You do not have permission to manage videos.'),
         notFound: t('找不到该视频。', 'This video is unavailable.'),
       };
       throw new Error(messages[result.error] || t('视频库暂时无法使用，请稍后重试。', 'The library is unavailable. Try again.'));
@@ -100,7 +101,8 @@
     const meta = metadata(video);
     if (meta) content.append(element('p','muted',meta));
     open.append(thumb, content);
-    article.append(open, button(t('编辑','Edit'), 'edit-button', () => openEditor(video)));
+    article.append(open);
+    if (editor) article.append(button(t('编辑','Edit'), 'edit-button', () => openEditor(video)));
     return article;
   }
 
@@ -340,11 +342,12 @@
     if (expanded) void loadFacets();
   });
   $('clear-filters').addEventListener('click',clearFilters);
-  $('optional-fields').addEventListener('toggle', () => {
+  if (form) {
+    $('optional-fields').addEventListener('toggle', () => {
     if ($('optional-fields').open) void loadAcademicChoices();
-  });
-  $('retry-academic').addEventListener('click', () => void loadAcademicChoices());
-  form.elements.category.addEventListener('change', () => {
+    });
+    $('retry-academic').addEventListener('click', () => void loadAcademicChoices());
+    form.elements.category.addEventListener('change', () => {
     const selected = form.elements.category.value;
     const custom = selected === customOption;
     $('custom-category-row').hidden = !custom;
@@ -353,23 +356,23 @@
     const customSubject = form.elements.subject.value === customOption;
     renderSelect('subject', choices, customSubject || choices.includes(subject) ? subject : '', customSubject);
     if (custom) $('custom-category').focus();
-  });
-  form.elements.subject.addEventListener('change', () => {
+    });
+    form.elements.subject.addEventListener('change', () => {
     const custom = form.elements.subject.value === customOption;
     $('custom-subject-row').hidden = !custom;
     if (custom) $('custom-subject').focus();
-  });
-  $('add-video').addEventListener('click',() => openEditor());
-  $('close-editor').addEventListener('click',() => {if (!busy) editor.close();});
-  $('cancel-remove').addEventListener('click',() => {if (!busy) removal.close();});
-  $('remove-video').addEventListener('click',() => {
+    });
+    $('add-video').addEventListener('click',() => openEditor());
+    $('close-editor').addEventListener('click',() => {if (!busy) editor.close();});
+    $('cancel-remove').addEventListener('click',() => {if (!busy) removal.close();});
+    $('remove-video').addEventListener('click',() => {
     if (busy || !editing) return;
     $('remove-title-name').textContent = editing.title;
     status('remove-error','');
     removal.showModal();
-  });
-  for (const dialog of [editor, removal]) dialog.addEventListener('cancel',event => {if (busy) event.preventDefault();});
-  form.addEventListener('submit', event => {
+    });
+    for (const dialog of [editor, removal]) dialog.addEventListener('cancel',event => {if (busy) event.preventDefault();});
+    form.addEventListener('submit', event => {
     event.preventDefault();
     void withSaveError('editor-error', async () => {
       const data = Object.fromEntries(new FormData(form));
@@ -377,8 +380,8 @@
       editor.close();
       afterChange(t('视频已保存。','Video saved.'));
     });
-  });
-  $('confirm-remove').addEventListener('click',() => {
+    });
+    $('confirm-remove').addEventListener('click',() => {
     void withSaveError('remove-error', async () => {
       if (!editing) return;
       await save({action:'remove',id:editing.id});
@@ -386,7 +389,9 @@
       editor.close();
       afterChange(t('已从视频库移除。','Removed from the library.'));
     });
-  });
+    });
+
+  }
 
   $('search').value = (initial.get('q') || '').slice(0, 120);
   syncType();

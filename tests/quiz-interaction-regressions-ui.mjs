@@ -40,8 +40,8 @@ async function open(params={},options={}){
   if(setting==='muted')localStorage.setItem('tickminder.quiz.sound.fixture-user',JSON.stringify({music:true,effects:false}));
   if(setting==='zero')localStorage.setItem('tickminder.quiz.sound.fixture-user',JSON.stringify({music:true,effects:true,effectsVolume:0}));
  },options.soundProbe);
- const errors=[],writes=[],shareTargetQueries=[],saveStarted=deferred(),releaseSave=deferred(),draftStarted=deferred(),releaseDraft=deferred(),checkStarted=deferred();
- let attempt=structuredClone(initialAttempt),draft=structuredClone(quiz),saveFailed=false,shareFailed=false;
+ const errors=[],writes=[],shareTargetQueries=[],listRequests=[],saveStarted=deferred(),releaseSave=deferred(),draftStarted=deferred(),releaseDraft=deferred(),checkStarted=deferred();
+ let attempt=structuredClone(initialAttempt),draft=structuredClone(quiz),saveFailed=false,shareFailed=false,moreFailed=false;
  if(options.streakQuestions){
   const questions=Array.from({length:options.streakQuestions},(_,index)=>({
    ...structuredClone(content.questions[0]),id:'streak-question-'+index,
@@ -95,8 +95,21 @@ async function open(params={},options={}){
   }
   if(u.pathname.startsWith('/api/quiz-music/'))return route.fulfill({status:404});
   if(u.pathname==='/api/quizzes'){
-   if(route.request().method()==='POST'){const body=route.request().postDataJSON();writes.push(body);if(body.action==='save'||body.action==='maintenanceImport'){draftStarted.resolve(body);if(options.holdDraft)await releaseDraft.promise;if(options.failDraft)return reply({error:'quiz.unavailable'},503);draft={...draft,id:body.id,content:body.content,keys:body.keys,revision:body.revision+1};return reply({id:draft.id,revision:draft.revision});}if(body.action==='share'){if(options.failShareOnce&&!shareFailed){shareFailed=true;return reply({error:'quiz.unavailable'},503);}draft={...draft,visibility:body.visibility,sharingMode:body.visibility,sharingRevision:draft.sharingRevision+1,sharedRevision:draft.revision,recipientIds:body.recipientIds};return reply({ok:true});}errors.push('unexpected quiz action '+body.action);return reply({error:'quiz.unavailable'},503);}
+   if(route.request().method()==='POST'){const body=route.request().postDataJSON();writes.push(body);if(body.action==='save'||body.action==='maintenanceImport'){draftStarted.resolve(body);if(options.holdDraft)await releaseDraft.promise;if(options.failDraft)return reply({error:'quiz.unavailable'},503);draft={...draft,id:body.id,content:body.content,keys:body.keys,revision:body.revision+1};return reply({id:draft.id,revision:draft.revision});}if(body.action==='share'){if(options.failShareOnce&&!shareFailed){shareFailed=true;return reply({error:'quiz.unavailable'},503);}draft={...draft,visibility:body.visibility,sharingMode:body.visibility,sharingRevision:draft.sharingRevision+1,sharedRevision:draft.revision,recipientIds:body.recipientIds};return reply({ok:true,visibility:draft.visibility,sharingMode:draft.sharingMode,sharingRevision:draft.sharingRevision,sharedRevision:draft.sharedRevision});}errors.push('unexpected quiz action '+body.action);return reply({error:'quiz.unavailable'},503);}
    if(u.searchParams.has('id'))return reply(draft);
+   if(options.pagedLibrary){
+    const offset=Number(u.searchParams.get('offset')||0),limit=Number(u.searchParams.get('limit')||40);
+    listRequests.push({offset,limit});
+    if(offset>0&&!moreFailed){moreFailed=true;return reply({error:'quiz.unavailable'},503);}
+    const items=Array.from({length:Math.min(limit,45-offset)},(_,i)=>({
+     id:'fixture-list-quiz-'+(offset+i),title:'Practice set '+(offset+i+1),subject:'Mathematics',exam:'SPM',difficulty:'mixed',
+     questionCount:2,totalScore:2,visibility:'public',bank:true,creator:'Fixture Teacher',organisation:'Fixture Group',
+     canEdit:false,revision:1,sharedRevision:1,
+    }));
+    const hasMore=offset+limit<45;
+    return reply({items,hasMore,nextOffset:hasMore?offset+limit:null,
+     facets:{subjects:['Mathematics'],levels:[],chapters:[],maintenanceImport:false,manageQuizzes:false}});
+   }
    return reply({items:[{id:quizId,title:draft.content.title,subject:'Mathematics',exam:'SPM',difficulty:'mixed',questionCount:2,totalScore:2,visibility:draft.visibility,bank:false,creator:'Fixture Teacher',organisation:'Fixture Group',canEdit:true,canShare:true,revision:draft.revision,sharedRevision:draft.sharedRevision}],hasMore:false,facets:{subjects:['Mathematics'],levels:[],chapters:[],maintenanceImport:Boolean(options.importZip),manageQuizzes:false,canModerate:false}});
   }
   if(u.pathname==='/api/quiz-practice'){
@@ -131,7 +144,7 @@ async function open(params={},options={}){
   errors.push('unexpected API '+u.pathname);return reply({error:'fixture.unexpected'},500);
  });
  page.on('pageerror',error=>errors.push(error.message));await page.goto(origin+'/?'+new URLSearchParams(params));
- return{page,writes,shareTargetQueries,saveStarted:saveStarted.promise,releaseSave:()=>releaseSave.resolve(),draftStarted:draftStarted.promise,releaseDraft:()=>releaseDraft.resolve(),checkStarted:checkStarted.promise,attempt:()=>attempt,expire:()=>{attempt.deadlineAt=new Date(Date.now()-1000).toISOString();},close:async()=>{releaseSave.resolve();releaseDraft.resolve();check(!errors.length,errors.join('; '));await context.close();}};
+ return{page,writes,shareTargetQueries,listRequests,saveStarted:saveStarted.promise,releaseSave:()=>releaseSave.resolve(),draftStarted:draftStarted.promise,releaseDraft:()=>releaseDraft.resolve(),checkStarted:checkStarted.promise,attempt:()=>attempt,expire:()=>{attempt.deadlineAt=new Date(Date.now()-1000).toISOString();},close:async()=>{releaseSave.resolve();releaseDraft.resolve();check(!errors.length,errors.join('; '));await context.close();}};
 }
 async function tap(page,locator){await locator.scrollIntoViewIfNeeded();const b=await locator.boundingBox();assert(b);await page.mouse.click(b.x+b.width/2,b.y+b.height/2);}
 async function startBackgroundSave(f){await f.page.locator('.quiz-flag-question').click();await f.saveStarted;}
@@ -445,10 +458,13 @@ try{
    await p.getByRole('tab',{name:/^题目编辑/}).click();
    await p.getByTestId('quiz-editor-question-language').selectOption('zh');
    check(await p.getByTestId('quiz-editor-prompt').inputValue()==='哪一种仪器用来测量温度？','Chinese stem from the example remains editable');
+   await p.getByRole('tab',{name:'共享设置',exact:true}).click();
+   check(await p.getByTestId('quiz-sharing-panel').getByRole('radio',{name:/^公开/}).isChecked(),'new ZIP imports preselect Public');
    await p.getByRole('button',{name:'保存草稿',exact:true}).click();
    const imported=await f.draftStarted;
    check(imported.action==='maintenanceImport'&&imported.content.questions[0].prompt.ms.includes('mengukur suhu'),'ZIP draft uses the existing import save path and retains translations');
    await p.getByTestId('quiz-hub').waitFor();
+   check(f.writes.some(body=>body.action==='share'&&body.visibility==='public'),'the same save publishes the imported quiz');
    await f.close();
   }
   {
@@ -465,6 +481,22 @@ try{
    check(checked.answers['question-0'].optionId==='option-0-A','switching language does not change the graded option ID');
    await f.close();
   }
+  {
+   const f=await open({lang:'en'},{pagedLibrary:true,touch:true}),p=f.page;
+   const cards=p.locator('.quiz-list article'), more=p.getByTestId('quiz-load-more');
+   await more.waitFor();
+   check(await cards.count()===20&&f.listRequests.length===1&&f.listRequests[0].limit===20,'loading the quiz page requests only twenty cards');
+   await more.tap();
+   await p.getByRole('alert').waitFor();
+   check(await cards.count()===20,'a failed continuation preserves the loaded cards');
+   await more.tap();
+   await p.getByRole('heading',{name:'Practice set 40',exact:true}).waitFor();
+   check(await cards.count()===40&&f.listRequests.map(row=>row.offset).join()==='0,20,20','retry requests the same page and appends results');
+   await more.tap();
+   await p.getByRole('heading',{name:'Practice set 45',exact:true}).waitFor();
+   check(await cards.count()===45&&await more.count()===0,'remaining cards are loaded on demand with no duplicate entries');
+   await f.close();
+  }
   {const f=await open({lang:'en'},{failDraft:true}),p=f.page,save=await editDraft(f,'en');await save.click();await p.locator('.quiz-editor [role=alert]').waitFor();check(await p.getByLabel('Quiz title',{exact:true}).inputValue()==='Updated fixture quiz','failed draft save keeps edited content');check(await p.locator('.quiz-editor').isVisible(),'failed draft never navigates');await f.close();}
   {
    const f=await open({lang:'en'},{touch:true,failShareOnce:true}),p=f.page;
@@ -477,9 +509,10 @@ try{
    const recipient=panel.getByRole('checkbox',{name:/Linked Student/});
    await recipient.check();
    check(f.shareTargetQueries.length===1&&f.shareTargetQueries[0]===null,'new quiz can choose linked students before a draft exists');
-   const publish=panel.getByRole('button',{name:'Save sharing settings',exact:true});
+   const publish=p.getByRole('button',{name:'Save draft',exact:true});
+   check(await panel.getByRole('button',{name:'Save sharing settings',exact:true}).count()===0,'sharing uses the one editor footer save');
    await publish.tap();
-   await panel.getByRole('alert').waitFor();
+   await p.locator('.quiz-editor [role=alert]').first().waitFor();
    check(f.writes.length===0,'an invalid new quiz cannot be saved or published');
    await p.getByRole('tab',{name:'Settings',exact:true}).tap();
    await p.getByLabel('Quiz title',{exact:true}).fill('Share an unsaved quiz');
@@ -496,14 +529,14 @@ try{
    const rejected=p.waitForResponse(response=>response.status()===503&&response.request().postDataJSON()?.action==='share');
    await publish.tap();
    await rejected;
-   await panel.getByRole('alert').waitFor();
+   await p.locator('.quiz-editor [role=alert]').first().waitFor();
    const [saved,failed]=f.writes;
    check(f.writes.length===2&&saved.action==='save'&&saved.revision===0&&failed.action==='share'&&failed.revision===1&&failed.id===saved.id,'publishing a new quiz first saves the draft and shares its stored revision');
    check(failed.visibility==='selected'&&failed.recipientIds.join(',')==='linked-student'&&await recipient.isChecked(),'a failed share retains the selected audience');
-   const confirmed=p.waitForResponse(response=>response.ok()&&response.request().method()==='GET'&&new URL(response.url()).searchParams.get('id')===saved.id);
+   const confirmed=p.waitForResponse(response=>response.ok()&&response.request().postDataJSON()?.action==='share');
    await publish.tap();
    await confirmed;
-   await panel.getByRole('alert').waitFor({state:'hidden'});
+   await p.getByTestId('quiz-hub').waitFor();
    check(f.writes.length===3&&f.writes[2].action==='share'&&f.writes[2].operationId===failed.operationId,'retry shares the saved draft with the same operation ID');
    await f.close();
   }
@@ -514,7 +547,7 @@ try{
    check(await numerals.evaluateAll(items=>items.length===4&&items.every(item=>getComputedStyle(item).scrollbarWidth==='none'&&item.querySelector('msub'))),'base-number options retain subscripts without visible scrollbars');
    await f.close();
   }
-  {const f=await open({lang:'en'}),p=f.page;await p.getByTestId('quiz-tab-mine').click();await p.locator('.quiz-item-more-trigger').first().click();await p.getByRole('button',{name:'Edit',exact:true}).click();await p.getByRole('tab',{name:'Sharing',exact:true}).click();const panel=p.getByTestId('quiz-sharing-panel');await panel.getByRole('radio',{name:/Public/}).check();const refreshed=p.waitForResponse(r=>r.url().includes('/api/quizzes?id=')&&r.request().method()==='GET');await panel.getByRole('button',{name:'Save sharing settings',exact:true}).click();await refreshed;await panel.locator('.quiz-sharing-options:not([disabled])').waitFor();check(await p.locator('.quiz-editor').isVisible(),'updating sharing does not close the editor');check(f.writes.some(body=>body.action==='share'),'sharing flow was actually saved');await f.close();}
+  {const f=await open({lang:'en'}),p=f.page;await p.getByTestId('quiz-tab-mine').click();await p.locator('.quiz-item-more-trigger').first().click();await p.getByRole('button',{name:'Edit',exact:true}).click();await p.getByRole('tab',{name:'Sharing',exact:true}).click();const panel=p.getByTestId('quiz-sharing-panel');await panel.getByRole('radio',{name:/Public/}).check();await p.getByRole('button',{name:'Save draft',exact:true}).click();await p.getByTestId('quiz-hub').waitFor();check(f.writes.length===1&&f.writes[0].action==='share'&&f.writes[0].visibility==='public','visibility-only changes save without writing a new quiz revision');await f.close();}
   {
    const f=await open({lang:'zh'},{touch:true}),p=f.page;
    await p.getByTestId('quiz-tab-mine').tap();

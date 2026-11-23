@@ -1,4 +1,5 @@
 import type {WatchVideo} from './watch-preview-video';
+import {escapeWatchHtml as escapeHtml, watchPlaylistMarkup, type PlaylistSection} from './watch-playlists-page';
 import {watchPreviewBranding} from './watch-preview-config';
 
 type Language = 'en' | 'zh';
@@ -15,12 +16,21 @@ function icon(name: keyof typeof symbols) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${symbols[name]}</svg>`;
 }
 
-const escapeHtml = (value: string) => value.replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
-
-export function watchPreviewPage(language: Language, managementUrl: string, entryPath: string, catalogUrl: string, theme: 'light' | 'dark' | null, video?: WatchVideo | null) {
+export function watchPreviewPage(language: Language, managementUrl: string, entryPath: string, catalogUrl: string, theme: 'light' | 'dark' | null, video: WatchVideo | null | undefined, options: PlaylistSection & {canEditVideos: boolean; params: URLSearchParams}) {
   const t = (zh: string, en: string) => language === 'zh' ? zh : en;
   const management = escapeHtml(managementUrl);
-  const catalog = video === undefined;
+  const playlistPage = options.playlists !== undefined || options.playlist !== undefined;
+  const catalog = video === undefined && !playlistPage;
+  const playlistTitle = options.playlist?.title || t('播放清单','Playlists');
+  const base = entryPath.replace(/\/$/, '');
+  const browsingParams = new URLSearchParams({lang:language});
+  const from = options.params.get('from');
+  if (from) browsingParams.set('from', from);
+  const playlistPath = base + '/playlists';
+  const menu = `<nav class="watch-section-nav" aria-label="${t('视频库菜单','Library navigation')}">
+    <a class="quiet-button" href="${escapeHtml(entryPath+'?'+browsingParams)}" ${catalog ? 'aria-current="page"' : ''}>${t('视频库','Video library')}</a>
+    <a class="quiet-button" href="${escapeHtml(playlistPath+'?'+browsingParams)}" ${playlistPage ? 'aria-current="page"' : ''}>${t('播放清单','Playlists')}</a>
+   </nav>`;
   const title = video ? escapeHtml(video.title) : t('视频暂不可用', 'Video unavailable');
   const metadata = video && escapeHtml([video.category, video.subject, video.chapter].filter(Boolean).join(' · '));
   return `<!doctype html>
@@ -30,10 +40,11 @@ export function watchPreviewPage(language: Language, managementUrl: string, entr
  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
  <meta name="robots" content="noindex, nofollow">
  <meta name="color-scheme" content="light dark">
- <title>${catalog ? 'TickPlay' : title + ' · TickPlay'}</title>
+ <title>${catalog ? 'TickPlay' : (playlistPage ? escapeHtml(playlistTitle) : title) + ' · TickPlay'}</title>
  <link rel="icon" href="${watchPreviewBranding.favicon}" type="image/png" sizes="64x64">
- <link rel="stylesheet" href="/watch-preview.css?v=tickplay-options">
- <script defer src="/watch-preview.js?v=3"></script>
+ <link rel="stylesheet" href="/watch-preview.css?v=playlists">
+ <script defer src="/watch-preview.js?v=4"></script>
+ ${playlistPage && options.canEditPlaylists ? '<script defer src="/watch-playlists.js?v=1"></script>' : ''}
 </head>
 <body>
  <header class="watch-bar">
@@ -53,13 +64,13 @@ export function watchPreviewPage(language: Language, managementUrl: string, entr
   </div>
  </header>
  <main class="watch-main">
-  ${catalog ? `<section aria-labelledby="library-title">
+  ${(catalog || playlistPage) ? menu : ''}
+  ${playlistPage ? watchPlaylistMarkup(options, base, browsingParams, t, icon('close')) : catalog ? `<section aria-labelledby="library-title">
    <div class="library-head">
     <div>
-     <p class="preview-status"><span aria-hidden="true"></span>${t('管理员预览','Admin preview')}</p>
      <h1 id="library-title">${t('视频库','Video library')}</h1>
     </div>
-    <button type="button" class="primary-button" id="add-video">${icon('plus')}${t('添加视频','Add video')}</button>
+    ${options.canEditVideos ? `<button type="button" class="primary-button" id="add-video">${icon('plus')}${t('添加视频','Add video')}</button>` : ''}
    </div>
    <div class="filter-bar">
     <div class="segmented" id="video-types" role="group" aria-label="${t('视频类型','Video type')}">
@@ -82,7 +93,7 @@ export function watchPreviewPage(language: Language, managementUrl: string, entr
    </nav>
   </section>
   ` : `<section id="player-section" class="player-section" data-type="${video?.kind ?? ''}" aria-labelledby="player-title">
-   <a href="${escapeHtml(catalogUrl)}" id="back-library" class="quiet-button">${t('‹ 返回视频库', '‹ Back to library')}</a>
+   <a href="${escapeHtml(catalogUrl)}" id="back-library" class="quiet-button">${new URL(catalogUrl).pathname.startsWith(playlistPath+'/') ? t('‹ 返回播放清单','‹ Back to playlist') : t('‹ 返回视频库', '‹ Back to library')}</a>
    ${video ? `<div id="player" class="player">
     <iframe src="https://www.youtube-nocookie.com/embed/${escapeHtml(video.youtubeId)}?rel=0&amp;playsinline=1"
      title="${title}" allow="encrypted-media; picture-in-picture; fullscreen"
@@ -92,7 +103,7 @@ export function watchPreviewPage(language: Language, managementUrl: string, entr
    ${metadata ? `<p id="player-meta" class="muted">${metadata}</p>` : ''}
   </section>`}
  </main>
- ${catalog ? `<dialog id="video-editor" aria-labelledby="editor-title">
+ ${catalog && options.canEditVideos ? `<dialog id="video-editor" aria-labelledby="editor-title">
   <form id="editor-form">
    <header class="dialog-head"><h2 id="editor-title">${t('添加视频','Add video')}</h2>
     <button type="button" class="icon-button" id="close-editor" aria-label="${t('关闭','Close')}">${icon('close')}</button>

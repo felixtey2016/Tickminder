@@ -1,10 +1,11 @@
 import {env} from 'cloudflare:workers';
 import {WatchPreviewConfig, watchPreviewConfig} from '@/lib/watch-preview-config';
 import {
-  CHALLENGE_COOKIE, WATCH_COOKIE, WATCH_MAX_AGE, createWatchVideo, currentWatchAdmin, currentWatchSession,
+  CHALLENGE_COOKIE, WATCH_COOKIE, WATCH_MAX_AGE, createWatchVideo, currentWatchViewer, currentWatchSession,
   deleteWatchVideo, editWatchVideo, issueWatchHandoff, redeemWatchHandoff, setWatchCookie, validWatchToken, watchCookie,
   watchToken, watchVideoDetail, watchVideoFacets, watchVideoList,
 } from '@/lib/watch-preview-server';
+import {canEditWatchPlaylist, removeWatchPlaylist, saveWatchPlaylist, watchPlaylistDetail, watchPlaylistEdit, watchPlaylists} from '@/lib/watch-playlists-server';
 import {watchPreviewPage} from '@/lib/watch-preview-page';
 import {validWatchVideoId, watchCatalogParams, watchVideoFields, watchVideoFilters} from '@/lib/watch-preview-video';
 
@@ -24,12 +25,21 @@ function redirect(url: string, cookies: string[] = []) {
   for (const cookie of cookies) responseHeaders.append('Set-Cookie', cookie);
   return new Response(null, {status:303,headers:responseHeaders});
 }
-function watchEntry(config: WatchPreviewConfig, params: URLSearchParams, id: string | null = null) {
-  const url = id ? config.entry.replace(/\/$/, '') + '/videos/' + id : config.entry;
-  return url + '?' + params;
+function watchEntry(config: WatchPreviewConfig, params: URLSearchParams, videoId: string | null = null,
+  playlistId: string | null = null, playlists = false) {
+  const url = new URL(config.entry);
+  const base = config.entryPath.replace(/\/$/, '');
+  url.search = params.toString();
+  if (videoId) {
+    url.pathname = base + '/videos/' + videoId;
+    if (playlistId) url.searchParams.set('playlist', playlistId);
+  } else if (playlists || playlistId) {
+    url.pathname = base + '/playlists' + (playlistId ? '/' + playlistId : '');
+  }
+  return url.href;
 }
 async function viewer(request: Request, config: WatchPreviewConfig) {
-  return config.splitOrigin ? currentWatchSession(request) : currentWatchAdmin();
+  return config.splitOrigin ? currentWatchSession(request) : currentWatchViewer();
 }
 
 async function watchAcademicOptions() {
@@ -61,17 +71,22 @@ export async function GET(request: Request, {params}: Context) {
   const videoId = validWatchVideoId(id) ? id : null;
   const requestedTheme = readTheme(url.searchParams.get('theme'));
   const {action} = await params;
-  const page = action === 'view' || action === 'video';
+  const page = ['view','video','playlists','playlist'].includes(action);
+  const rawPlaylistId = url.searchParams.get('playlist');
+  const playlistId = validWatchVideoId(rawPlaylistId) ? rawPlaylistId : null;
+  const playlistIndex = action === 'playlists' || ['authorize','redeem'].includes(action) && url.searchParams.get('section') === 'playlists';
   const handoffParams = new URLSearchParams(catalogParams);
   if (videoId) handoffParams.set('video', videoId);
+  if (playlistId) handoffParams.set('playlist', playlistId);
+  if (playlistIndex) handoffParams.set('section', 'playlists');
   if (requestedTheme) handoffParams.set('theme', requestedTheme);
   try {
     if (action === 'authorize' && config.splitOrigin && config.appOrigins.has(url.origin)) {
       const challenge = url.searchParams.get('challenge');
       if (!validWatchToken(challenge)) return json({error:'invalidLink'},400);
-      const admin = await currentWatchAdmin();
-      if (!admin) return json({error:'adminOnly'},403);
-      const code = await issueWatchHandoff(admin, challenge);
+      const account = await currentWatchViewer();
+      if (!account) return json({error:'signIn'},403);
+      const code = await issueWatchHandoff(account, challenge);
       handoffParams.set('code', code);
       return redirect(config.watch + path + 'redeem?' + handoffParams);
     }
@@ -82,7 +97,7 @@ export async function GET(request: Request, {params}: Context) {
       if (!validWatchToken(code) || !validWatchToken(challenge)) return json({error:'invalidLink'},401);
       const session = await redeemWatchHandoff(code, challenge);
       if (!session) return json({error:'invalidLink'},401);
-      return redirect(watchEntry(config, catalogParams, videoId), [
+      return redirect(watchEntry(config, catalogParams, videoId, playlistId, playlistIndex), [
         setWatchCookie(CHALLENGE_COOKIE, '', 0),
         setWatchCookie(WATCH_COOKIE, session, WATCH_MAX_AGE),
         ...(requestedTheme ? [themeCookie(requestedTheme)] : []),
@@ -90,25 +105,35 @@ export async function GET(request: Request, {params}: Context) {
     }
     if (!page && action !== 'catalog' && action !== 'facets' && action !== 'academic-options') return json({error:'notFound'},404);
     if (action === 'view' && videoId) return redirect(watchEntry(config, catalogParams, videoId));
-    if (action === 'video' && !videoId) return json({error:'notFound'},404);
+    if ((action === 'video' && !videoId) || (action === 'playlist' && !playlistId)) return json({error:'notFound'},404);
     const entering = action === 'view' && url.searchParams.get('enter') === '1';
-    const admin = config.splitOrigin && entering ? null : await viewer(request, config);
-    if (!admin && config.splitOrigin && page) {
+    const account = config.splitOrigin && entering ? null : await viewer(request, config);
+    if (!account && config.splitOrigin && page) {
       const challenge = watchToken();
       handoffParams.set('challenge', challenge);
       return redirect(appOrigin + path + 'authorize?' + handoffParams,
         [setWatchCookie(CHALLENGE_COOKIE, challenge, 120)]);
     }
-    if (!admin) return json({error:'adminOnly'},403);
-    if (action === 'catalog') return json(await watchVideoList(admin.groupId, catalogParams));
-    if (action === 'academic-options') return json({syllabuses:await watchAcademicOptions()});
-    if (action === 'facets') return json({facets:await watchVideoFacets(admin.groupId)});
-    if (requestedTheme) return redirect(watchEntry(config, catalogParams, videoId), [themeCookie(requestedTheme)]);
-    const video = action === 'video' && videoId ? await watchVideoDetail(admin.groupId, videoId) : undefined;
+    if (!account) return json({error:'signIn'},403);
+    if (action === 'catalog') return json(await watchVideoList(account.groupId, catalogParams));
+    if (action === 'academic-options') {
+      if (account.role !== 'admin') return json({error:'forbidden'},403);
+      return json({syllabuses:await watchAcademicOptions()});
+    }
+    if (action === 'facets') return json({facets:await watchVideoFacets(account.groupId)});
+    if (requestedTheme) return redirect(watchEntry(config, catalogParams, videoId, playlistId, playlistIndex), [themeCookie(requestedTheme)]);
+    const video = action === 'video' && videoId ? await watchVideoDetail(account.groupId, videoId) : undefined;
+    const playlists = action === 'playlists' ? await watchPlaylists(account.groupId, catalogParams) : undefined;
+    const playlist = action === 'playlist' && playlistId ? await watchPlaylistDetail(account.groupId, playlistId) : undefined;
     const theme = readTheme(watchCookie(request, themeName));
-    const html = watchPreviewPage(lang, appOrigin + '/manage', config.entryPath, watchEntry(config, catalogParams), theme, video);
+    const catalogUrl = watchEntry(config, catalogParams, null, videoId ? playlistId : null);
+    const html = watchPreviewPage(lang, appOrigin + (account.role === 'admin' ? '/manage' : '/'), config.entryPath, catalogUrl, theme, video, {
+      canEditVideos: account.role === 'admin',
+      canEditPlaylists: playlist !== null && canEditWatchPlaylist(account, playlist),
+      playlists, playlist, params:catalogParams,
+    });
     const framePolicy = video ? 'https://www.youtube-nocookie.com' : "'none'";
-    return new Response(html, {status:video === null ? 404 : 200, headers:{
+    return new Response(html, {status:video === null || playlist === null ? 404 : 200, headers:{
       ...headers, 'Content-Type':'text/html; charset=utf-8',
       'Referrer-Policy':'strict-origin-when-cross-origin',
       'Content-Security-Policy':`default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https://i.ytimg.com; frame-src ${framePolicy}; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'`,
@@ -122,25 +147,39 @@ export async function POST(request: Request, {params}: Context) {
   const config = watchPreviewConfig(env);
   const url = new URL(request.url);
   const {action} = await params;
-  if (!config || url.origin !== config.watch || action !== 'catalog') return json({error:'notFound'},404);
-  if (request.headers.get('origin') !== config.watch) return json({error:'adminOnly'},403);
+  if (!config || url.origin !== config.watch || !['catalog','playlists'].includes(action)) return json({error:'notFound'},404);
+  if (request.headers.get('origin') !== config.watch) return json({error:'forbidden'},403);
   try {
-    const admin = await viewer(request, config);
-    if (!admin) return json({error:'adminOnly'},403);
-    if (Number(request.headers.get('content-length') ?? '0') > 4096) return json({error:'invalidVideo'},400);
+    const account = await viewer(request, config);
+    if (!account) return json({error:'signIn'},403);
+    if (action === 'catalog' ? account.role !== 'admin' : !canEditWatchPlaylist(account)) return json({error:'forbidden'},403);
+    const limit = action === 'catalog' ? 4096 : 8192;
+    const invalid = action === 'catalog' ? 'invalidVideo' : 'invalidPlaylist';
+    if (Number(request.headers.get('content-length') ?? '0') > limit) return json({error:invalid},400);
     const raw = await request.text();
-    if (raw.length > 4096) return json({error:'invalidVideo'},400);
+    if (raw.length > limit) return json({error:invalid},400);
     let body;
-    try {body = JSON.parse(raw);} catch {return json({error:'invalidVideo'},400);}
+    try {body = JSON.parse(raw);} catch {return json({error:invalid},400);}
     const mode = body?.action;
+    if (action === 'playlists') {
+      if (!['create','edit','remove'].includes(mode)) return json({error:invalid},400);
+      const existing = mode === 'create' ? undefined : {id:body.id, revision:body.revision};
+      if (existing && (!validWatchVideoId(existing.id) || !Number.isSafeInteger(existing.revision) || existing.revision < 1)) return json({error:invalid},400);
+      if (existing && mode === 'remove') return await removeWatchPlaylist(account, existing.id, existing.revision)
+        ? json({ok:true}) : json({error:'playlistChanged'},409);
+      const input = watchPlaylistEdit(body);
+      if (!input) return json({error:invalid},400);
+      const saved = await saveWatchPlaylist(account, input, existing);
+      return saved ? json(saved) : json({error:'playlistChanged'},409);
+    }
     if (mode !== 'create' && !validWatchVideoId(body?.id)) return json({error:'notFound'},404);
     if (mode === 'remove') {
-      return await deleteWatchVideo(admin.groupId, body.id) ? json({ok:true}) : json({error:'notFound'},404);
+      return await deleteWatchVideo(account.groupId, body.id) ? json({ok:true}) : json({error:'notFound'},404);
     }
     if (mode !== 'create' && mode !== 'edit') return json({error:'invalidVideo'},400);
     const input = watchVideoFields(body);
     if (!input) return json({error:'invalidVideo'},400);
-    const video = mode === 'create' ? await createWatchVideo(admin.groupId, input) : await editWatchVideo(admin.groupId, body.id, input);
+    const video = mode === 'create' ? await createWatchVideo(account.groupId, input) : await editWatchVideo(account.groupId, body.id, input);
     return video ? json({video}) : json({error:'alreadyAdded'},409);
   } catch {
     return json({error:'unavailable'},503);

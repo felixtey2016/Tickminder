@@ -30,34 +30,39 @@ function db() {
   return env.DB;
 }
 
-export async function currentWatchAdmin() {
+export type WatchViewer = {groupId: string; accountId: string; role: 'admin' | 'teacher' | 'student'};
+
+export async function currentWatchViewer(): Promise<(WatchViewer & {sourceHash:string}) | null> {
   const actor = await currentBusinessAccount();
-  if (!actor || actor.role !== 'admin' || !actor.groupId) return null;
-  const allowed = isOwnerAccount(actor) || (await adminAuthority(actor, actor.groupId)).isGroupChief;
+  if (!actor?.groupId) return null;
+  const role = actor.role;
+  if (role !== 'teacher' && role !== 'student' && role !== 'admin') return null;
+  const allowed = role !== 'admin' || isOwnerAccount(actor) || (await adminAuthority(actor, actor.groupId)).isGroupChief;
   const sourceHash = boundAccountSessionHash(actor);
   if (!allowed || !sourceHash) return null;
-  return {groupId: actor.groupId, sourceHash};
+  return {groupId: actor.groupId, accountId: actor.id, role, sourceHash};
 }
 
-// Each Watch request checks the backing Tickminder session and live admin role.
-const linkedAdministrator = `
+// Each Watch request checks the backing session and live group membership.
+const linkedViewer = `
  FROM sessions s JOIN accounts a ON a.id=s.account_id
  JOIN tuition_groups g ON g.id=w.group_id AND g.active=1
  WHERE s.token_hash=w.source_hash AND s.expires_at>?
- AND a.role='admin' AND a.disabled_at IS NULL
+ AND a.disabled_at IS NULL
  AND NOT EXISTS(SELECT 1 FROM local_credentials lc WHERE lc.account_id=a.id AND lc.must_change_password=1)
- AND ((a.group_id=g.id AND g.chief_admin_id=a.id)
-      OR (lower(trim(a.email))=? AND substr(a.id,1,6)<>'local:'))
+ AND ((a.group_id=g.id AND a.role IN ('teacher','student'))
+      OR (a.role='admin' AND ((a.group_id=g.id AND g.chief_admin_id=a.id)
+        OR (lower(trim(a.email))=? AND substr(a.id,1,6)<>'local:'))))
 `;
 
-export async function issueWatchHandoff(admin: NonNullable<Awaited<ReturnType<typeof currentWatchAdmin>>>, challenge: string) {
+export async function issueWatchHandoff(viewer: NonNullable<Awaited<ReturnType<typeof currentWatchViewer>>>, challenge: string) {
   const token = watchToken();
   const database = db();
   const now = Math.floor(Date.now() / 1000);
   await database.batch([
     database.prepare('DELETE FROM watch_preview_sessions WHERE token_hash IN (SELECT token_hash FROM watch_preview_sessions WHERE expires_at<=? LIMIT 40)').bind(now),
     database.prepare(`INSERT INTO watch_preview_sessions(token_hash,source_hash,group_id,purpose,challenge_hash,expires_at)
-      VALUES(?,?,?,'handoff',?,?)`).bind(await hashToken(token), admin.sourceHash, admin.groupId, await hashToken(challenge), now + WATCH_HANDOFF_AGE),
+      VALUES(?,?,?,'handoff',?,?)`).bind(await hashToken(token), viewer.sourceHash, viewer.groupId, await hashToken(challenge), now + WATCH_HANDOFF_AGE),
   ]);
   return token;
 }
@@ -68,7 +73,7 @@ export async function redeemWatchHandoff(token: string, challenge: string) {
   const redeemed = await db().prepare(`UPDATE watch_preview_sessions AS w
     SET token_hash=?,purpose='watch',challenge_hash=NULL,expires_at=?
     WHERE token_hash=? AND challenge_hash=? AND purpose='handoff' AND expires_at>?
-      AND EXISTS(SELECT 1 ${linkedAdministrator})
+      AND EXISTS(SELECT 1 ${linkedViewer})
     RETURNING group_id AS groupId`)
     .bind(await hashToken(session), now + WATCH_MAX_AGE, await hashToken(token), await hashToken(challenge),
       now, new Date().toISOString(), OWNER_EMAIL).first<{groupId: string}>();
@@ -78,12 +83,15 @@ export async function redeemWatchHandoff(token: string, challenge: string) {
 export async function currentWatchSession(request: Request) {
   const token = watchCookie(request, WATCH_COOKIE);
   if (!validWatchToken(token)) return null;
-  return db().prepare(`SELECT w.group_id AS groupId FROM watch_preview_sessions w
-    WHERE w.token_hash=? AND w.purpose='watch' AND w.expires_at>? AND EXISTS(SELECT 1 ${linkedAdministrator})`)
-    .bind(await hashToken(token), Math.floor(Date.now() / 1000), new Date().toISOString(), OWNER_EMAIL).first<{groupId: string}>();
+  return db().prepare(`SELECT w.group_id AS groupId,a.id AS accountId,a.role
+    FROM watch_preview_sessions w JOIN sessions current_session ON current_session.token_hash=w.source_hash
+    JOIN accounts a ON a.id=current_session.account_id
+    WHERE w.token_hash=? AND w.purpose='watch' AND w.expires_at>? AND EXISTS(SELECT 1 ${linkedViewer})`)
+    .bind(await hashToken(token), Math.floor(Date.now() / 1000), new Date().toISOString(), OWNER_EMAIL).first<WatchViewer>();
 }
 
-const videoFields = 'id,youtube_id AS youtubeId,title,category,subject,chapter,kind,created_at AS createdAt';
+export const watchVideoSelect = (alias = '') => ['id','youtube_id AS youtubeId','title','category','subject','chapter','kind','created_at AS createdAt'].map(column => alias + column).join(',');
+const videoFields = watchVideoSelect();
 const pageSize = 12;
 const cursorFor = (video: WatchVideo) => video.createdAt + '~' + video.id;
 

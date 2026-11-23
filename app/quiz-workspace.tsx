@@ -52,7 +52,8 @@ type Standalone = {
 type Catalog={kind:'subtopic'|'chapter_overall'|'level_overall';level:string;chapterCode:string;chapterTitle:string;subtopicCode:string;subtopicTitle:string;setNumber:number};
 type Item={id:string;title:string;subject:string;exam:string;grade?:string|null;topic?:string|null;difficulty:string;questionCount:number;totalScore:number;visibility:string;sharingMode?:'private'|'public'|'selected'|'organisation';creator:string;organisation:string;bank?:boolean;canEdit:boolean|number;canShare?:boolean|number;canDelete?:boolean|number;revision?:number;sharedRevision:number|null;bankKind?:'platform'|'creator';catalog?:Catalog|null;updatedAt?:string;createdAt?:string};
 type Facets={subjects:string[];levels:string[];chapters:{code:string;title:string;level:string;subject:string;exam:string}[];maintenanceImport?:boolean;manageQuizzes?:boolean;canModerate?:boolean};
-type Reply={items?:Item[];hasMore?:boolean;facets?:Facets;error?:string};
+type Reply={items?:Item[];hasMore?:boolean;nextOffset?:number|null;facets?:Facets;error?:string};
+const quizListPageSize = 20;
 type Filters={search:string;syllabus:string;subject:string;level:string;chapterCode:string;difficulty:string;sort:'latest'|'oldest'|'title'};
 type CopyOperation={id:string;operationId:string;sourceId:string;bank:boolean;title:string;resultId?:string};
 type Opening={item:Item;mode:'edit'|'preview'|'copy';token:number;error:string};
@@ -103,7 +104,7 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
  const [composeOpen,setComposeOpen]=useState(false),[reviewOpen,setReviewOpen]=useState(false),[reporting,setReporting]=useState<string|null>(null);
  const [filters,setFilters]=useState<Filters>(EMPTY_FILTERS),[searchInput,setSearchInput]=useState('');
  const [facets,setFacets]=useState<Facets>(EMPTY_FACETS),[items,setItems]=useState<Item[]>([]);
- const [loading,setLoading]=useState(true),[busy,setBusy]=useState<string|null>(null),[more,setMore]=useState(false);
+ const [loading,setLoading]=useState(true),[busy,setBusy]=useState<string|null>(null),[nextOffset,setNextOffset]=useState<number|null>(null);
  const [loadError,setLoadError]=useState(''),[actionError,setActionError]=useState(''),[actionRetry,setActionRetry]=useState<(()=>void)|null>(null);
  const [importOpen,setImportOpen]=useState(false);
  const [editor,setEditor]=useState<LocalQuiz|null>(null),[preview,setPreview]=useState<{content:QuizContent;creator:string}|null>(null),[reload,setReload]=useState(0);
@@ -150,16 +151,22 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
  },[searchInput]);
 
  async function load(offset=0){
-  if(!catalogueAllowed||!catalogTab||suspended||!catalogue)return;
+  if(!catalogueAllowed||!catalogTab||suspended||!catalogue||offset&&listAbort.current)return;
   listAbort.current?.abort();const controller=new AbortController();listAbort.current=controller;
-  const gen=++generation.current;setLoading(true);setLoadError('');if(!offset){setItems([]);setMore(false);}
+  const gen=++generation.current;setLoading(true);setLoadError('');if(!offset){setItems([]);setNextOffset(null);}
   try{
    const scopeKey=JSON.stringify([catalogue?.revision,filters.syllabus,filters.subject,filters.level]),listKey=(bank?'bank':tab)+scopeKey,listFacets=!offset&&!facetCache.current.has(listKey);
-   const listReply=await api<Reply>(query(filters,bank,{...(listFacets?{facets:'1'}:{}),offset:String(offset),...(tab==='manage'?{manage:'1'}:{})}),{signal:controller.signal});
+   const listReply=await api<Reply>(query(filters,bank,{...(listFacets?{facets:'1'}:{}),offset:String(offset),limit:String(quizListPageSize),...(tab==='manage'?{manage:'1'}:{})}),{signal:controller.signal});
    if(gen!==generation.current)return;
-   setItems(old=>offset?[...old,...(listReply.items||[])].filter((item,index,all)=>all.findIndex(other=>other.id===item.id)===index):listReply.items||[]);setMore(Boolean(listReply.hasMore));
+   const page=listReply.items||[];
+   setItems(old=>{
+    if(!offset)return page;
+    const existing=new Set(old.map(item=>item.id));
+    return [...old,...page.filter(item=>!existing.has(item.id))];
+   });
+   setNextOffset(listReply.hasMore&&page.length?listReply.nextOffset??offset+page.length:null);
    if(!offset){if(listReply.facets)facetCache.current.set(listKey,listReply.facets);setFacets(mergeFacets([facetCache.current.get(listKey)]));}
-  }catch(error){if(gen===generation.current&&!controller.signal.aborted)setLoadError(errorCode(error));}finally{if(gen===generation.current)setLoading(false);}
+  }catch(error){if(gen===generation.current&&!controller.signal.aborted)setLoadError(errorCode(error));}finally{if(listAbort.current===controller)listAbort.current=null;if(gen===generation.current)setLoading(false);}
  }
  useEffect(()=>{if(!suspended)void load();return()=>{generation.current++;listAbort.current?.abort();};},[tab,filters,reload,suspended,catalogue?.revision,catalogueAllowed]);
  useEffect(()=>()=>{openGeneration.current++;openAbort.current?.abort();},[]);
@@ -262,10 +269,10 @@ export default function QuizWorkspace({view,language,role='teacher',initialQuizI
     </form>
    {actionError&&<div className="quiz-error" role="alert"><span>{t(actionError)}</span>{actionRetry&&<Button variant="outline" onClick={actionRetry}>{t('quiz.retry')}</Button>}</div>}
 
-    {loadError&&<div className="quiz-error" role="alert"><span>{t(loadError)}</span><Button variant="outline" onClick={()=>void load()}>{t('quiz.retry')}</Button></div>}
-    {loading&&!catalogueError&&loadingState()}
+    {loadError&&!items.length&&<div className="quiz-error" role="alert"><span>{t(loadError)}</span><Button variant="outline" onClick={()=>void load()}>{t('quiz.retry')}</Button></div>}
+    {loading&&!items.length&&!catalogueError&&loadingState()}
     {!loading&&!loadError&&!items.length&&emptyState(hasFilters?'quiz.noMatches':!bank?'quiz.noDrafts':'quiz.noBank')}
-    <div className="quiz-list">{items.map(item=>itemCard(item))}</div>{more&&!loading&&<Button variant="outline" onClick={()=>void load(items.length)}>{t('quiz.more')}</Button>}
+    <div className="quiz-list">{items.map(item=>itemCard(item))}</div>{nextOffset!==null&&<div className="quiz-list-pagination">{loadError&&<p className="quiz-error" role="alert">{t(loadError)}</p>}<Button type="button" data-testid="quiz-load-more" variant="outline" disabled={loading} aria-busy={loading} onClick={()=>void load(nextOffset)}>{t(loading?'quiz.loading':loadError?'quiz.retry':'quiz.more')}</Button></div>}
    </>}
   </section>
   {opening?.mode==='preview'&&<Dialog open onOpenChange={value=>{if(!value)cancelOpening();}}><DialogContent className="quiz-player-dialog quiz-opening" showCloseButton={false}><div className="quiz-player-heading"><DialogTitle>{opening.item.title}</DialogTitle><Button variant="ghost" className="quiz-player-close" aria-label={t('quiz.close')} onClick={cancelOpening}><X size={20}/></Button></div><DialogDescription>{t('quiz.previewNotice')}</DialogDescription>{openingBody()}</DialogContent></Dialog>}
