@@ -93,7 +93,12 @@
 }
 .tickgame-shell h1 { font-size: clamp(22px, 4vw, 28px); }
 .tickgame-shell h2 { font-size: 19px; }
+.tickgame-shell .tickgame-brand {
+  gap: 8px;
+  white-space: nowrap;
+}
 .tickgame-shell .tickgame-brand img { display:block; object-fit:contain; }
+.tickgame-shell .tickgame-brand strong { font-size: clamp(18px, 4vw, 22px); }
 .tickgame-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 245px), 1fr));
@@ -128,5 +133,15 @@
   .tickgame-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .tickgame-card span { padding: 9px; }
   .tickgame-card strong { font-size: 14px; }
-  .tickgame-shell .tickgame-brand img { width: 62px; height: 62px; }
+  .tickgame-shell .tickgame-brand img { width: 44px; height: 44px; }
+  .tickgame-shell .legal-topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+  .tickgame-shell .legal-topbar-tools { flex-wrap: nowrap; gap: 8px; }
+}
+@media (max-width: 340px) {
+  .tickgame-shell .legal-back { font-size: 12px; white-space: nowrap; }
+  .tickgame-shell .tickgame-brand img { width: 40px; height: 40px; } .tickgame-shell .tickgame-brand strong { font-size: 16px; }
 }

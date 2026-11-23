@@ -13,8 +13,9 @@ export function TickGameShell({language,backTo,children}: {
   const [href,label] = links[backTo || "manage"];
   return <main className="legal-shell legal-reader tickgame-shell" lang={language==="zh" ? "zh-CN" : "en"} data-testid="tickgame-admin-page">
     <header className="legal-topbar">
-      <a href={`/?lang=${language}`} className="legal-brand tickgame-brand" aria-label="TickGame">
+      <a href={`/?lang=${language}`} className="legal-brand tickgame-brand">
         <img src="/branding/tickgame-logo.webp" width={72} height={72} alt=""/>
+        <strong>TickGame</strong>
       </a>
       <div className="legal-topbar-tools">
         <AppearanceToggle language={language}/>
