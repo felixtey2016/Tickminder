@@ -44,8 +44,8 @@ export function watchPreviewPage(language: Language, managementUrl: string, entr
  <meta name="color-scheme" content="light dark">
  <title>${catalog || options.personal ? 'TickPlay' : (playlistPage ? escapeHtml(playlistTitle) : title) + ' · TickPlay'}</title>
  <link rel="icon" href="${watchPreviewBranding.favicon}" type="image/png" sizes="64x64">
- <link rel="stylesheet" href="/watch-preview.css?v=social">
- <script defer src="/watch-preview.js?v=5"></script>
+ <link rel="stylesheet" href="/watch-preview.css?v=cover-fit">
+ <script defer src="/watch-preview.js?v=6"></script>
  ${playlistPage && options.canEditPlaylists ? '<script defer src="/watch-playlists.js?v=2"></script>' : ''}
  ${video || options.personal ? '<script defer src="/watch-social.js?v=1"></script>' : ''}
  ${playlistPage ? '<script defer src="/watch-more.js?v=1"></script>' : ''}

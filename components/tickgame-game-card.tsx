@@ -1,3 +1,5 @@
+import type {StudioGame} from '@/lib/tickgame-studio-schema';
+
 export const sejGame = {
   name: "Warisan Negara Bangsa",
   detail: "Sejarah Tingkatan 4 · Bab 1 · Demo",
@@ -5,16 +7,26 @@ export const sejGame = {
   cover: "/covers/sej-f4-bab-1",
 };
 
-export function SejarahGameCards({language}:{language:"zh"|"en"}) {
+export function GameCards({language,games=[],includeSejarah=false}:{
+  language:"zh"|"en";games?:StudioGame[];includeSejarah?:boolean;
+}) {
+  const cards=games.map(game=>({name:game.title,detail:game.subject,path:'/games/'+game.id,
+    cover:'/covers/'+game.id+'?version='+game.version}));
+  if(includeSejarah)cards.push(sejGame);
   return <ul className="tickgame-grid">
-    <li>
-      <a className="tickgame-card" href={`${sejGame.path}?lang=${language}`}>
-        <img src={sejGame.cover} alt="" width={640} height={360} loading="lazy" decoding="async"/>
+    {cards.map(game=><li key={game.path}>
+      <a className="tickgame-card" href={game.path+'?lang='+language}>
+        <img src={game.cover} alt="" width={640} height={360} loading="lazy" decoding="async"/>
         <span>
-          <strong>{sejGame.name}</strong>
-          <small>{sejGame.detail}</small>
+          <strong>{game.name}</strong>
+          <small>{game.detail}</small>
         </span>
       </a>
-    </li>
+    </li>)}
   </ul>;
+}
+
+export function gamePageSize(amount?:string){
+  const requested=Number(amount);
+  return Number.isSafeInteger(requested)&&requested>=24?requested:24;
 }

@@ -5,7 +5,7 @@ import {Maximize,Minimize} from 'lucide-react';
 
 type GameOrientation = ScreenOrientation & {lock?: (orientation: "landscape") => Promise<void>};
 
-export function TickGamePlayer({title,language}:{title:string;language:'zh'|'en'}) {
+export function TickGamePlayer({title,language,src='/play'}:{title:string;language:'zh'|'en';src?:string}) {
   const [expanded,setExpanded]=useState(false);
   const player=useRef<HTMLDivElement>(null);
   const orientationLocked=useRef(false);
@@ -66,7 +66,7 @@ export function TickGamePlayer({title,language}:{title:string;language:'zh'|'en'
             {expanded?<Minimize size={18} aria-hidden="true"/>:<Maximize size={18} aria-hidden="true"/>}{label}
           </button>
         </div>
-        <iframe title={title} src="/play" sandbox="allow-scripts allow-same-origin allow-downloads" allowFullScreen referrerPolicy="no-referrer"/>
+        <iframe title={title} src={src} sandbox="allow-scripts allow-same-origin allow-downloads" allowFullScreen referrerPolicy="no-referrer"/>
       </div>
     </div>
   </section>;

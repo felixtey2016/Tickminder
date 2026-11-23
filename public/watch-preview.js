@@ -88,12 +88,19 @@
     open.setAttribute('aria-label', t('播放 ', 'Play ') + video.title);
     const thumb = element('div', 'thumbnail');
     const img = element('img');
-    img.src = 'https://i.ytimg.com/vi/' + video.youtubeId + '/hqdefault.jpg';
+    const imageBase = 'https://i.ytimg.com/vi/' + video.youtubeId;
+    const fallback = imageBase + '/mqdefault.jpg';
+    img.src = imageBase + '/maxresdefault.jpg';
     img.alt = '';
     img.loading = 'lazy';
     img.decoding = 'async';
     img.referrerPolicy = 'no-referrer';
-    img.addEventListener('error', () => {img.hidden = true;});
+    const useFallback = () => {
+      if (img.src !== fallback) img.src = fallback;
+      else img.hidden = true;
+    };
+    img.addEventListener('error', useFallback);
+    img.addEventListener('load', () => { if (img.naturalWidth <= 120) useFallback(); });
     thumb.append(img, element('span', 'play-icon', '▶'));
     if (video.kind === 'short') thumb.append(element('span', 'short-tag', t('短视频','Short')));
     const content = element('div', 'video-text');
