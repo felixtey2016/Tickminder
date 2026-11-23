@@ -137,8 +137,18 @@ export async function tickGameCatalogRoute(request: Request, bucket?: R2Bucket) 
     const value = request.headers.get('cookie')?.match(/(?:^|;\s*)__Host-tickgame-catalog=([^;]+)/)?.[1];
     return await hasTickGameCatalogSession(value,bucket) ? launchTickGame(bucket) : missing();
   }
+  if (url.pathname === '/covers/sej-f4-bab-1') {
+    const value = request.headers.get('cookie')?.match(/(?:^|;\s*)__Host-tickgame-catalog=([^;]+)/)?.[1];
+    if (!bucket || !await hasTickGameCatalogSession(value,bucket)) return missing();
+    const key = gamePrefix+'web-presplash.png';
+    const object = request.method==='HEAD' ? await bucket.head(key) : await bucket.get(key);
+    if (!object) return missing();
+    return new Response('body' in object ? object.body as ReadableStream : null,{
+      headers:{...privateHeaders,'Cache-Control':'private, max-age=600','Content-Type':'image/png','Content-Length':String(object.size)},
+    });
+  }
   const section = url.pathname.replace(/\/$/,'');
-  if (section === '' || section === '/sejarah') {
+  if (section === '' || section === '/sejarah' || section === '/sejarah/bab-1') {
     url.pathname = '/manage/tickgame'+section;
     return url;
   }

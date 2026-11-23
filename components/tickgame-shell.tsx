@@ -1,29 +1,26 @@
 import {AppearanceToggle} from "@/components/appearance-toggle";
 
-export function TickGameShell({language,subject,children}: {
+export function TickGameShell({language,backTo,children}: {
   language:"zh"|"en";
-  subject?:boolean;
+  backTo?:"subjects"|"sejarah";
   children:React.ReactNode;
 }) {
-  const back = subject
-    ? language === "zh" ? "返回科目" : "Back to subjects"
-    : language === "zh" ? "返回管理" : "Back to Manage";
-  return <main className="legal-shell legal-reader" lang={language === "zh" ? "zh-CN" : "en"} data-testid="tickgame-admin-page">
+  const links = {
+    subjects: ["/",language==="zh" ? "全部科目" : "All subjects"],
+    sejarah: ["/sejarah",language==="zh" ? "返回 Sejarah" : "Back to Sejarah"],
+    manage: ["https://www.tickminder.com/manage",language==="zh" ? "返回 Tickminder" : "Back to Tickminder"],
+  } as const;
+  const [href,label] = links[backTo || "manage"];
+  return <main className="legal-shell legal-reader tickgame-shell" lang={language==="zh" ? "zh-CN" : "en"} data-testid="tickgame-admin-page">
     <header className="legal-topbar">
-      <a href={`https://www.tickminder.com/manage?lang=${language}`} className="legal-brand">
-        <img src="/tickminder-logo.svg" width={36} height={36} alt=""/>
-        <strong>Tickminder</strong>
+      <a href={`/?lang=${language}`} className="legal-brand tickgame-brand" aria-label="TickGame">
+        <img src="/branding/tickgame-logo.webp" width={72} height={72} alt=""/>
       </a>
       <div className="legal-topbar-tools">
         <AppearanceToggle language={language}/>
-        <a className="legal-back" href={`${subject ? "/" : "https://www.tickminder.com/manage"}?lang=${language}`}>{back}</a>
+        <a className="legal-back" href={`${href}?lang=${language}`}>{label}</a>
       </div>
     </header>
-    <article className="legal-paper">
-      <div className="legal-document-head">
-        <h1><img src="/branding/tickgame-logo.webp" width={176} height={176} alt="TickGame"/></h1>
-        {children}
-      </div>
-    </article>
+    <article className="legal-paper">{children}</article>
   </main>;
 }

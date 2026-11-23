@@ -6,7 +6,7 @@ import {currentBusinessAccount} from "@/lib/auth";
 import "@/components/legal-document.css";
 import "@/components/tickgame-demo.css";
 
-export const metadata: Metadata = {title: "TickGame · Tickminder", robots: {index: false, follow: false}};
+export const metadata: Metadata = {title: "TickGame", robots: {index: false, follow: false}};
 
 export default async function TickGameLayout({children}: {children: React.ReactNode}) {
   const session = (await cookies()).get(catalogCookie)?.value;

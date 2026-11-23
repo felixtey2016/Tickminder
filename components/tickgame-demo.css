@@ -87,3 +87,46 @@
     transform: translate(-50%, -50%) rotate(90deg);
   }
 }
+.tickgame-shell h1, .tickgame-shell h2 {
+  margin: 0;
+  line-height: 1.25;
+}
+.tickgame-shell h1 { font-size: clamp(22px, 4vw, 28px); }
+.tickgame-shell h2 { font-size: 19px; }
+.tickgame-shell .tickgame-brand img { display:block; object-fit:contain; }
+.tickgame-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 245px), 1fr));
+  gap: 16px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.tickgame-card {
+  display: block;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  text-decoration: none;
+}
+.tickgame-card:hover { border-color: var(--ui-accent); }
+.tickgame-card:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 3px; }
+.tickgame-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: var(--ui-surface-muted);
+}
+.tickgame-card span { display: grid; gap: 4px; padding: 12px; }
+.tickgame-card small { color: var(--ui-muted); }
+@media (max-width: 560px) {
+  .tickgame-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .tickgame-card span { padding: 9px; }
+  .tickgame-card strong { font-size: 14px; }
+  .tickgame-shell .tickgame-brand img { width: 62px; height: 62px; }
+}
