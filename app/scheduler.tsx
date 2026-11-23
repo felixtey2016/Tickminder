@@ -544,7 +544,7 @@ function WatchPreviewLink({entry,language,home=false}:{entry:string;language:Lan
     const url=new URL(entry);
     url.searchParams.set('lang',language);
     url.searchParams.set('theme',resolvedTheme==='dark'?'dark':'light');
-    return <a className="navigation-hub-item" href={url.href} data-testid={home?'watch-home-entry':'watch-admin-preview'}>
+    return <a className="navigation-hub-item watch-entry-link" href={url.href} data-testid={home?'watch-home-entry':'watch-admin-preview'}>
         <ProductEntryLogo product="play"/>
     </a>;
 }
