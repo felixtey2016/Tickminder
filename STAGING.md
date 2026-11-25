@@ -19,7 +19,8 @@ TickLearn, TickQuiz, TickPlay and TickGame use the respective staging Workers. S
 
 ## Release workflow for TickMinder staging
 
-- Felix authorizes staging changes and staging deployments for assigned TickMinder work. Deploy each update to staging before asking Felix to accept it. Staging deploys for assigned work do not need individual approval.
-- Commit every update and push it to GitHub. Keep feature work on GitHub and deploy only the exact commit available on `staging`. Include the GitHub commit, staging URL, test results and any migration details in the acceptance message.
-- Use a Git revert or a previously verified commit to recover application code. Handle D1 migrations and data recovery separately.
-- Production releases are approved by Felix after staging acceptance and deployed by Codex. Keep production deployment credentials out of the staging workflow.
+1. Investigate the reported problem and send Felix a short report with the finding, evidence, proposed solution and how it will be tested.
+2. Wait for Felix to approve the proposed change before editing code, changing data or settings, or deploying the fix. Report material scope changes and get approval for them before proceeding.
+3. Once approved, implement the agreed change, commit and push each update to GitHub, then deploy the exact commit on staging. This approved work requires one approval before implementation.
+4. Send Felix the GitHub commit, staging URL, test results and any migration details for acceptance. Use a Git revert or a previously verified commit to recover application code. Handle D1 migration and data recovery separately.
+5. Codex deploys to production after Felix accepts the staging version.
