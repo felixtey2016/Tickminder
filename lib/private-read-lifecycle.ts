@@ -15,6 +15,7 @@ function publishImages(changed=false){
   for(const listener of [...imageListeners])listener();
 }
 function publish(update:Partial<PrivateReadSnapshot>={}){
+  if(update.clearEpoch!==undefined&&update.clearEpoch!==snapshot.clearEpoch)imageDirty=false;
   snapshot=Object.freeze({...snapshot,...update,blocked:authPending||writes>0});
   publishImages(true); // Global/security boundaries always fence every domain.
   for(const listener of [...listeners])listener();

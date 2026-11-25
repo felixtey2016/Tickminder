@@ -107,6 +107,10 @@ try {
  assert.equal(switched.error?.name,'PrivateReadInvalidatedError','Identity switch stops new queued uploads and rejects batch');
  assert.equal(waiting.length,3,'No queued image may start under the next group using an old draft');
  assert.equal(cache.size,0,'Old-identity successes are not retained for retry');
+ messages.length=0;
+ const oldBatch=api.beginPrivateImageMutation(),oldMember=api.beginPrivateImageMutation();oldMember();
+ api.setPrivateReadIdentity('fictional-final','fictional-final-group');oldBatch({changed:false});
+ assert.equal(messages.length,0,'Dirty data from an old group must not be announced as a change in the new group');
  console.log(JSON.stringify({passed:true,realModules:true,networkRequests:0}));
 } finally {
  flight?.dispose();release?.();Object.assign(globalThis,saved);
