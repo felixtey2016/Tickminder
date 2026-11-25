@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<title>TickLearn · 自主学习平台</title>
+<link rel="icon" href="assets/ticklearn-mascot-icon.png" type="image/png">
+<script src="appearance.js?v=1"></script><link rel="stylesheet" href="styles.css?v=landing-login"><script defer src="preview.js?v=study-domain"></script></head>
+<body data-page="home" data-title="homeTitle">
+<header class="top"><div class="wrap bar">
+<a class="brand" href="index.html" data-local aria-label="TickLearn"><img class="supplied-logo" src="assets/ticklearn-mascot.webp" width="440" height="406" alt="TickLearn"></a>
+<nav data-i18n-aria="nav" aria-label="网站导航"><div class="marketing-links"><a class="nav-link" href="index.html#features" data-local data-i18n="features">学习功能</a><a class="nav-link" href="tuition.html" data-local data-i18n="tuitionNav">补习</a><a class="nav-link" href="about.html" data-local data-i18n="aboutTitle">关于我们</a><a class="nav-link" href="contact.html" data-local data-i18n="contactTitle">联系方式</a></div><button type="button" id="language" aria-haspopup="dialog" aria-controls="language-sheet" aria-expanded="false"><span id="language-label">中文</span><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6"/></svg></button><a class="login-button" href="https://study.tickminder.com/ticklearn/login" data-auth="login" data-i18n="signin">登录</a></nav></div></header>
+<main>
+<section class="hero"><div class="wrap hero-grid"><div class="hero-copy">
+<p class="hero-kicker" data-i18n="tag">SPM 自主学习平台</p>
+<h1><span  data-i18n="hero1">看懂、刷透，</span><br><em  data-i18n="hero2">玩转 SPM。</em></h1>
+<p class="hero-description" data-i18n="heroText">TickLearn 是一个自主学习平台。用 TickPlay 看教学视频、回顾重点，再用 TickQuiz 做题和查看解题步骤，按自己的进度学。</p>
+<a class="primary" href="https://study.tickminder.com/ticklearn/signup" data-auth="signup" data-i18n="learnMore">免费开始学习</a>
+</div><figure class="hero-art">
+<div class="screen screen-library"><div class="window-strip" aria-hidden="true"><i></i><i></i><i></i><span>TickPlay</span></div>
+<img src="assets/tickplay.png" width="1000" height="740" alt="TickPlay 视频库" data-i18n-alt="playAlt"></div>
+<div class="screen screen-practice iphone-preview"><div class="iphone-glass"><div class="iphone-island" aria-hidden="true"></div><img src="assets/tickquiz-phone.png" width="780" height="1688" alt="TickQuiz 作答界面" data-i18n-alt="quizAlt"><div class="iphone-home" aria-hidden="true"></div></div></div>
+<div class="screen screen-game"><div class="window-strip"><i aria-hidden="true"></i><i aria-hidden="true"></i><i aria-hidden="true"></i><span>TickGame</span></div><img src="assets/tickgame-sejarah.webp" width="1000" height="625" alt="Warisan Negara Bangsa" data-i18n-alt="gameAlt"></div>
+</figure></div></section>
+<section class="features wrap" id="features" aria-labelledby="features-heading">
+<h2 id="features-heading" data-i18n="learnTools">从看课到复习</h2>
+<div class="tabs" role="tablist" data-i18n-aria="features" aria-label="学习功能"><button id="tab-play" aria-controls="panel-play" aria-selected="true" role="tab" type="button">TickPlay</button><button id="tab-quiz" aria-controls="panel-quiz" aria-selected="false" role="tab" type="button" tabindex="-1">TickQuiz</button><button id="tab-game" aria-controls="panel-game" aria-selected="false" role="tab" type="button" tabindex="-1">TickGame</button></div>
+<article id="panel-play" class="feature feature-play" role="tabpanel" aria-labelledby="tab-play" tabindex="0">
+<div class="feature-copy"><h3  data-i18n="playHead">随时回看教学视频</h3><p  data-i18n="playText">按科目或章节找教学视频，也可以打开老师整理的播放清单，照着学习顺序复习。</p><ul><li  data-i18n="playSearch">按视频标题、科目或章节搜索</li><li  data-i18n="playPlaylist">跟着播放清单复习</li></ul><a data-product="play" class="primary" href="signup.html?next=play" data-i18n="watchNow">观看视频</a></div>
+<button class="capture" type="button" data-image="assets/tickplay.png" data-title-key="playAlt"><img src="assets/tickplay.png" width="1000" height="740" data-i18n-alt="playAlt" alt="TickPlay 视频库" loading="lazy"><span  data-i18n="expand">放大查看</span></button></article>
+<article id="panel-quiz" class="feature feature-quiz" role="tabpanel" aria-labelledby="tab-quiz" tabindex="0" hidden>
+<div class="feature-copy"><h3  data-i18n="quizHead">自主做题，看懂每一步</h3><p  data-i18n="quizText">用 TickQuiz 检查自己学会了多少。题目有附解法时，答完就可以打开解题步骤，对照自己的答案。</p><ul><li  data-i18n="quizPace">按自己的进度练习</li><li  data-i18n="quizSteps">查看答题结果和逐步解法</li></ul><a data-product="quiz" class="primary" href="signup.html?next=quiz" data-i18n="takeQuiz">开始练习</a></div>
+<button class="capture portrait" type="button" data-image="assets/tickquiz.png" data-title-key="quizAlt"><img src="assets/tickquiz.png" width="390" height="1167" data-i18n-alt="quizAlt" alt="TickQuiz 作答与解题步骤" loading="lazy"><span  data-i18n="expand">放大查看</span></button></article>
+<article id="panel-game" class="feature feature-game" role="tabpanel" aria-labelledby="tab-game" tabindex="0" hidden>
+<div class="feature-copy"><h3 data-i18n="gameHead">边玩边学，探索历史</h3><p data-i18n="gameText"></p><ul><li data-i18n="gameStory"></li><li data-i18n="gameChapter"></li></ul><a data-product="game" class="primary" href="https://tickgame.tickminder.com/" data-i18n="exploreGame">探索游戏</a></div>
+<button class="capture game-capture" type="button" data-image="assets/tickgame-sejarah.webp" data-title-key="gameAlt"><img src="assets/tickgame-sejarah.webp" width="1000" height="625" data-i18n-alt="gameAlt" alt="Warisan Negara Bangsa" loading="lazy"><span data-i18n="expand">放大查看</span></button></article>
+</section>
+<section class="account-section" id="start"><div class="wrap start-box"><div><h2  data-i18n="startTitle">注册后开始学习</h2><p  data-i18n="startText">创建账号后，直接打开视频库或开始做题。</p></div><a class="primary" href="https://study.tickminder.com/ticklearn/signup" data-auth="signup" data-i18n="freeSignup">免费注册账号</a></div></section>
+
+</main>
+<dialog id="capture-dialog" class="capture-dialog" aria-labelledby="capture-title">
+<div class="capture-dialog-header"><h2 id="capture-title"></h2><button class="dialog-close" type="button" data-close aria-label="关闭" data-i18n-aria="close">×</button></div><img id="capture-image" alt=""></dialog>
+<footer class="wrap footer"><span>TickLearn · by Tickminder</span><a class="footer-link" data-local href="terms.html" data-i18n="termsTitle">条款与条件</a></footer>
+<a class="whatsapp-float" data-whatsapp aria-disabled="true" data-i18n="whatsappMore">WhatsApp · 了解更多</a>
+<dialog class="marketing-language-sheet" id="language-sheet" aria-labelledby="language-heading"><div class="marketing-language-head"><h2 id="language-heading" data-i18n="languageTitle">语言</h2><button type="button" data-language-close data-i18n-aria="close" aria-label="关闭">×</button></div><div class="marketing-language-choices"><button type="button" data-language-choice="zh" aria-pressed="true"><span>中文</span><svg aria-hidden="true" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m5 12 4.5 4.5L19 7"/></svg></button><button type="button" data-language-choice="en" aria-pressed="false"><span>English</span><svg aria-hidden="true" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m5 12 4.5 4.5L19 7"/></svg></button><button type="button" data-language-choice="ms" aria-pressed="false"><span>Melayu</span><svg aria-hidden="true" width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m5 12 4.5 4.5L19 7"/></svg></button></div></dialog>
+</body></html>
