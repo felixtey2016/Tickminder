@@ -98,6 +98,15 @@ try {
  uploadBody.enqueue(new TextEncoder().encode('{"id":"old-permission-image"}'));uploadBody.close();
  assert.equal((await lateJson).error?.name,'PrivateReadInvalidatedError','Late upload JSON after revocation cannot be cached');
  api.completePrivateAuthCheck('fictional-rebound','fictional-other');
+ const cache=new Map(),waiting=[];
+ const switchedBatch=observed(api.uploadQuizImages(entries,cache,()=>new Promise(resolve=>waiting.push(resolve))));
+ while(waiting.length<3)await new Promise(resolve=>setImmediate(resolve));
+ api.setPrivateReadIdentity('fictional-next','fictional-next-group');
+ waiting.forEach(resolve=>resolve('fictional-old-scope-id'));
+ const switched=await Promise.race([switchedBatch,new Promise(resolve=>setTimeout(()=>resolve({error:new Error('Old batch still running')}),30))]);
+ assert.equal(switched.error?.name,'PrivateReadInvalidatedError','Identity switch stops new queued uploads and rejects batch');
+ assert.equal(waiting.length,3,'No queued image may start under the next group using an old draft');
+ assert.equal(cache.size,0,'Old-identity successes are not retained for retry');
  console.log(JSON.stringify({passed:true,realModules:true,networkRequests:0}));
 } finally {
  flight?.dispose();release?.();Object.assign(globalThis,saved);
