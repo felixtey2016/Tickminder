@@ -1,0 +1,9 @@
+.course-setup-progress{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;list-style:none;padding:0;margin:0 0 16px;font-size:.8rem}
+.course-setup-progress li{padding:10px;border:1px solid var(--border,#dce3ea);border-radius:10px;overflow-wrap:anywhere}
+.course-setup-progress li[aria-current=step]{border-color:var(--primary,#1d4ed8);font-weight:700}
+.course-setup-progress li[data-complete=true]{background:var(--muted,#f1f5f9)}
+.course-setup-dialog .subject-edit-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.course-setup-dialog .billing-rate-editor{min-width:0}
+.course-setup-dialog .billing-rate-history li{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}
+.course-setup-dialog .billing-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:12px}
+.course-setup-dialog .course-setup-result p{overflow-wrap:anywhere}

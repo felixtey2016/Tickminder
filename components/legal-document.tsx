@@ -1,5 +1,8 @@
 import { BRAND_NAME } from "@/lib/brand";
 import { LEGAL_CONTACT, LEGAL_VERSION, SERVICE_OPERATOR, termsContent, privacyContent, type LegalLanguage } from "@/lib/legal-content";
+import { ChevronDown } from "lucide-react";
+import { AppearanceToggle } from "./appearance-toggle";
+import "./legal-document.css";
 
 const labels = {
   zh: { back: "返回应用", updated: "更新日期", operator: "运营者", contact: "联系邮箱", contents: "目录", terms: "服务条款", privacy: "隐私政策", language: "页面语言" },
@@ -11,14 +14,16 @@ export function LegalDocument({ document, language }: { document: "terms" | "pri
   const lang = document === "terms" && language === "ms" ? "en" : language;
   const copy = document === "terms" ? termsContent[lang as "zh" | "en"] : privacyContent[lang];
   const text = labels[lang];
-  return <main className="legal-shell" lang={lang === "zh" ? "zh-CN" : lang}>
-    <header className="legal-topbar"><a href="/" className="legal-brand"><img src="/tickminder-logo.svg" width="36" height="36" alt=""/><strong>{BRAND_NAME}</strong></a><a className="legal-back" href="/">← {text.back}</a></header>
+  const contents = copy.sections.map((section, i) => <a href={`#section-${i + 1}`} key={section.title}>{section.title}</a>);
+  return <main className="legal-shell legal-reader" lang={lang === "zh" ? "zh-CN" : lang}>
+    <header className="legal-topbar"><a href="/" className="legal-brand"><img src="/tickminder-logo.svg" width="36" height="36" alt=""/><strong>{BRAND_NAME}</strong></a><div className="legal-topbar-tools"><AppearanceToggle language={lang === "zh" ? "zh" : "en"}/><a className="legal-back" href="/">← {text.back}</a></div></header>
     <article className="legal-paper">
       <div className="legal-document-head"><p className="eyebrow">{BRAND_NAME}</p><h1>{copy.title}</h1><p className="legal-summary">{copy.summary}</p>
         <div className="legal-meta"><span>{text.updated}: {LEGAL_VERSION}</span><span>{text.operator}: {SERVICE_OPERATOR}</span></div>
         <nav className="legal-languages" aria-label={text.language}>{(["zh", "en", ...(document === "privacy" ? ["ms"] : [])] as LegalLanguage[]).map(item => <a key={item} href={`/${document}?lang=${item}`} aria-current={lang === item ? "page" : undefined}>{item === "zh" ? "中文" : item === "en" ? "English" : "Bahasa Melayu"}</a>)}</nav>
       </div>
-      <nav className="legal-contents" aria-label={text.contents}><strong>{text.contents}</strong>{copy.sections.map((section, i) => <a href={`#section-${i + 1}`} key={section.title}>{section.title}</a>)}</nav>
+      <nav className="legal-contents legal-contents-desktop" aria-label={text.contents}><strong>{text.contents}</strong>{contents}</nav>
+      <details className="legal-contents-mobile"><summary><span>{text.contents} · {copy.sections.length}</span><ChevronDown size={18} aria-hidden="true"/></summary><nav aria-label={text.contents}>{contents}</nav></details>
       <div className="legal-sections">{copy.sections.map((section, i) => <section id={`section-${i + 1}`} key={section.title}><h2>{section.title}</h2>{section.paragraphs.map(paragraph => <p key={paragraph}>{paragraph}</p>)}</section>)}</div>
       <footer className="legal-document-footer"><p>{text.contact}: <a href={`mailto:${LEGAL_CONTACT}`}>{LEGAL_CONTACT}</a></p><nav aria-label={text.contents}><a href={`/terms?lang=${lang === "ms" ? "en" : lang}`}>{text.terms}</a><a href={`/privacy?lang=${lang}`}>{text.privacy}</a><a href="/">{text.back}</a></nav></footer>
     </article>

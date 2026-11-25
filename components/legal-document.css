@@ -1,0 +1,35 @@
+/* Shared reading surface for every legal document and language. Body copy stays intact. */
+.legal-shell.legal-reader{min-height:100dvh;padding:0 24px 40px;background:var(--ui-bg);color:var(--ui-text);overflow-wrap:anywhere}
+.legal-reader *{box-sizing:border-box}
+.legal-reader .legal-topbar{max-width:960px;padding:20px 0;gap:12px;flex-wrap:wrap}
+.legal-reader .legal-brand{color:var(--ui-brand-ink);font-size:22px;min-width:0}
+.legal-reader .legal-brand img{flex:none}
+.legal-reader .legal-topbar-tools{display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+.legal-reader .legal-back{display:inline-flex;align-items:center;min-height:44px;color:var(--ui-accent);font-size:14px}
+.legal-reader .legal-paper{max-width:960px;padding:32px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface);box-shadow:none}
+.legal-reader .legal-document-head h1{margin:8px 0 14px;color:var(--ui-text);font-size:clamp(28px,4vw,36px)}
+.legal-reader .legal-document-head .eyebrow{color:var(--ui-muted);font-size:13px}
+.legal-reader .legal-summary{color:var(--ui-muted);font-size:16px;line-height:1.75}
+.legal-reader .legal-meta{gap:6px 20px;color:var(--ui-muted);font-size:13px;margin-top:16px}
+.legal-reader .legal-languages{gap:8px;margin-top:16px}
+.legal-reader .legal-languages a{display:inline-flex;align-items:center;min-height:44px;padding:8px 12px;border-color:var(--ui-border);border-radius:6px;color:var(--ui-accent);font-size:14px}
+.legal-reader .legal-languages a[aria-current=page]{background:var(--ui-accent-soft);border-color:var(--ui-accent);color:var(--ui-accent)}
+.legal-reader .legal-contents{grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 20px;background:var(--ui-surface-muted);border-color:var(--ui-border);border-radius:8px;padding:16px 20px;margin:24px 0;font-size:14px}
+.legal-reader .legal-contents>strong{grid-column:1/-1;color:var(--ui-text);padding-bottom:4px}
+.legal-reader :is(.legal-contents,.legal-contents-mobile) a{display:flex;align-items:center;min-height:44px;color:var(--ui-accent);text-decoration:none;line-height:1.6;overflow-wrap:anywhere}
+.legal-reader :is(.legal-contents,.legal-contents-mobile) a:hover{text-decoration:underline}
+.legal-reader .legal-contents-mobile{display:none;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface-muted);margin:20px 0}
+.legal-reader .legal-contents-mobile>summary{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:48px;padding:12px 16px;cursor:pointer;list-style:none;font-size:14px;font-weight:600;color:var(--ui-text)}
+.legal-reader .legal-contents-mobile>summary::-webkit-details-marker{display:none}
+.legal-reader .legal-contents-mobile>summary svg{flex-shrink:0;color:var(--ui-muted)}
+.legal-reader .legal-contents-mobile[open]>summary svg{transform:rotate(180deg)}
+.legal-reader .legal-contents-mobile>nav{border-top:1px solid var(--ui-border);padding:8px 16px 12px;font-size:14px}
+.legal-reader .legal-contents-mobile[open]>nav{display:grid;gap:4px}
+.legal-reader .legal-sections section{scroll-margin-top:20px;margin-top:28px}
+.legal-reader .legal-sections h2{font-size:20px;line-height:1.5;color:var(--ui-text);margin-bottom:12px;overflow-wrap:anywhere}
+.legal-reader .legal-sections p{font-size:16px;line-height:1.8;color:var(--ui-text);margin:12px 0}
+.legal-reader .legal-document-footer{margin-top:32px;padding-top:20px;border-color:var(--ui-border);color:var(--ui-muted)}
+.legal-reader .legal-document-footer a{display:inline-flex;align-items:center;min-height:44px;color:var(--ui-accent)}
+.legal-reader :is(a,summary,button):focus-visible{outline:2px solid var(--ui-accent);outline-offset:3px;border-radius:4px}
+@media(max-width:650px){.legal-shell.legal-reader{padding:0 16px 28px}.legal-reader .legal-topbar{padding:16px 0}.legal-reader .legal-brand{font-size:20px}.legal-reader .legal-paper{padding:20px 16px}.legal-reader .legal-contents-desktop{display:none}.legal-reader .legal-contents-mobile{display:block}.legal-reader .legal-meta{flex-direction:column;gap:6px}.legal-reader .legal-document-head h1{font-size:28px}.legal-reader .legal-sections h2{font-size:19px}}
+@media print{.legal-shell.legal-reader{padding:0;background:#fff;color:#222}.legal-reader .legal-paper{max-width:none;padding:0;border:0;background:#fff}.legal-reader :is(.legal-topbar-tools,.legal-languages,.legal-contents-desktop,.legal-contents-mobile){display:none}.legal-reader .legal-brand,.legal-reader .legal-document-head h1,.legal-reader .legal-sections :is(h2,p){color:#222}.legal-reader :is(.legal-summary,.legal-meta,.legal-document-footer){color:#444}.legal-reader .legal-document-footer a{color:#222}}

@@ -1,20 +1,24 @@
+import {groupWhere} from "@/lib/group-data";
 import { eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { plans, students, teachers } from "@/db/schema";
 
-export async function readRoster(account?: { role: string; teacherName: string | null; studentName: string | null }) {
+export async function readRoster(account: {groupId:string|null; role: string; teacherName: string | null; studentName: string | null }) {
   const db = getDb();
   const planFilter = account?.role === "teacher" ? eq(plans.teacherName, account.teacherName || "") : account?.role === "student" ? eq(plans.student, account.studentName || "") : undefined;
   const [teacherRows, studentRows, planRows] = await Promise.all([
-    db.select().from(teachers).where(planFilter ? inArray(teachers.name, db.select({name: plans.teacherName}).from(plans).where(planFilter)) : undefined).all(),
-    db.select().from(students).where(planFilter ? inArray(students.name, db.select({name: plans.student}).from(plans).where(planFilter)) : undefined).all(),
-    db.select().from(plans).where(planFilter).all(),
+    db.select().from(teachers).where(groupWhere(teachers,account.groupId,planFilter ? inArray(teachers.name, db.select({name: plans.teacherName}).from(plans).where(groupWhere(plans,account.groupId,planFilter))) : undefined)).all(),
+    db.select().from(students).where(groupWhere(students,account.groupId,planFilter ? inArray(students.name, db.select({name: plans.student}).from(plans).where(groupWhere(plans,account.groupId,planFilter))) : undefined)).all(),
+    db.select().from(plans).where(groupWhere(plans,account.groupId,planFilter)).all(),
   ]);
   const activeTeachers = new Set(teacherRows.filter(t => t.active).map(t => t.name));
   const activeStudents = new Set(studentRows.filter(s => s.active).map(s => s.name));
+  const profiles = new Map(studentRows.map(student=>[student.name,student]));
+  const academic = (student:string)=>({syllabusId:profiles.get(student)?.syllabusId||"spm",grade:profiles.get(student)?.grade||null,age:profiles.get(student)?.age??null});
   return {
     teachers: [...activeTeachers].sort(),
     plans: planRows.filter(p => p.active && activeStudents.has(p.student) && activeTeachers.has(p.teacherName)).map(p => ({
+      ...academic(p.student),subjectId:p.subjectId,
       key: p.key,
       student: p.student,
       subject: p.subject,
@@ -25,6 +29,6 @@ export async function readRoster(account?: { role: string; teacherName: string |
     allTeachers: teacherRows,
     students: [...activeStudents].sort(),
     allStudents: studentRows.sort((a, b) => a.name.localeCompare(b.name)),
-    allPlans: planRows,
+    allPlans: planRows.map(plan=>({...plan,...academic(plan.student)})),
   };
 }

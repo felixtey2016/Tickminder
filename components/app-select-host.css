@@ -1,0 +1,56 @@
+.app-select-overlay{position:fixed;inset:0;z-index:1600;background:transparent;}
+.app-select-overlay.is-mobile{background:rgba(27,23,39,.29);}
+.dark .app-select-overlay.is-mobile{background:rgba(5,7,12,.46);}
+div.app-select-panel[role=dialog]{position:fixed;z-index:1601;display:flex;flex-direction:column;gap:0;box-sizing:border-box;margin:0;padding:12px;overflow:hidden;transform:none;outline:0;border:1px solid var(--ui-border,#dddfe7);border-radius:12px;background:var(--ui-surface,#fff);color:var(--ui-text,#252334);box-shadow:0 8px 28px #090b161c;font-family:inherit;font-size:16px;line-height:1.5;}
+div.app-select-panel.is-mobile[role=dialog]{padding:0 18px max(14px,env(safe-area-inset-bottom));border-bottom:0;border-radius:23px 23px 0 0;box-shadow:0 -8px 24px #090b1610;}
+.app-select-handle{display:none;}
+.is-mobile>.app-select-handle{display:block;flex:0 0 4px;width:32px;height:4px;border-radius:4px;background:var(--ui-border,#dddfe7);margin:10px auto 5px;}
+.app-select-panel .app-select-heading{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;gap:12px;min-height:50px;margin:0 0 8px;padding:0 2px;}
+.app-select-panel.is-mobile .app-select-heading{min-height:58px;}
+.app-select-panel .app-select-heading h2{margin:0;font-size:19px;font-weight:650;line-height:1.4;overflow-wrap:anywhere;}
+.app-select-panel.is-mobile .app-select-heading h2{font-size:21px;}
+.app-select-panel button.app-select-close{display:flex;flex:0 0 44px;align-items:center;justify-content:center;min-width:44px;width:44px;min-height:44px;height:44px;margin:0 -5px 0 0;padding:0;border:0;border-radius:8px;background:transparent;color:var(--ui-muted,#626575);box-shadow:none;cursor:pointer;}
+.app-select-panel .app-select-search{display:flex;flex:0 0 auto;align-items:center;gap:10px;min-height:48px;margin-bottom:12px;padding:0 13px;border:1px solid var(--ui-border,#dddfe7);border-radius:10px;background:var(--ui-bg,#f4f3f7);color:var(--ui-muted,#626575);}
+.app-select-panel .app-select-search svg{flex:0 0 19px;}
+div.app-select-panel[role=dialog] .app-select-search input[type=search]{flex:1;box-sizing:border-box;min-width:0;max-width:100%;width:100%;height:46px;min-height:46px;padding:8px 0;margin:0;border:0;border-radius:0;outline:0;background:transparent;color:var(--ui-text,#252334);box-shadow:none;font:inherit;font-size:16px;}
+.app-select-panel .app-select-search input::placeholder{color:var(--ui-muted,#626575);opacity:1;}
+.app-select-panel .app-select-search:focus-within{outline:2px solid var(--ui-accent,#6547c6);outline-offset:1px;}
+.app-select-options{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scroll-padding-block:4px;-webkit-overflow-scrolling:touch;}
+.app-select-item+.app-select-item{margin-top:8px;}
+.app-select-panel button.app-select-option{display:flex;align-items:center;justify-content:space-between;gap:12px;box-sizing:border-box;width:100%;min-height:48px;height:auto;margin:0;padding:11px 14px;border:1px solid var(--ui-border,#dddfe7);border-radius:12px;background:var(--ui-surface,#fff);color:var(--ui-text,#252334);font:inherit;font-size:16px;font-weight:400;line-height:1.5;text-align:start;box-shadow:none;cursor:pointer;white-space:normal;}
+.app-select-panel.is-mobile button.app-select-option{min-height:58px;padding:14px;}
+.app-select-option>span{min-width:0;overflow-wrap:anywhere;}.app-select-option>svg{flex:0 0 21px;}
+.app-select-panel button.app-select-option.is-selected{border-color:color-mix(in srgb,var(--ui-accent,#6547c6) 45%,var(--ui-border,#dddfe7));background:var(--ui-accent-soft,#eee9fb);color:var(--ui-accent,#6547c6);font-weight:600;}
+.app-select-panel button.app-select-option:disabled{opacity:.5;cursor:not-allowed;}
+.app-select-panel button:focus{outline:0;}
+.app-select-panel.is-keyboard button:focus-visible{outline:2px solid var(--ui-accent,#6547c6);outline-offset:-3px;}
+.app-select-panel .app-select-group{padding:12px 12px 4px;font-size:13px;font-weight:600;color:var(--ui-muted,#626575);overflow-wrap:anywhere;}
+.app-select-panel .app-select-empty{padding:20px 10px;margin:0;text-align:center;color:var(--ui-muted,#626575);}
+@media(hover:hover){.app-select-panel button.app-select-option:not(:disabled):not(.is-selected):hover,.app-select-panel button.app-select-close:hover{background:var(--ui-surface-muted,#f1eff5);}}
+@media(forced-colors:active){.app-select-panel button.app-select-option.is-selected{outline:2px solid Highlight;outline-offset:-2px;}.app-select-panel button.app-select-option:disabled{color:GrayText;}}
+
+/* Keep the native form control; replace only its closed-field indicator.
+   These longhands intentionally outrank legacy field background/padding shorthands. */
+:root{--app-select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23626575' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");}
+.dark{--app-select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a8b1bf' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");}
+select:where(:not([multiple])):where(:not([size]),[size="0"],[size="1"]):not([data-native-select="true"],[data-native-select="true"] select,[aria-hidden="true"]){
+ -webkit-appearance:none;appearance:none;
+ padding-inline-end:52px!important;
+ background-image:var(--app-select-chevron)!important;
+ background-position:right 16px center!important;
+ background-size:20px 20px!important;
+ background-repeat:no-repeat!important;
+}
+/* The optional component already supplies a real SVG. Do not draw it twice. */
+[data-slot="native-select-wrapper"] select[data-slot="native-select"]{background-image:none!important;}
+[data-slot="native-select-icon"]{right:16px;width:20px;height:20px;opacity:1;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;color:var(--ui-muted,#626575);}
+[data-slot="select-trigger"]{padding-inline-end:16px;}
+[data-slot="select-trigger"]>svg:last-child{width:20px;height:20px;opacity:1;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;color:var(--ui-muted,#626575);}
+
+/* Compact language controls retain enough space for Chinese and English labels. */
+.app-shell.shell-wave1 select.shell-language{width:84px;min-width:84px;padding-inline-start:9px;padding-inline-end:36px!important;background-position:right 12px center!important;background-size:16px 16px!important;}
+@media(max-width:380px){.app-shell.shell-wave1 select.shell-language{width:78px;min-width:78px;padding-inline-start:6px;}}
+@media(forced-colors:active){
+ select:where(:not([multiple])):where(:not([size]),[size="0"],[size="1"]):not([data-native-select="true"],[data-native-select="true"] select,[aria-hidden="true"]){-webkit-appearance:auto!important;appearance:auto!important;background-image:none!important;}
+ [data-slot="native-select-icon"]{display:none;}
+}

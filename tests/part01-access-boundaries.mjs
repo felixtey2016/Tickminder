@@ -1,0 +1,138 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import {pathToFileURL} from 'node:url';
+import {DatabaseSync} from 'node:sqlite';
+import ts from 'typescript';
+import {drizzle} from 'drizzle-orm/d1';
+process.on('uncaughtException',error=>{console.error(error.name+': '+error.message);console.error(String(error.stack).split('\n').filter(line=>!line.includes('data:text/')).slice(0,8).join('\n'));process.exit(1);});
+
+const sqlite=new DatabaseSync(':memory:');
+const fixtureOwnerEmail='platform-owner@example.test';
+const configuredOwnerEmail=fs.readFileSync(new URL('../lib/owner.ts',import.meta.url),'utf8').match(/export const OWNER_EMAIL\s*=\s*"([^"]+)";/)?.[1];
+assert(configuredOwnerEmail,'Owner constant is required for the isolated identity fixture');
+const migrations=fs.readdirSync(new URL('../drizzle/',import.meta.url)).filter(n=>n.endsWith('.sql')).sort();
+for(const file of migrations)sqlite.exec(fs.readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8').replaceAll(configuredOwnerEmail,fixtureOwnerEmail));
+function statement(sql,values=[]) {
+  const execute=arrays=>{const st=sqlite.prepare(sql);if(arrays)st.setReturnArrays(true);const reading=st.columns().length>0;return reading?{results:st.all(...values),meta:{changes:0}}:{results:[],meta:st.run(...values)};};
+  return {bind:(...v)=>statement(sql,v),all:async()=>execute(false),raw:async()=>execute(true).results,first:async()=>execute(false).results[0]||null,run:async()=>execute(false),execute:()=>execute(false)};
+}
+const d1={prepare:statement,batch:async stmts=>{sqlite.exec('BEGIN');try{const results=stmts.map(s=>s.execute());sqlite.exec('COMMIT');return results;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
+const objects=new Map(),bucket={put:async(k,b)=>objects.set(k,Buffer.from(b)),delete:async k=>objects.delete(k),get:async k=>objects.has(k)?{body:objects.get(k),size:objects.get(k).length,httpMetadata:{contentType:'application/pdf'}}:null};
+let cookieValues={},requestHeaders=new Headers(),googleProfile=null;
+class JsonResponse extends Response {static json(data,options){const r=new JsonResponse(JSON.stringify(data),{...options,headers:{'content-type':'application/json',...options?.headers}});r.cookies={set:(name,value)=>cookieValues[name]=value,delete:name=>delete cookieValues[name]};return r;}}
+const runtime={env:{DB:d1,BUCKET:bucket,GOOGLE_CLIENT_ID:'fixture-client'},cookies:async()=>({get:name=>cookieValues[name]?{value:cookieValues[name]}:undefined}),headers:async()=>requestHeaders,NextResponse:JsonResponse};
+globalThis.__groups=runtime;
+const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'tickminder-groups-')),stubPath=path.join(temporary,'runtime.mjs');
+process.once('exit',()=>{const resolved=path.resolve(temporary);if(path.dirname(resolved)===path.resolve(os.tmpdir())&&path.basename(resolved).startsWith('tickminder-groups-'))fs.rmSync(resolved,{recursive:true,force:true});});
+fs.writeFileSync(stubPath,'export const {env,cookies,headers,NextResponse}=globalThis.__groups;export let StaleSessionCredentialError;export function connectFixtureAuth(){StaleSessionCredentialError=globalThis.__groups.StaleSessionCredentialError;}'+['getDb','currentAccount','currentIdentity','currentBusinessAccount','createSession','hashToken','verifyGoogleCredential'].map(name=>`export const ${name}=(...args)=>globalThis.__groups.${name}(...args);`).join(''));
+const stub=pathToFileURL(stubPath).href,cache=new Map();
+// Run the real owner-check algorithm with a fictional identity constant.
+function compile(file){if(cache.has(file))return cache.get(file);const output=path.join(temporary,file.replace(/\.ts$/,'.mjs')),url=pathToFileURL(output).href;cache.set(file,url);let source=fs.readFileSync(new URL('../'+file,import.meta.url),'utf8');if(file==='lib/owner.ts')source=source.replace(/(export const OWNER_EMAIL\s*=\s*)"[^"]+";/,(_,prefix)=>prefix+JSON.stringify(fixtureOwnerEmail)+';');for(const [,spec]of [...source.matchAll(/from ["']([^"']+)["']/g)]){const replacement=['cloudflare:workers','next/headers','next/server','@/db','@/lib/auth'].includes(spec)?stub:spec.startsWith('@/')?compile(spec.slice(2)+'.ts'):spec.startsWith('.')?compile(path.posix.normalize(path.posix.join(path.posix.dirname(file),spec))+(spec.endsWith('.ts')?'':'.ts')):import.meta.resolve(spec);source=source.replaceAll('"'+spec+'"','"'+replacement+'"').replaceAll("'"+spec+"'","'"+replacement+"'");}fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText);return url;}
+async function load(file){const url=compile(file);return{url,module:await import(url)};}
+
+const schema=(await load('db/schema.ts')).module;runtime.getDb=()=>drizzle(d1,{schema});
+const auth=(await load('lib/auth.ts')).module;Object.assign(runtime,auth);(await import(stub)).connectFixtureAuth();runtime.verifyGoogleCredential=async()=>{if(!googleProfile)throw Error('No verified fixture identity');return googleProfile;};
+const pw=(await load('lib/password.ts')).module;
+const now=new Date().toISOString(),password='Fixture-pass-123',passwordHash=await pw.hashPassword(password);
+sqlite.prepare("INSERT INTO tuition_groups(id,name,join_code,created_at,updated_at) VALUES('school-b','Test School B','school-b',?,?)").run(now,now);
+for(const group of ['next-genn-edu','school-b']) {
+  sqlite.prepare('INSERT INTO teachers(group_id,name,created_at) VALUES(?,?,?)').run(group,'Teacher Same',now);
+  sqlite.prepare('INSERT INTO students(group_id,name,name_key,created_at,grade) VALUES(?,?,?,?,?)').run(group,'Student Same','studentsame',now,'Form 3');
+  sqlite.prepare('INSERT INTO plans(group_id,key,student,subject,teacher_name,created_at,subject_id) VALUES(?,?,?,?,?,?,?)').run(group,'Student Same|Science','Student Same','Science','Teacher Same',now,'science');
+  for(const [suffix,role]of [['admin','admin'],['teacher','teacher'],['student','student'],['pending','pending']]) {
+    const id=group+'-'+suffix;
+    sqlite.prepare('INSERT INTO accounts(group_id,id,email,name,role,teacher_name,student_name,created_at,name_confirmed_at,activated_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(group,id,id+'@example.test',id,role,role==='teacher'?'Teacher Same':null,role==='student'?'Student Same':null,now,now,role==='pending'?null:now);
+    sqlite.prepare('INSERT INTO local_credentials(account_id,username,password_hash,must_change_password,updated_at) VALUES(?,?,?,0,?)').run(id,id,passwordHash,now);
+  }
+}
+sqlite.prepare("INSERT INTO accounts(group_id,id,email,name,role,created_at,name_confirmed_at,activated_at) VALUES(NULL,'owner',?,'Platform Owner','admin',?,?,?)").run(fixtureOwnerEmail,now,now,now);
+sqlite.prepare("INSERT INTO local_credentials(account_id,username,password_hash,must_change_password,updated_at) VALUES('owner','owner',?,0,?)").run(passwordHash,now);
+async function login(id,groupHeader) {
+  const token='fixture-session-'+crypto.randomUUID();cookieValues.tuition_session=token;requestHeaders=new Headers(groupHeader?{'x-tickminder-group':groupHeader}:{});
+  sqlite.prepare('INSERT INTO sessions(token_hash,account_id,expires_at) VALUES(?,?,?)').run(await auth.hashToken(token),id,new Date(Date.now()+86400000).toISOString());
+}
+const routes={};for(const name of ['groups','state','action','classrooms','learning','files','manage','conflicts','lesson-history','notifications','auth','sheet-sync'])routes[name]=(await load('app/api/'+name+'/route.ts')).module;
+const fileRoute=(await load('app/api/files/[id]/route.ts')).module;
+const learning=(await load('lib/learning-server.ts')).module;
+const groupData=(await load('lib/group-data.ts')).module;
+const engine=(await load('lib/notifications-server.ts')).module;
+function req(name,body,query='') {return new Request('https://test.invalid/api/'+name+query,body?{method:'POST',headers:{origin:'https://test.invalid','content-type':'application/json'},body:JSON.stringify(body)}:{});}
+async function call(name,body,query=''){const response=await routes[name][body?'POST':'GET'](req(name,body,query));const data=await response.json();return{status:response.status,data};}
+const ok=async(name,body,query)=>{const r=await call(name,body,query);assert.equal(r.status,200,JSON.stringify({name,status:r.status,data:r.data}));return r.data;};
+const deny=async(name,body,query)=>{const r=await call(name,body,query);assert.ok([400,401,403,404,409,503].includes(r.status),JSON.stringify({name,...r}));return r;};
+
+// Additional Part 01 boundaries run with real identity resolution and handlers.
+// All identities/data are fictional; outbound requests are denied. The retired
+// Sheet bridge returns only a constant 410 without reading identity or data.
+for(const name of ['account-setup','academic-catalogues','student-promotions','class-sessions','attendance','revision','folders','quiz-practice','quizzes','quiz-images','learning/versions','learning/review'])routes[name]=(await load('app/api/'+name+'/route.ts')).module;
+let checks=0;
+function check(value,label){assert.ok(value,label);checks++;}
+const business=[['state',null,'?scope=core'],['revision'],['class-sessions'],['attendance',null,'?sessionId=foreign'],['learning/versions',null,'?kind=homework&id=foreign'],['learning/review',null,'?homeworkId=foreign'],['quizzes',null,'?bank=1'],['quiz-practice'],['quiz-images',null,'?id=foreign'],['academic-catalogues',null,'?scope=quiz'],['student-promotions',null,'?cycle=2032'],['notifications'],['lesson-history',null,'?lessonId=foreign'],['action',{action:'create'}],['classrooms',{action:'saveClassroom'}],['learning',{action:'submitHomework'}],['folders',{action:'create'}],['manage',{action:'permanentDelete'}],['conflicts',{action:'edit'}],['files',{}],['quizzes',{action:'save'}],['quiz-practice',{action:'start'}],['quiz-images',{}],['academic-catalogues',{scope:'quiz'}],['student-promotions',{}],['sheet-sync',{action:'preview',mode:'billable'}]];
+async function businessDenied(label){for(const[name,body,query]of business){const result=await call(name,body,query||'');check((name==='sheet-sync'?[410]:[401,403]).includes(result.status),`${label}: ${name} ${body?'POST':'GET'} rejected, got ${result.status}`);if(name==='sheet-sync')check(result.data.code==='integration_retired','Retired endpoint exposes no business response');}}
+cookieValues={};requestHeaders=new Headers();await businessDenied('anonymous');
+await login('next-genn-edu-admin');sqlite.prepare('UPDATE accounts SET disabled_at=? WHERE id=?').run(now,'next-genn-edu-admin');await businessDenied('disabled old session');sqlite.prepare('UPDATE accounts SET disabled_at=NULL WHERE id=?').run('next-genn-edu-admin');
+await login('next-genn-edu-admin');sqlite.prepare('UPDATE local_credentials SET must_change_password=1 WHERE account_id=?').run('next-genn-edu-admin');await businessDenied('initial-password gate');sqlite.prepare('UPDATE local_credentials SET must_change_password=0 WHERE account_id=?').run('next-genn-edu-admin');
+await login('next-genn-edu-admin','school-b');await businessDenied('forged group header');
+await login('next-genn-edu-admin');sqlite.prepare('UPDATE sessions SET expires_at=? WHERE account_id=?').run('2000-01-01T00:00:00Z','next-genn-edu-admin');await businessDenied('expired old session');
+await login('next-genn-edu-pending');sqlite.prepare('UPDATE accounts SET pending_expires_at=? WHERE id=?').run('2000-01-01T00:00:00Z','next-genn-edu-pending');await businessDenied('expired pending');
+await login('next-genn-edu-admin');sqlite.prepare('UPDATE tuition_groups SET active=0 WHERE id=?').run('next-genn-edu');await businessDenied('paused group old session');sqlite.prepare('UPDATE tuition_groups SET active=1 WHERE id=?').run('next-genn-edu');
+
+// Shared catalogues intentionally readable across groups and roles. The two
+// catalogue scopes stay separate; no non-owner can update global menus.
+for(const group of ['next-genn-edu','school-b'])for(const role of ['admin','teacher','student']){await login(group+'-'+role);const result=await call('academic-catalogues',null,'?scope=quiz');check(result.status===200&&!result.data.canManage,'authenticated shared catalogue '+group+' '+role);const denied=await call('academic-catalogues',{scope:'quiz',expectedRevision:1,syllabuses:[]});check(denied.status===403,'non-owner catalogue write');}
+await login('owner','school-b');check((await ok('academic-catalogues',null,'?scope=student')).canManage,'Owner scope switch retains global catalogue authority');
+// Fake actor IDs and body group IDs cannot confer platform ownership.
+await login('school-b-admin');check((await call('academic-catalogues',{scope:'quiz',actorId:'owner',groupId:'next-genn-edu',expectedRevision:1,syllabuses:[]})).status===403,'forged catalogue actor');
+for(const name of ['quizzes','quiz-practice','classrooms','folders','action','learning','manage','conflicts','student-promotions','academic-catalogues','notifications','files','quiz-images','sheet-sync']){const r=await routes[name].POST(new Request('https://test.invalid/api/'+name,{method:'POST',headers:{origin:'https://other.invalid','content-type':'application/json'},body:'{}'}));check(r.status===(name==='sheet-sync'?410:403),'cross-origin cannot write '+name);}
+
+// Even retained old credentials cannot revive a retired integration.
+Object.assign(runtime.env,{SHEET_SYNC_URL:'https://script.google.com/macros/s/fictional-test/exec',SHEET_SYNC_SECRET:'fictional-test-secret-at-least-32-characters'});
+let bridgeCalls=0;globalThis.fetch=async()=>{bridgeCalls++;throw Error('Outbound network is forbidden');};
+for(const id of ['school-b-admin','owner','next-genn-edu-admin','next-genn-edu-teacher']){
+ await login(id,id==='owner'?'school-b':undefined);
+ for(const action of ['preview','commit'])check((await call('sheet-sync',{action,mode:'billable',groupId:'next-genn-edu'})).status===410,'retired bridge '+id+' '+action);
+}
+check(bridgeCalls===0,'No identity can contact the retired Sheet');
+
+// Google password setup uses stored group ownership even with a forged header.
+const setupId='fictional-google-group-b';sqlite.prepare('INSERT INTO accounts(id,email,name,role,group_id,created_at,pending_expires_at) VALUES(?,?,?,?,?,?,?)').run(setupId,setupId+'@example.test','Google Setup','pending','school-b',now,new Date(Date.now()+86400000).toISOString());
+sqlite.prepare('INSERT INTO google_identities(subject,account_id,email,linked_at) VALUES(?,?,?,?)').run(setupId,setupId,setupId+'@example.test',now);
+await login(setupId,'next-genn-edu');check((await call('account-setup',{username:'fictional.setup.b',password:'Fictional-new-pass-123'})).status===200,'Google setup works before business access');
+const setupAudit=sqlite.prepare("SELECT group_id FROM audit WHERE actor_id=? AND action='setupCredentials'").all(setupId);check(setupAudit.length===1&&setupAudit[0].group_id==='school-b','setup audit belongs only to stored Group B');
+const rejectedId='fictional-google-revoked';sqlite.prepare('INSERT INTO accounts(id,email,name,role,group_id,created_at,pending_expires_at) VALUES(?,?,?,?,?,?,?)').run(rejectedId,rejectedId+'@example.test','Revoked Setup','pending','school-b',now,new Date(Date.now()+86400000).toISOString());sqlite.prepare('INSERT INTO google_identities(subject,account_id,email,linked_at) VALUES(?,?,?,?)').run(rejectedId,rejectedId,rejectedId+'@example.test',now);
+await login(rejectedId);const originalBatch=d1.batch;d1.batch=async statements=>{sqlite.prepare('UPDATE accounts SET disabled_at=? WHERE id=?').run(now,rejectedId);d1.batch=originalBatch;return originalBatch(statements);};
+check((await call('account-setup',{username:'fictional.setup.revoked',password:'Fictional-new-pass-123'})).status===409,'revoked during setup rejected');check(!sqlite.prepare('SELECT 1 FROM local_credentials WHERE account_id=?').get(rejectedId),'no revoked credential');check(!sqlite.prepare("SELECT 1 FROM audit WHERE actor_id=? AND action='setupCredentials'").get(rejectedId),'no false setup-success audit');
+// A browser session or a token for another privileged task is not export,
+// dispatch or cleanup authority. Never execute those tasks in this suite.
+Object.assign(runtime.env,{BACKUP_EXPORT_TOKEN:'fictional-backup-secret-with-32-characters',NOTIFICATIONS_CRON_TOKEN:'fictional-notification-secret-with-32-characters',PENDING_CLEANUP_TOKEN:'fictional-cleanup-secret-with-32-characters'});
+await login('owner');
+for(const [name,method,foreignToken,status] of [['backup-export','GET',runtime.env.NOTIFICATIONS_CRON_TOKEN,404],['notifications/dispatch','POST',runtime.env.PENDING_CLEANUP_TOKEN,404],['pending-cleanup','POST',runtime.env.BACKUP_EXPORT_TOKEN,403]]){
+ const handler=(await load('app/api/'+name+'/route.ts')).module;
+ for(const token of ['',foreignToken]){
+  const response=await handler[method](new Request('https://test.invalid/api/'+name,{method,headers:token?{authorization:'Bearer '+token}:{}}));
+  check(response.status===status,'dedicated task secret required '+name);
+ }
+}
+// Part 22 pilot: financial audit details are Owner-only, with filtering in SQL
+// before LIMIT. New billing events must not crowd normal events out of an
+// ordinary administrator's latest-30 list or appear in shared state/rosters.
+for(const group of ['next-genn-edu','school-b']){
+ const identity=sqlite.prepare('SELECT id FROM billing_students WHERE group_id=? AND student_name=?').get(group,'Student Same').id;
+ const subject=sqlite.prepare('SELECT subject_key FROM billing_subjects WHERE group_id=? AND student_id=?').get(group,identity).subject_key;
+ const rate='privacy-rate-'+group,version=rate+'-version';
+ sqlite.prepare('INSERT INTO billing_rates(id,group_id,student_id,subject_key,revision,current_version_id,updated_at) VALUES(?,?,?,?,1,?,?)').run(rate,group,identity,subject,version,now);
+ sqlite.prepare('INSERT INTO billing_rate_versions(id,group_id,rate_id,revision,mode,amount_cents,currency,effective_from,subject_snapshot,actor_id,created_at) VALUES(?,?,?,1,?,?,?,?,?,?,?)').run(version,group,rate,'hour',9876543,'MYR','2032-01-01','Science','owner',now);
+ for(let index=0;index<35;index++)sqlite.prepare('INSERT INTO audit(group_id,id,lesson_id,actor_id,action,after_json,at) VALUES(?,?,?,?,?,?,?)').run(group,'normal-audit-'+group+'-'+index,'privacy-fixture','owner','normal.fixture',JSON.stringify({visible:'ordinary event '+index}),new Date(Date.UTC(2032,0,1,0,0,index)).toISOString());
+ for(let index=0;index<40;index++)sqlite.prepare('INSERT INTO audit(group_id,id,lesson_id,actor_id,action,after_json,at) VALUES(?,?,?,?,?,?,?)').run(group,'financial-audit-'+group+'-'+index,'billing','owner','billing.saveRate',JSON.stringify({feePrivacySentinel:'FICTIONAL_PRIVATE_FEE',amountCents:9876543}),new Date(Date.UTC(2033,0,1,0,0,index)).toISOString());
+ await login('owner',group);const ownerActivity=await ok('state',null,'?scope=activity');check(ownerActivity.activity.length===30&&ownerActivity.activity.every(entry=>entry.action==='billing.saveRate'&&entry.id.startsWith('financial-audit-'+group+'-')),'Owner sees only current-group financial history');check(ownerActivity.activity.every(entry=>entry.afterSummary.some(field=>field.field==='amountCents'&&field.value===9876543)),'Owner retains authorized financial audit summaries');check(!JSON.stringify(ownerActivity).includes('FICTIONAL_PRIVATE_FEE'),'Unrecognized raw financial payload is not exposed');
+ await login(group+'-admin');const adminActivity=await ok('state',null,'?scope=activity');check(adminActivity.activity.length===30,'financial SQL filter runs before latest-30 limit');check(adminActivity.activity.every(entry=>entry.action==='normal.fixture'&&entry.id.startsWith('normal-audit-'+group+'-')),'administrator sees normal events from own group only');check(!JSON.stringify(adminActivity).includes('FICTIONAL_PRIVATE_FEE')&&!JSON.stringify(adminActivity).includes('9876543'),'administrator cannot receive financial audit fields');
+ for(const role of ['admin','teacher','student']){
+  await login(group+'-'+role);const core=await ok('state',null,'?scope=core'),encoded=JSON.stringify(core);check(!encoded.includes('9876543')&&!encoded.includes('amountCents')&&!encoded.includes('billing_rate')&&!encoded.includes('FICTIONAL_PRIVATE_FEE'),'shared core contains no financial rates for '+group+' '+role);
+  const account=await auth.currentBusinessAccount(),roster=await(await load('lib/roster.ts')).module.readRoster(account),rosterJson=JSON.stringify(roster);check(!rosterJson.includes('9876543')&&!rosterJson.includes('amountCents')&&!rosterJson.includes('billing_rate'),'shared roster contains no financial rates for '+group+' '+role);
+  if(role!=='admin')check((await call('state',null,'?scope=activity')).status===403,'non-admin cannot request activity '+role);
+ }
+}
+check(sqlite.prepare('PRAGMA integrity_check').get().integrity_check==='ok','SQLite integrity');sqlite.close();
+console.log(JSON.stringify({suite:'part01-access-boundaries',checks,database:'isolated SQLite',network:'disabled',productionWrites:false}));

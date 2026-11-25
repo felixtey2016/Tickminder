@@ -1,0 +1,32 @@
+.ticklearn-dashboard {display:grid;gap:clamp(20px,4vw,32px);max-width:1040px;margin:24px auto 0}
+.ticklearn-dashboard h1,.ticklearn-dashboard h2,.ticklearn-dashboard h3,.ticklearn-dashboard p {margin:0;overflow-wrap:anywhere}
+.ticklearn-dashboard h2 {font-size:clamp(1.1rem,3vw,1.4rem);font-weight:750;margin-bottom:12px}
+.ticklearn-dashboard h3 {font-weight:700;font-size:1.05rem}
+.ticklearn-dashboard p {color:#59476e;line-height:1.55}
+.ticklearn-dashboard-welcome,.ticklearn-feature-grid,.ticklearn-stat-grid {display:grid;gap:14px;margin:0}
+.ticklearn-dashboard-hero,.ticklearn-plan,.ticklearn-feature,.ticklearn-stat,.ticklearn-recent {border:1px solid #e2d6f2;border-radius:18px;padding:clamp(15px,2.2vw,24px);min-width:0;background:#fff}
+.ticklearn-dashboard-hero {background:linear-gradient(112deg,#f1e5ff,#e8ddff)}
+.ticklearn-dashboard-name {font-weight:700;color:#5427aa!important}
+.ticklearn-dashboard-hero h1 {font-size:clamp(1.5rem,4vw,2.4rem);font-weight:800;line-height:1.16;margin:8px 0 12px}
+.ticklearn-exam-link,.ticklearn-dashboard-link,.ticklearn-dashboard-button {display:inline-flex;align-items:center;gap:8px;color:#5224ac;font-weight:700;text-underline-offset:.22em;min-height:44px}
+.ticklearn-exam-link {margin-top:8px;text-decoration:underline}
+.ticklearn-exam-link svg,.ticklearn-dashboard-link svg {flex-shrink:0}
+.ticklearn-plan h2 {margin-bottom:7px}
+.ticklearn-plan strong {display:inline-block;background:#eee5fb;color:#5224ac;border-radius:7px;padding:4px 9px;margin:0 0 8px}
+.ticklearn-feature {display:flex;flex-direction:column;gap:8px}
+.ticklearn-feature img {display:block;object-fit:contain;object-position:left;width:min(100%,132px);height:58px}
+.ticklearn-feature a {align-self:flex-start;margin-top:auto}
+.ticklearn-dashboard-link:hover {text-decoration:underline}
+.ticklearn-stat-grid {grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(6px,2vw,14px)}
+.ticklearn-stat {padding:clamp(8px,2vw,22px)}
+.ticklearn-stat dt {font-size:clamp(.78rem,2.6vw,.99rem);font-weight:650;overflow-wrap:anywhere}
+.ticklearn-stat dd {margin:7px 0 0;color:#5224ac;font-size:clamp(1.02rem,3vw,1.5rem);font-weight:800;overflow-wrap:anywhere}
+.ticklearn-stat .ticklearn-stat-detail,.ticklearn-stat .ticklearn-stat-empty {color:#59476e;font-size:clamp(.72rem,2.5vw,.88rem);font-weight:500}
+.ticklearn-recent-heading,.ticklearn-recent-actions {display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap}
+.ticklearn-recent-heading h2 {margin:0}
+.ticklearn-recent p,.ticklearn-recent-actions {margin:5px 0}
+.ticklearn-recent-actions {justify-content:flex-start}
+.ticklearn-dashboard-button {min-height:44px;border-radius:10px;padding:8px 14px;color:#fff;background:#562ac0}
+.ticklearn-dashboard-button:hover {background:#4921a8}
+.ticklearn-dashboard :is(.ticklearn-stat,.ticklearn-plan,.ticklearn-recent,.ticklearn-exam-link){font-variant-numeric:tabular-nums}
+@media(min-width:650px) {.ticklearn-feature-grid {grid-template-columns:repeat(3,minmax(0,1fr))}.ticklearn-dashboard-welcome {grid-template-columns:minmax(0,2fr) minmax(205px,1fr)}}

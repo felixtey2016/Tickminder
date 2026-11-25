@@ -1,0 +1,30 @@
+"use client";
+import {useEffect,useState} from 'react';
+import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
+import {Button} from '@/components/ui/button';
+import {PageState} from '@/components/page-state';
+import {groupFetch} from '@/lib/group-client';
+import {readApiJson,alertActionFailure,actionFailureMessage} from '@/lib/action-feedback';
+import {formatDurationMilliseconds} from '@/lib/duration-format';
+import {registerTranslations,t} from '@/lib/i18n';
+import type {TeachingStatisticsDetailTarget} from '@/lib/teaching-statistics-types';
+import {CoursePagination} from './course-query-ui';
+import {SessionAttendanceLoaderDialog} from './session-attendance';
+import {HomeworkReview} from './homework-review';
+import {ContentActions} from './learning-content-actions';
+import './teaching-statistics-details.css';
+registerTranslations({}, {'教学统计':'Teaching statistics','统计明细':'Statistics details','与所选指标使用相同月份及筛选条件。':'Uses the same month and filters as the selected metric.','查看课次':'View lesson','暂无符合条件的明细':'No matching details','已批改':'Marked','待登记':'Awaiting attendance'});
+type Row={id:string;sessionId?:string;homeworkId?:string;student?:string;teacher:string;subject:string;classroomId?:string;title?:string;start:string;end?:string;status:string;durationMilliseconds?:number};
+type Data={items:Row[];page:number;pages:number;total:number;pageSize:20;error?:string};
+export function TeachingStatisticsDetails({target,role,lang,mutate,busy,close,onOpenFinance}:{target:TeachingStatisticsDetailTarget;role:'admin'|'teacher';lang:'zh'|'en';mutate:(body:Record<string,unknown>)=>Promise<boolean>;busy:boolean;close:()=>void;onOpenFinance?:()=>void}){
+ const [page,setPage]=useState(1),[version,setVersion]=useState(0),[state,setState]=useState<{key:string;data:Data|null;error:string}>({key:'',data:null,error:''}),[sessionId,setSessionId]=useState<string|null>(null);
+ const filters=JSON.stringify(target),key=JSON.stringify({filters,page,version});
+ useEffect(()=>{setPage(1);setSessionId(null);},[filters]);
+ useEffect(()=>{const refresh=()=>setVersion(n=>n+1);window.addEventListener('tickminder:data-changed',refresh);return()=>window.removeEventListener('tickminder:data-changed',refresh);},[]);
+ useEffect(()=>{const controller=new AbortController(),params=new URLSearchParams({view:'details',page:String(page)});for(const [name,value]of Object.entries(JSON.parse(filters)))if(name!=='view'&&typeof value==='string'&&value)params.set(name,value);
+  setState({key,data:null,error:''});void groupFetch('/api/teaching-statistics?'+params,{cache:'no-store',signal:controller.signal}).then(async response=>{const data=await readApiJson<Data>(response);if(!response.ok){if([401,403].includes(response.status))window.dispatchEvent(new Event('timelyo:auth-refresh'));throw Error(data.error||t('页面加载失败'));}if(!Array.isArray(data.items)||!Number.isSafeInteger(data.total))throw Error(t('页面加载失败'));if(!controller.signal.aborted)setState({key,data,error:''});}).catch(error=>{if(!controller.signal.aborted){setState({key,data:null,error:actionFailureMessage(error)});alertActionFailure(error);}});return()=>controller.abort();
+ },[filters,page,version,key]);
+ const current=state.key===key?state:{key,data:null,error:''},data=current.data,stamp=(value:string)=>value?new Date(value).toLocaleString(lang==='zh'?'zh-CN':'en-GB',{timeZone:'Asia/Kuala_Lumpur',dateStyle:'medium',timeStyle:'short'}):'';
+ const labels:Record<string,string>={taught:'已上课',completed:'已上课',pending:'待登记',scheduled:'未上课',present:'出席',absent:'缺席',student_absent:'学生缺席',teacher_absent:'老师缺席',late:'迟交',missing:'未提交',submitted:'已提交',graded:'已批改',published:'已发布'};
+ return <Dialog open onOpenChange={open=>{if(!open)close();}}><DialogContent className="content-edit-dialog teaching-statistics-details"><DialogTitle>{t('统计明细')} · {target.month}</DialogTitle><DialogDescription>{t('与所选指标使用相同月份及筛选条件。')} GMT+8{target.metric==='makeup'&&<span>{lang==='zh'?' 同一堂课的待补学生逐一列出；老师待补时长按课次去重。':' Each student awaiting a makeup is listed; teacher makeup time counts each lesson once.'}</span>}</DialogDescription>{current.error?<PageState kind="error" title="页面加载失败" description={current.error} action="重试" onAction={()=>setVersion(n=>n+1)}/>:!data?<PageState kind="loading" title="正在加载…"/>:<><p className="muted">{data.total} {lang==='zh'?'条':'records'}</p><div className="statistics-detail-list">{data.items.map(row=><article key={row.id} className="statistics-detail-row"><header><strong>{row.title||row.subject}</strong><span className="badge">{t(labels[row.status]||row.status)}</span></header><p>{[row.student,row.teacher,row.title?row.subject:''].filter(Boolean).join(' · ')}</p><p className="muted">{stamp(row.start)}{row.end?' – '+stamp(row.end):''}{row.durationMilliseconds!==undefined?' · '+formatDurationMilliseconds(row.durationMilliseconds,lang):''}</p><div className="statistics-detail-actions">{row.sessionId&&<Button type="button" variant="outline" onClick={()=>setSessionId(row.sessionId!)}>{t('查看课次')}</Button>}{row.homeworkId&&(row.student?<HomeworkReview homeworkId={row.homeworkId} studentName={row.student}/>:<ContentActions kind="homework" id={row.homeworkId}/>)}</div></article>)}</div>{!data.items.length&&<PageState kind="empty" title="暂无符合条件的明细"/>}<CoursePagination data={data} onChange={setPage}/></>}{sessionId&&<SessionAttendanceLoaderDialog key={sessionId} sessionId={sessionId} role={role} mutate={mutate} busy={busy} close={()=>setSessionId(null)} onOpenFinance={onOpenFinance}/>}</DialogContent></Dialog>;
+}

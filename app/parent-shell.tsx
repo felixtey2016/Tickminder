@@ -1,0 +1,179 @@
+"use client";
+import {useDisplayPreferences} from '@/lib/use-display-preferences';
+import {lazy,Suspense,useEffect,useLayoutEffect,useRef,useState} from 'react';
+import {BarChart3,Bell,BookOpen,CalendarDays,House,LibraryBig,ListChecks,LogOut,UserRound,Video,WalletCards} from 'lucide-react';
+import {Button} from '@/components/ui/button';
+import {FloatingBackButton} from '@/components/floating-back-button';
+import {TickMinderLearningLinks} from '@/components/tickminder-learning-links';
+import {MobileBottomNavigation} from '@/components/mobile-bottom-navigation';
+import {NavigationHub} from '@/components/navigation-hub';
+import {ShellPreferences} from '@/components/shell-preferences';
+import './shell-wave1.css';
+import {LegalLinks} from '@/components/legal-links';
+import {navigationAllowed} from '@/lib/page-history';
+import {legacyWorkspaceView,workspaceViewFromPath,workspaceUrl} from '@/lib/workspace-route';
+import {t,type Language} from '@/lib/i18n';
+import {BRAND_NAME} from '@/lib/brand';
+import {PNav} from '@/lib/parent-nav-i18n';
+import type {ParentWorkspaceView} from '@/lib/parent-navigation';
+import {isParentShellView,parentPrimaryFor,type ParentShellView} from '@/lib/parent-shell-navigation';
+import type {ParentWorkspaceTarget} from '@/lib/parent-workspace-ui';
+import './parent-shell.css';
+import './parent-compact.css';
+import '@/lib/parent30-i18n';
+import {MenuBadge,NotificationsProvider} from './notifications';
+import type {ParentNoticeNavigation} from './parent-notifications-pane';
+
+const ParentsWorkspace=lazy(()=>import('./parents-workspace'));
+const ParentHome=lazy(()=>import('./parent-home'));
+const ParentNotificationsPane=lazy(()=>import('./parent-notifications-pane'));
+const AccountSettings=lazy(()=>import('./account-settings').then(m=>({default:m.AccountSettings})));
+const QuizWorkspace=lazy(()=>import('./quiz-workspace'));
+
+type ParentIdentity={id?:string;name:string;groupId?:string|null;groupName?:string|null};
+type ParentShellProps={account:ParentIdentity;language:Language;changeLanguage:(value:Language)=>void;logout:()=>void;refreshIdentity:()=>Promise<void>;initialQuizId?:string;onLinkedQuizExit?:()=>void};
+
+export default function ParentShell(props:ParentShellProps){
+ useDisplayPreferences();
+  return <NotificationsProvider key={props.account.id+':'+props.account.groupId} accountId={props.account.id||''} groupId={props.account.groupId||''} language={props.language} audience="parent"><ParentShellContent {...props}/></NotificationsProvider>;
+}
+
+function ParentShellContent({account,language,changeLanguage,logout,refreshIdentity,initialQuizId,onLinkedQuizExit}:ParentShellProps){
+  const shellRef=useRef<HTMLDivElement>(null),headerRef=useRef<HTMLElement>(null);
+  const [view,updateView]=useState<ParentShellView>(()=>{
+    const requested=typeof window!=="undefined"?legacyWorkspaceView(window.location.search,"parent")||workspaceViewFromPath(window.location.pathname,"parent"):null;
+    return initialQuizId?"quizzes":isParentShellView(requested)?requested:"home";
+  });
+  const viewRef=useRef(view);viewRef.current=view;
+  const urlRef=useRef(typeof window!=="undefined"?window.location.pathname+window.location.search:"/");
+  const setView=(next:ParentShellView,replace=false)=>{
+    const path=initialQuizId&&next==="quizzes"?window.location.pathname+window.location.search:workspaceUrl(next,"parent",window.location.search);
+    const entry={...window.history.state,timelyoRole:"parent",timelyoGroup:account.groupId,timelyoAccount:account.id,timelyoView:next,timelyoRoute:1,timelyoMenu:false};
+    if(replace||next===viewRef.current)window.history.replaceState(entry,"",path);else window.history.pushState(entry,"",path);
+    urlRef.current=path;updateView(next);
+  };
+  const setViewRef=useRef(setView);setViewRef.current=setView;
+  const replaceView=(next:ParentShellView)=>setViewRef.current(next,true);
+  useLayoutEffect(()=>{
+    const saved=window.history.state||{},params=new URLSearchParams(window.location.search);
+    const notice=params.get('parentNotice');
+    if(params.get('view')==='notifications'&&notice&&/^parent:[A-Za-z0-9_-]{1,100}$/.test(notice))setPendingNotice(notice);
+    let requested=initialQuizId?"quizzes":legacyWorkspaceView(window.location.search,"parent")||workspaceViewFromPath(window.location.pathname,"parent");
+    if(!initialQuizId&&window.location.pathname==="/"&&!params.has("view")&&saved.timelyoRoute!==1&&saved.tickminderNavigation?.context===account.id+":parent:"+account.groupId){
+      const old=Object.entries(saved.tickminderPages||{}).find(([key])=>key.endsWith(":parent.shell.view"))?.[1] as {scalar?:unknown}|undefined;
+      if(isParentShellView(old?.scalar))requested=old.scalar;
+    }
+    setViewRef.current(isParentShellView(requested)?requested:"home",true);
+    const restore=(event:PopStateEvent)=>{
+      const entry=window.history.state||{},same=entry.timelyoRole==="parent"&&entry.timelyoGroup===account.groupId&&(!entry.timelyoAccount||entry.timelyoAccount===account.id);
+      const route=workspaceViewFromPath(window.location.pathname,"parent");
+      const next=same&&isParentShellView(route)?route:"home";
+      if(next!==viewRef.current&&!navigationAllowed(event)){window.history.pushState({...entry,timelyoRole:"parent",timelyoGroup:account.groupId,timelyoAccount:account.id,timelyoView:viewRef.current,timelyoRoute:1},"",urlRef.current);return;}
+      if(!same||!isParentShellView(route)){setViewRef.current("home",true);return;}
+      urlRef.current=window.location.pathname+window.location.search;updateView(next);
+    };
+    window.addEventListener("popstate",restore);return()=>window.removeEventListener("popstate",restore);
+  },[account.id,account.groupId,initialQuizId]);
+  const [navigation,setNavigation]=useState<ParentNoticeNavigation|null>(null),[pendingNotice,setPendingNotice]=useState('');
+  const [target,setTarget]=useState<ParentWorkspaceTarget|null>(null);
+  const activePrimary=parentPrimaryFor(view);
+
+  useEffect(()=>{
+    const update=()=>{if(headerRef.current)shellRef.current?.style.setProperty('--parent-header-height',Math.ceil(headerRef.current.getBoundingClientRect().height)+'px');};
+    update();
+    const observer=typeof ResizeObserver!=='undefined'?new ResizeObserver(update):null;
+    if(headerRef.current)observer?.observe(headerRef.current);
+    window.addEventListener('resize',update);
+    return()=>{observer?.disconnect();window.removeEventListener('resize',update);};
+  },[]);
+
+  useEffect(()=>{
+    const open=(event?:Event)=>{
+      if(!navigationAllowed())return;
+      const requested=(event as CustomEvent<{id?:string}>|undefined)?.detail?.id;
+      setPendingNotice(typeof requested==='string'&&/^parent:[A-Za-z0-9_-]{1,100}$/.test(requested)?requested:'');
+      setViewRef.current('notifications');
+    };
+    window.addEventListener('tickminder:open-notifications',open);
+    const params=new URLSearchParams(window.location.search);
+    if(params.get('view')==='notifications'){
+      const id=params.get('parentNotice');
+      setPendingNotice(id&&/^parent:[A-Za-z0-9_-]{1,100}$/.test(id)?id:'');setViewRef.current('notifications');
+      params.delete('view');params.delete('parentNotice');
+      const query=params.toString();
+      window.history.replaceState(window.history.state,'',workspaceUrl('notifications','parent',query));
+    }
+    return()=>window.removeEventListener('tickminder:open-notifications',open);
+  },[]);
+
+  useEffect(()=>{
+    if(!initialQuizId)return;
+    setNavigation(null);setTarget(null);setPendingNotice('');replaceView('quizzes');
+  },[initialQuizId]);
+  const linkedViewOpened=useRef(false);
+  useEffect(()=>{
+    if(!initialQuizId){linkedViewOpened.current=false;return;}
+    if(view==='quizzes')linkedViewOpened.current=true;
+    else if(linkedViewOpened.current)onLinkedQuizExit?.();
+  },[initialQuizId,view,onLinkedQuizExit]);
+
+  function choose(next:ParentShellView){
+    if(next!==view&&!navigationAllowed())return;
+    if(next==='quizzes'&&next!==view){window.location.assign(workspaceUrl(next,'parent',window.location.search));return;}
+    setNavigation(null);setTarget(null);setPendingNotice('');setView(next);
+    if(initialQuizId&&next!=='quizzes')onLinkedQuizExit?.();
+    if(next!==view)window.scrollTo(0,0);
+  }
+  function openWorkspace(next:Omit<ParentWorkspaceTarget,'targetId'>){
+    if(!navigationAllowed())return;
+    setNavigation(null);setPendingNotice('');setTarget({...next,targetId:crypto.randomUUID()});setView(next.view);window.scrollTo(0,0);
+    if(initialQuizId)onLinkedQuizExit?.();
+  }
+  function openNotice(next:ParentNoticeNavigation){
+    if(!navigationAllowed())return;
+    setTarget(null);setNavigation(next);setView(next.kind==='invoice'?'finance':'lessons');window.scrollTo(0,0);
+  }
+  const workspaceView:ParentWorkspaceView=['home','account','notifications','quizzes','learnHub','mineHub'].includes(view)?'calendar':view as ParentWorkspaceView;
+  const title=view==='finance'?PNav('fees'):PNav(view);
+  const learningSections=[
+    {id:'courses',title:PNav('courses'),layout:'list' as const,items:[
+      {id:'calendar',label:PNav('calendar'),Icon:CalendarDays},
+      {id:'lessons',label:PNav('lessons'),Icon:ListChecks},
+    ]},
+    {id:'content',title:PNav('learningContent'),layout:'grid' as const,items:[
+      {id:'homework',label:PNav('homework'),Icon:BookOpen},
+      {id:'quizzes',label:'TickQuiz',Icon:BookOpen},
+      {id:'materials',label:PNav('materials'),Icon:LibraryBig},
+      {id:'recordings',label:PNav('recordings'),Icon:Video},
+    ]},
+    {id:'records',title:PNav('records'),layout:'list' as const,items:[
+      {id:'attendance',label:PNav('attendance'),Icon:ListChecks},
+      {id:'learning',label:PNav('learning'),Icon:BarChart3},
+    ]},
+  ];
+  const personalSections=[{id:'account',title:PNav('accountAndMessages'),layout:'list' as const,items:[
+    {id:'account',label:PNav('account'),description:account.name,Icon:UserRound},
+    {id:'notifications',label:PNav('notifications'),Icon:Bell,badge:<MenuBadge includeUnread/>},
+  ]}];
+
+  return <div ref={shellRef} className="app-shell parent-shell shell-wave1 four-entry-shell" data-home-view={view==='home'?'true':undefined}>
+    <header ref={headerRef} className="topbar">
+      <button type="button" className="brand brand-home" data-testid="brand-home" aria-label={`${BRAND_NAME} · ${PNav('home')}`} onClick={()=>choose('home')}><span className="brand-logo small"><img src="/tickminder-logo.svg" width="40" height="40" alt={BRAND_NAME}/></span><div><strong>{BRAND_NAME}</strong><span>{account.groupName||PNav('portal')} · GMT+8</span></div></button>
+      <div className="top-actions">
+        <ShellPreferences language={language} onLanguageChange={changeLanguage}/>
+        <Button type="button" variant="ghost" className="shell-notifications" aria-label={PNav('notifications')} onClick={()=>choose('notifications')}><Bell size={20} aria-hidden="true"/><MenuBadge includeUnread header/></Button>
+      </div>
+    </header>
+    <div className="parent-shell-body">
+      <main className="parent-shell-main parent-compact">
+        <FloatingBackButton context={account.id+':parent:'+account.groupId} isHome={view==='home'} onHome={()=>choose('home')} title={title} subtitle={account.groupName||undefined}/>
+        <Suspense fallback={<p role="status">{t('正在加载…')}</p>}>
+          {view==='learnHub'?<NavigationHub sections={learningSections} leading={<TickMinderLearningLinks language={language} quiz={false} section="study"/>} onChoose={id=>{if(isParentShellView(id))choose(id);}}/>:
+          view==='mineHub'?<NavigationHub sections={personalSections} onChoose={id=>{if(isParentShellView(id))choose(id);}}><div className="navigation-hub-actions" data-testid="hub-utility-actions"><Button type="button" variant="outline" data-testid="hub-signout" onClick={()=>{if(navigationAllowed())logout();}}><LogOut size={18} aria-hidden="true"/><span>{PNav('logout')}</span></Button></div><LegalLinks language={language} className="navigation-hub-legal"/></NavigationHub>:
+          view==='home'?<ParentHome studyLinks={<TickMinderLearningLinks language={language} quiz={false} section="study"/>} name={account.name} onOpen={openWorkspace} onNotifications={()=>choose('notifications')} onAuthorityLost={()=>void refreshIdentity()}/>:view==='account'?<AccountSettings/>:view==='notifications'?<ParentNotificationsPane onOpen={openNotice} pendingNotice={pendingNotice} onPendingHandled={()=>setPendingNotice('')} onAuthorityLost={()=>void refreshIdentity()}/>:view==='quizzes'?<QuizWorkspace key={account.id+':'+account.groupId} view="quizBank" language={language} role="parent" initialQuizId={initialQuizId} onLinkedQuizExit={onLinkedQuizExit}/>:<ParentsWorkspace key={account.id+':'+account.groupId} view={workspaceView} onViewChange={next=>{if(next===view||navigationAllowed())setView(next);}} navigation={navigation} target={target} onAuthorityLost={()=>void refreshIdentity()}/>}
+        </Suspense>
+      </main>
+    </div>
+    <MobileBottomNavigation primary items={[{value:'home',label:PNav('home'),Icon:House},{value:'learnHub',label:PNav('learnHub'),Icon:BookOpen},{value:'finance',label:PNav('fees'),Icon:WalletCards},{value:'mineHub',label:PNav('mineHub'),Icon:UserRound,badge:<MenuBadge includeUnread/>}]} active={activePrimary} onNavigate={value=>{if(isParentShellView(value))choose(value);}} ariaLabel={PNav('primaryNavigation')}/>
+  </div>;
+}

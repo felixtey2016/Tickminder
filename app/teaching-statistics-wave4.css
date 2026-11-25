@@ -1,0 +1,86 @@
+/* R13/R14: separate teacher time, student time, and percentage denominators. */
+.teaching-statistics{gap:24px;color:var(--ui-text);font-size:15px}
+.teaching-statistics :is(h1,h2,h3,strong){color:var(--ui-text)}
+.teaching-statistics h1{font-size:21px;line-height:1.4}
+.teaching-statistics h2{font-size:18px;line-height:1.4;margin:0 0 12px}
+.teaching-statistics h3{font-size:15px;font-weight:500;line-height:1.5}
+.teaching-statistics .section-head p,.teaching-statistics .muted,.teaching-statistics small,.teaching-stat-card p{font-size:13px;line-height:1.6;color:var(--ui-muted)}
+.teaching-stat-filters :is(input,select){border-color:var(--ui-border);background:var(--ui-surface);color:var(--ui-text);border-radius:8px}
+.teaching-stat-filters select:disabled{background:var(--ui-surface-muted);opacity:1;color:var(--ui-muted)}
+.teaching-stat-section-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.teaching-stat-section-heading p{font-size:13px;color:var(--ui-muted);margin:0 0 12px;line-height:1.6}
+.teaching-stat-cards{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.teaching-stat-card{grid-template-columns:minmax(0,1fr) auto;column-gap:12px;row-gap:4px;border-color:var(--ui-border);background:var(--ui-surface);border-radius:8px;padding:16px}
+.teaching-stat-card h3{grid-column:1/-1}
+.teaching-stat-card>strong{font-size:25px;line-height:1.4;font-variant-numeric:tabular-nums;align-self:center;min-width:0}
+.teaching-stat-card>button{grid-column:2;grid-row:2;align-self:center;white-space:nowrap;display:block;font-size:13px;font-weight:600;color:var(--ui-accent);border:0;background:transparent;min-height:44px;padding:8px 0}
+.teaching-stat-card>button:hover{text-decoration:underline}
+.teaching-stat-card :is(p,small){grid-column:1/-1;margin:0}
+.teaching-stat-progress .teaching-stat-card>strong,.teaching-stat-billable .teaching-stat-card>strong{color:var(--ui-accent)}
+.teaching-stat-scope h2{font-size:15px;color:var(--ui-muted)}
+.teaching-stat-scope .teaching-stat-cards{gap:0;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface);overflow:hidden}
+.teaching-stat-scope .teaching-stat-card{border:0;border-radius:0;background:transparent}
+.teaching-stat-scope .teaching-stat-card+.teaching-stat-card{border-left:1px solid var(--ui-border)}
+.teaching-stat-scope .teaching-stat-card>strong{font-size:22px}
+.teaching-stat-billable .teaching-stat-card{grid-template-columns:auto minmax(0,1fr) auto;align-items:center}
+.teaching-stat-billable .teaching-stat-card h3{display:none}
+.teaching-stat-billable .teaching-stat-card>strong{grid-column:1;grid-row:1}
+.teaching-stat-billable .teaching-stat-card>p{grid-column:2;grid-row:1}
+.teaching-stat-billable .teaching-stat-card>button{grid-column:3;grid-row:1}
+.teaching-stat-metric-groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.teaching-stat-metric-groups>section{border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface);padding:20px}
+.teaching-stat-metric-groups h2{padding-bottom:12px;border-bottom:1px solid var(--ui-border);margin:0}
+.teaching-stat-rows .teaching-stat-card{border:0;border-radius:0;padding:16px 0;background:transparent}
+.teaching-stat-rows .teaching-stat-card+.teaching-stat-card{border-top:1px solid var(--ui-border)}
+.teaching-statistics :is(.teaching-stat-chart,.teaching-stat-data,.teaching-stat-rules){min-width:0;max-width:100%;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface);padding:0 16px}
+.teaching-statistics summary{list-style:none;position:relative;padding:14px 28px 14px 0;line-height:1.5;font-size:15px;color:var(--ui-text)}
+.teaching-statistics summary::-webkit-details-marker{display:none}
+.teaching-statistics summary:after{content:'⌄';position:absolute;right:0;top:12px;font-size:19px;color:var(--ui-accent)}
+.teaching-statistics details[open]>summary:after{transform:rotate(180deg)}
+.teaching-statistics summary small{display:block;font-weight:400;margin-top:4px}
+.teaching-statistics details[open]{padding-bottom:16px}
+.teaching-statistics :is(button,summary,input,select):focus-visible{outline:2px solid var(--ui-accent);outline-offset:3px}
+.teaching-stat-bar-pair,.teaching-stat-table-wrap :is(th,td){border-color:var(--ui-border)}
+.teaching-stat-stacked{background:var(--ui-surface-muted)}
+.teaching-stat-workload{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.teaching-stat-workload article{border-color:var(--ui-border);background:var(--ui-surface);border-radius:8px;padding:16px}
+.teaching-stat-workload article h3{font-weight:600;margin:0 0 12px}
+.teaching-stat-workload dl{display:grid;gap:8px;margin:0;padding:0 0 14px;border-bottom:1px solid var(--ui-border)}
+.teaching-stat-workload dl>div{display:flex;justify-content:space-between;gap:16px;line-height:1.5}
+.teaching-stat-workload dt{color:var(--ui-muted);min-width:0}
+.teaching-stat-workload dd{margin:0;text-align:end;font-variant-numeric:tabular-nums;min-width:0}
+.teaching-stat-workload button{margin-top:12px}
+/* Reflow by available text space, including enlarged system/browser text. */
+.teaching-stat-card,.teaching-stat-scope,.teaching-stat-filters{container-type:inline-size}
+.teaching-stat-workload dl>div{flex-wrap:wrap}
+.teaching-stat-workload dt{flex:1 1 10em;overflow-wrap:anywhere}
+.teaching-stat-workload dd{flex:0 0 auto;max-width:100%;overflow-wrap:anywhere;margin-left:auto}
+@container(max-width:15em){
+ .teaching-stat-card>strong{grid-column:1/-1!important;grid-row:auto!important;overflow-wrap:normal}
+ .teaching-stat-card>button{grid-column:1/-1!important;grid-row:auto!important;justify-self:start!important;white-space:normal;text-align:left}
+ .teaching-stat-card>p{grid-column:1/-1!important;grid-row:auto!important}
+}
+@container(max-width:17em){
+ .teaching-stat-filters>label{grid-template-columns:minmax(0,1fr)!important;gap:4px!important}
+ .teaching-stat-scope .teaching-stat-cards{grid-template-columns:minmax(0,1fr)!important}
+ .teaching-stat-scope .teaching-stat-card+.teaching-stat-card{border-left:0;border-top:1px solid var(--ui-border)}
+}
+@media(max-width:900px){.teaching-stat-card>strong{font-size:23px}.teaching-stat-progress .teaching-stat-card>button{grid-column:1/-1;grid-row:auto;justify-self:start}}
+@media(max-width:640px){
+ .teaching-statistics{gap:20px}
+ .teaching-stat-filters{grid-template-columns:1fr;gap:8px}
+ .teaching-stat-filters label{grid-template-columns:64px minmax(0,1fr);align-items:center;gap:12px}
+ .teaching-stat-cards,.teaching-stat-metric-groups,.teaching-stat-workload{grid-template-columns:1fr}
+ .teaching-stat-card{padding:12px 14px}
+ .teaching-stat-progress .teaching-stat-card>button{grid-column:2;grid-row:2;justify-self:end}
+ .teaching-stat-scope .teaching-stat-cards{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .teaching-stat-scope .teaching-stat-card{padding:12px 10px;gap:4px}
+ .teaching-stat-scope .teaching-stat-card h3{font-size:13px}
+ .teaching-stat-scope .teaching-stat-card small{font-size:12px}
+ .teaching-stat-billable .teaching-stat-card{grid-template-columns:minmax(0,1fr) auto}
+ .teaching-stat-billable .teaching-stat-card>button{grid-column:2;grid-row:1}
+ .teaching-stat-billable .teaching-stat-card>p{grid-column:1/-1;grid-row:2}
+ .teaching-stat-metric-groups>section{padding:16px}
+ .teaching-stat-section-heading{display:block}
+ .teaching-stat-section-heading h2{margin-bottom:6px}
+}

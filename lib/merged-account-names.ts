@@ -1,8 +1,8 @@
-import { rows } from "@/lib/learning-server";
+import { groupRows } from "@/lib/group-data";
 
 // Keep historical audit events immutable while resolving a merged identity's name.
-export async function mergedAccountNames() {
-  const events = await rows<{ afterJson: string | null }>("SELECT after_json AS afterJson FROM audit WHERE action = 'mergeAccount'");
+export async function mergedAccountNames(groupId:string|null) {
+  const events = await groupRows<{ afterJson: string | null }>(groupId,"SELECT after_json AS afterJson FROM audit WHERE action = 'mergeAccount'");
   const names = new Map<string, string>();
   for (const event of events) {
     try {

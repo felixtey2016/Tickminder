@@ -1,15 +1,25 @@
 "use client";
+import {useDisplayPreferences} from '@/lib/use-display-preferences';
+import {orderedWeekdays} from '@/lib/display-preferences';
+import {displayFormatter} from '@/lib/display-preferences';
+import {attendanceLabels} from "@/lib/attendance-types";
+import type {SessionLesson} from "@/lib/class-session-display";
+import {uniqueSessionLessons,sessionLessonTitle} from "@/lib/class-session-display";
+import {ClassSessionLabel} from "@/components/class-session-label";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { CalendarDays, Plus, ChevronLeft, ChevronRight, Clock3 } from "lucide-react";
 import { getLanguage, t } from "@/lib/i18n";
 import { activeLessonsOnDay, malaysiaDay, monthDays, shiftMonth } from "@/lib/student-calendar";
 import { Button } from "@/components/ui/button";
+import { Mascot } from "@/components/page-state";
 import type { StudyBlock } from "./learning-portal";
 import { OnlineLessonLink } from "./online-lesson-link";
 import { LessonHistory } from "./lesson-history";
+import {shiftCalendarDay,type CalendarRange} from "@/lib/course-calendar-range";
+import './course-wave2.css';
 
-type Lesson = {
+type Lesson = SessionLesson & {
   id: string;
   subject: string;
   student?: string;
@@ -28,7 +38,7 @@ const statusText: Record<string, string> = {
   scheduled: "已安排", completed: "已上课", student_absent: "学生缺席", teacher_absent: "老师缺席",
 };
 const weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-const timeFormatter = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
+const timeFormatter = displayFormatter("en-GB",{ timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
 const time = (iso: string) => timeFormatter.format(new Date(iso));
 const dateFormatters = new Map<string, Intl.DateTimeFormat>();
 const dateLabel = (day: string, options: Intl.DateTimeFormatOptions) => {
@@ -38,17 +48,20 @@ const dateLabel = (day: string, options: Intl.DateTimeFormatOptions) => {
   return formatter.format(new Date(`${day}T00:00:00Z`));
 };
 
-export function StudentCalendar({ lessons, proposals, studyBlocks = [], onAddStudy, onEditStudy, onRequestReschedule, busy, role = "student", toolbar, renderActions, onPending, selectedDate, onDateChange }: { lessons: Lesson[]; proposals: Proposal[]; studyBlocks?: StudyBlock[]; onAddStudy?: (day: string) => void; onEditStudy?: (block: StudyBlock) => void; onRequestReschedule?: (id: string) => void; busy?: boolean; role?: "student" | "teacher" | "admin"; toolbar?: ReactNode; renderActions?: (id: string) => ReactNode; onPending?: (id: string) => void; selectedDate?: string; onDateChange?: (day: string) => void }) {
+export function StudentCalendar({ lessons:sourceLessons, proposals, studyBlocks = [], onAddStudy, onEditStudy, onRequestReschedule, busy, role = "student", toolbar, renderActions, onPending, selectedDate, onDateChange, onRangeChange,loading=false }: { loading?:boolean;lessons: Lesson[]; proposals: Proposal[]; studyBlocks?: StudyBlock[]; onAddStudy?: (day: string) => void; onEditStudy?: (block: StudyBlock) => void; onRequestReschedule?: (id: string) => void; busy?: boolean; role?: "student" | "teacher" | "admin"; toolbar?: ReactNode; renderActions?: (id: string) => ReactNode; onPending?: (id: string) => void; selectedDate?: string; onDateChange?: (day: string) => void; onRangeChange?: (range:CalendarRange) => void }) {
+  const preferences=useDisplayPreferences();
   const today = malaysiaDay(new Date().toISOString());
   const [localDay, setSelectedDay] = useState(today);
+  const lessons=role==="student"?sourceLessons:uniqueSessionLessons(sourceLessons);
   const selectedDay = selectedDate || localDay;
   const [localMonth, setVisibleMonth] = useState(today.slice(0, 7));
   const visibleMonth = selectedDate?.slice(0, 7) || localMonth;
-  const days = useMemo(() => monthDays(visibleMonth), [visibleMonth]);
+  const days = useMemo(() => monthDays(visibleMonth,preferences.weekStart), [visibleMonth,preferences.weekStart]);
+  useEffect(()=>{if(days.length)onRangeChange?.({from:days[0],to:shiftCalendarDay(days[days.length-1],1)});},[days,onRangeChange]);
   const byDay = useMemo(() => new Map(days.map(day => [day, activeLessonsOnDay(lessons, day)])), [days, lessons]);
   const selectedLessons = byDay.get(selectedDay) || activeLessonsOnDay(lessons, selectedDay);
   const pending = new Map(proposals.filter(proposal => proposal.status === "pending").map(proposal => [proposal.lessonId, proposal]));
-  const monthLessonCount = lessons.filter(lesson => lesson.status !== "cancelled" && malaysiaDay(lesson.plannedStart).slice(0, 7) === visibleMonth).length;
+  const monthLessonCount = lessons.filter(lesson => lesson.status !== "cancelled" && Date.parse(lesson.plannedStart)<Date.parse(shiftMonth(visibleMonth,1)+"-01T00:00:00+08:00")&&Date.parse(lesson.plannedEnd)>Date.parse(visibleMonth+"-01T00:00:00+08:00")).length;
   const studyOnDay = (day: string) => studyBlocks.filter(block => malaysiaDay(block.startsAt) === day);
   const selectedStudy = studyOnDay(selectedDay);
 
@@ -64,26 +77,25 @@ export function StudentCalendar({ lessons, proposals, studyBlocks = [], onAddStu
     onDateChange?.(`${month}-01`);
   }
 
-  return <section className="student-calendar" aria-label={t("课程日历")}>
-    {onAddStudy && <div className="calendar-add-row"><Button size="sm" variant="outline" onClick={() => onAddStudy?.(selectedDay)}><Plus size={18} aria-hidden="true"/>{t("新增")}</Button></div>}
+  return <section className="student-calendar course-wave2" aria-label={t("课程日历")}>
     {toolbar}
     <div className="student-calendar-layout">
       <div className="student-calendar-month">
         <div className="student-calendar-toolbar">
-          <div><h3>{dateLabel(`${visibleMonth}-01`, { year: "numeric", month: "long" })}</h3><span>{monthLessonCount} {t("堂课")}</span></div>
+          <div><h3>{dateLabel(`${visibleMonth}-01`, { year: "numeric", month: "long" })}</h3><span>{loading?t("正在加载…"):monthLessonCount} {!loading&&t("堂课")}</span></div>
           <div className="student-calendar-controls">
             <Button size="sm" variant="outline" onClick={() => chooseDay(today)}>{t("今天")}</Button>
             <Button size="icon" variant="outline" aria-label={t("上一月")} onClick={() => changeMonth(-1)}><ChevronLeft size={18}/></Button>
             <Button size="icon" variant="outline" aria-label={t("下一月")} onClick={() => changeMonth(1)}><ChevronRight size={18}/></Button>
           </div>
         </div>
-        <div className="student-calendar-weekdays">{weekdays.map(day => <span key={day}>{t(day)}</span>)}</div>
+        <div className="student-calendar-weekdays">{orderedWeekdays(weekdays,preferences.weekStart).map(day => <span key={day}>{t(day)}</span>)}</div>
         <div className="student-calendar-days">{days.map(day => {
           const dayLessons = byDay.get(day) || [];
           const dayStudy = studyOnDay(day);
           const isToday = day === today;
           const isSelected = day === selectedDay;
-          return <button type="button" key={day} className={`student-calendar-day${day.slice(0, 7) !== visibleMonth ? " is-outside" : ""}${isToday ? " is-today" : ""}${isSelected ? " is-selected" : ""}`} aria-label={`${day} · ${dayLessons.length} ${t("堂课")} · ${dayStudy.length} ${t("项学习安排")}`} aria-pressed={isSelected} onClick={() => chooseDay(day)}>
+          return <button type="button" key={day} className={`student-calendar-day${day.slice(0, 7) !== visibleMonth ? " is-outside" : ""}${isToday ? " is-today" : ""}${isSelected ? " is-selected" : ""}`} aria-label={`${day} · ${loading?t("正在加载…"):dayLessons.length} ${t("堂课")} · ${dayStudy.length} ${t("项学习安排")}`} aria-pressed={isSelected} onClick={() => chooseDay(day)}>
             <span className="student-calendar-day-number">{Number(day.slice(8))}</span>
             <span className="student-calendar-day-events">{dayLessons.slice(0, 1).map(lesson => <span className={`student-calendar-event event-${lesson.status}`} key={lesson.id}><i aria-hidden="true"/>{time(lesson.plannedStart)} {lesson.subject}</span>)}{dayStudy.slice(0, 1).map(block => <span className="student-calendar-event event-study" key={block.id}><i aria-hidden="true"/>{time(block.startsAt)} {block.title}</span>)}{dayLessons.length + dayStudy.length > 2 && <small>+{dayLessons.length + dayStudy.length - 2}</small>}</span>
             {(dayLessons.length > 0 || dayStudy.length > 0) && <span className="student-calendar-dots" aria-hidden="true">{dayLessons.slice(0, 2).map(lesson => <i key={lesson.id} className={`event-${lesson.status}`}/>)}{dayStudy.slice(0, 1).map(block => <i key={block.id} className="event-study"/>)}</span>}
@@ -91,21 +103,21 @@ export function StudentCalendar({ lessons, proposals, studyBlocks = [], onAddStu
         })}</div>
         <div className="student-calendar-legend"><span><i className="legend-scheduled"/>{t("补习课")}</span><span><i className="legend-completed"/>{t("已上课")}</span>{onAddStudy && <span><i className="legend-study"/>{t("个人学习")}</span>}<span><i className="legend-absent"/>{t("缺席")}</span></div>
       </div>
-      <aside className="student-day-panel" aria-live="polite">
-        <div className="student-day-heading"><span>{dateLabel(selectedDay, { weekday: "long" })}</span><h3>{dateLabel(selectedDay, { year: "numeric", month: "long", day: "numeric" })}</h3><p>{selectedLessons.length} {t("堂课")}{onAddStudy && <> · {selectedStudy.length} {t("项学习安排")}</>}</p>{onAddStudy && <Button size="sm" variant="outline" onClick={() => onAddStudy?.(selectedDay)}>{t("为这一天新增学习安排")}</Button>}</div>
+      <aside className="student-day-panel" aria-live="polite" aria-busy={loading}>
+        <div className="student-day-heading"><div><h3>{dateLabel(selectedDay, { month: "long", day: "numeric", weekday: "short" })}</h3><p>{loading?t("正在加载…"):selectedLessons.length} {!loading&&t("堂课")}{onAddStudy && <> · {selectedStudy.length} {t("项学习安排")}</>} · GMT+8</p></div>{onAddStudy && <Button size="sm" variant="outline" onClick={() => onAddStudy?.(selectedDay)}><Plus size={18} aria-hidden="true"/>{t("新增学习计划")}</Button>}</div>
         {selectedLessons.map(lesson => <article className={`student-day-lesson lesson-${lesson.status}`} key={lesson.id}>
-          <div className="student-day-lesson-top"><strong>{role === "student" ? lesson.subject : `${lesson.student} · ${lesson.subject}`}</strong><span>{t(lesson.attendanceKind === "early_dismissal" ? "提前结束课程" : statusText[lesson.status] || lesson.status)}</span></div>
+          <div className="student-day-lesson-top"><strong>{lesson.subject}</strong><span>{t(lesson.attendanceKind === "early_dismissal" ? "提前结束课程" : statusText[lesson.status] || lesson.status)}</span></div>
           <p><Clock3 size={16} aria-hidden="true"/>{time(lesson.plannedStart)}–{time(lesson.plannedEnd)}</p>
+          {role!=="student"&&lesson.sessionType!=="group"&&sessionLessonTitle(lesson)&&<p className="student-day-lesson-identity">{sessionLessonTitle(lesson)}</p>}
           <p><span className="student-teacher-avatar" aria-hidden="true">{lesson.teacherName.charAt(0).toUpperCase()}</span>{lesson.teacherName}</p>
-          <OnlineLessonLink href={lesson.onlineLink}/>
-          {lesson.actualStart && lesson.actualEnd && <small>{t("实际时间")}：{time(lesson.actualStart)}–{time(lesson.actualEnd)}</small>}
-          {onRequestReschedule && lesson.status === "scheduled" && !pending.has(lesson.id) && <Button size="sm" variant="outline" disabled={busy} onClick={() => onRequestReschedule?.(lesson.id)}>{t("申请改期")}</Button>}
+          <ClassSessionLabel lesson={lesson}/>{lesson.personalAttendance&&lesson.personalAttendance!=="pending"&&<small>{t("个人出席")} · {t(attendanceLabels[lesson.personalAttendance]||lesson.personalAttendance)}</small>}<OnlineLessonLink href={lesson.onlineLink}/>
+          {onRequestReschedule && lesson.sessionType!=="group" && lesson.status === "scheduled" && !pending.has(lesson.id) && <Button size="sm" variant="outline" disabled={busy} onClick={() => onRequestReschedule?.(lesson.id)}>{t("申请改期")}</Button>}
           {renderActions?.(lesson.id)}
-          <LessonHistory lessonId={lesson.id}/>
+          <details className="course-row-details"><summary>{t("详情与记录")}</summary>{lesson.actualStart && lesson.actualEnd && <small>{t("实际时间")}：{time(lesson.actualStart)}–{time(lesson.actualEnd)}</small>}<LessonHistory lessonId={lesson.id}/></details>
           {pending.has(lesson.id) && <a className="student-lesson-pending" href="#student-reschedule" onClick={event => { if (onPending) { event.preventDefault(); onPending(lesson.id); } }}>{t(role === "admin" ? "待确认改期" : pending.get(lesson.id)!.requestedRole === role ? (role === "teacher" ? "等待学生确认" : "等待老师确认") : "待你确认改期")} · {dateLabel(malaysiaDay(pending.get(lesson.id)!.proposedStart), { month: "short", day: "numeric" })} {time(pending.get(lesson.id)!.proposedStart)} →</a>}
         </article>)}
-        {selectedStudy.map(block => <article className="student-day-lesson lesson-study" key={block.id}><div className="student-day-lesson-top"><strong>{block.title}</strong><span>{t("个人学习")}</span></div><p><Clock3 size={16} aria-hidden="true"/>{time(block.startsAt)}–{time(block.endsAt)}</p>{block.subject && <p>{block.subject}</p>}{block.note && <small>{block.note}</small>}<Button size="sm" variant="outline" onClick={() => onEditStudy?.(block)}>{t("编辑学习安排")}</Button></article>)}
-        {!selectedLessons.length && !selectedStudy.length && <div className="student-day-empty"><CalendarDays size={26} aria-hidden="true"/><p>{t(onAddStudy ? "当日暂无课程或学习安排。" : "当日暂无课程。")}</p></div>}
+        {selectedStudy.map(block => <article className="student-day-lesson lesson-study" key={block.id}><div className="student-day-lesson-top"><strong>{block.title}</strong><span>{t("个人学习")}</span></div><p><Clock3 size={16} aria-hidden="true"/>{time(block.startsAt)}–{time(block.endsAt)}</p>{block.subject && <p>{block.subject}</p>}{block.note && <small>{block.note}</small>}<Button size="sm" variant="outline" onClick={() => onEditStudy?.(block)}>{t("编辑学习计划")}</Button></article>)}
+        {!loading && !selectedLessons.length && !selectedStudy.length && <div className="student-day-empty">{role === "student" ? <Mascot pose="rest" size={88}/> : <CalendarDays size={26} aria-hidden="true"/>}<p>{t(onAddStudy ? "当日暂无课程或学习安排。" : "当日暂无课程。")}</p></div>}
       </aside>
     </div>
   </section>;

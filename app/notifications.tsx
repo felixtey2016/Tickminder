@@ -1,4 +1,9 @@
 "use client";
+import {displayFormatter} from '@/lib/display-preferences';
+import {groupFetch} from "@/lib/group-client";
+import {getPrivateReadSnapshot,subscribePrivateReadLifecycle} from '@/lib/private-read-lifecycle';
+import {PrivateReadInvalidatedError} from '@/lib/private-read-flight';
+
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Bell, BellOff, Check, Settings, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -6,13 +11,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { alertActionFailure, readApiJson, showActionToast } from "@/lib/action-feedback";
 import { useDialogState } from "@/lib/use-dialog-state";
 import { t, type Language } from "@/lib/i18n";
+import {usePageHistoryState} from '@/lib/page-history';
+import {notificationDestination,type NotificationDestination} from '@/lib/notification-navigation';
+import './notification-workspace.css';
 
-type Item={id:string;minutes:number;dueAt:string;readAt:string|null;subject:string;teacherName:string;plannedStart:string;plannedEnd:string};
-type State={items:Item[];configured:boolean;publicKey:string|null;schedulerReady:boolean;lastDispatchAt:string|null};
+type Item={id:string;contentKind?:"material"|"homework"|"quiz";recordId?:string;lessonId?:string;attemptId?:string;title?:string;kind?:string;minutes?:number;dueAt:string;readAt:string|null;subject:string;teacherName:string;plannedStart:string;plannedEnd:string;previousStart?:string};
+type State={summary?:boolean;groupId?:string;accountId?:string;unreadCount:number;unreadQuizCount?:number;items:Item[];configured:boolean;publicKey:string|null;schedulerReady:boolean;lastDispatchAt:string|null};
 type Device={accountId:string;id:string};
 const DEVICE_KEY="tickminder-push-device";
-// A dismissal is intentionally not persisted: a full new entry offers again.
-let offeredThisEntry=false;
 let pushPaused=false;
 let deviceQueue:Promise<unknown>=Promise.resolve();
 function withDeviceLock<T>(operation:()=>Promise<T>):Promise<T> {
@@ -21,7 +27,7 @@ function withDeviceLock<T>(operation:()=>Promise<T>):Promise<T> {
 function readDevice():Device|null {try {return JSON.parse(localStorage.getItem(DEVICE_KEY)||"null");}catch{return null;}}
 function writeDevice(value:Device|null) {try{if(value)localStorage.setItem(DEVICE_KEY,JSON.stringify(value));else localStorage.removeItem(DEVICE_KEY);}catch{/* browser privacy settings */}}
 async function api(body:Record<string,unknown>) {
-  const response=await fetch("/api/notifications",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const response=await groupFetch("/api/notifications",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   const result=await readApiJson<{ok?:boolean;error?:string;id?:string}>(response);
   if(!response.ok || result.error) throw new Error(result.error||"操作失败，请重试");return result;
 }
@@ -51,45 +57,99 @@ function needsHomeScreen() {
 function applicationKey(key:string) {const raw=atob(key.replace(/-/g,"+").replace(/_/g,"/"));return Uint8Array.from(raw,c=>c.charCodeAt(0));}
 type ContextValue={state:State|null;loadError:string;deviceId:string|null;enabled:boolean;busy:boolean;enable:()=>Promise<void>;disable:()=>Promise<void>;test:()=>Promise<void>;refresh:()=>Promise<void>;read:(id?:string)=>Promise<void>;showHelp:()=>void};
 const Context=createContext<ContextValue|null>(null);
+export function useNotificationControls(){return useContext(Context);}
 
-export function NotificationsProvider({accountId,language,children}:{accountId:string;language:Language;children:ReactNode}) {
+export function MenuBadge({count=0,includeUnread=false,quizOnly=false,header=false}:{count?:number;includeUnread?:boolean;quizOnly?:boolean;header?:boolean}) {
+  const context=useContext(Context);
+  const unread=context?.state?.unreadCount ?? context?.state?.items.filter(item=>!item.readAt).length ?? 0;
+  const quizUnread=context?.state?.unreadQuizCount ?? context?.state?.items.filter(item=>item.contentKind==='quiz'&&!item.readAt).length ?? 0;
+  const total=count+(quizOnly?quizUnread:includeUnread?unread:0);
+  if(total<=0)return null;
+  return <span className={"menu-count"+(header?" menu-count-header":"")} aria-label={`${total} ${t("项待查看或处理")}`}>{total>99?"99+":total}</span>;
+}
+
+export function NotificationsProvider({accountId,groupId,language,children,audience='learning',inboxOpen=false}:{accountId:string;groupId:string;language:Language;children:ReactNode;audience?:'learning'|'parent';inboxOpen?:boolean}) {
   const [state,setState]=useState<State|null>(null),[loadError,setLoadError]=useState(""),[deviceId,setDeviceId]=useState<string|null>(null),[enabled,setEnabled]=useState(false),[busy,setBusy]=useState(false);
-  const [prompt,setPrompt]=useDialogState<true|null>("notification-permission",null);
-  const inFlight=useRef(false),configured=useRef<State|null>(null);
-  useEffect(()=>{pushPaused=false;},[accountId]);
-  const refresh=useCallback(async()=>{
-    const response=await fetch("/api/notifications",{cache:"no-store"});
+  // Only explicit notification controls open this guide. Do not restore a
+  // legacy automatically opened permission dialog from navigation history.
+  const [prompt,setPrompt]=useDialogState<true|null>("notification-help",null);
+  const inFlight=useRef(false),configured=useRef<State|null>(null),latestRefresh=useRef(0),refreshAbort=useRef<AbortController|null>(null);
+  const refreshPending=useRef<{key:string;promise:Promise<void>}|null>(null),refreshHealth=useRef({at:0,retryAt:0,failures:0,dataEpoch:-1,inbox:false,error:null as unknown});
+  const inboxVisible=useRef(inboxOpen),lastInboxMode=useRef(inboxOpen);inboxVisible.current=inboxOpen;
+  useEffect(()=>{pushPaused=false;latestRefresh.current++;refreshAbort.current?.abort();configured.current=null;refreshPending.current=null;refreshHealth.current={at:0,retryAt:0,failures:0,dataEpoch:-1,inbox:false,error:null};setState(null);setLoadError('');},[accountId,groupId]);
+  const refresh=useCallback((mode:'manual'|'timer'|'foreground'|'change'='manual'):Promise<void>=>{
+    const context=getPrivateReadSnapshot(),health=refreshHealth.current,now=Date.now();
+    if(context.blocked)return Promise.reject(new PrivateReadInvalidatedError());
+    if(mode!=='manual'&&now<health.retryAt)return Promise.reject(health.error);
+    if((mode==='timer'||mode==='foreground')&&health.at&&health.dataEpoch===context.dataEpoch&&health.inbox===inboxVisible.current&&now-health.at<500)return Promise.resolve();
+    const key=JSON.stringify([accountId,groupId,inboxVisible.current,context.epoch]);
+    if(refreshPending.current?.key===key)return refreshPending.current.promise;
+    const requestId=++latestRefresh.current,controller=new AbortController();refreshAbort.current?.abort();refreshAbort.current=controller;
+    const promise=(async()=>{
+    const response=await groupFetch(inboxVisible.current?"/api/notifications":"/api/notifications?view=summary",{cache:"no-store",signal:controller.signal});
+    if(requestId!==latestRefresh.current||context.epoch!==getPrivateReadSnapshot().epoch){controller.abort();throw new PrivateReadInvalidatedError();}
+    if([401,403,404].includes(response.status)){configured.current=null;setState(null);throw new Error("登录已过期，请重新登录");}
     const result=await readApiJson<State & {error?:string}>(response);
     if(!response.ok || result.error) throw new Error(result.error||"通知中心暂时无法载入，请稍后重试");
+    if((result.accountId && result.accountId!==accountId)||(result.groupId && result.groupId!==groupId))throw new Error("登录已过期，请重新登录");
+    if(requestId!==latestRefresh.current||context.epoch!==getPrivateReadSnapshot().epoch)throw new PrivateReadInvalidatedError();
     configured.current=result;setState(result);setLoadError("");
-  },[]);
+    refreshHealth.current={at:Date.now(),retryAt:0,failures:0,dataEpoch:context.dataEpoch,inbox:inboxVisible.current,error:null};
+    })().catch(error=>{
+      if(controller.signal.aborted)throw new PrivateReadInvalidatedError();
+      if(!(error instanceof PrivateReadInvalidatedError)&&requestId===latestRefresh.current){const failures=refreshHealth.current.failures+1;refreshHealth.current={...refreshHealth.current,failures,retryAt:Date.now()+Math.min(300_000,15_000*2**Math.min(failures-1,5)),error};}
+      throw error;
+    }).finally(()=>{if(refreshPending.current?.promise===promise)refreshPending.current=null;if(refreshAbort.current===controller)refreshAbort.current=null;});
+    refreshPending.current={key,promise};return promise;
+  },[accountId,groupId]);
   useEffect(()=>{
-    let alive=true;
+    if(lastInboxMode.current===inboxOpen)return;lastInboxMode.current=inboxOpen;
+    void refresh().catch(error=>{if(!(error instanceof PrivateReadInvalidatedError))setLoadError(t("通知中心暂时无法载入，请稍后重试"));});
+  },[inboxOpen,refresh]);
+  useEffect(()=>{
+    let alive=true,needsDeviceSync=true;
     const sync=()=>withDeviceLock(async()=>{
-      if(!alive || pushPaused)return;
+      if(!alive || pushPaused||!needsDeviceSync)return;
       try {
-        await refresh();if(!alive || pushPaused)return;
+        await refresh('foreground');if(!alive || pushPaused)return;
+        needsDeviceSync=false;
         if(supported()) {
+          try {
           const registration=await navigator.serviceWorker.register("/notifications-sw.js",{scope:"/"});
-          let subscription=await registration.pushManager.getSubscription();const saved=readDevice();
+          let subscription=await registration?.pushManager?.getSubscription();const saved=readDevice();
           if(!alive || pushPaused)return;
           if(subscription && saved && saved.accountId!==accountId) {await subscription.unsubscribe();subscription=null;writeDevice(null);}
           if(subscription && Notification.permission==="granted" && configured.current?.configured) {
             const result=await api({action:"subscribe",subscription:subscription.toJSON(),language});
             writeDevice({accountId,id:result.id!});if(!alive || pushPaused)return;setDeviceId(result.id!);setEnabled(true);return;
           }
+          } catch { /* Optional device push must not hide a successfully loaded inbox. */ }
         }
         setDeviceId(null);setEnabled(false);
-        if(!offeredThisEntry && alive) {offeredThisEntry=true;setPrompt(true);}
-      } catch(error) {if(alive)setLoadError(error instanceof Error?t(error.message):t("通知中心暂时无法载入，请稍后重试"));}
+        // A missing subscription is not a reason to interrupt the page. The
+        // Notification Centre retains explicit enable/help controls.
+      } catch(error) {if(alive&&!(error instanceof PrivateReadInvalidatedError))setLoadError(error instanceof Error?t(error.message):t("通知中心暂时无法载入，请稍后重试"));}
     });
     void sync();
-    const visible=()=>{if(document.visibilityState==="visible") void sync();};
-    const returning=(event:PageTransitionEvent)=>{if(event.persisted){offeredThisEntry=false;void sync();}};
-    const message=(event:MessageEvent)=>{if(event.data?.type==="tickminder:notifications")window.dispatchEvent(new Event("tickminder:open-notifications"));};
-    const timer=window.setInterval(()=>{if(document.visibilityState==="visible")void refresh().catch(()=>setLoadError(t("通知中心暂时无法载入，请稍后重试")));},60_000);
+    const visible=()=>{if(document.visibilityState==="visible"){needsDeviceSync=true;void sync();}};
+    const returning=(event:PageTransitionEvent)=>{if(event.persisted){needsDeviceSync=true;void sync();}};
+    const update=(mode:'change'|'timer')=>{if(alive && document.visibilityState==="visible")void refresh(mode).catch(error=>{if(!(error instanceof PrivateReadInvalidatedError))setLoadError(t("通知中心暂时无法载入，请稍后重试"));});};
+    let changeTimer:ReturnType<typeof setTimeout>|undefined;
+    // All listeners for the same DOM event finish advancing the read fence
+    // before this request captures it; do not send an obsolete extra GET.
+    const changed=()=>{clearTimeout(changeTimer);changeTimer=setTimeout(()=>{changeTimer=undefined;update('change');},50);};
+    let previous=getPrivateReadSnapshot();
+    const unsubscribe=subscribePrivateReadLifecycle(()=>{
+      const next=getPrivateReadSnapshot(),cleared=next.clearEpoch!==previous.clearEpoch,changedData=next.dataEpoch!==previous.dataEpoch;
+      if(next.epoch!==previous.epoch)refreshAbort.current?.abort();previous=next;
+      if(cleared){latestRefresh.current++;configured.current=null;setState(null);}
+      if(!next.blocked){if(needsDeviceSync)void sync();else if(changedData||!configured.current)changed();}
+    });
+    const message=(event:MessageEvent)=>{if(event.data?.type==="tickminder:notifications"){changed();if(event.data.open!==false)window.dispatchEvent(new Event("tickminder:open-notifications"));}};
+    const timer=window.setInterval(()=>update('timer'),30_000);
     document.addEventListener("visibilitychange",visible);window.addEventListener("pageshow",returning);navigator.serviceWorker?.addEventListener("message",message);
-    return()=>{alive=false;clearInterval(timer);document.removeEventListener("visibilitychange",visible);window.removeEventListener("pageshow",returning);navigator.serviceWorker?.removeEventListener("message",message);};
+    window.addEventListener("tickminder:data-changed",changed);
+    return()=>{alive=false;unsubscribe();latestRefresh.current++;refreshAbort.current?.abort();clearTimeout(changeTimer);clearInterval(timer);document.removeEventListener("visibilitychange",visible);window.removeEventListener("pageshow",returning);window.removeEventListener("tickminder:data-changed",changed);navigator.serviceWorker?.removeEventListener("message",message);};
   },[accountId,language,refresh,setPrompt]);
   const enable=async()=>{
     if(inFlight.current)return;
@@ -100,8 +160,8 @@ export function NotificationsProvider({accountId,language,children}:{accountId:s
     pushPaused=false;
     try {
       // Request immediately within the user's click, before any asynchronous IO.
-      const permission=await Notification.requestPermission();
-      if(permission!=="granted") {setEnabled(false);return;}
+      const permission=Notification.permission==="granted"?"granted":await Notification.requestPermission();
+      if(permission!=="granted") {setEnabled(false);setPrompt(null);return;}
       await withDeviceLock(async()=>{
         if(pushPaused)return;
         const registration=await navigator.serviceWorker.ready;
@@ -122,23 +182,26 @@ export function NotificationsProvider({accountId,language,children}:{accountId:s
   const read=(id?:string)=>perform(async()=>{await api(id?{action:"read",id}:{action:"readAll"});await refresh();},"通知已标记为已读");
   const ios=typeof navigator!=="undefined"&&needsHomeScreen(),denied=typeof Notification!=="undefined"&&Notification.permission==="denied";
   return <Context.Provider value={{state,loadError,deviceId,enabled,busy,enable,disable,test,refresh,read,showHelp:()=>setPrompt(true)}}>{children}
-    <Dialog open={Boolean(prompt)} onOpenChange={open=>{if(!open)setPrompt(null);}}><DialogContent className="notification-dialog"><DialogHeader><DialogTitle>{t("开启上课提醒")}</DialogTitle></DialogHeader>
-      <div className="notification-symbol"><Bell size={28}/></div><p>{t("在上课前 30 分钟、5 分钟及开始时接收提醒。")}</p>
+    <Dialog open={Boolean(prompt)} onOpenChange={open=>{if(!open)setPrompt(null);}}><DialogContent className="notification-dialog"><DialogHeader><DialogTitle>{t(audience==='parent'?"开启家长通知":"开启上课提醒")}</DialogTitle></DialogHeader>
+      <div className="notification-symbol"><Bell size={28}/></div><p>{t(audience==='parent'?"接收孩子缺席、账单及欠费提醒；财务提醒需要对应孩子的授权。":"在上课前 30 分钟、5 分钟及开始时接收提醒。")}</p>
       {ios?<div className="notification-help"><Smartphone size={20}/><p>{t("iPhone／iPad：请用 Safari 打开网站，点击分享 → 添加到主屏幕，再从主屏幕图标进入并开启通知。")}</p></div>:denied?<div className="notification-help"><Settings size={20}/><p>{t("浏览器已禁止通知。请在网站设置或设备通知设置中改为允许，然后回到 Tickminder 开启提醒。")}</p></div>:typeof navigator!=="undefined"&&!supported()?<p className="notice">{t("此浏览器暂不支持推送通知。请使用支持通知的浏览器；你仍可查看通知中心。")}</p>:null}
       <p className="notification-muted">{t("每个设备需要分别开启。提醒可能受网络或系统设置影响，请以课程时间为准。")}</p>
-      {!state?.configured && <p className="notice">{t("自动上课提醒正在配置，通知中心仍可查看。")}</p>}
-      <div className="notification-actions"><Button variant="outline" onClick={()=>setPrompt(null)}>{t("稍后再说")}</Button>{!ios&&!denied&&<Button onClick={()=>void enable()} disabled={busy||!state?.configured}>{t("开启通知")}</Button>}</div>
+      {!state?.configured && <p className="notice">{t(audience==='parent'?"推送服务尚未配置，仍可查看站内通知。":"自动上课提醒正在配置，通知中心仍可查看。")}</p>}
+      <div className="notification-actions"><Button variant="outline" onClick={()=>setPrompt(null)}>{t("暂不开启")}</Button>{!ios&&!denied&&<Button onClick={()=>void enable()} disabled={busy||!state?.configured}>{t("开启此设备通知")}</Button>}</div>
     </DialogContent></Dialog>
   </Context.Provider>;
 }
-export function NotificationCentre({onLesson,language}:{onLesson:()=>void;language:Language}) {
-  const value=useContext(Context);if(!value)return null;
+export function NotificationCentre({onOpen,language}:{onOpen:(target:NotificationDestination)=>void;language:Language}) {
+  const value=useContext(Context);
+  const [status,setStatus]=usePageHistoryState('notifications.status','unread'),[category,setCategory]=usePageHistoryState('notifications.category','all');
+  if(!value)return null;
   const {state,loadError,enabled,busy,enable,disable,test,refresh,read,showHelp}=value;
-  const date=(input:string)=>new Intl.DateTimeFormat(language==="en"?"en-GB":"zh-CN",{timeZone:"Asia/Kuala_Lumpur",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(input));
-  return <div className="notification-page"><section className="panel notification-settings"><div className="notification-heading"><Bell size={22}/><h2>{t("上课提醒")}</h2></div><p>{t("在上课前 30 分钟、5 分钟及开始时接收提醒。")}</p><p className="notification-status">{enabled?<Check size={18}/>:<BellOff size={18}/>} {t(enabled?"此设备已开启通知":"此设备尚未开启通知")}</p>
-    <div className="notification-actions">{enabled?<><Button variant="outline" onClick={()=>void test()} disabled={busy}>{t("发送测试提醒")}</Button><Button variant="outline" onClick={()=>void disable()} disabled={busy}>{t("关闭此设备通知")}</Button></>:<Button onClick={()=>void enable()} disabled={busy||!state?.configured}>{t("开启通知")}</Button>}<Button variant="outline" onClick={showHelp}>{t("通知设置说明")}</Button></div>
-    {!state?.schedulerReady&&<p className="notice">{t("自动上课提醒暂未连接。你仍可在通知中心查看提醒，请以课程时间为准。")}</p>}<p className="notification-muted">{t("每个设备需要分别开启。提醒可能受网络或系统设置影响，请以课程时间为准。")}</p></section>
-    <section className="panel"><div className="notification-list-heading"><h2>{t("通知中心")}</h2><Button variant="outline" disabled={busy||!state?.items.some(item=>!item.readAt)} onClick={()=>void read()}>{t("全部标记已读")}</Button></div>
-      {loadError?<div className="error" role="alert">{loadError}<Button variant="outline" onClick={()=>void refresh().catch(alertActionFailure)}>{t("重试")}</Button></div>:!state?<p>{t("正在载入…")}</p>:!state.items.length?<p className="empty">{t("暂无上课提醒。课程临近时，提醒会显示在这里。")}</p>:<div className="notification-list">{state.items.map(item=><article key={item.id} className={"notification-item"+(item.readAt?"":" unread")}><div><span className="notification-kicker">{t(item.minutes===0?"课程已到开始时间":item.minutes===5?"课前 5 分钟提醒":"课前 30 分钟提醒")}</span><h3>{item.subject}</h3><p>{date(item.plannedStart)} · {item.teacherName}</p></div><div className="notification-actions"><Button variant="outline" onClick={onLesson}>{t("查看课程")}</Button>{!item.readAt&&<Button variant="outline" disabled={busy} onClick={()=>void read(item.id)}>{t("标记已读")}</Button>}</div></article>)}</div>}
-    </section></div>;
+  const label=(zh:string,en:string)=>language==='zh'?zh:en;
+  const items=state?.items.filter(item=>(status==='all'||!item.readAt)&&(category==='all'||(item.contentKind||'course')===category))||[];
+  const date=(input:string)=>displayFormatter(language==="en"?"en-GB":"zh-CN",{timeZone:"Asia/Kuala_Lumpur",year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(input));
+  const messageTitle=(item:Item)=>item.kind==="quiz_assigned"?"收到新的 Quiz 安排":item.kind==="quiz_updated"?"Quiz 安排已更新":item.kind==="quiz_retake_granted"?"Quiz 作答权限已更新":item.kind==="quiz_pending_marking"?"Quiz 有待批改的提交":item.kind==="group_reschedule_requested"?"老师申请整班改期":item.kind==="feedback_published"?"老师已发布批改反馈":item.kind==="resubmission_granted"?"老师已授予一次重交权限":item.kind==="homework_updated"?"功课已更新":item.kind==="material_updated"?"教学资料已更新":item.kind==="cancel"?"课程已取消":item.kind==="rejectReschedule"?"改期申请已被拒绝":item.kind==="reschedule"||item.kind==="acceptReschedule"?"课程时间已变更":item.minutes===0?"课程时间已到":item.minutes===5?"课前 5 分钟提醒":"课前 30 分钟提醒";
+  return <div className="notification-page"><section className="panel notification-inbox"><div className="notification-list-heading"><h2>{t("通知中心")}</h2><Button variant="outline" disabled={busy||!state?.items.some(item=>!item.readAt)} onClick={()=>void read()}>{t("全部标为已读")}</Button></div>
+    <div className="notification-filters"><label>{label('状态','Status')}<select aria-label={label('通知状态','Notification status')} value={status} onChange={event=>setStatus(event.target.value)}><option value="unread">{label('未读','Unread')}</option><option value="all">{label('全部','All')}</option></select></label><label>{label('分类','Category')}<select aria-label={label('通知分类','Notification category')} value={category} onChange={event=>setCategory(event.target.value)}><option value="all">{label('全部分类','All categories')}</option><option value="course">{label('课程','Courses')}</option><option value="homework">{label('功课','Homework')}</option><option value="material">{label('教学资料','Materials')}</option><option value="quiz">Quiz</option></select></label></div>
+    {loadError?<div className="error" role="alert" data-error-popup-ignore>{loadError}<Button variant="outline" onClick={()=>void refresh().catch(alertActionFailure)}>{t("重试")}</Button></div>:!state||state.summary?<p role="status">{t("正在加载…")}</p>:!items.length?<div className="notification-empty"><p className="empty">{label(status==='unread'?'暂无未读通知':'暂无通知',status==='unread'?'No unread notifications.':'No notifications.')}</p>{status==='unread'&&<Button type="button" variant="outline" onClick={()=>setStatus('all')}>{label('查看全部通知','View all notifications')}</Button>}</div>:<div className="notification-list">{items.map(item=>{const target=notificationDestination(item);return <article key={item.id} className={"notification-item"+(item.readAt?"":" unread")}><div className="notification-item-content"><div className="notification-item-meta"><span className="notification-kicker">{t(messageTitle(item))}</span><span className="notification-read-state">{label(item.readAt?'已读':'未读',item.readAt?'Read':'Unread')}</span></div><h3>{item.title||item.subject}</h3><p>{item.contentKind?date(item.dueAt):`${date(item.plannedStart)} · ${item.teacherName}`}</p></div><div className="notification-actions"><Button variant="outline" disabled={!target} onClick={()=>{if(target){if(!item.readAt)void read(item.id);onOpen(target);}}}>{target?(item.contentKind==='quiz'?t('查看 Quiz'):item.contentKind==='homework'?t('查看功课'):item.contentKind==='material'?label('查看教学资料','View material'):label('查看课程','View lesson')):label('内容不可用','Content unavailable')}</Button>{!item.readAt&&<Button variant="outline" disabled={busy} onClick={()=>void read(item.id)}>{t("标为已读")}</Button>}</div></article>;})}</div>}
+    </section><details className="panel notification-device-settings"><summary><span><Settings size={19}/>{label('此设备通知设置','Device notification settings')}</span>{state&&!loadError&&(enabled?<Check size={18}/>:<BellOff size={18}/>)}</summary><div>{!state||loadError?<><p className="notification-status" role={loadError?'alert':'status'}>{loadError||t('正在加载…')}</p>{loadError&&<Button type="button" variant="outline" onClick={()=>void refresh().catch(alertActionFailure)}>{t('重试')}</Button>}</>:<><p className="notification-status">{t(enabled?"此设备已开启通知":"此设备尚未开启通知")}</p><div className="notification-actions">{enabled?<><Button variant="outline" onClick={()=>void test()} disabled={busy}>{t("发送测试通知")}</Button><Button variant="outline" onClick={()=>void disable()} disabled={busy}>{t("关闭此设备通知")}</Button></>:<Button onClick={()=>void enable()} disabled={busy||!state.configured}>{t("开启此设备通知")}</Button>}<Button variant="outline" onClick={showHelp}>{t("通知开启指南")}</Button></div>{!state.schedulerReady&&<p className="notice">{t("自动提醒服务暂不可用。你仍可查看通知中心，请以课表时间为准。")}</p>}</>}</div></details></div>;
 }

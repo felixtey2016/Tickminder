@@ -1,0 +1,12 @@
+import {reportUnexpectedError} from '@/lib/diagnostics-server';
+import { isLegacyBusinessRole } from '@/lib/legacy-business-access';
+import {currentBusinessAccount} from "@/lib/auth";
+import {classScheduleOptions,classSessionState,ClassSessionError,classSessionPreview} from "@/lib/class-sessions";
+import {classroomMayRead} from "@/lib/classrooms-server";
+import {translate} from "@/lib/i18n";
+import {studentSessionResponse} from "@/lib/student-course-response";
+import {adminPermissionFailure} from '@/lib/admin-permission-access';
+const headers={"Cache-Control":"private, no-store"};
+function failure(request:Request,error:unknown){const lang=new URL(request.url).searchParams.get("lang")==="en"?"en":"zh",permission=adminPermissionFailure(error);if(!permission&&!(error instanceof ClassSessionError))reportUnexpectedError(error,{operation:'api-class-sessions'});return Response.json({error:translate(permission?.error||(error instanceof ClassSessionError?error.message:"班级课次操作未能确认，请重新载入"),lang),...(error instanceof ClassSessionError&&error.conflict?{conflict:error.conflict}:{})},{status:permission?.status||(error instanceof ClassSessionError?error.status:503),headers});}
+export async function GET(request:Request){try{const actor=await currentBusinessAccount();if(!actor)throw new ClassSessionError("请先登录",401);if(!isLegacyBusinessRole(actor.role))throw new ClassSessionError("没有课程访问权限",403);const classroomId=new URL(request.url).searchParams.get("classroomId");if(classroomId){if(!await classroomMayRead(actor,classroomId))throw new ClassSessionError("班级不存在或无权访问",404);const {classroomSessions:sessions}=await classSessionState(actor,{classroomId});return Response.json({sessions:actor.role==="student"?sessions.map(session=>studentSessionResponse(session,actor.studentName)):sessions},{headers});}return Response.json({classes:await classScheduleOptions(actor)},{headers});}catch(error){return failure(request,error);}}
+export async function POST(request:Request){try{if(request.headers.get("origin")!==new URL(request.url).origin)throw new ClassSessionError("Origin mismatch",403);const actor=await currentBusinessAccount();if(!actor)throw new ClassSessionError("请先登录",401);return Response.json(await classSessionPreview(actor,await request.json()),{headers});}catch(error){if(error instanceof ClassSessionError&&error.conflict)return Response.json({available:false,conflict:error.conflict},{headers});return failure(request,error);}}

@@ -1,4 +1,7 @@
 "use client";
+import {LessonTimeRange} from "@/components/lesson-time-range";
+import {validLessonRange} from "@/lib/lesson-time-range";
+import {DateTimeInput} from '@/components/date-time-input';
 import { useState } from "react";
 import { useDialogState } from "@/lib/use-dialog-state";
 import { t } from "@/lib/i18n";
@@ -17,9 +20,9 @@ export function RescheduleRequestDialog({ lesson, close, mutate, busy }: { lesso
   return <Dialog open={Boolean(lesson)} onOpenChange={open => { if (!open) close(); }}><DialogContent className="lesson-dialog"><DialogHeader><DialogTitle>{t("申请改期")}</DialogTitle></DialogHeader>{lesson && <form onSubmit={async e => { e.preventDefault(); if (await mutate({ action: "proposeReschedule", id: lesson.id, start, end, note })) close(); }}>
     <p className="dialog-sub">{lesson.subject} · {lesson.teacherName}<br/>{t("原时间：")}{range(lesson.plannedStart, lesson.plannedEnd)}</p>
     <p className="muted">{t("对方同意后才会更新上课时间。")}</p>
-    <div className="form-pair"><label>{t("新开始时间")}<input type="datetime-local" required value={start} onChange={e => setStart(e.target.value)}/></label><label>{t("新结束时间")}<input type="datetime-local" required value={end} onChange={e => setEnd(e.target.value)}/></label></div>
-    <ConflictPreview enabled={Boolean(start && end && start < end)} value={{ action: "proposeReschedule", id: lesson.id, start, end }}/>
-    <label>{t("备注（可选）")}<textarea maxLength={500} value={note} onChange={e => setNote(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("发送给老师确认")}</Button>
+    <LessonTimeRange start={start} end={end} disabled={busy} onChange={(a,b)=>{setStart(a);setEnd(b);}}/>
+    <ConflictPreview enabled={Boolean(validLessonRange(start,end))} value={{ action: "proposeReschedule", id: lesson.id, start, end }}/>
+    <label>{t("备注（可选）")}<textarea maxLength={500} value={note} onChange={e => setNote(e.target.value)}/></label><Button className="primary-full" disabled={busy}>{t("提交改期申请")}</Button>
   </form>}</DialogContent></Dialog>;
 }
 export function ReschedulePanel({ role, lessons, proposals, mutate, busy }: { role: "teacher" | "student"; lessons: Lesson[]; proposals: RescheduleProposal[]; mutate: Mutate; busy: boolean }) {
@@ -28,10 +31,10 @@ export function ReschedulePanel({ role, lessons, proposals, mutate, busy }: { ro
   const incoming = pending.filter(p => (p.requestedRole || "teacher") !== role);
   const outgoing = pending.filter(p => (p.requestedRole || "teacher") === role);
   const chosen = incoming.find(p => p.id === selected);
-  return <section className="panel" id={role + "-reschedule"}><p className="eyebrow">{t("改期申请")}</p><h2>{t("改期申请")}</h2>{[{ title: "待我确认", rows: incoming, respond: true }, { title: "等待对方确认", rows: outgoing, respond: false }].map(group => <div key={group.title}><h3>{t(group.title)}</h3>{group.rows.length ? group.rows.map(p => {
+  return <section className="panel course-reschedule-panel course-wave2" id={role + "-reschedule"} aria-label={t("改期申请")}>{role === "teacher" && <h2>{t("一对一课程")}</h2>}{[{ title: "待我确认", rows: incoming, respond: true }, { title: "等待对方确认", rows: outgoing, respond: false }].map(group => <div key={group.title}>{role === "teacher" ? <h3>{t(group.title)}</h3> : <h2>{t(group.title)}</h2>}{group.rows.length ? group.rows.map(p => {
     const lesson = lessons.find(l => l.id === p.lessonId); if (!lesson) return null;
-    return <article className="portal-card" key={p.id}><div><strong>{role === "teacher" ? lesson.student : lesson.teacherName} · {lesson.subject}</strong><span>{t("原时间：")}{range(p.originalStart, p.originalEnd)}</span><span>{t("建议时间：")}{range(p.proposedStart, p.proposedEnd)}</span>{p.note && <small>{p.note}</small>}{!group.respond && <small>{t(role === "student" ? "等待老师确认" : "等待学生确认")}</small>}</div>{group.respond && <div className="portal-actions"><Button size="sm" disabled={busy} onClick={() => setSelected(p.id)}>{t("同意改期")}</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => mutate({ action: "respondReschedule", id: lesson.id, requestId: p.id, decision: "reject" })}>{t("不同意")}</Button></div>}</article>;
+    return <article className="portal-card" key={p.id}><div><strong>{role === "teacher" ? lesson.student : lesson.teacherName} · {lesson.subject}</strong><span>{t("原时间：")}{range(p.originalStart, p.originalEnd)}</span><span>{t("建议时间：")}{range(p.proposedStart, p.proposedEnd)}</span>{p.note && <small>{p.note}</small>}{!group.respond && <small>{t(role === "student" ? "等待老师确认" : "等待学生确认")}</small>}</div>{group.respond && <div className="portal-actions"><Button size="sm" disabled={busy} onClick={() => setSelected(p.id)}>{t("接受新时间…")}</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => mutate({ action: "respondReschedule", id: lesson.id, requestId: p.id, decision: "reject" })}>{t("拒绝改期")}</Button></div>}</article>;
   }) : <p className="muted">{t("目前没有待确认的改期。")}</p>}</div>)}
-  <Dialog open={Boolean(chosen)} onOpenChange={open => { if (!open) setSelected(null); }}><DialogContent><DialogHeader><DialogTitle>{t("确认改期")}</DialogTitle></DialogHeader><p>{t("同意后，这堂课会改到对方建议的新时间。")}</p>{chosen && <p>{range(chosen.proposedStart, chosen.proposedEnd)}</p>}<Button disabled={busy} onClick={async () => { if (chosen && await mutate({ action: "respondReschedule", id: chosen.lessonId, requestId: chosen.id, decision: "accept" })) setSelected(null); }}>{t("确认改期")}</Button></DialogContent></Dialog>
+  <Dialog open={Boolean(chosen)} onOpenChange={open => { if (!open) setSelected(null); }}><DialogContent><DialogHeader><DialogTitle>{t("确认变更时间")}</DialogTitle></DialogHeader><p>{t("同意后，这堂课会改到对方建议的新时间。")}</p>{chosen && <p>{range(chosen.proposedStart, chosen.proposedEnd)}</p>}<Button disabled={busy} onClick={async () => { if (chosen && await mutate({ action: "respondReschedule", id: chosen.lessonId, requestId: chosen.id, decision: "accept" })) setSelected(null); }}>{t("确认变更时间")}</Button></DialogContent></Dialog>
   </section>;
 }

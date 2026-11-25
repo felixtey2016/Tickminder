@@ -1,0 +1,54 @@
+.parent-calendar{display:grid;gap:20px;min-width:0}
+.parent-calendar-toolbar,.parent-calendar-month-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0}
+.parent-calendar-toolbar{justify-content:space-between}.parent-calendar-month-controls h3{min-width:0;text-align:center;font-size:1.05rem}
+.parents-workspace .parent-calendar-month-controls button{width:44px;min-width:44px;padding:8px;flex:0 0 44px}
+.parent-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;min-width:0}
+.parent-calendar-weekday{text-align:center;color:#69677c;padding:6px 0;font-size:.875rem;font-weight:600}
+.parents-workspace .parent-calendar-day{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:7px;min-width:0;min-height:76px;padding:10px 2px;border:1px solid #ded9eb;border-radius:8px;background:white;color:#24223a;cursor:pointer;font:inherit;box-sizing:border-box}
+.parent-calendar-day[aria-pressed=true]{border:2px solid #5632d8;background:#f2edff;padding:9px 1px}
+.parent-calendar-day[data-today=true] .parent-calendar-number{font-weight:800;text-decoration:underline;text-underline-offset:4px}
+.parent-calendar-number{line-height:1.3}.parent-calendar-count{display:inline-flex;align-items:center;justify-content:center;padding:3px 4px;border-radius:5px;background:#eee8ff;color:#4e3299;font-size:.75rem;line-height:1.2;font-weight:600;max-width:100%}
+.parent-calendar-day[data-status=completed] .parent-calendar-count{background:#e5f5ef;color:#146448}.parent-calendar-day[data-status=absent] .parent-calendar-count{background:#fbebee;color:#9c2440}.parent-calendar-day[data-status=cancelled] .parent-calendar-count{background:#eeedf2;color:#635e70}
+.parent-calendar-legend{display:flex;gap:12px 16px;flex-wrap:wrap;color:#69677c;font-size:.875rem}.parent-calendar-legend>span{display:inline-flex;align-items:center;gap:7px}.parent-calendar-legend i{width:10px;height:10px;border-radius:50%;background:#8967d5;flex-shrink:0}.parent-calendar-legend i[data-status=completed]{background:#2f8764}.parent-calendar-legend i[data-status=absent]{background:#bb4761}.parent-calendar-legend i[data-status=cancelled]{background:#aaa5b5}
+.parent-calendar-day-details{display:grid;gap:16px;min-width:0;border-top:1px solid #e4e0ed;padding-top:20px}.parents-course-tabs{display:flex;flex-wrap:wrap;gap:12px;margin-top:20px}.parents-workspace .parents-main-filters{margin-top:0}.parents-workspace .parents-main-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px;min-width:0}.parents-workspace .parents-main-heading h1{font-size:1.5rem;line-height:1.4;margin:0}.parents-workspace .parents-main-heading>div{display:grid;gap:8px;min-width:0}
+@media(max-width:600px){.parent-calendar-grid{gap:4px}.parents-workspace .parent-calendar-day{min-height:64px;padding:8px 1px;gap:6px}.parent-calendar-day[aria-pressed=true]{padding:7px 0}.parent-calendar-count{font-size:.6875rem;padding:3px 2px}.parent-calendar-toolbar{align-items:flex-start}.parent-calendar-month-controls{gap:8px}.parent-calendar-month-controls h3{font-size:1rem}.parent-calendar-day-details .parents-record{padding:14px}}
+
+.parents-workspace .parent-calendar-month-picker{position:relative;display:flex;align-items:center;justify-content:center;gap:8px;min-width:0;min-height:44px;flex:1;border:1px solid #d6d2e4;border-radius:10px;padding:8px 12px;background:#fff;cursor:pointer;box-sizing:border-box}.parent-calendar-month-label{font-size:1rem;line-height:1.4;text-align:center;overflow-wrap:anywhere}.parent-calendar-month-picker::after{content:"▾";font-size:.75rem;color:#69677c;flex-shrink:0}.parents-workspace .parent-calendar-month-picker input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;min-height:0;padding:0}.parent-calendar-month-picker:focus-within{outline:2px solid #a58ae9;outline-offset:2px}
+@media(max-width:600px){.parent-calendar{gap:16px}.parent-calendar-toolbar{gap:10px}.parent-calendar-month-controls{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;flex:1 1 100%;gap:8px}.parents-workspace .parent-calendar-month-picker{padding:8px 4px}.parent-calendar-toolbar>button{margin-left:auto}}
+
+/* Round 2: match the course calendars, including the parent's all-children view. */
+.shell-wave1 .parent-calendar.course-wave2{gap:16px;align-items:start}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month{display:grid;gap:12px;min-width:0;padding:12px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface)}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-toolbar{display:grid;grid-template-columns:44px minmax(0,1fr) 44px auto;gap:6px;align-items:center}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month-controls{display:contents}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-toolbar>button{margin:0;min-height:44px;padding:8px}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month-picker{min-height:44px;padding:6px 4px;border-radius:6px;background:var(--ui-surface);border-color:var(--ui-border);color:var(--ui-text)}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month-label{font-size:15px;font-weight:600}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month-picker::after{color:var(--ui-muted)}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-weekday{color:var(--ui-muted);padding:4px 0;font-size:13px}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-day{border-color:var(--ui-border);background:var(--ui-surface);color:var(--ui-text);min-height:70px;border-radius:6px}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-day[aria-pressed=true]{border-color:var(--ui-accent);background:var(--ui-accent-soft)}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-count{background:var(--ui-accent-soft);color:var(--ui-accent)}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-day[data-status=completed] .parent-calendar-count{background:var(--ui-success-bg);color:var(--ui-success-text)}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-day[data-status=absent] .parent-calendar-count{background:var(--ui-warning-bg);color:var(--ui-warning-text)}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-day[data-status=cancelled] .parent-calendar-count{background:var(--ui-surface-muted);color:var(--ui-muted)}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-legend{color:var(--ui-muted);font-size:13px;gap:8px 12px}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-day-details{padding:14px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface);gap:12px}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-day-details>h3{font-size:16px;line-height:1.5;margin:0;padding:0 0 10px;border-bottom:1px solid var(--ui-border);color:var(--ui-text)}
+.shell-wave1 .parent-calendar.course-wave2 .parents-records{gap:10px}
+.shell-wave1 .parent-calendar.course-wave2 .parents-record{padding:12px;border-radius:6px}
+@media(min-width:1000px){.shell-wave1 .parent-calendar.course-wave2{grid-template-columns:minmax(320px,1.1fr) minmax(280px,.9fr)}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-day-details{position:sticky;top:148px}}
+@media(max-width:650px){.shell-wave1 .parent-calendar.course-wave2{gap:12px}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month{padding:10px;gap:10px}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-grid{gap:3px}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-day{min-height:50px;gap:3px;padding:5px 1px}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-day[aria-pressed=true]{padding:4px 0}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-count{font-size:11px;padding:2px}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-legend{font-size:12px;gap:6px 10px}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month-label{font-size:14px}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-day-details{padding:12px}}
+@media(max-width:380px){.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-toolbar{grid-template-columns:44px minmax(0,1fr) 44px}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-toolbar>button{grid-column:1/-1;justify-self:end}.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month-label{overflow-wrap:normal;word-break:normal}}
+
+/* Keep dates intact when the user enlarges text; only the calendar grid scrolls. */
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-grid{grid-template-columns:repeat(7,minmax(1.75em,1fr));overflow-x:auto;max-width:100%;padding-bottom:4px}
+.shell-wave1 .parent-calendar.course-wave2 .parent-calendar-number{white-space:nowrap}
+@media(max-width:650px){
+ .parent-compact .parents-workspace .parents-course-view .parents-course-tabs button{flex:1 1 5em;max-width:none}
+ .shell-wave1 .parent-calendar.course-wave2 .parent-calendar-toolbar{grid-template-columns:44px minmax(0,1fr) 44px}
+ .shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month-picker{grid-column:1/-1;grid-row:1}
+ .shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month-controls>button:first-child{grid-column:1;grid-row:2}
+ .shell-wave1 .parent-calendar.course-wave2 .parent-calendar-month-controls>button:last-child{grid-column:3;grid-row:2}
+ .shell-wave1 .parent-calendar.course-wave2 .parent-calendar-toolbar>button{grid-column:2;grid-row:2;justify-self:center}
+}

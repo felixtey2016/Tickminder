@@ -1,0 +1,40 @@
+/* Learning summaries are a compact strip; detailed counts remain expandable. */
+.parent-compact .parents-learning .parents-kpis {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 0;
+  margin: 0;
+  padding-block: 12px;
+  border-block: 1px solid var(--ui-border);
+}
+.parent-compact .parents-learning .parents-kpis > div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 16px;
+  border: 0;
+  border-inline-start: 1px solid var(--ui-border);
+  border-radius: 0;
+  background: transparent;
+}
+.parent-compact .parents-learning .parents-kpis > div:first-child { padding-inline-start: 0; border-inline-start: 0; }
+.parent-compact .parents-learning .parents-kpis > div:last-child { padding-inline-end: 0; }
+.parent-compact .parents-learning .parents-kpis dt { color: var(--ui-muted); font-size: 14px; }
+.parent-compact .parents-learning .parents-kpis dd { color: var(--ui-text); font-size: 22px; font-variant-numeric: tabular-nums; line-height: 1.4; }
+.parent-compact .parents-learning .parents-record { background: var(--ui-surface); color: var(--ui-text); border-color: var(--ui-border); border-radius: 8px; }
+.parent-compact .parents-learning .parents-record :is(h3,p) { margin: 0; }
+.parent-compact .parents-learning .parents-result-score { color: var(--ui-accent); }
+.parent-compact .parents-learning :is(.parents-muted,.parents-details dt,.parents-statistics dt,.parent-compact-note) { color: var(--ui-muted); }
+.parent-compact .parents-learning .parents-statistics > div { border-color: var(--ui-border); }
+.parent-compact .parents-learning .parents-statistics dd { color: var(--ui-text); font-variant-numeric: tabular-nums; }
+.parent-compact .parents-learning .parent-compact-note > summary { color: var(--ui-accent); }
+.parent-compact .parents-learning .parents-notice { background: var(--ui-surface-muted); color: var(--ui-muted); border-color: var(--ui-border); }
+.parent-compact .parents-learning .parents-link-button { background: var(--ui-surface); color: var(--ui-accent); border-color: var(--ui-border); border-radius: 6px; }
+.parent-compact .parents-learning .parents-link-button:hover { background: var(--ui-accent-soft); }
+.parent-compact .parents-learning .parents-link-button:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
+@media (max-width: 650px) {
+  .parent-compact .parents-learning .parents-kpis { grid-template-columns: minmax(0,1fr); padding: 0; }
+  .parent-compact .parents-learning .parents-kpis > div { grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 10px 0; border: 0; border-bottom: 1px solid var(--ui-border); }
+  .parent-compact .parents-learning .parents-kpis > div:last-child { border-bottom: 0; }
+  .parent-compact .parents-learning .parents-kpis dd { font-size: 20px; text-align: end; }
+}

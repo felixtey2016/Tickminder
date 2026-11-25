@@ -1,0 +1,5 @@
+.homework-folder-filter{display:flex;align-items:end;flex-wrap:wrap;gap:12px;margin-bottom:16px}
+.homework-folder-filter>label{display:grid;gap:6px;flex:1 1 220px;max-width:480px;font-size:.875rem;color:var(--muted-foreground)}
+.homework-folder-filter select{width:100%;min-height:42px;border:1px solid var(--border);border-radius:10px;padding:8px 12px;background:var(--background);color:var(--foreground)}
+.homework-folder-filter>p{flex-basis:100%;margin:0}
+.folder-workspace>.folder-browser[hidden]{display:none}

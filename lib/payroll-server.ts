@@ -1,0 +1,262 @@
+import type {Account} from './auth';
+import {learningDb} from './learning-server';
+import {configuredAdminGrantPredicate} from './admin-permissions-server';
+import {accountSessionPredicate} from './account-session';
+import {OWNER_EMAIL} from './owner';
+import {billingDate,billingMonth,billHourlyCents,malaysiaDate} from './billing';
+import {PAYROLL_METHODS,PayrollError,payrollDraftPreview,type PayrollTeacher,type PayrollRate,type PayrollSourceLine,type PayrollReview,type PayrollDocument,type PayrollSummary,type PayrollDetail,type PayrollList,type PayrollRatesResponse,type PayrollResult,type PayrollEvent,type PayrollMethod,type PayrollMonthlyLine,type PayrollClassroomResponse,type PayrollRateMode} from './payroll';
+import type {PayslipData} from './payroll-payslip';
+
+type Guard={sql:string;args:unknown[]};
+const text=(v:unknown)=>typeof v==='string'?v.trim():'';
+const maxAmount=100_000_000;
+function group(actor:Account){if(actor.role!=='admin'||!actor.groupId||!/^[a-z0-9-]{1,64}$/.test(actor.groupId))throw new PayrollError('没有权限查看或修改老师薪资',403);return actor.groupId;}
+export function payrollAuthority(actor:Account,key='payroll.view'):Guard{
+ const gid=group(actor),keys=[...new Set(['payroll.view',key])],grants=keys.map(k=>configuredAdminGrantPredicate(actor,k)),session=accountSessionPredicate(actor);
+ return{sql:`EXISTS(SELECT 1 FROM accounts pa JOIN tuition_groups pg ON pg.id=? AND pg.active=1 WHERE pa.id=? AND pa.role='admin' AND pa.disabled_at IS NULL AND (pa.group_id=pg.id OR lower(trim(pa.email))=? AND substr(pa.id,1,6)<>'local:') AND NOT EXISTS(SELECT 1 FROM local_credentials pc WHERE pc.account_id=pa.id AND pc.must_change_password=1)) AND ${grants.map(g=>`(${g.sql})`).join(' AND ')} AND (${session.sql})`,args:[gid,actor.id,OWNER_EMAIL,...grants.flatMap(g=>g.args),...session.args]};
+}
+export async function requirePayrollPermission(actor:Account,key='payroll.view'){const a=payrollAuthority(actor,key);if(!await learningDb().prepare(`SELECT 1 WHERE ${a.sql}`).bind(...a.args).first())throw new PayrollError('没有权限查看或修改老师薪资',403);return group(actor);}
+async function read<T>(actor:Account,key:string,query:string,...values:unknown[]){const a=payrollAuthority(actor,key);return(await learningDb().prepare(`SELECT * FROM (${query}) WHERE ${a.sql}`).bind(...values,...a.args).all<T>()).results||[];}
+async function digest(value:unknown){return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(value))))].map(v=>v.toString(16).padStart(2,'0')).join('');}
+export async function payrollTeacherId(gid:string,name:string){return'payroll-teacher-'+(await digest([gid,name])).slice(0,40);}
+function id(value:unknown,label='薪资记录'){const v=text(value);if(!/^[A-Za-z0-9:_-]{1,100}$/.test(v))throw new PayrollError(`请选择有效${label}`);return v;}
+function revision(value:unknown,min=0){if(!Number.isSafeInteger(value)||Number(value)<min)throw new PayrollError('薪资版本无效，请刷新后重试',409);return Number(value);}
+function amount(value:unknown){if(!Number.isSafeInteger(value)||Number(value)<=0||Number(value)>maxAmount)throw new PayrollError('金额须大于零，且不超过 RM1,000,000.00');return Number(value);}
+function limited(value:unknown,max:number,label:string,required=false){const v=text(value);if(v.length>max||/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(v)||required&&!v)throw new PayrollError(`请填写有效${label}，最多 ${max} 个字符`);return v;}
+function date(value:unknown){try{return billingDate(value);}catch{throw new PayrollError('请选择有效生效日期');}}
+function month(value:unknown){try{return billingMonth(value);}catch{throw new PayrollError('请选择有效薪资月份');}}
+function timestamp(value:unknown,now:string){const v=text(value)||now;try{billingDate(v.slice(0,10));}catch{throw new PayrollError('请选择有效薪资付款日期');}const converted=/^20\d\d-\d\d-\d\d$/.test(v)?v+'T00:00:00+08:00':v;if(!/^20\d\d-\d\d-\d\dT(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(converted)||!Number.isFinite(Date.parse(converted)))throw new PayrollError('请选择有效薪资付款日期与时间');if(Date.parse(converted)>Date.parse(now)+300000)throw new PayrollError('薪资付款时间不能晚于现在');return new Date(converted).toISOString();}
+const paging=(n:number,total:number)=>{const pages=Math.max(1,Math.ceil(total/20));return{pages,page:Math.min(pages,Math.max(1,Math.trunc(n)||1))};};
+
+const monthlyPeopleSql=`WITH target AS(SELECT ? AS gid,? AS month),monthly_sources AS(
+ SELECT s.teacher_name AS teacherName,s.planned_start AS plannedStart,s.planned_end AS plannedEnd FROM class_sessions s,target WHERE s.group_id=target.gid AND s.status<>'cancelled' AND strftime('%Y-%m',coalesce(s.actual_start,s.planned_start),'+8 hours')=target.month
+ UNION ALL
+ SELECT l.teacher_name,l.planned_start,l.planned_end FROM lessons l,target WHERE l.group_id=target.gid AND l.session_id IS NULL AND l.status<>'cancelled' AND strftime('%Y-%m',coalesce(l.actual_start,l.planned_start),'+8 hours')=target.month
+),monthly AS(SELECT teacherName,count(*) AS lessonCount,coalesce(sum(CASE WHEN strftime('%s',plannedEnd)-strftime('%s',plannedStart) BETWEEN 1 AND 43200 THEN strftime('%s',plannedEnd)-strftime('%s',plannedStart) ELSE 0 END),0) AS durationSeconds FROM monthly_sources GROUP BY teacherName),candidates AS(
+ SELECT teacherName,lessonCount,durationSeconds FROM monthly
+ UNION ALL
+ SELECT t.teacher_name,0,0 FROM payroll_runs r JOIN payroll_teachers t ON t.group_id=r.group_id AND t.id=r.teacher_id,target WHERE r.group_id=target.gid AND r.month=target.month AND NOT EXISTS(SELECT 1 FROM monthly m WHERE m.teacherName=t.teacher_name)
+)`;
+export async function payrollTeachers(actor:Account,pageValue=1,monthValue='',searchValue='',selectedIdValue='',selectedNameValue=''){
+ const gid=await requirePayrollPermission(actor),m=monthValue?month(monthValue):'',query=m?`${monthlyPeopleSql},roster AS(SELECT t.name AS teacherName,t.active,0 AS rosterMissing FROM teachers t,target WHERE t.group_id=target.gid UNION ALL SELECT c.teacherName,0,1 FROM candidates c,target WHERE NOT EXISTS(SELECT 1 FROM teachers t WHERE t.group_id=target.gid AND t.name=c.teacherName)) SELECT * FROM roster`:'SELECT name AS teacherName,active,0 AS rosterMissing FROM teachers WHERE group_id=?',values=m?[gid,m]:[gid];
+ const search=limited(searchValue,100,'搜索姓名'),selectedId=text(selectedIdValue),selectedName=limited(selectedNameValue,160,'老师姓名'),where=search?' WHERE instr(lower(teacherName),lower(?))>0':'',args=[...values,...(search?[search]:[])];
+ if(selectedId.length>100)throw new PayrollError('请选择有效老师');
+ const total=(await read<{n:number}>(actor,'payroll.view',`SELECT count(*) AS n FROM (${query}) picker${where}`,...args))[0]?.n||0,{pages,page}=paging(pageValue,total),rows=await read<{teacherName:string;active:number;rosterMissing:number}>(actor,'payroll.view',`SELECT * FROM (${query}) picker${where} ORDER BY rosterMissing,active DESC,lower(teacherName),teacherName LIMIT 20 OFFSET ?`,...args,(page-1)*20);
+ const mapTeacher=async(t:{teacherName:string;active:number;rosterMissing:number})=>({teacherId:await payrollTeacherId(gid,t.teacherName),teacherName:t.teacherName,active:Boolean(t.active),rosterMissing:Boolean(t.rosterMissing)});
+ let selected:PayrollTeacher|null=null;
+ if(selectedId&&selectedName){const row=(await read<{teacherName:string;active:number;rosterMissing:number}>(actor,'payroll.view',`SELECT * FROM (${query}) picker WHERE teacherName=?`,...values,selectedName))[0];if(row&&await payrollTeacherId(gid,row.teacherName)===selectedId)selected=await mapTeacher(row);}
+ return{items:await Promise.all(rows.map(mapTeacher)),total,page,pages,selected};
+}
+async function teacher(actor:Account,teacherId:string,key='payroll.view'):Promise<PayrollTeacher>{
+ const gid=group(actor),stored=(await read<{teacherName:string;active:number}>(actor,key,'SELECT p.teacher_name AS teacherName,t.active FROM payroll_teachers p JOIN teachers t ON t.group_id=p.group_id AND t.name=p.teacher_name WHERE p.group_id=? AND p.id=?',gid,teacherId))[0];
+ if(stored)return{teacherId,teacherName:stored.teacherName,active:Boolean(stored.active)};
+ // Only current, group-scoped roster labels participate in stable financial identities.
+ const rows=await read<{teacherName:string;active:number}>(actor,key,'SELECT name AS teacherName,active FROM teachers WHERE group_id=? ORDER BY name',gid);
+ for(const row of rows)if(await payrollTeacherId(gid,row.teacherName)===teacherId)return{teacherId,teacherName:row.teacherName,active:Boolean(row.active)};
+ await requirePayrollPermission(actor,key);throw new PayrollError('老师不存在或无权查看',404);
+}
+const rateColumns=`v.mode,v.id,v.scope_id AS scopeId,s.teacher_id AS teacherId,s.classroom_id AS classroomId,c.title AS classroomTitle,v.revision,s.revision AS scopeRevision,v.amount_cents AS amountCents,v.currency,v.effective_from AS effectiveFrom,v.created_at AS createdAt`;
+export async function payrollRates(actor:Account,teacherIdValue:string):Promise<PayrollRatesResponse>{const gid=await requirePayrollPermission(actor,'payroll.rates'),teacherId=id(teacherIdValue,'老师'),person=await teacher(actor,teacherId,'payroll.rates');const [rates,classrooms]=await Promise.all([read<PayrollRate>(actor,'payroll.rates',`SELECT ${rateColumns} FROM payroll_rate_versions v JOIN payroll_rate_scopes s ON s.group_id=v.group_id AND s.id=v.scope_id LEFT JOIN classrooms c ON c.group_id=s.group_id AND c.id=s.classroom_id WHERE v.group_id=? AND s.teacher_id=? ORDER BY v.effective_from DESC,v.revision DESC LIMIT 500`,gid,teacherId),read<{id:string;title:string}>(actor,'payroll.rates',`SELECT c.id,c.title FROM classrooms c WHERE c.group_id=? AND (c.teacher_name=? OR EXISTS(SELECT 1 FROM class_sessions cs WHERE cs.group_id=c.group_id AND cs.classroom_id=c.id AND cs.teacher_name=?)) ORDER BY c.archived,lower(c.title),c.id LIMIT 500`,gid,person.teacherName,person.teacherName)]);return{teacher:person,rates,classrooms};}
+
+
+export async function payrollClassroom(actor:Account,classroomIdValue:string):Promise<PayrollClassroomResponse>{
+ const gid=await requirePayrollPermission(actor),classroomId=id(classroomIdValue,'班级'),classroom=(await read<{id:string;title:string;teacherName:string}>(actor,'payroll.view','SELECT id,title,teacher_name AS teacherName FROM classrooms WHERE group_id=? AND id=?',gid,classroomId))[0];
+ if(!classroom)throw new PayrollError('班级不存在或无权查看',404);
+ const people=await read<{teacherName:string;active:number}>(actor,'payroll.view','SELECT t.name AS teacherName,t.active FROM teachers t WHERE t.group_id=? AND (t.name=? OR EXISTS(SELECT 1 FROM class_sessions s WHERE s.group_id=t.group_id AND s.classroom_id=? AND s.teacher_name=t.name)) ORDER BY t.active DESC,lower(t.name),t.name',gid,classroom.teacherName,classroomId);
+ const teachers=await Promise.all(people.map(async person=>({teacherId:await payrollTeacherId(gid,person.teacherName),teacherName:person.teacherName,active:Boolean(person.active)})));
+ const rates=await read<PayrollRate>(actor,'payroll.view','SELECT '+rateColumns+' FROM payroll_rate_versions v JOIN payroll_rate_scopes s ON s.group_id=v.group_id AND s.id=v.scope_id LEFT JOIN classrooms c ON c.group_id=s.group_id AND c.id=s.classroom_id WHERE v.group_id=? AND s.classroom_id=? ORDER BY v.effective_from DESC,v.revision DESC LIMIT 500',gid,classroomId);
+ const suggestions=await read<PayrollRate>(actor,'payroll.view','SELECT '+rateColumns+' FROM payroll_rate_versions v JOIN payroll_rate_scopes s ON s.group_id=v.group_id AND s.id=v.scope_id LEFT JOIN classrooms c ON c.group_id=s.group_id AND c.id=s.classroom_id JOIN payroll_teachers p ON p.group_id=s.group_id AND p.id=s.teacher_id WHERE v.group_id=? AND s.classroom_id IS NULL AND (p.teacher_name=? OR EXISTS(SELECT 1 FROM class_sessions x WHERE x.group_id=p.group_id AND x.classroom_id=? AND x.teacher_name=p.teacher_name)) ORDER BY v.effective_from DESC,v.revision DESC LIMIT 500',gid,classroom.teacherName,classroomId);
+ return{classroom,teachers,rates,suggestions};
+}
+
+function payrollRateForSessionSql(teacherIdSql:string){return "(SELECT pv.id FROM payroll_rate_versions pv JOIN payroll_rate_scopes ps ON ps.group_id=pv.group_id AND ps.id=pv.scope_id WHERE ps.group_id=s.group_id AND ps.teacher_id=target.teacherId AND (ps.classroom_id=s.classroom_id OR ps.classroom_id IS NULL AND EXISTS(SELECT 1 FROM payroll_legacy_rate_links lk WHERE lk.group_id=ps.group_id AND lk.teacher_id=ps.teacher_id AND lk.scope_id=ps.id AND pv.revision<=lk.max_revision AND (lk.classroom_id=s.classroom_id OR lk.session_id=s.id))) AND pv.effective_from<=strftime('%Y-%m-%d',coalesce(s.actual_start,s.planned_start),'+8 hours') ORDER BY CASE WHEN ps.classroom_id IS NOT NULL THEN 0 ELSE 1 END,pv.effective_from DESC,pv.revision DESC LIMIT 1)".replaceAll('target.teacherId',teacherIdSql);}
+const sourceRows="SELECT s.id AS sessionId,s.classroom_id AS classroomId,coalesce(s.classroom_title,c.title) AS classroomTitle,s.subject,s.teacher_name AS teacherName,s.planned_start AS plannedStart,s.planned_end AS plannedEnd,s.actual_start AS actualStart,s.actual_end AS actualEnd,s.teaching_status AS teachingStatus,s.attendance_reviewed_at AS attendanceReviewedAt,s.revision AS sessionRevision,v.id AS rateVersionId,v.amount_cents AS hourlyRateCents,v.mode AS rateMode,v.effective_from AS rateEffectiveFrom FROM class_sessions s CROSS JOIN(SELECT ? AS gid,? AS teacherName,? AS teacherId,? AS month) target LEFT JOIN classrooms c ON c.group_id=s.group_id AND c.id=s.classroom_id LEFT JOIN payroll_rate_versions v ON v.id="+payrollRateForSessionSql('target.teacherId')+" WHERE s.group_id=target.gid AND s.teacher_name=target.teacherName AND s.status<>'cancelled' AND strftime('%Y-%m',coalesce(s.actual_start,s.planned_start),'+8 hours')=target.month ORDER BY s.planned_start,s.id";
+export const payrollBasisSql=`SELECT json_object('sessions',json((SELECT coalesce(json_group_array(json_object('sessionId',sessionId,'classroomId',classroomId,'classroomTitle',classroomTitle,'subject',subject,'teacherName',teacherName,'plannedStart',plannedStart,'plannedEnd',plannedEnd,'actualStart',actualStart,'actualEnd',actualEnd,'teachingStatus',teachingStatus,'attendanceReviewedAt',attendanceReviewedAt,'sessionRevision',sessionRevision,'rateVersionId',rateVersionId,'hourlyRateCents',hourlyRateCents,'rateMode',rateMode,'rateEffectiveFrom',rateEffectiveFrom)),'[]') FROM (${sourceRows}))), 'unlinked',json((SELECT coalesce(json_group_array(json_object('id',id,'status',status,'updatedAt',updated_at)),'[]') FROM (SELECT id,status,updated_at FROM lessons WHERE group_id=? AND teacher_name=? AND session_id IS NULL AND status<>'cancelled' AND strftime('%Y-%m',coalesce(actual_start,planned_start),'+8 hours')=? ORDER BY id))), 'classrooms',json((SELECT coalesce(json_group_array(json_object('id',id,'title',title,'teacherName',teacher_name,'archived',archived,'createdAt',created_at)),'[]') FROM classrooms WHERE group_id=?)), 'otherTeachers',json((SELECT coalesce(json_group_array(json_object('id',id,'classroomId',classroom_id,'teacherName',teacher_name)),'[]') FROM (SELECT * FROM class_sessions WHERE group_id=? AND teacher_name<>? AND status<>'cancelled' AND strftime('%Y-%m',coalesce(actual_start,planned_start),'+8 hours')=? ORDER BY id))), 'reviews',json((SELECT coalesce(json_group_array(json_object('id',id,'classroomId',classroom_id,'revision',revision,'amountCents',amount_cents,'reason',reason,'basisHash',basis_hash)),'[]') FROM (SELECT * FROM payroll_monthly_reviews WHERE group_id=? AND teacher_id=? AND month=? ORDER BY revision DESC,id)))) AS basis`;
+
+const basisArgs=(gid:string,p:PayrollTeacher,m:string)=>[gid,p.teacherName,p.teacherId,m,gid,p.teacherName,m,gid,gid,p.teacherName,m,gid,p.teacherId,m];
+async function sourceBasis(actor:Account,key:string,p:PayrollTeacher,m:string){return(await read<{basis:string}>(actor,key,payrollBasisSql,...basisArgs(group(actor),p,m)))[0]?.basis;}
+type RawSource=Pick<PayrollSourceLine,'sessionId'|'classroomId'|'classroomTitle'|'subject'|'teacherName'|'plannedStart'|'plannedEnd'|'actualStart'|'actualEnd'|'teachingStatus'|'attendanceReviewedAt'|'sessionRevision'|'rateVersionId'|'hourlyRateCents'>&{rateMode:PayrollRateMode|null;rateEffectiveFrom:string|null};
+async function source(actor:Account,key:string,p:PayrollTeacher,m:string){
+ const basis=await sourceBasis(actor,key,p,m);if(!basis)throw new PayrollError('薪资依据暂时无法读取，请重试',503);
+ return calculatePayrollSource(p,m,basis);
+}
+export async function calculatePayrollSource(p:Pick<PayrollTeacher,'teacherId'|'teacherName'>,m:string,basis:string){
+ const parsed=JSON.parse(basis) as {sessions:RawSource[];unlinked:unknown[];classrooms:{id:string;title:string;teacherName:string;archived:number;createdAt:string}[];otherTeachers:{id:string;classroomId:string;teacherName:string}[];reviews:{id:string;classroomId:string;revision:number;amountCents:number;reason:string;basisHash:string}[]};
+ if(parsed.sessions.length>5000)throw new PayrollError('该月份课次过多，请联系管理员核对');const now=Date.now(),calculationVersion=parsed.sessions.some(s=>s.rateMode==='lesson'||s.rateMode==='month')?2 as const:undefined;
+ const lines:PayrollSourceLine[]=parsed.sessions.map(s=>{const {rateMode,rateEffectiveFrom,...old}=s,mode=rateMode||'hour',seconds=s.actualStart&&s.actualEnd?(Date.parse(s.actualEnd)-Date.parse(s.actualStart))/1000:0,warnings:string[]=[];let state:PayrollSourceLine['status']='ready',cents:number|null=null,minutes=0;
+  if(s.teachingStatus==='teacher_absent'||s.teachingStatus==='not_taught')state='excluded';else if(s.teachingStatus==='pending'&&Date.parse(s.plannedStart)>now)state='upcoming';else{
+   if(s.teachingStatus!=='taught')warnings.push('attendance_pending');if(!s.attendanceReviewedAt)warnings.push('attendance_unconfirmed');if(!Number.isFinite(seconds)||seconds<=0||seconds>43200)warnings.push('invalid_duration');if(!s.rateVersionId||s.hourlyRateCents===null)warnings.push('missing_rate');
+   state=warnings.length?'pending':'ready';if(state==='ready'){const calculated=billHourlyCents(s.hourlyRateCents!,Math.round(seconds),'minute');cents=mode==='month'?0:mode==='lesson'?s.hourlyRateCents:calculated.amountCents;minutes=calculated.billableSeconds/60;}
+  }
+  return{...old,...(mode!=='hour'?{rateMode:mode,unitAmountCents:s.hourlyRateCents!}:{}),durationSeconds:Number.isFinite(seconds)&&seconds>0?Math.round(seconds):0,minutes,amountCents:cents,status:state,warnings};
+ });
+ const monthlyLines:PayrollMonthlyLine[]=[];
+ for(const classId of [...new Set(parsed.sessions.filter(s=>s.rateMode==='month'&&s.classroomId).map(s=>s.classroomId!))]){
+  const sessions=parsed.sessions.filter(s=>s.classroomId===classId),monthly=sessions.filter(s=>s.rateMode==='month'),picked=monthly[0],classroom=parsed.classrooms.find(c=>c.id===classId),otherTeachers=parsed.otherTeachers.filter(s=>s.classroomId===classId);
+  const semantic=sessions.map(({sessionRevision,attendanceReviewedAt,...s})=>({...s,attendanceConfirmed:Boolean(attendanceReviewedAt)}));
+  const sourceHash=await digest({teacherId:p.teacherId,classroomId:classId,month:m,sessions:semantic,classroom:classroom||null,otherTeachers});
+  const warnings:string[]=[];
+  if(sessions.some(s=>s.rateMode!=='month')||new Set(monthly.map(s=>s.rateVersionId)).size>1)warnings.push('monthly_rate_changed');
+  if(monthly.some(s=>(s.rateEffectiveFrom||'')>m+'-01')||(classroom&&malaysiaDate(classroom.createdAt).slice(0,7)===m&&malaysiaDate(classroom.createdAt)>m+'-01'))warnings.push('partial_month');
+  if(classroom?.archived)warnings.push('class_archived');if(classroom&&classroom.teacherName!==p.teacherName||otherTeachers.length)warnings.push('teacher_changed');
+  const review=parsed.reviews.find(r=>r.classroomId===classId),validReview=review?.basisHash===sourceHash,classLines=lines.filter(l=>l.classroomId===classId);
+  if(validReview)for(const line of classLines){line.warnings=line.warnings.filter(warning=>warning!=='missing_rate');if(line.status==='pending'&&!line.warnings.length){line.status='ready';line.minutes=Math.max(0,Math.round(line.durationSeconds/60));}}
+  const active=classLines.filter(l=>l.status!=='excluded'),allReady=active.length>0&&active.every(l=>l.status==='ready');
+  if(review&&!validReview)warnings.push('monthly_review_stale');
+  const requiresReview=warnings.length>0,amount=validReview?review!.amountCents:requiresReview?null:picked.hourlyRateCents;
+  const state:PayrollMonthlyLine['status']=!active.length?'excluded':requiresReview&&!validReview?'pending':allReady?'ready':active.some(l=>l.status==='pending')?'pending':'upcoming';
+  monthlyLines.push({classroomId:classId,classroomTitle:classroom?.title||picked.classroomTitle||classId,teacherId:p.teacherId,month:m,rateVersionId:picked.rateVersionId!,unitAmountCents:picked.hourlyRateCents!,amountCents:state==='ready'?amount:null,estimatedAmountCents:state==='excluded'?null:amount,status:state,warnings:validReview?[]:warnings,reviewRevision:review?.revision||0,reviewId:validReview?review!.id:null,reviewReason:validReview?review!.reason:null,sourceHash});
+ }
+ for(const line of lines)if(monthlyLines.some(monthly=>monthly.classroomId===line.classroomId)){line.rateMode='month';line.amountCents=line.status==='ready'?0:null;}
+ const baseTotalCents=lines.reduce((n,l)=>n+(l.amountCents??0),0)+monthlyLines.reduce((n,l)=>n+(l.amountCents??0),0);if(!Number.isSafeInteger(baseTotalCents)||baseTotalCents>maxAmount)throw new PayrollError('薪资总额超过上限');
+ const review:PayrollReview={sourceChanged:false,pendingCount:lines.filter(l=>l.status==='pending').length+parsed.unlinked.length+monthlyLines.filter(l=>l.status!=='excluded'&&l.warnings.length).length,missingRateCount:lines.filter(l=>l.warnings.includes('missing_rate')).length,upcomingCount:lines.filter(l=>l.status==='upcoming').length,excludedCount:lines.filter(l=>l.status==='excluded').length};
+ const financial={teacherId:p.teacherId,teacherName:p.teacherName,month:m,unlinked:parsed.unlinked,lines:lines.map(({sessionRevision,attendanceReviewedAt,...l})=>({...l,attendanceConfirmed:Boolean(attendanceReviewedAt)}))};
+ const sourceHash=await digest(calculationVersion?{...financial,calculationVersion,monthlyLines}:financial);
+ return{basis,sourceHash,sourceLines:lines,baseTotalCents,review,monthlyLines,calculationVersion,durationSeconds:lines.filter(l=>l.status==='ready').reduce((n,l)=>n+l.durationSeconds,0),lessonCount:lines.filter(l=>l.status==='ready').length};
+}
+/** Read the same monthly pay calculation for reporting in a fixed number of queries. */
+export async function payrollReportingSources(actor:Account,monthValue:string){
+ const gid=await requirePayrollPermission(actor),m=month(monthValue);
+ const reportingSql=sourceRows.replace('SELECT s.id AS sessionId','SELECT report_teacher.id AS teacherId,s.id AS sessionId').replace('CROSS JOIN(SELECT ? AS gid,? AS teacherName,? AS teacherId,? AS month) target','LEFT JOIN payroll_teachers report_teacher ON report_teacher.group_id=s.group_id AND report_teacher.teacher_name=s.teacher_name CROSS JOIN(SELECT ? AS gid,? AS month) target').replaceAll('target.teacherId','report_teacher.id').replace('s.teacher_name=target.teacherName AND ','');
+ type ReportingSource=RawSource&{teacherId:string|null};
+ const [sessions,classrooms,reviews,runs,unlinked]=await Promise.all([
+  read<ReportingSource>(actor,'payroll.view',reportingSql+' LIMIT 20001',gid,m),
+  read<{id:string;title:string;teacherName:string;archived:number;createdAt:string}>(actor,'payroll.view','SELECT id,title,teacher_name AS teacherName,archived,created_at AS createdAt FROM classrooms WHERE group_id=?',gid),
+  read<{teacherId:string;id:string;classroomId:string;revision:number;amountCents:number;reason:string;basisHash:string}>(actor,'payroll.view','SELECT teacher_id AS teacherId,id,classroom_id AS classroomId,revision,amount_cents AS amountCents,reason,basis_hash AS basisHash FROM payroll_monthly_reviews WHERE group_id=? AND month=? ORDER BY revision DESC,id',gid,m),
+  read<{teacherId:string;payrollId:string;status:string}>(actor,'payroll.view','SELECT teacher_id AS teacherId,id AS payrollId,status FROM payroll_runs WHERE group_id=? AND month=?',gid,m),
+  read<{teacherName:string;id:string;status:string;updatedAt:string}>(actor,'payroll.view',"SELECT teacher_name AS teacherName,id,status,updated_at AS updatedAt FROM lessons WHERE group_id=? AND session_id IS NULL AND status<>'cancelled' AND strftime('%Y-%m',coalesce(actual_start,planned_start),'+8 hours')=? ORDER BY id",gid,m)
+ ]);
+ if(sessions.length>20000)throw new PayrollError('该月份课次过多，请按老师核对薪资',413);
+ const byTeacher=new Map<string,ReportingSource[]>();for(const row of sessions){const list=byTeacher.get(row.teacherName)||[];list.push(row);byTeacher.set(row.teacherName,list);}
+ const results=[];
+ for(const [teacherName,teacherRows] of byTeacher){
+  const teacherId=teacherRows[0].teacherId||await payrollTeacherId(gid,teacherName),own=teacherRows.map(({teacherId:_teacherId,...row})=>row);
+  const otherTeachers=sessions.filter(s=>s.teacherName!==teacherName).map(s=>({id:s.sessionId,classroomId:s.classroomId,teacherName:s.teacherName})).sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
+  const basis=JSON.stringify({sessions:own,unlinked:unlinked.filter(l=>l.teacherName===teacherName).map(({teacherName:_teacherName,...line})=>line),classrooms,otherTeachers,reviews:reviews.filter(r=>r.teacherId===teacherId).map(({teacherId:_teacherId,...r})=>r)});
+  const calculated=await calculatePayrollSource({teacherId,teacherName},m,basis),run=runs.find(r=>r.teacherId===teacherId);
+  results.push({teacherId,teacherName,payrollId:run?.payrollId,payrollStatus:run?.status,sourceLines:calculated.sourceLines,monthlyLines:calculated.monthlyLines});
+ }
+ await requirePayrollPermission(actor);return results;
+}
+
+type RunRow={id:string;teacherId:string;teacherName:string;month:string;status:'draft'|'confirmed';revision:number;documentJson:string;sourceHash:string;baseTotalCents:number;bonusCents:number;deductionCents:number;paid:number;reversed:number;createdAt:string;updatedAt:string;confirmedAt:string|null;unlinkedCount:number};
+const runColumns=`r.id,r.teacher_id AS teacherId,t.teacher_name AS teacherName,r.month,r.status,r.revision,r.document_json AS documentJson,r.source_hash AS sourceHash,r.base_total_cents AS baseTotalCents,r.bonus_cents AS bonusCents,r.deduction_cents AS deductionCents,r.paid_cents AS paid,r.reversed_cents AS reversed,r.created_at AS createdAt,r.updated_at AS updatedAt,r.confirmed_at AS confirmedAt,(SELECT count(*) FROM lessons ul WHERE ul.group_id=r.group_id AND ul.teacher_name=t.teacher_name AND ul.session_id IS NULL AND ul.status<>'cancelled' AND strftime('%Y-%m',coalesce(ul.actual_start,ul.planned_start),'+8 hours')=r.month) AS unlinkedCount`;
+function summary(r:RunRow):PayrollSummary{const totalCents=r.baseTotalCents+r.bonusCents-r.deductionCents,paidCents=r.paid-r.reversed,d=JSON.parse(r.documentJson) as PayrollDocument;return{id:r.id,teacherId:r.teacherId,teacherName:r.teacherName,month:r.month,status:r.status,revision:r.revision,baseTotalCents:r.baseTotalCents,bonusCents:r.bonusCents,deductionCents:r.deductionCents,totalCents,paidCents,remainingCents:totalCents-paidCents,lessonCount:d.lessonCount,durationSeconds:d.durationSeconds,confirmedAt:r.confirmedAt,createdAt:r.createdAt,updatedAt:r.updatedAt,...(r.status==='draft'?{draftPreview:payrollDraftPreview(d.sourceLines,r.unlinkedCount,d.monthlyLines)}:{})};}
+async function run(actor:Account,key:string,payrollId:string){const row=(await read<RunRow>(actor,key,`SELECT ${runColumns} FROM payroll_runs r JOIN payroll_teachers t ON t.group_id=r.group_id AND t.id=r.teacher_id WHERE r.group_id=? AND r.id=?`,group(actor),payrollId))[0];if(!row){await requirePayrollPermission(actor,key);throw new PayrollError('薪资记录不存在或无权查看',404);}return row;}
+export async function payrollList(actor:Account,monthValue:string,teacherIdValue='',pageValue=1):Promise<PayrollList>{
+ const gid=await requirePayrollPermission(actor),m=month(text(monthValue)||malaysiaDate(new Date().toISOString()).slice(0,7)),teacherId=teacherIdValue?id(teacherIdValue,'老师'):'';let selectedName:string|null=null;
+ if(teacherId){const people=await read<{teacherName:string;teacherId:string|null}>(actor,'payroll.view',`${monthlyPeopleSql} SELECT c.teacherName,t.id AS teacherId FROM candidates c,target LEFT JOIN payroll_teachers t ON t.group_id=target.gid AND t.teacher_name=c.teacherName`,gid,m);for(const person of people)if((person.teacherId||await payrollTeacherId(gid,person.teacherName))===teacherId){selectedName=person.teacherName;break;}}
+ const where=teacherId?' WHERE c.teacherName=?':'',values=[gid,m,...(teacherId?[selectedName]:[])],total=(await read<{n:number}>(actor,'payroll.view',`${monthlyPeopleSql} SELECT count(*) AS n FROM candidates c${where}`,...values))[0]?.n||0,{pages,page}=paging(pageValue,total);
+ type CandidateRow=RunRow&{candidateName:string;candidateLessonCount:number;candidateDurationSeconds:number;rosterMissing:number};
+ const rows=await read<CandidateRow>(actor,'payroll.view',`${monthlyPeopleSql} SELECT ${runColumns},c.teacherName AS candidateName,c.lessonCount AS candidateLessonCount,c.durationSeconds AS candidateDurationSeconds,CASE WHEN roster.name IS NULL THEN 1 ELSE 0 END AS rosterMissing FROM candidates c,target LEFT JOIN teachers roster ON roster.group_id=target.gid AND roster.name=c.teacherName LEFT JOIN payroll_teachers t ON t.group_id=target.gid AND t.teacher_name=c.teacherName LEFT JOIN payroll_runs r ON r.group_id=target.gid AND r.teacher_id=t.id AND r.month=target.month${where} ORDER BY CASE WHEN r.id IS NULL THEN 1 ELSE 0 END,r.updated_at DESC,lower(c.teacherName),c.teacherName LIMIT 20 OFFSET ?`,...values,(page-1)*20);
+ return{items:await Promise.all(rows.map(async row=>row.id?summary(row):{id:null,teacherId:await payrollTeacherId(gid,row.candidateName),teacherName:row.candidateName,month:m,status:'not_generated' as const,lessonCount:row.candidateLessonCount,durationSeconds:row.candidateDurationSeconds,rosterMissing:Boolean(row.rosterMissing)})),page,pages,total,pageSize:20};
+}
+export async function payrollDetail(actor:Account,payrollIdValue:string,pageValue=1):Promise<PayrollDetail>{await requirePayrollPermission(actor);const row=await run(actor,'payroll.view',id(payrollIdValue)),person=await teacher(actor,row.teacherId),current=await source(actor,'payroll.view',person,row.month),total=(await read<{n:number}>(actor,'payroll.view','SELECT count(*) AS n FROM payroll_events WHERE group_id=? AND payroll_id=?',actor.groupId,row.id))[0]?.n||0,{pages,page}=paging(pageValue,total),events=await read<PayrollEvent>(actor,'payroll.view',`SELECT e.id,e.kind,e.amount_cents AS amountCents,e.payment_id AS paymentId,e.occurred_at AS occurredAt,e.method,e.reference,e.notes,e.reason,e.actor_id AS actorId,e.created_at AS createdAt,(SELECT x.occurred_at FROM payroll_events x WHERE x.group_id=e.group_id AND x.payment_id=e.id AND x.kind='reverse') AS reversedAt FROM payroll_events e WHERE e.group_id=? AND e.payroll_id=? ORDER BY e.expected_revision DESC LIMIT 20 OFFSET ?`,actor.groupId,row.id,(page-1)*20);return{payroll:JSON.parse(row.documentJson) as PayrollDocument,summary:summary(row),review:{...current.review,sourceChanged:current.sourceHash!==row.sourceHash},events,page,pages,total,pageSize:20};}
+
+export async function payrollBankTeacher(actor: Account, teacherName: unknown) {
+ const gid = group(actor);
+ const name = limited(teacherName, 200, '老师姓名', true);
+ const teacher = (await read<{name: string; createdAt: string}>(actor, 'payroll.edit',
+  'SELECT name, created_at AS createdAt FROM teachers WHERE group_id=? AND name=?', gid, name))[0];
+ if (!teacher) {
+  await requirePayrollPermission(actor, 'payroll.edit');
+  throw new PayrollError('找不到这位老师。', 404);
+ }
+ return {gid, ...teacher};
+}
+
+export async function payrollPayslip(actor: Account, payrollId: string): Promise<PayslipData & {
+ revision: number;
+ teacherName: string;
+ teacherCreatedAt: string | null;
+ canArchive: boolean;
+}> {
+ const gid = group(actor);
+ const archiveAuthority = payrollAuthority(actor, 'payroll.edit');
+ const record = (await read<Pick<PayslipData, 'institutionName' | 'bonusCents' | 'deductionCents'> & {
+  status: PayrollSummary['status'];
+  documentJson: string;
+  revision: number;
+  teacherName: string;
+  teacherCreatedAt: string | null;
+  canArchive: number;
+ }>(actor, 'payroll.view', `
+  SELECT r.status, r.document_json AS documentJson, r.bonus_cents AS bonusCents,
+         r.deduction_cents AS deductionCents, g.name AS institutionName, r.revision,
+         pt.teacher_name AS teacherName, t.created_at AS teacherCreatedAt,
+         CASE WHEN ${archiveAuthority.sql} THEN 1 ELSE 0 END AS canArchive
+  FROM payroll_runs r JOIN tuition_groups g ON g.id = r.group_id
+  JOIN payroll_teachers pt ON pt.group_id = r.group_id AND pt.id = r.teacher_id
+  LEFT JOIN teachers t ON t.group_id = pt.group_id AND t.name = pt.teacher_name
+  WHERE r.group_id = ? AND r.id = ?
+ `, ...archiveAuthority.args, gid, id(payrollId)))[0];
+ if (!record) {
+  await requirePayrollPermission(actor);
+  throw new PayrollError('薪资记录不存在或无权查看', 404);
+ }
+ if (record.status !== 'confirmed') throw new PayrollError('核算完成后才能生成正式薪资单', 409);
+ return {
+  payroll: JSON.parse(record.documentJson) as PayrollDocument,
+  institutionName: record.institutionName,
+  bonusCents: record.bonusCents,
+  deductionCents: record.deductionCents,
+  revision: record.revision,
+  teacherName: record.teacherName,
+  teacherCreatedAt: record.teacherCreatedAt,
+  canArchive: Boolean(record.canArchive),
+ };
+}
+async function replay(actor:Account,key:string,operation:string,hash:string){const row=(await read<{actorId:string;hash:string;result:string}>(actor,key,'SELECT actor_id AS actorId,request_hash AS hash,result_json AS result FROM payroll_operations WHERE group_id=? AND operation_id=?',group(actor),operation))[0];if(!row)return null;if(row.actorId!==actor.id||row.hash!==hash)throw new PayrollError('操作编号已用于其他请求，请刷新后重试',409);const result=JSON.parse(row.result) as PayrollResult;if(result.payrollId&&!result.deleted&&(await read<{id:string}>(actor,key,'SELECT payroll_id AS id FROM payroll_deleted_drafts WHERE group_id=? AND payroll_id=?',group(actor),result.payrollId)).length)throw new PayrollError('这份薪资草稿已删除，请重新生成',410);return result;}
+function opGuard(gid:string,operation:string,execution:string):Guard{return{sql:'EXISTS(SELECT 1 FROM payroll_operations WHERE group_id=? AND operation_id=? AND execution_id=?)',args:[gid,operation,execution]};}
+function identityStatement(person:PayrollTeacher,gid:string,now:string,guard:Guard){return learningDb().prepare(`INSERT OR IGNORE INTO payroll_teachers(id,group_id,teacher_name,created_at) SELECT ?,?,?,? WHERE ${guard.sql}`).bind(person.teacherId,gid,person.teacherName,now,...guard.args);}
+const actionGrants:Record<string,string>={deleteDraft:'payroll.delete',reviewMonth:'payroll.rates',saveRate:'payroll.rates',generate:'payroll.edit',refresh:'payroll.edit',confirm:'payroll.confirm',adjust:'payroll.edit',pay:'payroll.pay',reversePayment:'payroll.reverse'};
+export async function savePayroll(actor:Account,data:Record<string,unknown>):Promise<PayrollResult>{
+ const action=text(data.action),key=actionGrants[action];if(!key)throw new PayrollError('未知薪资操作');const gid=await requirePayrollPermission(actor,key);if('groupId'in data&&data.groupId!==gid)throw new PayrollError('没有权限修改其他集团的薪资',403);const operation=id(data.operationId,'操作编号');if(operation.length<16)throw new PayrollError('操作编号无效，请重试');const requestHash=await digest(data),old=await replay(actor,key,operation,requestHash);if(old)return old;
+ const now=new Date().toISOString(),execution=crypto.randomUUID(),authority=payrollAuthority(actor,key),guard=opGuard(gid,operation,execution),db=learningDb();let result:PayrollResult,statements:D1PreparedStatement[]=[];
+ const claim=(condition:string,args:unknown[],response:PayrollResult)=>db.prepare(`INSERT OR IGNORE INTO payroll_operations(group_id,operation_id,actor_id,action,request_hash,execution_id,result_json,created_at) SELECT ?,?,?,?,?,?,?,? WHERE ${authority.sql} AND (${condition})`).bind(gid,operation,actor.id,action,requestHash,execution,JSON.stringify(response),now,...authority.args,...args);
+ if(action==='saveRate'){
+  const teacherId=id(data.teacherId,'老师'),person=await teacher(actor,teacherId,key),classroomId=id(data.classroomId,'班级'),expected=revision(data.revision),value=amount(data.amountCents),effectiveFrom=date(data.effectiveFrom),mode=(text(data.mode)||'hour') as PayrollRateMode;if(!['hour','lesson','month'].includes(mode))throw new PayrollError('请选择有效报酬方式');
+  if(classroomId&&!(await read<{id:string}>(actor,key,'SELECT c.id FROM classrooms c WHERE c.group_id=? AND c.id=? AND (c.teacher_name=? OR EXISTS(SELECT 1 FROM class_sessions s WHERE s.group_id=c.group_id AND s.classroom_id=c.id AND s.teacher_name=?))',gid,classroomId,person.teacherName,person.teacherName)).length)throw new PayrollError('班级不存在或未关联该老师',404);
+  const scope=(await read<{id:string;revision:number}>(actor,key,'SELECT id,revision FROM payroll_rate_scopes WHERE group_id=? AND teacher_id=? AND scope_key=?',gid,teacherId,classroomId||''))[0];if((scope?.revision||0)!==expected)throw new PayrollError('时薪设置已改变，请刷新后重试',409);
+  const scopeId=scope?.id||crypto.randomUUID(),rateId=crypto.randomUUID();result={ok:true,teacherId,rateId,revision:expected+1};
+  statements=[claim(`EXISTS(SELECT 1 FROM teachers WHERE group_id=? AND name=?) AND coalesce((SELECT revision FROM payroll_rate_scopes WHERE group_id=? AND teacher_id=? AND scope_key=?),0)=?${classroomId?' AND EXISTS(SELECT 1 FROM classrooms c WHERE c.group_id=? AND c.id=? AND (c.teacher_name=? OR EXISTS(SELECT 1 FROM class_sessions s WHERE s.group_id=c.group_id AND s.classroom_id=c.id AND s.teacher_name=?)))':''}`,[gid,person.teacherName,gid,teacherId,classroomId||'',expected,...(classroomId?[gid,classroomId,person.teacherName,person.teacherName]:[])],result),identityStatement(person,gid,now,guard),db.prepare(`INSERT OR IGNORE INTO payroll_rate_scopes(id,group_id,teacher_id,classroom_id,scope_key,revision,updated_at) SELECT ?,?,?,?,?,0,? WHERE ${guard.sql}`).bind(scopeId,gid,teacherId,classroomId,classroomId||'',now,...guard.args),db.prepare(`INSERT INTO payroll_rate_versions(id,group_id,scope_id,revision,amount_cents,currency,effective_from,created_by,created_at,operation_id,mode) SELECT ?,?,?,?,?,'MYR',?,?,?,?,? WHERE ${guard.sql}`).bind(rateId,gid,scopeId,expected+1,value,effectiveFrom,actor.id,now,operation,mode,...guard.args),db.prepare(`UPDATE payroll_rate_scopes SET revision=?,updated_at=? WHERE group_id=? AND id=? AND revision=? AND ${guard.sql}`).bind(expected+1,now,gid,scopeId,expected,...guard.args)];
+ }else if(action==='reviewMonth'){
+  const teacherId=id(data.teacherId,'老师'),person=await teacher(actor,teacherId,key),classroomId=id(data.classroomId,'班级'),m=month(data.month),expected=revision(data.revision),value=data.amountCents;
+  if(!Number.isSafeInteger(value)||Number(value)<0||Number(value)>maxAmount)throw new PayrollError('月报酬须为有效金额');const reason=limited(data.reason,1000,'月报酬核对原因',true),current=await source(actor,key,person,m),line=current.monthlyLines.find(l=>l.classroomId===classroomId);
+  if(!line)throw new PayrollError('该班本月没有固定月报酬，请先设置班级报酬',404);if(line.reviewRevision!==expected||text(data.expectedSourceHash)!==line.sourceHash)throw new PayrollError('月报酬依据已改变，请刷新后核对',409);
+  const reviewId=crypto.randomUUID();result={ok:true,teacherId,reviewId,revision:expected+1};
+  statements=[claim('('+payrollBasisSql+')=? AND coalesce((SELECT max(revision) FROM payroll_monthly_reviews WHERE group_id=? AND teacher_id=? AND classroom_id=? AND month=?),0)=?',[...basisArgs(gid,person,m),current.basis,gid,teacherId,classroomId,m,expected],result),db.prepare('INSERT INTO payroll_monthly_reviews(id,group_id,teacher_id,classroom_id,month,revision,amount_cents,reason,basis_hash,created_by,created_at,operation_id) SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE '+guard.sql).bind(reviewId,gid,teacherId,classroomId,m,expected+1,value,reason,line.sourceHash,actor.id,now,operation,...guard.args)];
+ }else if(action==='generate'){
+  const teacherId=id(data.teacherId,'老师'),person=await teacher(actor,teacherId,key),m=month(data.month),existing=(await read<{id:string;revision:number}>(actor,key,'SELECT id,revision FROM payroll_runs WHERE group_id=? AND teacher_id=? AND month=?',gid,teacherId,m))[0];if(existing)return{ok:true,payrollId:existing.id,revision:existing.revision};
+  const current=await source(actor,key,person,m);if(!current.sourceLines.length&&current.review.pendingCount===0)throw new PayrollError('该月份没有老师课次');const payrollId=crypto.randomUUID(),document:PayrollDocument={...(current.calculationVersion?{calculationVersion:current.calculationVersion,monthlyLines:current.monthlyLines}:{}),id:payrollId,groupId:gid,teacherId,teacherName:person.teacherName,month:m,currency:'MYR',status:'draft',revision:1,sourceHash:current.sourceHash,sourceLines:current.sourceLines,baseTotalCents:current.baseTotalCents,durationSeconds:current.durationSeconds,lessonCount:current.lessonCount,createdAt:now,updatedAt:now,confirmedAt:null};result={ok:true,payrollId,revision:1};
+  statements=[claim(`EXISTS(SELECT 1 FROM teachers WHERE group_id=? AND name=?) AND (${payrollBasisSql})=? AND NOT EXISTS(SELECT 1 FROM payroll_runs WHERE group_id=? AND teacher_id=? AND month=?)`,[gid,person.teacherName,...basisArgs(gid,person,m),current.basis,gid,teacherId,m],result),identityStatement(person,gid,now,guard),db.prepare(`INSERT INTO payroll_runs(id,group_id,teacher_id,month,status,revision,document_json,source_hash,base_total_cents,created_by,created_at,updated_at) SELECT ?,?,?,?,'draft',1,?,?,?,?,?,? WHERE ${guard.sql}`).bind(payrollId,gid,teacherId,m,JSON.stringify(document),current.sourceHash,current.baseTotalCents,actor.id,now,now,...guard.args)];
+ }else{
+  const payrollId=id(data.payrollId),row=await run(actor,key,payrollId),expected=revision(data.revision,1);if(row.revision!==expected)throw new PayrollError('薪资记录已改变，请刷新后重试',409);
+  if(action==='deleteDraft'){
+   if(row.status!=='draft')throw new PayrollError('已确认或已发放的薪资不能删除',409);
+   result={ok:true,payrollId,revision:expected+1,deleted:true};
+   const snapshotFields=['id','group_id','teacher_id','month','status','revision','document_json','source_hash','base_total_cents','bonus_cents','deduction_cents','paid_cents','reversed_cents','created_by','created_at','updated_at','confirmed_by','confirmed_at'],snapshotSql='json_object('+snapshotFields.map(field=>"'"+field+"',r."+field).join(',')+')';
+   statements=[claim("EXISTS(SELECT 1 FROM payroll_runs r WHERE r.group_id=? AND r.id=? AND r.status='draft' AND r.revision=? AND NOT EXISTS(SELECT 1 FROM payroll_events e WHERE e.group_id=r.group_id AND e.payroll_id=r.id))",[gid,payrollId,expected],result),db.prepare('INSERT INTO payroll_deleted_drafts(group_id,payroll_id,teacher_id,month,revision,run_snapshot_json,deleted_by,deleted_at,operation_id) SELECT r.group_id,r.id,r.teacher_id,r.month,r.revision,'+snapshotSql+',?,?,? FROM payroll_runs r WHERE r.group_id=? AND r.id=? AND r.status=\'draft\' AND r.revision=? AND '+guard.sql).bind(actor.id,now,operation,gid,payrollId,expected,...guard.args),db.prepare('DELETE FROM payroll_runs WHERE group_id=? AND id=? AND revision=? AND '+guard.sql).bind(gid,payrollId,expected,...guard.args)];
+  }else if(action==='refresh'||action==='confirm'){
+   if(row.status!=='draft')throw new PayrollError('已确认薪资不能覆盖，请使用差额调整',409);const person=await teacher(actor,row.teacherId,key),current=await source(actor,key,person,row.month),document=JSON.parse(row.documentJson) as PayrollDocument;
+   if(action==='confirm'){
+    if(text(data.expectedSourceHash)!==row.sourceHash||current.sourceHash!==row.sourceHash)throw new PayrollError('授课或时薪已有更改，请先刷新薪资草稿',409);
+    if(current.review.pendingCount||current.review.missingRateCount)throw new PayrollError('仍有未确认考勤、缺少时薪或无效课时，请先处理',409);
+    if(current.review.upcomingCount)throw new PayrollError('该月仍有未完成课程，可先保存草稿，课程完成后确认薪资',409);
+    if(!current.lessonCount)throw new PayrollError('没有已确认授课，不能确认薪资');
+   }else {delete document.calculationVersion;delete document.monthlyLines;Object.assign(document,{sourceHash:current.sourceHash,sourceLines:current.sourceLines,baseTotalCents:current.baseTotalCents,durationSeconds:current.durationSeconds,lessonCount:current.lessonCount,...(current.calculationVersion?{calculationVersion:current.calculationVersion,monthlyLines:current.monthlyLines}:{})});}
+   document.revision=expected+1;document.updatedAt=now;if(action==='confirm'){document.status='confirmed';document.confirmedAt=now;}result={ok:true,payrollId,revision:expected+1};
+   statements=[claim(`EXISTS(SELECT 1 FROM payroll_runs WHERE group_id=? AND id=? AND status='draft' AND revision=?) AND (${payrollBasisSql})=?`,[gid,payrollId,expected,...basisArgs(gid,person,row.month),current.basis],result),db.prepare(`UPDATE payroll_runs SET status=?,revision=?,document_json=?,source_hash=?,base_total_cents=?,updated_at=?,confirmed_at=?,confirmed_by=? WHERE group_id=? AND id=? AND status='draft' AND revision=? AND ${guard.sql}`).bind(document.status,document.revision,JSON.stringify(document),document.sourceHash,document.baseTotalCents,now,document.confirmedAt,action==='confirm'?actor.id:null,gid,payrollId,expected,...guard.args)];
+  }else{
+   if(row.status!=='confirmed')throw new PayrollError('请先确认薪资，再登记调整或付款',409);let kind:PayrollEvent['kind'],value:number,paymentId:string|null=null,method:PayrollMethod|''='',occurredAt=now;const reference=limited(data.reference,160,'参考号'),notes=limited(data.notes,1000,'内部备注'),reason=limited(data.reason,1000,'原因',action!=='pay'),current=summary(row);
+   if(action==='adjust'){if(!['bonus','deduction'].includes(text(data.kind)))throw new PayrollError('请选择增加或扣减薪资');kind=data.kind as 'bonus'|'deduction';value=amount(data.amountCents);if(kind==='deduction'&&value>current.remainingCents)throw new PayrollError('扣减后薪资不能低于已经发放的金额');if(kind==='bonus'&&current.totalCents+value>maxAmount)throw new PayrollError('薪资总额超过上限');occurredAt=timestamp(data.effectiveAt,now);}
+   else if(action==='pay'){kind='payment';value=amount(data.amountCents);if(value>current.remainingCents)throw new PayrollError('发放金额不可超过尚未发放的薪资');if(!PAYROLL_METHODS.includes(data.method as PayrollMethod))throw new PayrollError('请选择有效薪资付款方式');method=data.method as PayrollMethod;occurredAt=timestamp(data.paidAt,now);}
+   else{kind='reverse';paymentId=id(data.paymentId,'薪资付款');const payment=(await read<{id:string;amountCents:number;occurredAt:string;method:PayrollMethod}>(actor,key,"SELECT e.id,e.amount_cents AS amountCents,e.occurred_at AS occurredAt,e.method FROM payroll_events e WHERE e.group_id=? AND e.payroll_id=? AND e.id=? AND e.kind='payment' AND NOT EXISTS(SELECT 1 FROM payroll_events x WHERE x.group_id=e.group_id AND x.payment_id=e.id AND x.kind='reverse')",gid,payrollId,paymentId))[0];if(!payment)throw new PayrollError('薪资付款不存在或已撤销',409);value=payment.amountCents;method=payment.method;occurredAt=timestamp(data.effectiveAt,now);if(Date.parse(occurredAt)<Date.parse(payment.occurredAt))throw new PayrollError('撤销日期不能早于原薪资付款日期');}
+   const eventId=crypto.randomUUID();result={ok:true,payrollId,revision:expected+1,eventId};statements=[claim("EXISTS(SELECT 1 FROM payroll_runs WHERE group_id=? AND id=? AND status='confirmed' AND revision=?)",[gid,payrollId,expected],result),db.prepare(`INSERT INTO payroll_events(id,group_id,payroll_id,kind,amount_cents,payment_id,occurred_at,method,reference,notes,reason,actor_id,created_at,operation_id,expected_revision) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE ${guard.sql}`).bind(eventId,gid,payrollId,kind,value,paymentId,occurredAt,method,reference,notes,reason,actor.id,now,operation,expected,...guard.args)];
+  }
+ }
+ statements.push(db.prepare(`INSERT INTO audit(group_id,id,lesson_id,actor_id,action,after_json,at) SELECT ?,?,?,?,?,?,? WHERE ${guard.sql}`).bind(gid,crypto.randomUUID(),'payroll:'+(result.payrollId||result.teacherId),actor.id,'payroll.'+action,JSON.stringify({...result,reason:text(data.reason),amountCents:data.amountCents,kind:data.kind}),now,...guard.args));
+ try{const saved=await db.batch(statements);if(!saved[0].meta.changes){const repeated=await replay(actor,key,operation,requestHash);if(repeated)return repeated;if(action==='generate'){const existing=(await read<{id:string;revision:number}>(actor,key,'SELECT id,revision FROM payroll_runs WHERE group_id=? AND teacher_id=? AND month=?',gid,text(data.teacherId),text(data.month)))[0];if(existing)return{ok:true,payrollId:existing.id,revision:existing.revision};}throw new PayrollError('薪资、时薪、授课资料或权限已改变，请刷新后重试',409);}}
+ catch(error){if(error instanceof PayrollError)throw error;if(/payroll_|UNIQUE constraint failed/.test(String(error)))throw new PayrollError('薪资或发放金额已改变，请刷新后重试',409);throw error;}
+ return await replay(actor,key,operation,requestHash)||result;
+}

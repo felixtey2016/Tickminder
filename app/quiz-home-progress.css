@@ -1,0 +1,12 @@
+.quiz-home-progress{min-width:0;border:1px solid var(--ui-line,#e4dff0);border-radius:12px;background:var(--ui-surface,#fff);color:var(--ui-text,#24223a);overflow:hidden}
+.quiz-home-progress>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--ui-line,#e4dff0)}
+.quiz-home-progress h2,.quiz-home-progress h3{margin:0;font-size:1rem;line-height:1.5;overflow-wrap:anywhere}
+.quiz-home-progress h2{font-size:18px;font-weight:700}
+.quiz-home-progress h3{font-weight:600}
+.quiz-home-progress>p,.quiz-home-progress>div[role=alert]{padding:14px 18px;margin:0}
+.quiz-home-progress-list>article{display:flex;align-items:center;gap:14px;padding:14px 18px}
+.quiz-home-progress-list>article+article{border-top:1px solid var(--ui-line,#e4dff0)}
+.quiz-home-progress-list>article>div{flex:1;min-width:0}
+.quiz-home-progress p{font-size:.875rem;line-height:1.5;color:var(--ui-muted,#6c687e);margin:5px 0 0}
+.quiz-home-progress button{flex-shrink:0;min-height:44px;gap:6px}
+@media(max-width:420px){.quiz-home-progress-list>article{align-items:flex-start;flex-wrap:wrap}.quiz-home-progress-list>article>div{flex-basis:100%}.quiz-home-progress>header{padding:12px}.quiz-home-progress-list>article{padding:12px}}

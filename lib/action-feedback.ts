@@ -1,6 +1,8 @@
 "use client";
 
 import { t } from "@/lib/i18n";
+import {PrivateReadInvalidatedError} from './private-read-flight';
+import {observeInvalidApiResponse} from "./diagnostics-client";
 
 export type ActionToast = { kind: "success" | "error"; message: string; id: number };
 export const ACTION_TOAST_EVENT = "timelyo:action-toast";
@@ -22,11 +24,12 @@ export function actionFailureMessage(error: unknown, fallback = "操作失败，
   const message = error instanceof Error ? error.message : fallback;
   if (/^(Sign in required|Unauthorized)$/i.test(message)) return t("登录已过期，请重新登录");
   if (/^(Administrator access required|Student access only|No permission)/i.test(message)) return t("没有权限执行此操作");
+  if (/^(Google key lookup failed|Google signing key unavailable|Invalid Google credential|Invalid Google signature)$/i.test(message)) return t("Google 登录验证失败，请重试");
   if (/stack trace|internal server error|SQLITE_|D1_ERROR|wrangler|cloudflare:workers|token=|secret=/i.test(message)) return t("操作失败，请稍后重试；如仍失败请联系管理员");
   return t(message || fallback);
 }
 
-// Kept for existing callers: failures now use the shared non-blocking, persistent toast.
+// Kept for existing callers: failures use the shared error dialog host.
 export function alertActionFailure(error: unknown, fallback?: string) {
   const message = actionFailureMessage(error, fallback);
   showActionToast("error", message);
@@ -35,9 +38,10 @@ export function alertActionFailure(error: unknown, fallback?: string) {
 
 export async function readApiJson<T>(response: Response): Promise<T> {
   if (!response.headers.get("content-type")?.includes("application/json")) {
+    observeInvalidApiResponse(response);
     const reason = response.status === 413 ? t("请求内容过大") : response.status === 401 ? t("登录已过期，请重新登录") : t("服务器未返回有效响应，请稍后重试");
     throw new Error(reason);
   }
   try { return await response.json() as T; }
-  catch { throw new Error(t("服务器未返回有效响应，请稍后重试")); }
+  catch (error) { if(error instanceof PrivateReadInvalidatedError||(error instanceof Error&&error.name==='AbortError'))throw error;observeInvalidApiResponse(response,error); throw new Error(t("服务器未返回有效响应，请稍后重试")); }
 }

@@ -20,6 +20,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "请输入不超过 80 个字符的姓名" }, { status: 400 });
   const now = new Date().toISOString();
   await getDb().update(accounts).set({ name, nameConfirmedAt: now }).where(eq(accounts.id, account.id));
-  await getDb().insert(audit).values({ id: crypto.randomUUID(), lessonId: `account:${account.id}`, actorId: account.id, action: "confirmName", before: JSON.stringify({ name: account.name }), after: JSON.stringify({ name }), at: now });
+  await getDb().insert(audit).values({groupId:account.groupId || "next-genn-edu", id: crypto.randomUUID(), lessonId: `account:${account.id}`, actorId: account.id, action: "confirmName", before: JSON.stringify({ name: account.name }), after: JSON.stringify({ name }), at: now });
   return NextResponse.json({ ok: true, name });
 }

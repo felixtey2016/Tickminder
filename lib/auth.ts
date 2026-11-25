@@ -1,9 +1,13 @@
+import { setDiagnosticActor } from "@/lib/diagnostics-context";
+import {sessionDeviceLabel} from "@/lib/session-device-label";
 import { env } from "cloudflare:workers";
 import { cookies } from "next/headers";
 import { and, eq, gt } from "drizzle-orm";
 import { getDb } from "@/db";
 import { accounts, googleIdentities, localCredentials, sessions } from "@/db/schema";
 import { pendingExpired } from "@/lib/account-lifecycle";
+import { selectedGroup } from "@/lib/groups-server";
+import { bindAccountSession, transferAccountSession } from "@/lib/account-session";
 
 export type Account = typeof accounts.$inferSelect;
 const encoder = new TextEncoder();
@@ -50,7 +54,7 @@ async function googleSigningKeys(force = false): Promise<GoogleSigningKey[]> {
   try { return await googleKeysRequest; } finally { googleKeysRequest = null; }
 }
 
-export async function verifyGoogleCredential(token: string) {
+export async function verifyGoogleCredential(token: string, nonce?: string) {
   if (!env.GOOGLE_CLIENT_ID) throw new Error("Google login is not configured");
   const parts = token.split(".");
   if (parts.length !== 3) throw new Error("Invalid Google credential");
@@ -59,7 +63,8 @@ export async function verifyGoogleCredential(token: string) {
   if (header.alg !== "RS256" || !header.kid) throw new Error("Invalid Google credential");
   if (!["https://accounts.google.com", "accounts.google.com"].includes(payload.iss) ||
       payload.aud !== env.GOOGLE_CLIENT_ID || payload.exp <= Date.now() / 1000 ||
-      !payload.email_verified || !payload.sub || !payload.email) throw new Error("Invalid Google credential");
+      payload.email_verified !== true || !payload.sub || !payload.email ||
+      (nonce !== undefined && payload.nonce !== nonce)) throw new Error("Invalid Google credential");
   const cached = Boolean(googleKeysCache && googleKeysCache.expiresAt > Date.now());
   let keys = await googleSigningKeys();
   let jwk = keys.find(k => k.kid === header.kid && k.kty === "RSA");
@@ -74,6 +79,7 @@ export async function verifyGoogleCredential(token: string) {
 export async function currentIdentity() {
   const token = (await cookies()).get("tuition_session")?.value;
   if (!token) return null;
+  const sessionHash = await hashToken(token);
   const row = await getDb().select({
     account: accounts,
     username: localCredentials.username,
@@ -83,9 +89,10 @@ export async function currentIdentity() {
   }).from(sessions).innerJoin(accounts, eq(accounts.id, sessions.accountId))
     .leftJoin(localCredentials, eq(localCredentials.accountId, accounts.id))
     .leftJoin(googleIdentities, eq(googleIdentities.accountId, accounts.id))
-    .where(and(eq(sessions.tokenHash, await hashToken(token)), gt(sessions.expiresAt, new Date().toISOString()))).get();
+    .where(and(eq(sessions.tokenHash, sessionHash), gt(sessions.expiresAt, new Date().toISOString()))).get();
   if (!row || row.account.disabledAt || pendingExpired(row.account)) return null;
-  return { account: row.account,
+  setDiagnosticActor(row.account);
+  return { account: bindAccountSession(row.account, sessionHash),
     local: row.username ? { username: row.username, mustChangePassword: Boolean(row.mustChangePassword) } : null,
     google: row.googleSubject ? { subject: row.googleSubject, email: row.googleEmail! } : null };
 }
@@ -97,13 +104,40 @@ export async function currentAccount(): Promise<Account | null> {
 // Business routes still enforce the initial password and Google account setup.
 export async function currentBusinessAccount(): Promise<Account | null> {
   const identity = await currentIdentity();
-  if (!identity || identity.local?.mustChangePassword || (!identity.local && identity.google)) return null;
-  return identity.account;
+  if (!identity || identity.account.role === 'learner' || identity.local?.mustChangePassword || (!identity.local && identity.google)) return null;
+  const group = await selectedGroup(identity.account);
+  if (!group) return null;
+  const account=transferAccountSession(identity.account, {...identity.account,groupId:group.id});
+  setDiagnosticActor(account);return account;
 }
 
-export async function createSession(accountId: string) {
+export class StaleSessionCredentialError extends Error {
+  constructor() { super("Credential changed during login"); }
+}
+
+export async function createSession(accountId: string, request?: Request, expectedPasswordHash?: string, replaceBrowserSession = false, sourceSessionHash?: string) {
   const token = toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
   const expiresAt = new Date(Date.now() + 30 * 86400000).toISOString();
-  await getDb().insert(sessions).values({ tokenHash: await hashToken(token), accountId, expiresAt });
+  const tokenHash=await hashToken(token),device=sessionDeviceLabel(request?.headers.get("user-agent")||"");
+  const database=env.DB;if(!database)throw new Error("Database is not configured");
+  // Google and password login may start before a concurrent suspension. Check
+  // live eligibility in the issuance batch; password login also binds the hash
+  // that was actually verified, so a concurrent reset cannot issue a session.
+  const insertSession = database.prepare(`INSERT INTO sessions(token_hash,account_id,expires_at) SELECT ?,?,? WHERE EXISTS(
+    SELECT 1 FROM accounts a WHERE a.id=? AND a.disabled_at IS NULL
+    AND NOT(a.role='pending' AND COALESCE(a.activated_at,'')='' AND COALESCE(a.teacher_name,'')='' AND COALESCE(a.student_name,'')='' AND COALESCE(a.pending_expires_at,'')<>'' AND a.pending_expires_at<=strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ${expectedPasswordHash === undefined ? '' : 'AND EXISTS(SELECT 1 FROM local_credentials c WHERE c.account_id=a.id AND c.password_hash=?)'}
+    ${sourceSessionHash === undefined ? '' : "AND EXISTS(SELECT 1 FROM sessions s WHERE s.account_id=a.id AND s.token_hash=? AND s.expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now'))"}
+  )`).bind(tokenHash,accountId,expiresAt,accountId,...(expectedPasswordHash===undefined?[]:[expectedPasswordHash]),...(sourceSessionHash===undefined?[]:[sourceSessionHash]));
+  const statements = [insertSession, database.prepare("INSERT INTO session_devices(id,token_hash,created_at,browser,os) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM sessions WHERE token_hash=?)").bind(crypto.randomUUID(),tokenHash,new Date().toISOString(),device.browser,device.os,tokenHash)];
+  const prior = replaceBrowserSession ? (await cookies()).get("tuition_session")?.value : null;
+  if (prior && /^[A-Za-z0-9_-]{43}$/.test(prior)) {
+    const priorHash = await hashToken(prior);
+    // Replace this browser’s prior session, including its linked product sessions.
+    statements.push(database.prepare("DELETE FROM sessions WHERE token_hash=? AND EXISTS(SELECT 1 FROM sessions WHERE token_hash=?)")
+      .bind(priorHash, tokenHash));
+  }
+  const result = await database.batch(statements);
+  if (result[0].meta.changes !== 1) throw new StaleSessionCredentialError();
   return { token, expiresAt };
 }

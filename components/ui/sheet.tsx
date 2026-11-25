@@ -5,9 +5,11 @@ import { XIcon } from "lucide-react"
 import { Dialog as SheetPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { ModalLayer, useModalLayer } from "@/components/ui/modal-layer"
+import { t } from "@/lib/i18n"
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
-  return <SheetPrimitive.Root data-slot="sheet" {...props} />
+  return <ModalLayer><SheetPrimitive.Root data-slot="sheet" {...props} /></ModalLayer>
 }
 
 function SheetTrigger({
@@ -30,11 +32,14 @@ function SheetPortal({
 
 function SheetOverlay({
   className,
+  style,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Overlay>) {
+  const layer = useModalLayer()
   return (
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
+      style={{ ...style, zIndex: layer }}
       className={cn(
         "fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
         className
@@ -46,19 +51,24 @@ function SheetOverlay({
 
 function SheetContent({
   className,
+  style,
   children,
   side = "right",
   showCloseButton = true,
+  onScroll,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
 }) {
+  const layer = useModalLayer()
   return (
     <SheetPortal>
       <SheetOverlay />
       <SheetPrimitive.Content
         data-slot="sheet-content"
+        style={{ ...style, zIndex: layer }}
+        onScroll={event=>{event.currentTarget.style.setProperty("--sheet-scroll-top",event.currentTarget.scrollTop+"px");onScroll?.(event);}}
         className={cn(
           "fixed z-50 flex flex-col gap-4 bg-background shadow-lg transition ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:animate-in data-[state=open]:duration-500",
           side === "right" &&
@@ -75,9 +85,9 @@ function SheetContent({
       >
         {children}
         {showCloseButton && (
-          <SheetPrimitive.Close className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary">
-            <XIcon className="size-4" />
-            <span className="sr-only">Close</span>
+          <SheetPrimitive.Close data-slot="sheet-close" aria-label={t("关闭")} style={{top:"calc(var(--sheet-scroll-top, 0px) + 8px)",right:8,width:44,height:44,zIndex:20}} className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary">
+            <XIcon style={{width:22,height:22}} aria-hidden="true"/>
+            <span className="sr-only">{t("关闭")}</span>
           </SheetPrimitive.Close>
         )}
       </SheetPrimitive.Content>

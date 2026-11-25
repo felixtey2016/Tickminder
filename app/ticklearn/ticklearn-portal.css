@@ -1,0 +1,69 @@
+.ticklearn-portal,.ticklearn-language-sheet[data-slot="dialog-content"]{
+  --ticklearn-font:"Plus Jakarta Sans","Inter","Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui;
+  font-family:var(--ticklearn-font),sans-serif;
+  line-height:1.6
+}
+.ticklearn-portal {min-height:100vh;padding:20px clamp(16px,5vw,64px) 48px;background:#f5efff;color:#251740}
+.ticklearn-portal-top {max-width:1040px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.ticklearn-portal-top > a {display:flex;align-items:center;min-width:0;gap:8px;font-size:1.25rem;font-weight:800;color:inherit;text-decoration:none}
+.ticklearn-portal-top img {min-width:0;object-fit:contain}
+.ticklearn-form input {color:#251740;background:white;border:1px solid #cfc2e6;border-radius:10px;min-height:44px;padding:8px 10px}
+.ticklearn-language-sheet[data-slot="dialog-content"] {max-width:400px;background:#fff;color:#251740;border-radius:20px}
+@media(max-width:600px) {
+ .ticklearn-language-sheet[data-slot="dialog-content"] {inset:auto 0 0;width:100%;max-width:none;translate:none!important;transform:none;border-radius:24px 24px 0 0;padding:30px 18px calc(18px + env(safe-area-inset-bottom,0px))}
+ .ticklearn-language-sheet::before {content:'';position:absolute;inset:9px calc(50% - 16px) auto;height:4px;border-radius:8px;background:#d8d5de}
+}
+.ticklearn-portal-card {max-width:460px;margin:clamp(24px,6vh,68px) auto 0;background:white;border:1px solid #e6dcf6;border-radius:24px;padding:clamp(20px,5vw,36px);box-shadow:0 16px 42px #30205212}
+.ticklearn-portal-card h1 {font-size:clamp(1.65rem,5vw,2.2rem);line-height:1.1;margin:0 0 14px}
+.ticklearn-portal-card p,.ticklearn-form small {color:#59476e;line-height:1.5}
+.ticklearn-google {margin-top:18px}
+.ticklearn-divider {display:flex;align-items:center;gap:12px;color:#59476e;margin:18px 0;font-size:.9rem}
+.ticklearn-divider::before,.ticklearn-divider::after {content:'';flex:1;border-top:1px solid #e6dcf6}
+.ticklearn-form,.ticklearn-form label {display:grid;gap:8px}
+.ticklearn-form {gap:16px}
+.ticklearn-portal-card > .ticklearn-form {margin-top:20px}
+.ticklearn-form button,.ticklearn-secondary {border:0;border-radius:10px;min-height:44px;background:#562ac0;color:white;font-weight:700;padding:10px 16px}
+.ticklearn-form button:disabled,.ticklearn-secondary:disabled {opacity:.65}
+.ticklearn-auth-options {display:grid;gap:10px}
+.ticklearn-auth-options a {display:flex;align-items:center;justify-content:center;min-height:44px;padding:9px 12px;border:1px solid var(--ui-border,#ded7e8);border-radius:10px;background:var(--ui-surface,#fff);color:var(--ui-text,#251740);font-weight:650;text-align:center;text-decoration:none}
+.ticklearn-auth-options a:hover {background:var(--ui-surface-muted,#f1f1f6)}
+.ticklearn-auth-options a:focus-visible {outline:2px solid var(--ui-accent,#6547c6);outline-offset:2px}
+.ticklearn-portal-links {display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-top:18px;font-size:.9rem}
+.ticklearn-portal-links a {color:#5326aa;text-decoration:underline;text-underline-offset:.18em}
+.ticklearn-portal-card .ticklearn-portal-error {color:#9e263a;background:#fff0f2;border-radius:8px;padding:8px 12px;margin:16px 0 0}
+
+.ticklearn-phone-field {display:flex;align-items:center;border:1px solid #cfc2e6;border-radius:10px;background:white;min-width:0}
+.ticklearn-phone-field:focus-within {outline:2px solid #9271df;outline-offset:2px}
+.ticklearn-phone-code {flex:none;padding:3px 10px;border-inline-end:1px solid #ded5ea;color:#514068;font-weight:700}
+.ticklearn-form .ticklearn-phone-field input {flex:1;min-width:0;border:0;background:transparent;outline:0}
+
+.ticklearn-settings{max-width:1040px;margin:24px auto 0;min-width:0}
+.ticklearn-settings>h1{font-size:clamp(1.5rem,4vw,2.25rem);font-weight:800;margin:0 0 16px}
+.ticklearn-settings .account-settings-compact{min-width:0}
+.ticklearn-settings .account-login-methods,.ticklearn-settings .account-summary-fields dd{overflow-wrap:anywhere}
+.ticklearn-settings .account-password-form form{display:grid;gap:12px}
+.ticklearn-session-actions{margin-top:20px}
+.ticklearn-session-actions button{display:inline-flex;align-items:center;gap:8px}
+.ticklearn-session-actions [role="alert"]{color:#9e263a;margin-top:12px}
+
+.ticklearn-header-actions{display:flex;align-items:center;justify-content:end;gap:8px;flex:none}
+@media(max-width:360px){
+ .ticklearn-portal-top>a{gap:5px;font-size:1.05rem}
+ .ticklearn-portal-top>a img{width:35px}
+ .ticklearn-header-actions{gap:5px}
+}
+:root.dark .ticklearn-portal {background:var(--ui-bg);color:var(--ui-text)}
+:root.dark :is(.ticklearn-portal-card,.ticklearn-plan,.ticklearn-feature,.ticklearn-stat,.ticklearn-recent) {
+  background:var(--ui-surface);border-color:var(--ui-border);color:var(--ui-text)
+}
+:root.dark .ticklearn-dashboard-hero {background:linear-gradient(112deg,#292335,#342745);border-color:#514862;color:var(--ui-text)}
+:root.dark :is(.ticklearn-dashboard p,.ticklearn-stat-detail,.ticklearn-stat-empty,.ticklearn-portal-card p,.ticklearn-form small,.ticklearn-divider,.ticklearn-phone-code) {color:var(--ui-muted)}
+:root.dark :is(.ticklearn-dashboard .ticklearn-dashboard-name,.ticklearn-dashboard-link,.ticklearn-exam-link,.ticklearn-stat dd,.ticklearn-portal-links a) {color:var(--ui-accent)}
+:root.dark :is(.ticklearn-form input,.ticklearn-phone-field,.ticklearn-language-sheet[data-slot="dialog-content"]) {
+  color:var(--ui-text);background:var(--ui-surface);border-color:var(--ui-border)
+}
+:root.dark .ticklearn-form .ticklearn-phone-field input {background:transparent}
+:root.dark .ticklearn-plan strong {background:var(--ui-accent-soft);color:var(--ui-accent);border-color:var(--ui-accent)}
+:root.dark :is(.ticklearn-form button,.ticklearn-secondary,.ticklearn-dashboard-button) {background:var(--ui-primary);color:var(--ui-primary-text)}
+:root.dark :is(.ticklearn-session-actions [role="alert"],.ticklearn-portal-card .ticklearn-portal-error,.ticklearn-portal .ticklearn-portal-error) {background:var(--ui-danger-bg);color:var(--ui-danger-text)}
+:root.dark .ticklearn-exam-link:hover,:root.dark .ticklearn-dashboard-link:hover {color:#eadfff}

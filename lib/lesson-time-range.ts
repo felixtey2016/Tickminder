@@ -1,0 +1,4 @@
+export function lessonDateAfter(date:string,days:number){const value=Date.parse(date+"T00:00:00Z");return Number.isFinite(value)?new Date(value+days*86400000).toISOString().slice(0,10):"";}
+export function lessonRangeMinutes(start:string,end:string){const instant=(v:string)=>/^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(v)&&Number.isFinite(Date.parse(v+":00+08:00"))&&new Date(Date.parse(v+":00+08:00")+28800000).toISOString().slice(0,16)===v?Date.parse(v+":00+08:00"):NaN;return(instant(end)-instant(start))/60000;}
+export function validLessonRange(start:string,end:string){const m=lessonRangeMinutes(start,end);return Number.isFinite(m)&&m>0&&m<=720;}
+export function lessonRangeParts(start:string,end:string){const [date="",startTime=""]=start.split("T"),[endDate="",endTime=""]=end.split("T");return{date,startTime,endTime,nextDay:Boolean(date&&endDate===lessonDateAfter(date,1))};}

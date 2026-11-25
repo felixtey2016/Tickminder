@@ -3,6 +3,7 @@ import {readFileSync,readdirSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {drizzle} from 'drizzle-orm/d1';
 import ts from 'typescript';
+import {registerHooks} from 'node:module';
 
 // Real route handlers, Google signature checks, password hashes and SQLite SQL.
 // Only runtime bindings, cookie transport and Google's certificate HTTP response
@@ -15,10 +16,24 @@ const d1={prepare:statement,async batch(items){sqlite.exec('BEGIN');try{const re
 let token='';
 const env={DB:d1,GOOGLE_CLIENT_ID:'isolated-test-client',PENDING_CLEANUP_TOKEN:'isolated-cleanup-secret'};
 const next={json(data,options){const response=Response.json(data,options);response.cookies={set(name,value){response.headers.set('set-cookie',name+'='+value+'; Path=/; HttpOnly; Secure');},delete(name){response.headers.set('set-cookie',name+'=; Path=/; Max-Age=0');}};return response;}};
-globalThis.__unifiedTest={env,NextResponse:next,cookies:async()=>({get:()=>token?{value:token}:undefined}),getDb:()=>drizzle(d1)};
-const stub='data:text/javascript;base64,'+Buffer.from('export const {env,NextResponse,cookies,getDb}=globalThis.__unifiedTest;').toString('base64');
-const cache=new Map();
-async function load(file){if(cache.has(file))return cache.get(file);let source=readFileSync(new URL('../'+file,import.meta.url),'utf8');const imports=[...source.matchAll(/from ["']([^"']+)["']/g)];for(const item of imports){const spec=item[1];let url;if(['cloudflare:workers','next/server','next/headers','@/db'].includes(spec))url=stub;else if(spec.startsWith('@/'))url=(await load(spec.slice(2)+'.ts')).url;else url=import.meta.resolve(spec);source=source.replaceAll(`"${spec}"`,`"${url}"`).replaceAll(`'${spec}'`,`'${url}'`);}const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;const url='data:text/javascript;base64,'+Buffer.from(js).toString('base64');const result={url,module:await import(url)};cache.set(file,result);return result;}
+globalThis.__unifiedTest={env,headers:async()=>new Headers(),NextResponse:next,cookies:async()=>({get:name=>name==='tuition_session'&&token?{value:token}:undefined}),getDb:()=>drizzle(d1)};
+const stub='data:text/javascript;base64,'+Buffer.from('export const {env,headers,NextResponse,cookies,getDb}=globalThis.__unifiedTest;').toString('base64');
+const applicationRoot=new URL('../',import.meta.url).href;
+// Native ESM links shared and circular dependencies once. Recursive data-URL
+// embedding cannot handle learning-operations <-> learning-versions correctly.
+const hooks=registerHooks({
+ resolve(specifier,context,nextResolve){
+  if(['cloudflare:workers','next/server','next/headers','@/db'].includes(specifier))return {url:stub,shortCircuit:true};
+  if(specifier.startsWith('@/'))return {url:new URL(specifier.slice(2)+'.ts',applicationRoot).href,shortCircuit:true};
+  if(specifier.startsWith('.')&&context.parentURL?.startsWith(applicationRoot)&&context.parentURL.endsWith('.ts'))return {url:new URL(/\.[cm]?[jt]sx?$/.test(specifier)?specifier:specifier+'.ts',context.parentURL).href,shortCircuit:true};
+  return nextResolve(specifier,context);
+ },
+ load(url,context,nextLoad){
+  if(url.startsWith(applicationRoot)&&url.endsWith('.ts'))return {format:'module',source:ts.transpileModule(readFileSync(new URL(url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText,shortCircuit:true};
+  return nextLoad(url,context);
+ },
+});
+async function load(file){const url=new URL('../'+file,import.meta.url).href;return {url,module:await import(url)};}
 const auth=(await load('app/api/auth/route.ts')).module,setup=(await load('app/api/account-setup/route.ts')).module,password=(await load('app/api/password/route.ts')).module,action=(await load('app/api/action/route.ts')).module,state=(await load('app/api/state/route.ts')).module,cleanup=(await load('app/api/pending-cleanup/route.ts')).module;
 const authLib=(await load('lib/auth.ts')).module,life=(await load('lib/account-lifecycle.ts')).module;
 const key=await crypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['sign','verify']);
@@ -53,12 +68,12 @@ const adminToken=token;
 assert.equal((await call(action,{action:'activateAccount',userId:'new-google'},'/api/action')).status,200);
 let row=sqlite.prepare('SELECT * FROM accounts WHERE id=?').get('new-google');assert.ok(row.activated_at);assert.equal(row.pending_expires_at,null);
 await call(auth,{credential:await google('bound-student','bound@example.test')});await call(setup,{username:'bound.student',password:'StudentPass26!'});
-sqlite.prepare('INSERT INTO students VALUES (?,?,1,?)').run('Test Student','teststudent',now);token=adminToken;
+sqlite.prepare('INSERT INTO students(name,name_key,active,created_at) VALUES (?,?,1,?)').run('Test Student','teststudent',now);token=adminToken;
 assert.equal((await call(action,{action:'bind',userId:'bound-student',role:'student',studentName:'Test Student'},'/api/action')).status,200);assert.ok(sqlite.prepare('SELECT activated_at FROM accounts WHERE id=?').get('bound-student').activated_at);
 
 function pending(id,expires,activated=null,role='pending'){sqlite.prepare('INSERT INTO accounts (id,email,name,role,created_at,pending_expires_at,activated_at) VALUES (?,?,?,?,?,?,?)').run(id,'',id,role,now,expires,activated);}
 pending('expired','2000-01-01T00:00:00.000Z');pending('legacy',null);pending('former-active','2000-01-01T00:00:00.000Z',now);pending('teacher-protected','2000-01-01T00:00:00.000Z',null,'teacher');pending('not-due','2999-01-01T00:00:00.000Z');pending('assigned-protected','2000-01-01T00:00:00.000Z');
-sqlite.prepare('INSERT INTO assignments VALUES (?,?,?)').run('test-assignment','assigned-protected','Test Student|Science');
+sqlite.prepare('INSERT INTO assignments(id,account_id,plan_key) VALUES (?,?,?)').run('test-assignment','assigned-protected','Test Student|Science');
 sqlite.prepare('INSERT INTO local_credentials VALUES (?,?,?,?,?)').run('expired','expired-user','irrelevant-hash',0,now);sqlite.prepare('INSERT INTO google_identities VALUES (?,?,?,?)').run('expired-sub','expired','expired@example.test',now);sqlite.prepare('INSERT INTO sessions VALUES (?,?,?)').run('expired-session','expired','2999-01-01T00:00:00.000Z');
 assert.equal((await cleanup.POST(req({},'/api/pending-cleanup'))).status,403);
 let result=await cleanup.POST(req({},'/api/pending-cleanup',{authorization:'Bearer isolated-cleanup-secret'}));assert.equal(result.status,200);assert.equal((await result.json()).deleted,1);assert.equal(sqlite.prepare('SELECT id FROM accounts WHERE id=?').get('expired'),undefined);
@@ -73,5 +88,5 @@ result=await cleanup.POST(req({},'/api/pending-cleanup',{authorization:'Bearer i
 // Unique usernames and concurrent setup cannot create a second credential.
 token='';await call(auth,{credential:await google('other-google','other@example.test')});assert.equal((await call(setup,{username:'STUDENT.ONE',password:'StudentPass26!'})).status,409);
 assert.equal(sqlite.prepare('SELECT count(*) AS n FROM local_credentials WHERE account_id=?').get('other-google').n,0);
-globalThis.fetch=originalFetch;sqlite.close();
+globalThis.fetch=originalFetch;hooks.deregister();sqlite.close();
 console.log('PASS: verified Google signature; original IDs; username/email/password login; mandatory setup; Pending privacy; owner/admin activation; binding; immutable activation; 7-day expiry; legacy protection; guarded atomic cleanup; race; idempotence; username uniqueness; session invalidation. Isolated SQLite only.');

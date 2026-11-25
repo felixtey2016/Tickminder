@@ -1,29 +1,49 @@
+import { registrationGroup,selectedGroup } from "@/lib/groups-server";
 import { env } from "cloudflare:workers";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { accounts, googleIdentities, localCredentials, loginAttempts, sessions } from "@/db/schema";
-import { createSession, currentIdentity, hashToken, verifyGoogleCredential, type Account } from "@/lib/auth";
+import { StaleSessionCredentialError, createSession, currentIdentity, hashToken, verifyGoogleCredential, type Account } from "@/lib/auth";
 import { normalizeUsername, validUsername, verifyPassword } from "@/lib/password";
 import { isOwnerAccount, OWNER_EMAIL } from "@/lib/owner";
 import { lifecycleView, pendingDeadline, pendingExpired } from "@/lib/account-lifecycle";
 import { rows } from "@/lib/learning-server";
+import { adminAuthority } from "@/lib/admin-authority";
+import { adminPermissionContext } from "@/lib/admin-permission-access";
+import { transferAccountSession } from "@/lib/account-session";
+import { studentContactRequired } from "@/lib/student-contact";
+import { GOOGLE_LINK_PROMPT_SKIPPED, googleLinkOnboardingEligible } from "@/lib/google-link-onboarding";
+import {watchPreviewConfig, watchPreviewEntry} from "@/lib/watch-preview-config";
+import {isTickLearnAccount} from '@/lib/ticklearn-account';
+import {tickLearnFreeDailyLimit,tickLearnFreeQuizLimit} from '@/lib/ticklearn-free';
 
-function authPayload(account: Account | null | undefined, local: {username: string; mustChangePassword?: boolean | number} | null | undefined, google: {email: string} | null | undefined) {
-  return { account: account ? { id: account.id, email: google?.email || account.email, name: account.name, nameConfirmedAt: account.nameConfirmedAt, role: account.role, isOwner: isOwnerAccount(account), teacherName: account.teacherName, studentName: account.studentName, googleLinked: Boolean(google), emailLoginAvailable: Boolean(google && local), requiresAccountSetup: Boolean(google && !local), username: local?.username || null, mustChangePassword: Boolean(local?.mustChangePassword), ...lifecycleView(account) } : null, clientId: env.GOOGLE_CLIENT_ID || null };
+async function authPayload(request: Request, account: Account | null | undefined, local: {username: string; mustChangePassword?: boolean | number} | null | undefined, google: {email: string} | null | undefined) {
+  const group=account?await selectedGroup(account):null;
+  const hierarchy=account&&group?await adminAuthority(account,group.id):{isGroupChief:false,canManageAdministrators:false};
+  const permission=account?.role==="admin"&&group?await adminPermissionContext(transferAccountSession(account,{...account,groupId:group.id})):null;
+  const showGoogleLinkOnboarding = googleLinkOnboardingEligible(account,local,google,Boolean(group&&env.GOOGLE_CLIENT_ID)) && !(await rows("SELECT 1 AS found FROM audit WHERE group_id=? AND actor_id=? AND lesson_id=? AND action=? LIMIT 1",account!.groupId,account!.id,`account:${account!.id}`,GOOGLE_LINK_PROMPT_SKIPPED)).length;
+  const canWatch = account && (account.role==='teacher' || account.role==='student' ||
+    account.role==='admin' && (isOwnerAccount(account) || hierarchy.isGroupChief));
+  const watch = canWatch && group?.active && local && !local.mustChangePassword ? watchPreviewConfig(env) : null;
+  const watchPreview = watch ? watchPreviewEntry(watch, new URL(request.url).origin) : undefined;
+  const learn = account && isTickLearnAccount(account) ? account.role === 'learner'
+    ? {tickLearnFree: {dailyAttempts:tickLearnFreeDailyLimit(), quizzes:tickLearnFreeQuizLimit()}}
+    : {tickLearnEnrolled:true} : {};
+  return { account: account ? { groupId:group?.id || account.groupId,groupName:group?.name || null,groupUnavailable:Boolean(account && !group),id: account.id, email: google?.email || account.email, name: account.name, nameConfirmedAt: account.nameConfirmedAt, contactPhone:account.contactPhone, contactPhoneKind:account.contactPhoneKind, contactPhoneUpdatedAt:account.contactPhoneUpdatedAt, requiresStudentPhone:studentContactRequired(account,Boolean(group?.active&&local&&!local.mustChangePassword)), role: account.role, isOwner: isOwnerAccount(account), isGroupChief:hierarchy.isGroupChief, canManageAdministrators:Boolean(local&&!local.mustChangePassword&&hierarchy.canManageAdministrators), teacherName: account.teacherName, studentName: account.studentName, googleLinked: Boolean(google), emailLoginAvailable: Boolean(google && local), requiresAccountSetup: Boolean(google && !local), username: local?.username || null, mustChangePassword: Boolean(local?.mustChangePassword), showGoogleLinkOnboarding, ...(watchPreview?{watchPreview}:{}), ...(permission?{adminPermissions:permission}:{}), ...learn, ...lifecycleView(account) } : null, clientId: env.GOOGLE_CLIENT_ID || null };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const identity = await currentIdentity();
   const account = identity?.account, local = identity?.local, google = identity?.google;
-  return NextResponse.json(authPayload(account, local, google), {headers: {"Cache-Control": "no-store"}});
+  return NextResponse.json(await authPayload(request, account, local, google), {headers: {"Cache-Control": "no-store"}});
 }
 
 export async function POST(request: Request) {
   if (new URL(request.url).origin !== request.headers.get("origin")) return NextResponse.json({ error: "Origin mismatch" }, { status: 403 });
   try {
-    const body = await request.json() as { credential?: string; username?: string; password?: string };
+    const body = await request.json() as { credential?: string; username?: string; password?: string;groupCode?:unknown };
     if (body.username !== undefined) {
       const identifier = normalizeUsername(body.username);
       const emailLogin = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier) && identifier.length <= 254;
@@ -49,8 +69,8 @@ export async function POST(request: Request) {
       if (!loginAccount || loginAccount.disabledAt) return NextResponse.json({ error: "账号已停用，请联系管理员" }, { status: 403 });
       if (pendingExpired(loginAccount)) return NextResponse.json({ error: "待分配账号已到期，请联系管理员" }, { status: 403 });
       if (attempt) await db.delete(loginAttempts).where(eq(loginAttempts.username, username));
-      const session = await createSession(credential.accountId);
-      const response = NextResponse.json({ ok: true, ...authPayload(loginAccount, credential, loginIdentity?.googleEmail ? {email: loginIdentity.googleEmail} : null) }, {headers: {"Cache-Control": "no-store"}});
+      const session = await createSession(credential.accountId,request,credential.passwordHash,true);
+      const response = NextResponse.json({ ok: true, ...await authPayload(request, loginAccount, credential, loginIdentity?.googleEmail ? {email: loginIdentity.googleEmail} : null) }, {headers: {"Cache-Control": "no-store"}});
       response.cookies.set("tuition_session", session.token, { httpOnly: true, secure: true, sameSite: "lax", path: "/", expires: new Date(session.expiresAt) });
       return response;
     }
@@ -65,8 +85,10 @@ export async function POST(request: Request) {
     if (existing && pendingExpired(existing)) return NextResponse.json({ error: "待分配账号已到期，请联系管理员" }, { status: 403 });
     const bootstrapAdmin = profile.email === OWNER_EMAIL;
     const now = new Date().toISOString();
+    const group=!existing&&!bootstrapAdmin?await registrationGroup(body.groupCode):null;
+    if(!existing&&!bootstrapAdmin&&!group)return NextResponse.json({error:"集团邀请链接无效或已停用"},{status:400});
     if (!existing) await db.batch([
-      db.insert(accounts).values({ id: profile.id, email: profile.email, name: profile.name, role: bootstrapAdmin ? "admin" : "pending", createdAt: now, pendingExpiresAt: bootstrapAdmin ? null : pendingDeadline(new Date(now)), activatedAt: bootstrapAdmin ? now : null, activationReason: bootstrapAdmin ? "owner" : null }).onConflictDoNothing(),
+      db.insert(accounts).values({ groupId:bootstrapAdmin?null:group!.id, id: profile.id, email: profile.email, name: profile.name, role: bootstrapAdmin ? "admin" : "pending", createdAt: now, pendingExpiresAt: bootstrapAdmin ? null : pendingDeadline(new Date(now)), activatedAt: bootstrapAdmin ? now : null, activationReason: bootstrapAdmin ? "owner" : null }).onConflictDoNothing(),
       db.insert(googleIdentities).values({ subject: profile.id, accountId, email: profile.email, linkedAt: now }).onConflictDoNothing(),
     ]);
     else await db.batch([
@@ -76,11 +98,12 @@ export async function POST(request: Request) {
     // Resolve identity again after a concurrent link or first registration.
     const canonical = await db.select({account: accounts, username: localCredentials.username, mustChangePassword: localCredentials.mustChangePassword, email: googleIdentities.email}).from(googleIdentities).innerJoin(accounts, eq(accounts.id, googleIdentities.accountId)).leftJoin(localCredentials, eq(localCredentials.accountId, accounts.id)).where(eq(googleIdentities.subject, profile.id)).get();
     if (!canonical || canonical.account.disabledAt || pendingExpired(canonical.account)) return NextResponse.json({error:"账号暂时不可用，请联系管理员"},{status:403});
-    const session = await createSession(canonical.account.id);
-    const response = NextResponse.json({ ok: true, ...authPayload(canonical.account, canonical.username ? {username: canonical.username, mustChangePassword: Boolean(canonical.mustChangePassword)} : null, {email: canonical.email}) }, {headers: {"Cache-Control": "no-store"}});
+    const session = await createSession(canonical.account.id,request,undefined,true);
+    const response = NextResponse.json({ ok: true, ...await authPayload(request, canonical.account, canonical.username ? {username: canonical.username, mustChangePassword: Boolean(canonical.mustChangePassword)} : null, {email: canonical.email}) }, {headers: {"Cache-Control": "no-store"}});
     response.cookies.set("tuition_session", session.token, { httpOnly: true, secure: true, sameSite: "lax", path: "/", expires: new Date(session.expiresAt) });
     return response;
   } catch (error) {
+    if (error instanceof StaleSessionCredentialError) return NextResponse.json({ error: "账号或密码错误" }, { status: 401, headers: { "Cache-Control": "no-store" } });
     const message = error instanceof Error ? error.message : "";
     return NextResponse.json({ error: /无法连接 Google 登录验证服务/.test(message) ? message : /Google login is not configured/.test(message) ? "Google 登录尚未配置" : /Invalid Google|Google signing key unavailable|Google key lookup failed/.test(message) ? "Google 登录验证失败，请重试" : "登录失败，请稍后重试" }, { status: 400 });
   }
@@ -89,7 +112,7 @@ export async function POST(request: Request) {
 export async function DELETE() {
   const token = (await cookies()).get("tuition_session")?.value;
   if (token) await getDb().delete(sessions).where(eq(sessions.tokenHash, await hashToken(token)));
-  const response = NextResponse.json({ ok: true });
-  response.cookies.delete("tuition_session");
+  const response = NextResponse.json({ ok: true }, {headers: {"Cache-Control": "private, no-store"}});
+  response.cookies.set("tuition_session", "", {httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 0});
   return response;
 }

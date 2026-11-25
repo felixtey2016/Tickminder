@@ -1,11 +1,23 @@
 declare namespace Cloudflare {
   interface Env {
+    ASSETS?: Fetcher;
+    TICKGAME_ASSETS?: R2Bucket;
     DB?: D1Database;
     BUCKET?: R2Bucket;
+    DIAGNOSTICS?: R2Bucket;
+    DIAGNOSTICS_FEED_URL?: string;
+    CF_VERSION_METADATA?: {id:string;tag?:string;timestamp?:string};
     GOOGLE_CLIENT_ID?: string;
+    TICKLEARN_FREE_QUIZZES?: string;
+    TICKLEARN_FREE_DAILY_QUIZZES?: string;
+    TICKLEARN_FREE_VIDEOS?: string;
+    BREVO_API_KEY?: string;
+    BREVO_SENDER_EMAIL?: string;
+    BREVO_SENDER_NAME?: string;
+    PASSWORD_RECOVERY_SECRET?: string;
+    GOOGLE_PICKER_API_KEY?: string;
+    GOOGLE_DRIVE_APP_ID?: string;
     ADMIN_EMAIL?: string;
-    SHEET_SYNC_URL?: string;
-    SHEET_SYNC_SECRET?: string;
     BACKUP_EXPORT_TOKEN?: string;
     PENDING_CLEANUP_TOKEN?: string;
     NOTIFICATIONS_CRON_TOKEN?: string;
@@ -14,5 +26,10 @@ declare namespace Cloudflare {
     VAPID_SUBJECT?: string;
     PDF_MAX_BYTES?: string;
     PDF_TOTAL_STORAGE_LIMIT_BYTES?: string;
+    ADMIN_PERMISSIONS_MODE?: string;
+    WATCH_PREVIEW_APP_ORIGIN?: string;
+    WATCH_PREVIEW_APP_ALIASES?: string;
+    WATCH_PREVIEW_ORIGIN?: string;
+    WATCH_PREVIEW_LEGACY_ORIGIN?: string;
   }
 }

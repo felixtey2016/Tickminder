@@ -1,2 +1,2 @@
-import { Scheduler } from "./scheduler";
-export default function Home() { return <Scheduler />; }
+import { SchedulerEntry } from "./scheduler-entry";
+export default function Home() { return <SchedulerEntry />; }

@@ -1,0 +1,35 @@
+.course-navigation{width:100%;min-width:0;max-width:100%;margin-bottom:24px;color:var(--timelyo-ink,#252247)}
+.course-navigation-main{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;min-width:0;max-width:100%}
+.course-navigation-row{display:flex;align-items:center;gap:4px;min-width:0;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;padding:5px;border:1px solid var(--border,#e5e3f1);border-radius:12px;background:var(--card,#fff);scrollbar-width:thin;scroll-padding-inline:6px}
+.course-navigation-row>button,.course-navigation-secondary>button{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:0 0 auto;min-width:44px;min-height:44px;padding:10px 14px;border:1px solid transparent;border-radius:8px;color:#5d5774;background:transparent;font:inherit;font-size:14px;font-weight:600;line-height:1.5;white-space:nowrap;cursor:pointer}
+.course-navigation-row>button:hover,.course-navigation-secondary>button:hover{background:#f6f3ff;color:#4b2fb2}
+.course-navigation-row>button[data-active="true"]{background:#eee8ff;color:#4324a8;border-color:#d9ccff}
+.course-navigation-actions{display:flex;justify-content:flex-end;min-width:0;max-width:100%}
+.course-navigation-arrange{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;max-width:100%;padding:10px 16px;border:1px solid #5636d9;border-radius:10px;background:#5636d9;color:#fff;font:inherit;font-size:14px;font-weight:650;line-height:1.5;white-space:nowrap;cursor:pointer}
+.course-navigation-arrange:hover{background:#4525c2;border-color:#4525c2}
+.course-navigation-arrange[data-active="true"]{box-shadow:0 0 0 3px #d9ceff}
+.course-navigation-arrange>svg{flex:0 0 auto}
+.course-navigation :is(button):focus-visible{outline:3px solid #9f8bea;outline-offset:2px}
+.course-navigation-secondary{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0;max-width:100%;padding:12px 0 0}
+.course-navigation-secondary>button{border-color:#ddd6ed;background:#fff;font-weight:500}
+.course-navigation-secondary>button[data-active="true"]{border-color:#7454d5;background:#f2edff;color:#4324a8;font-weight:650}
+.course-navigation-badge{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:21px;height:21px;padding:0 5px;border-radius:999px;background:#c52b46;color:#fff;font-size:12px;font-weight:700;line-height:1}
+@media(max-width:640px){.course-navigation{margin-bottom:20px}.course-navigation-main{grid-template-columns:minmax(0,1fr);gap:12px}.course-navigation-actions{grid-row:1;justify-content:flex-start}.course-navigation-row{width:100%;box-sizing:border-box}.course-navigation-row>button{padding-inline:12px}.course-navigation-arrange{min-height:44px}.course-navigation-secondary{padding-top:10px}}
+
+.shell-wave1 .course-navigation{margin-bottom:16px;color:var(--ui-text)}
+.shell-wave1 .course-navigation-row{padding:0;gap:12px;border:0;border-bottom:1px solid var(--ui-border);border-radius:0;background:transparent}
+.shell-wave1 .course-navigation-row>button{border:0;border-bottom:3px solid transparent;border-radius:0;padding:10px 4px;color:var(--ui-muted)}
+.shell-wave1 .course-navigation-row>button:hover{background:var(--ui-surface-muted);color:var(--ui-text)}
+.shell-wave1 .course-navigation-row>button[data-active=true]{background:transparent;color:var(--ui-accent);border-bottom-color:var(--ui-accent)}
+.shell-wave1 .course-navigation-secondary>button{color:var(--ui-muted);background:var(--ui-surface);border-color:var(--ui-border);border-radius:6px}
+.shell-wave1 .course-navigation-secondary>button[data-active=true]{color:var(--ui-accent);background:var(--ui-accent-soft);border-color:var(--ui-accent)}
+.shell-wave1 .course-navigation :is(button):focus-visible{outline:2px solid var(--ui-accent);outline-offset:-2px}
+.shell-wave1 .workspace-course-view .workspace-arrange-compact{display:none}
+@media(max-width:650px){
+ .shell-wave1 .workspace-course-view .workspace-heading:has(.workspace-heading-actions){display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:8px}
+ .shell-wave1 .workspace-course-view .workspace-heading-actions{justify-content:flex-end}
+ .shell-wave1 .workspace-course-view .workspace-heading-text h1{overflow-wrap:normal;word-break:normal}
+ .shell-wave1 .workspace-course-view .workspace-arrange{gap:6px;font-size:14px;white-space:nowrap}
+ .shell-wave1 .workspace-course-view .workspace-arrange-full{display:none}
+ .shell-wave1 .workspace-course-view .workspace-arrange-compact{display:inline}
+}

@@ -1,0 +1,5 @@
+.attendance-action-dialog .makeup-students{display:grid;gap:.75rem;border:1px solid var(--ui-border);border-radius:var(--ui-radius,12px);padding:1rem;min-width:0}
+.attendance-action-dialog .makeup-students legend{padding:0 .4rem;font-weight:600}
+.attendance-action-dialog .makeup-students .check-row{margin:0}
+.pending-makeup-board>.muted{margin-block:0 1rem}
+.pending-makeup-board .attendance-session>p{margin-block:.25rem .75rem;overflow-wrap:anywhere}

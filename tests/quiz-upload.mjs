@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+const source=fs.readFileSync(new URL('../lib/quiz-upload.ts',import.meta.url),'utf8');
+const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const {uploadQuizImages}=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
+const entries=Array.from({length:40},(_,index)=>({path:`images/q${index}.png`,bytes:Uint8Array.of(137,index)}));
+const pause=()=>new Promise(resolve=>setTimeout(resolve,5));
+let active=0,maximum=0,calls=0;
+const cache=new Map(),progress=[];
+const result=await uploadQuizImages(entries,cache,async entry=>{calls++;maximum=Math.max(maximum,++active);await pause();active--;return 'image-'+entry.bytes[1];},(completed,total)=>progress.push([completed,total]));
+assert.equal(result.size,40);assert.equal(calls,40);assert.equal(maximum,3);assert.equal(active,0);assert.deepEqual(progress[0],[0,40]);assert.deepEqual(progress.at(-1),[40,40]);
+assert.deepEqual(progress.map(([completed])=>completed),Array.from({length:41},(_,index)=>index));
+const same=await uploadQuizImages(entries,cache,async()=>{throw new Error('cached image uploaded twice');});
+assert.deepEqual(Object.fromEntries(same),Object.fromEntries(result));assert.equal(calls,40);
+let uniqueCalls=0;const duplicated=await uploadQuizImages([{path:'a.png',bytes:Uint8Array.of(1)},{path:'b.png',bytes:Uint8Array.of(1)},{path:'a.png',bytes:Uint8Array.of(1)},{path:'c.png',bytes:Uint8Array.of(2)}],new Map(),async()=>{uniqueCalls++;await pause();return 'asset-'+uniqueCalls;});
+assert.equal(duplicated.size,3);assert.equal(uniqueCalls,2);assert.equal(duplicated.get('a.png'),duplicated.get('b.png'));
+const retryCache=new Map(),succeeded=new Set();let fail=true,retained=0,failedActive=0;
+async function flaky(entry){failedActive++;try{await pause();if(fail&&entry.path==='images/q1.png')throw new Error('offline');assert.equal(succeeded.has(entry.path),false,'a successful upload must not repeat after failure');succeeded.add(entry.path);return 'ready-'+entry.path;}finally{failedActive--;}}
+await assert.rejects(uploadQuizImages(entries,retryCache,flaky),/offline/);assert.equal(failedActive,0,'all in-flight uploads finish before rejection');retained=retryCache.size;assert.ok(retained>=1&&retained<40);fail=false;
+const retried=await uploadQuizImages(entries,retryCache,flaky);assert.equal(retried.size,40);assert.equal(succeeded.size,40);assert.equal(retryCache.size,40);
+let emptyCalls=0;const emptyProgress=[];assert.equal((await uploadQuizImages([],new Map(),async()=>{emptyCalls++;return 'no';},(...value)=>emptyProgress.push(value))).size,0);assert.equal(emptyCalls,0);assert.deepEqual(emptyProgress,[[0,0]]);
+console.log('Quiz image uploads: 40-image max-3 queue, progress, path/content deduplication, in-flight drain, cache retention and failure retry passed.');

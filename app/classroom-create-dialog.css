@@ -1,0 +1,10 @@
+.classroom-create-dialog[data-slot="dialog-content"]{width:min(680px,calc(100vw - 32px));max-width:680px;max-height:calc(100dvh - 32px)}
+.classroom-create-form{display:grid;gap:18px;padding:2px}
+.classroom-create-members{max-height:250px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;border-color:var(--ui-border)}
+.classroom-create-members legend{color:var(--ui-text)}
+.classroom-create-form .classroom-create-members label{display:flex;flex-direction:row;min-height:44px;align-items:center;max-width:100%;overflow-wrap:anywhere;background:var(--ui-surface-muted);border-color:var(--ui-border);color:var(--ui-text)}
+.classroom-create-members input{flex:none;accent-color:var(--ui-accent)}
+.classroom-create-description summary{cursor:pointer;font-weight:600;padding:10px 0}
+.classroom-create-description textarea{margin-top:8px;width:100%}
+.classroom-create-form .field-hint{margin:0;line-height:1.5;overflow-wrap:anywhere}
+@media(max-width:640px){.classroom-create-dialog[data-slot="dialog-content"]{width:calc(100vw - 16px);max-height:calc(100dvh - 16px)}.classroom-create-members{max-height:220px}}

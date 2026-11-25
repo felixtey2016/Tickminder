@@ -4,6 +4,8 @@ import { first, learningDb } from "@/lib/learning-server";
 import { verifyPassword } from "@/lib/password";
 import { OWNER_EMAIL } from "@/lib/owner";
 import { prepareAccountMerge } from "@/lib/account-merge";
+import {accountSessionPredicate} from "@/lib/account-session";
+import {authorityGuard, isAdminAuthorityFailure } from "@/lib/admin-authority";
 
 class LinkError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export async function POST(request: Request) {
@@ -32,18 +34,21 @@ export async function POST(request: Request) {
     const merge = used && used.account_id !== actor.id ? await prepareAccountMerge(actor, used.account_id, data.confirmMerge === true) : { statements: [] };
     if (merge.error) return NextResponse.json({ error: merge.error, mergeName: merge.mergeName }, { status: 409 });
     const db = learningDb(), now = new Date().toISOString();
+    const parentSession=accountSessionPredicate(actor);
     await db.batch([
+      ...(actor.role==='parent'?[authorityGuard({sql:`EXISTS(SELECT 1 FROM accounts a JOIN tuition_groups g ON g.id=a.group_id AND g.active=1 JOIN local_credentials c ON c.account_id=a.id WHERE a.id=? AND a.group_id=? AND a.role='parent' AND a.disabled_at IS NULL AND c.must_change_password=0 AND c.password_hash=?) AND (${parentSession.sql})`,args:[actor.id,actor.groupId,local.password_hash,...parentSession.args]})]:[]),
       ...merge.statements,
       // Strict unique insert makes concurrent linking attempts fail and roll back together.
       own ? db.prepare("UPDATE google_identities SET email = ? WHERE subject = ? AND account_id = ?").bind(profile.email, profile.id, actor.id)
         : db.prepare("INSERT INTO google_identities (subject,account_id,email,linked_at) VALUES (?,?,?,?)").bind(profile.id, actor.id, profile.email, now),
       db.prepare("UPDATE accounts SET email = ? WHERE id = ?").bind(profile.email, actor.id),
       db.prepare("DELETE FROM login_attempts WHERE username = ?").bind(attemptKey),
-      db.prepare("INSERT INTO audit (id,lesson_id,actor_id,action,at) VALUES (?,?,?,'linkGoogle',?)").bind(crypto.randomUUID(), `account:${actor.id}`, actor.id, now),
+      db.prepare("INSERT INTO audit (group_id,id,lesson_id,actor_id,action,at) VALUES (?,?,?,?,'linkGoogle',?)").bind(actor.groupId || "next-genn-edu",crypto.randomUUID(), `account:${actor.id}`, actor.id, now),
     ]);
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof LinkError) return NextResponse.json({ error: error.message }, { status: error.status });
+    if (isAdminAuthorityFailure(error)) return NextResponse.json({ error: "admin.authorityChanged" }, { status: 409 });
     return NextResponse.json({ error: "Google 连接失败，请重新验证后再试" }, { status: 400 });
   }
 }

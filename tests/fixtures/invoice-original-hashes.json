@@ -1,0 +1,57 @@
+{
+  "settings": {
+    "institutionName": "Example Tuition Centre",
+    "address": "18 Example Road\nKuala Lumpur",
+    "phone": "0120000000",
+    "email": "billing@example.invalid",
+    "template": "standard",
+    "themeColor": "#6040bf",
+    "bankName": "Example Bank",
+    "beneficiary": "Example Tuition",
+    "bankAccount": "0000000",
+    "paymentNote": "Quote invoice number.",
+    "invoiceNote": "Thank you.",
+    "invoicePrefix": "INV",
+    "logoAssetId": null,
+    "revision": 1,
+    "dueDays": 7
+  },
+  "cases": [
+    {
+      "template": "standard",
+      "lang": "en",
+      "invoice": "12e1555c67dd328425752db2c99b54f6bbb9bf72bb584e2f19390879e301a3ca",
+      "receipt": "b106fac5d3b4995046c2e3a76b6aecd926e45ec0b46182be668947e4ab1e515a"
+    },
+    {
+      "template": "standard",
+      "lang": "zh",
+      "invoice": "35956eb0f2fbdbe437d18bcf0160ec7aab76295065a097ed98f6cb2b1f6dfe43",
+      "receipt": "ed0f743a10abfb6f25e2f5909555d78450e494b2add1b07b2b7291ebc552edb3"
+    },
+    {
+      "template": "centered",
+      "lang": "en",
+      "invoice": "b750c2d308ddbe9531774d59b104710992bb674b152a1b083661ad2fdd45c0d4",
+      "receipt": "ac27f0a01bbd8ef6c4ef6349d286205621747a111e5ee4bf30f309470dd7b9bb"
+    },
+    {
+      "template": "centered",
+      "lang": "zh",
+      "invoice": "61b52b460e02b652cfb91ae76be06ea7c40915ede23b1ff17e13f5378eed4444",
+      "receipt": "acc09ba88c6d2d6d93ef5072e963ca9d4853414a432dcc54147d12ca0512652d"
+    },
+    {
+      "template": "brand",
+      "lang": "en",
+      "invoice": "a049e11b33b821737a8b3a7aeeb5764868b2f9fee25cc2cdeb9d78de034678bd",
+      "receipt": "33baa32f035fede45c03e69235e6c4117a18e54b21abf7fe8783cc20cdb2ed51"
+    },
+    {
+      "template": "brand",
+      "lang": "zh",
+      "invoice": "c47dd6b8ab76ec41711a016951e7f28a542c1309afb839f41e0258ba03a29bd3",
+      "receipt": "213f1d3011ec3b96c523e82991ec2d926987a913d852d41a97e7d93eacaac68c"
+    }
+  ]
+}

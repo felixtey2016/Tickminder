@@ -2,7 +2,7 @@
 
 The website stores private notification subscriptions and enforces all course
 permissions. This separate Cloudflare Worker calls one secret-protected website
-endpoint every minute. It has no database or file-storage access.
+endpoint every minute. It has no business database or teaching-file access. A dedicated private diagnostics R2 binding stores only sanitized error records.
 
 Deploy only after the website notification migration and isolated tests pass.
 From this directory, use the project's installed Wrangler CLI to log in through
@@ -31,3 +31,13 @@ Stop the clock before rolling the website back to a version without this route.
 Browser push data and notification records are included in encrypted database
 backup format `timelyo-d1-v7`. Inbox records are retained for 90 days; backup
 retention follows the existing encrypted-backup policy.
+
+
+## Independent diagnostics
+
+The clock also makes one bounded homepage probe per minute and records detected
+503/timeout/1102 failures directly to diagnostic R2. The authenticated
+/diagnostics/feed endpoint reuses expiring, scoped, read-only diagnostic keys;
+all other HTTP paths return 404. It does not reuse the reminder dispatch secret
+for AI access. See [diagnostics](../../docs/DIAGNOSTICS.md) for coverage, retention
+and platform-outage limits. Deployment retains the existing minute cron and secret.

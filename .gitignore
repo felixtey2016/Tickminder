@@ -64,3 +64,5 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+# Local reference galleries and research captures are not application source.
+/docs/ui-research/

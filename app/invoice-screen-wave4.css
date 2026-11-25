@@ -1,0 +1,55 @@
+/* R12 / R15: application screens only; never applied to invoice print documents. */
+.invoice-workspace.invoice-browse-screen{gap:16px;color:var(--ui-text)}
+.invoice-browse-screen .invoice-list-panel.panel{padding:0;background:transparent;border:0;box-shadow:none;gap:0}
+.invoice-browse-screen .invoice-list-panel>.invoice-heading{padding:4px 0 16px;margin:0;min-height:44px}
+.invoice-browse-screen .invoice-list-count{color:var(--ui-muted);font-size:.875rem}
+.invoice-browse-screen .invoice-list{padding:0 18px;background:var(--ui-surface);border-radius:8px}
+.invoice-browse-screen .invoice-list:empty{display:none}
+.invoice-browse-screen .invoice-list-card{padding:18px 0;border-color:var(--ui-border)}
+.invoice-browse-screen .invoice-list-card:first-child{padding-top:18px}
+.invoice-browse-screen .invoice-list-card:last-child{border-bottom:0}
+.invoice-browse-screen .invoice-card-title h3{font-size:1rem;color:var(--ui-text);font-weight:650}
+.invoice-browse-screen :is(.invoice-line-meta,.invoice-card-amount small,.invoice-card-more summary,.invoice-inline-help>p,.invoice-muted,.invoice-summary dt){color:var(--ui-muted)}
+.invoice-browse-screen :is(.invoice-finance-card-balance,.invoice-load-more p){color:var(--ui-muted)}
+.invoice-browse-screen .invoice-card-amount strong{font-size:1.15rem;color:var(--ui-text);white-space:nowrap}
+.invoice-browse-screen .invoice-card-more{margin:0}
+.invoice-browse-screen .invoice-card-more summary{padding:6px 0;color:var(--ui-accent)}
+.invoice-browse-screen .invoice-empty-state{display:grid;justify-items:center;align-content:center;gap:16px;min-height:300px;padding:28px 16px;color:var(--ui-muted);text-align:center}
+.invoice-browse-screen .invoice-empty-state .mascot{width:110px;height:110px;object-fit:contain}
+.invoice-browse-screen .invoice-empty-state p{font-size:.95rem}
+.invoice-browse-screen .invoice-loading{padding:32px 0;font-size:.9rem;color:var(--ui-muted)}
+.invoice-browse-screen .invoice-section-disclosure>summary{color:var(--ui-text)}
+.invoice-browse-screen .invoice-section-disclosure>summary>span{color:var(--ui-muted)}
+.invoice-browse-screen :is(.invoice-summary>div,.invoice-addition){background:var(--ui-surface-muted);border-color:var(--ui-border)}
+.invoice-browse-screen .invoice-summary dd{color:var(--ui-text);font-variant-numeric:tabular-nums}
+.invoice-browse-screen .invoice-badge{background:var(--ui-accent-soft);color:var(--ui-accent)}
+.invoice-browse-screen .invoice-badge-issued{background:var(--ui-success-bg);color:var(--ui-success-text)}
+.invoice-browse-screen .invoice-notice{background:var(--ui-warning-bg);border-color:var(--ui-border);color:var(--ui-warning-text)}
+.invoice-browse-screen .invoice-notice-error{background:var(--ui-danger-bg);color:var(--ui-danger-text)}
+.invoice-browse-screen .invoice-notice-success{background:var(--ui-success-bg);color:var(--ui-success-text)}
+.invoice-browse-screen .invoice-finance-status{background:var(--ui-accent-soft);color:var(--ui-accent)}
+.invoice-browse-screen .invoice-finance-status-paid{background:var(--ui-success-bg);color:var(--ui-success-text)}
+.invoice-browse-screen .invoice-finance-status-void{background:var(--ui-surface-muted);color:var(--ui-muted)}
+.invoice-browse-screen .invoice-finance-status-unpaid,.invoice-browse-screen .invoice-finance-status-partially_paid{background:var(--ui-warning-bg);color:var(--ui-warning-text)}
+.invoice-browse-screen :is(.invoice-finance-balances>div,.invoice-finance-record,.invoice-finance-section){border-color:var(--ui-border);background:transparent}
+.invoice-browse-screen .invoice-finance-balances{gap:0;border:1px solid var(--ui-border);border-radius:8px;overflow:hidden}
+.invoice-browse-screen .invoice-finance-balances>div{border:0;border-radius:0;border-inline-end:1px solid var(--ui-border)}
+.invoice-browse-screen .invoice-finance-balances>div:last-child{border-inline-end:0}
+.invoice-browse-screen .invoice-finance-balances dt{color:var(--ui-muted)}
+.invoice-browse-screen .invoice-finance-balances dd{color:var(--ui-text)}
+.invoice-browse-screen .invoice-inline-help>summary{color:var(--ui-accent)}
+.invoice-browse-screen summary:focus-visible{outline:2px solid var(--ui-accent);outline-offset:3px}
+@media(max-width:600px){
+ .invoice-browse-screen .invoice-heading{flex-wrap:nowrap;gap:10px}
+ .invoice-browse-screen .invoice-heading>div:first-child{flex:1 1 auto}
+ .invoice-browse-screen .invoice-heading>button{flex:0 1 auto;white-space:normal;height:auto;padding:10px 12px}
+ .invoice-browse-screen .invoice-list-filters{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+ .invoice-browse-screen .invoice-list{padding:0 14px}
+ .invoice-browse-screen .invoice-empty-state{min-height:260px;padding:24px 12px}
+ .invoice-browse-screen .invoice-empty-state .mascot{width:96px;height:96px}
+ .invoice-browse-screen .invoice-finance-balances{grid-template-columns:minmax(0,1fr)}
+ .invoice-browse-screen .invoice-finance-balances>div{display:flex;align-items:center;justify-content:space-between;gap:12px;border-inline-end:0;border-bottom:1px solid var(--ui-border)}
+ .invoice-browse-screen .invoice-finance-balances>div:last-child{border-bottom:0}
+ .invoice-browse-screen .invoice-document-header .invoice-heading{flex-wrap:wrap}
+}
+@media(max-width:350px){.invoice-browse-screen .invoice-list-filters{grid-template-columns:minmax(0,1fr)}}

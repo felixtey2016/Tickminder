@@ -1,0 +1,392 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {createHash} from 'node:crypto';
+import {DatabaseSync} from 'node:sqlite';
+import {createFixtureLoader} from './fixture-loader.mjs';
+import {snapshotObjects, snapshotVersion, validObjectSignature} from '../scripts/backup-order.mjs';
+
+// Only fictional in-memory institutions, teachers and money. Real route, grants,
+// SQL, triggers and atomic batch semantics are retained in this fixture.
+const RealDate=Date,instant='2026-10-22T10:00:00.000Z';
+globalThis.Date=class extends RealDate{constructor(...args){super(...(args.length?args:[instant]));}static now(){return RealDate.parse(instant);}};
+const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys=ON');
+for(const file of fs.readdirSync(new URL('../drizzle/',import.meta.url)).filter(n=>n.endsWith('.sql')).sort())sqlite.exec(fs.readFileSync(new URL('../drizzle/'+file,import.meta.url),'utf8'));
+let actor=null,beforeBatch=null,checks=0,maxBindings=0;
+function statement(sql,values=[]){const execute=()=>{maxBindings=Math.max(maxBindings,values.length);assert(values.length<=100,'D1 parameter limit');assert((sql.match(/\bUNION\b/gi)||[]).length<5,'D1 compound query limit');const s=sqlite.prepare(sql);return s.columns().length?{results:s.all(...values),meta:{changes:0}}:{results:[],meta:s.run(...values)};};return{bind:(...v)=>statement(sql,v),all:async()=>execute(),first:async()=>execute().results[0]||null,run:async()=>execute(),execute};}
+const db={prepare:statement,batch:async statements=>{beforeBatch?.();beforeBatch=null;sqlite.exec('BEGIN');try{const result=statements.map(s=>s.execute());sqlite.exec('COMMIT');return result;}catch(error){sqlite.exec('ROLLBACK');throw error;}}};
+const objects = new Map();
+const bucket = {
+ head: async key => objects.get(key) ?? null,
+ get: async (key, {onlyIf} = {}) => {
+  const object = objects.get(key);
+  if (!object || onlyIf && onlyIf.etagMatches !== object.etag) return null;
+  return {...object, body: new Blob([object.bytes]).stream(), json: async () => JSON.parse(object.bytes.toString())};
+ },
+ put: async (key, data, {onlyIf} = {}) => {
+  const previous = objects.get(key);
+  if (onlyIf?.etagDoesNotMatch === '*' && previous || onlyIf?.etagMatches && previous?.etag !== onlyIf.etagMatches) return null;
+  const bytes = Buffer.from(data);
+  const value = {key, etag: createHash('md5').update(bytes).digest('hex'), bytes, size: bytes.length};
+  objects.set(key, value);
+  return value;
+ },
+ list: async ({prefix}) => ({objects: [...objects.values()].filter(value => value.key.startsWith(prefix)), truncated: false}),
+};
+globalThis.__payrollRuntime={learningDb:()=>db,pdfBucket:()=>bucket,currentBusinessAccount:async()=>actor,OWNER_EMAIL:'owner@payroll.example.test',isOwnerAccount:a=>a?.role==='admin'&&a.email==='owner@payroll.example.test'&&!a.id.startsWith('local:')};
+globalThis.__payrollEnvironment={ADMIN_PERMISSIONS_MODE:'enforced',BUCKET:bucket,BACKUP_EXPORT_TOKEN:'fictional-payroll-backup-123456789012345'};
+const dataUrl=s=>'data:text/javascript;base64,'+Buffer.from(s).toString('base64'),runtimeUrl=dataUrl('export const {learningDb,pdfBucket,currentBusinessAccount,OWNER_EMAIL,isOwnerAccount}=globalThis.__payrollRuntime;'),environmentUrl=dataUrl('export const env=globalThis.__payrollEnvironment;');
+const load=createFixtureLoader({runtimeUrl,environmentUrl,runtimeFiles:['lib/auth.ts','lib/owner.ts','lib/learning-server.ts','lib/pdf-storage.ts']});
+const route=(await load('app/api/payroll/route.ts')).module,service=(await load('lib/payroll-server.ts')).module,permissions=(await load('lib/admin-permissions.ts')).module,payrollContract=(await load('lib/payroll.ts')).module;
+const printRoute=(await load('app/api/payroll/[id]/print/route.ts')).module;
+const bankRoute=(await load('app/api/payroll/teacher-bank/route.ts')).module;
+const backupRoute=(await load('app/api/backup-export/route.ts')).module;
+const gid='payroll-school',foreign='payroll-foreign',now=new Date().toISOString(),op=()=>crypto.randomUUID();
+for(const g of[gid,foreign])sqlite.prepare('INSERT INTO tuition_groups(id,name,join_code,created_at,updated_at) VALUES(?,?,?,?,?)').run(g,g,g,now,now);
+function account(id,role='admin',groupId=gid,email=id+'@payroll.example.test'){const value={id,role,groupId,email,name:id};sqlite.prepare('INSERT INTO accounts(id,email,name,role,group_id,created_at) VALUES(?,?,?,?,?,?)').run(id,email,id,role,groupId,now);return value;}
+const owner=account('payroll-owner','admin',gid,'owner@payroll.example.test'),admin=account('payroll-admin'),teacher=account('payroll-account-teacher','teacher'),student=account('payroll-student','student'),outsider=account('payroll-outsider','admin',foreign),chief=account('payroll-chief');
+sqlite.prepare('UPDATE tuition_groups SET chief_admin_id=? WHERE id=?').run(chief.id,gid);
+const grants=['payroll.view','payroll.rates','payroll.edit','payroll.confirm','payroll.pay','payroll.reverse','payroll.delete'];
+function grant(values,who=admin,origin='new'){sqlite.prepare('INSERT INTO admin_permission_profiles(group_id,account_id,revision,grants_json,origin,updated_at) VALUES(?,?,1,?,?,?) ON CONFLICT(group_id,account_id) DO UPDATE SET grants_json=excluded.grants_json,origin=excluded.origin,revision=revision+1').run(who.groupId,who.id,JSON.stringify(values),origin,now);}grant(grants);grant(grants,outsider);
+const names=['Ms Ada','Ms Missing','Ms Future','Ms Pending','Ms Fraction'];
+for(const name of names)sqlite.prepare('INSERT INTO teachers(group_id,name,created_at) VALUES(?,?,?)').run(gid,name,now);
+sqlite.prepare('INSERT INTO teachers(group_id,name,created_at) VALUES(?,?,?)').run(foreign,'Foreign Teacher',now);
+function classroom(id,name='Ms Ada',groupId=gid){sqlite.prepare('INSERT INTO classrooms(id,group_id,title,subject,teacher_name,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').run(id,groupId,'Class '+id,'Mathematics',name,owner.id,now,now);}
+classroom('class-group');classroom('class-default');classroom('class-future','Ms Future');classroom('class-pending','Ms Pending');classroom('class-fraction','Ms Fraction');classroom('class-foreign','Foreign Teacher',foreign);
+function session(id,teacherName,start,end,{classroomId=({'Ms Future':'class-future','Ms Pending':'class-pending','Ms Fraction':'class-fraction'})[teacherName]||null,status='scheduled',teachingStatus='taught',reviewed=true,actualStart=start,actualEnd=end}={}){sqlite.prepare('INSERT INTO class_sessions(id,group_id,session_type,classroom_id,classroom_title,teacher_name,subject,planned_start,planned_end,status,teaching_status,actual_start,actual_end,attendance_reviewed_at,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id,gid,'group',classroomId,classroomId?'Class '+classroomId:null,teacherName,'Mathematics',start,end,status,teachingStatus,actualStart,actualEnd,reviewed?now:null,owner.id,now,now);}
+session('session-group','Ms Ada','2026-10-01T12:00:00Z','2026-10-01T13:30:00Z',{classroomId:'class-group'});
+session('session-default','Ms Ada','2026-10-02T12:00:00Z','2026-10-02T13:00:00Z',{classroomId:'class-default'});
+session('session-absent','Ms Ada','2026-10-03T12:00:00Z','2026-10-03T13:00:00Z',{teachingStatus:'teacher_absent',actualStart:null,actualEnd:null});
+session('session-not-taught','Ms Ada','2026-10-04T12:00:00Z','2026-10-04T13:00:00Z',{teachingStatus:'not_taught',actualStart:null,actualEnd:null});
+session('session-cancelled','Ms Ada','2026-10-05T12:00:00Z','2026-10-05T13:00:00Z',{status:'cancelled'});
+session('session-missing','Ms Missing','2026-10-03T12:00:00Z','2026-10-03T13:00:00Z');
+session('session-future-done','Ms Future','2026-10-04T12:00:00Z','2026-10-04T13:00:00Z');
+session('session-future','Ms Future','2026-10-30T12:00:00Z','2026-10-30T13:00:00Z',{teachingStatus:'pending',reviewed:false,actualStart:null,actualEnd:null});
+session('session-pending','Ms Pending','2026-10-05T12:00:00Z','2026-10-05T13:00:00Z',{reviewed:false});
+session('session-fraction','Ms Fraction','2026-10-06T12:00:00Z','2026-10-06T12:01:00Z');
+// Two students, including an absent student, remain one teaching session.
+for(const [name,status]of[['Student A','completed'],['Student B','student_absent']]){
+ sqlite.prepare('INSERT INTO students(group_id,name,name_key,created_at) VALUES(?,?,?,?)').run(gid,name,name.toLowerCase(),now);
+ sqlite.prepare('INSERT INTO lessons(id,group_id,session_id,student,subject,teacher_name,planned_start,planned_end,status,created_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run('lesson-'+name,gid,'session-group',name,'Mathematics','Ms Ada','2026-10-01T12:00:00Z','2026-10-01T13:30:00Z',status,owner.id,now);
+}
+async function get(params,as=admin){actor=as;const response=await route.GET(new Request('https://payroll.example.test/api/payroll?'+new URLSearchParams(params)));return{status:response.status,data:await response.json()};}
+async function print(payrollId,as=admin,lang='en'){
+ actor=as;
+ const url='https://payroll.example.test/api/payroll/'+encodeURIComponent(payrollId)+'/print?lang='+lang;
+ return printRoute.GET(new Request(url),{params:Promise.resolve({id:payrollId})});
+}
+async function post(data,as=admin){actor=as;const response=await route.POST(new Request('https://payroll.example.test/api/payroll',{method:'POST',headers:{origin:'https://payroll.example.test','content-type':'application/json'},body:JSON.stringify(data)}));return{status:response.status,data:await response.json()};}
+const check=fn=>{fn();checks++;},expect=(r,status,label)=>{check(()=>assert.equal(r.status,status,label+': '+JSON.stringify(r.data)));return r.data;};
+expect(await get({view:'teachers'},null),401,'anonymous denied');expect(await get({view:'teachers'},teacher),403,'teacher payroll denied');expect(await get({view:'teachers'},student),403,'student payroll denied');
+const roster=expect(await get({view:'teachers'}),200,'teacher selectors'),tid=Object.fromEntries(roster.items.map(t=>[t.teacherName,t.teacherId]));
+check(()=>assert.equal(roster.items.length,5));check(()=>assert.equal(sqlite.prepare('SELECT count(*) n FROM payroll_teachers').get().n,0,'read-only roster creates no financial identities'));
+const ungenerated=expect(await get({view:'list',month:'2026-10'}),200,'monthly teaching roster appears before salary generation');check(()=>assert.equal(ungenerated.total,5));check(()=>assert(ungenerated.items.every(item=>item.status==='not_generated'&&item.id===null&&!('totalCents' in item))));check(()=>assert.equal(ungenerated.items.find(item=>item.teacherName==='Ms Ada').lessonCount,4,'cancelled sessions excluded and class counted once'));check(()=>assert.equal(sqlite.prepare('SELECT count(*) n FROM payroll_teachers').get().n,0,'monthly preview never writes financial identities'));
+expect(await get({view:'rates',teacherId:tid['Ms Ada']}),200,'empty rates');check(()=>assert.equal(sqlite.prepare('SELECT count(*) n FROM payroll_teachers').get().n,0,'read-only rates creates no financial identities'));
+const foreignRoster=expect(await get({view:'teachers'},outsider),200,'foreign own roster');check(()=>assert.deepEqual(foreignRoster.items.map(t=>t.teacherName),['Foreign Teacher']));expect(await get({view:'rates',teacherId:foreignRoster.items[0].teacherId}),404,'foreign teacher identity denied');
+const rateBody=(name,value,effectiveFrom='2026-10-01',revision=0,classroomId=null)=>({action:'saveRate',teacherId:tid[name],amountCents:value,effectiveFrom,revision,classroomId:classroomId||({'Ms Ada':'class-default','Ms Future':'class-future','Ms Pending':'class-pending','Ms Fraction':'class-fraction'})[name],operationId:op()});
+expect(await post(rateBody('Ms Ada',10000)),200,'teacher default rate');const override=expect(await post(rateBody('Ms Ada',12000,'2026-10-01',0,'class-group')),200,'class override');
+const history=expect(await get({view:'rates',teacherId:tid['Ms Ada']}),200,'rate history');check(()=>assert.equal(history.rates.length,2));check(()=>assert.equal(history.classrooms.length,2));
+expect(await post(rateBody('Ms Ada',1,'2026-02-30',1)),400,'invalid effective date');expect(await post(rateBody('Ms Ada',0,'2026-10-01',1)),400,'zero rate denied');expect(await post(rateBody('Ms Ada',10000,'2026-10-01',0)),409,'stale rate revision');expect(await post(rateBody('Ms Ada',10000,'2026-10-01',0,'class-foreign')),404,'foreign classroom denied');
+const generatedBody={action:'generate',teacherId:tid['Ms Ada'],month:'2026-10',operationId:op()},generated=expect(await post(generatedBody),200,'salary accrues during current month');expect(await post(generatedBody),200,'generation replay');
+const draftPrint=await print(generated.payrollId);
+check(()=>assert.equal(draftPrint.status,409,'draft is not a formal payslip'));
+let detail=expect(await get({view:'detail',payrollId:generated.payrollId}),200,'draft details');check(()=>assert.equal(detail.summary.baseTotalCents,28000));check(()=>assert.equal(detail.summary.lessonCount,2));check(()=>assert.equal(detail.summary.durationSeconds,9000));check(()=>assert.equal(detail.payroll.sourceLines.length,4));check(()=>assert.equal(detail.review.excludedCount,2));check(()=>assert.equal(detail.review.sourceChanged,false));
+const groupLine=detail.payroll.sourceLines.find(l=>l.sessionId==='session-group');check(()=>assert.equal(groupLine.amountCents,18000,'90min paid once despite two students'));check(()=>assert.equal(groupLine.rateVersionId,override.rateId));
+check(()=>assert.equal(detail.summary.draftPreview.confirmedCents,28000));check(()=>assert.equal(detail.summary.draftPreview.projectedCents,0));check(()=>assert.equal(detail.summary.draftPreview.complete,true));
+expect(await get({view:'detail',payrollId:generated.payrollId},outsider),404,'foreign run denied');expect(await post({...generatedBody,groupId:foreign,operationId:op()}),403,'explicit cross-group mutation denied');
+sqlite.prepare("UPDATE class_session_participants SET attendance_status='early_leave',left_at='2026-10-01T12:30:00Z' WHERE lesson_id='lesson-Student A'").run();sqlite.prepare('UPDATE class_sessions SET revision=revision+1,attendance_reviewed_at=? WHERE id=?').run('2026-10-21T12:00:00Z','session-group');
+detail=expect(await get({view:'detail',payrollId:generated.payrollId}),200,'student early leave review');check(()=>assert.equal(detail.review.sourceChanged,false,'student-only revisions do not flag changed wages'));check(()=>assert.equal(detail.summary.baseTotalCents,28000,'student early leave does not shorten teacher pay'));
+sqlite.prepare("UPDATE class_sessions SET actual_end='2026-10-02T12:30:00Z',revision=revision+1 WHERE id='session-default'").run();
+detail=expect(await get({view:'detail',payrollId:generated.payrollId}),200,'teacher duration difference');check(()=>assert.equal(detail.review.sourceChanged,true));
+expect(await post({action:'confirm',payrollId:generated.payrollId,revision:1,expectedSourceHash:detail.payroll.sourceHash,operationId:op()}),409,'stale teaching source blocks confirmation');
+expect(await post({action:'refresh',payrollId:generated.payrollId,revision:1,operationId:op()}),200,'explicit refresh');detail=expect(await get({view:'detail',payrollId:generated.payrollId}),200,'refreshed amount');check(()=>assert.equal(detail.summary.baseTotalCents,23000));check(()=>assert.equal(detail.review.sourceChanged,false));
+const confirmBody={action:'confirm',payrollId:generated.payrollId,revision:detail.summary.revision,expectedSourceHash:detail.payroll.sourceHash,operationId:op()};
+beforeBatch=()=>sqlite.prepare("UPDATE class_sessions SET revision=revision+1 WHERE id='session-group'").run();expect(await post(confirmBody),409,'live source race blocks confirmation even metadata race');check(()=>assert.equal(sqlite.prepare('SELECT status FROM payroll_runs WHERE id=?').get(generated.payrollId).status,'draft'));
+expect(await post({...confirmBody,operationId:op()}),200,'can confirm before calendar month ends');detail=expect(await get({view:'detail',payrollId:generated.payrollId}),200,'confirmed salary');check(()=>assert.equal(detail.summary.status,'confirmed'));
+check(()=>assert.equal('draftPreview' in detail.summary,false,'confirmed payroll remains actual snapshot only'));
+const frozen=sqlite.prepare('SELECT document_json FROM payroll_runs WHERE id=?').get(generated.payrollId).document_json;
+expect(await post({action:'refresh',payrollId:generated.payrollId,revision:detail.summary.revision,operationId:op()}),409,'confirmed source cannot rewrite');
+expect(await post(rateBody('Ms Ada',15000,'2026-10-01',1)),200,'backdated rate correction appends history');detail=expect(await get({view:'detail',payrollId:generated.payrollId}),200,'rate difference flagged');check(()=>assert.equal(detail.review.sourceChanged,true));check(()=>assert.equal(detail.summary.baseTotalCents,23000,'confirmed original rate retained'));
+check(()=>assert.equal(sqlite.prepare('SELECT count(*) n FROM payroll_rate_versions').get().n,3,'rate versions never overwritten'));
+let rev=detail.summary.revision;
+expect(await post({action:'adjust',payrollId:generated.payrollId,revision:rev,operationId:op(),kind:'bonus',amountCents:2000,reason:'Agreed additional teaching'}),200,'bonus adjustment');rev++;
+expect(await post({action:'adjust',payrollId:generated.payrollId,revision:rev,operationId:op(),kind:'deduction',amountCents:500,reason:'Agreed correction'}),200,'deduction adjustment');rev++;
+const paymentBody={action:'pay',payrollId:generated.payrollId,revision:rev,operationId:op(),amountCents:10000,method:'bank_transfer',paidAt:'2026-10-20',reference:'SAL-ONE'},payment=expect(await post(paymentBody),200,'partial salary payment');expect(await post(paymentBody),200,'payment replay');rev++;
+detail=expect(await get({view:'detail',payrollId:generated.payrollId}),200,'partial balance');check(()=>assert.equal(detail.summary.totalCents,24500));check(()=>assert.equal(detail.summary.paidCents,10000));check(()=>assert.equal(detail.summary.remainingCents,14500));
+{
+ const before=sqlite.prepare('SELECT * FROM payroll_runs WHERE id=?').get(generated.payrollId);
+ const response=await print(generated.payrollId),html=await response.text();
+ for(const [account,status] of [[null,401],[teacher,403],[student,403],[outsider,404]]){
+  const denied=await print(generated.payrollId,account);
+  check(()=>assert.equal(denied.status,status));
+  check(()=>assert.equal(denied.headers.get('Cache-Control'),'private, no-store'));
+ }
+ grant([]);
+ const revoked=await print(generated.payrollId);
+ check(()=>assert.equal(revoked.status,403,'revoked finance grant cannot print'));
+ grant(grants);
+ check(()=>assert.equal(response.status,200));
+ check(()=>assert.equal(response.headers.get('Cache-Control'),'private, no-store'));
+ const nonce=html.match(/<script nonce="([a-f0-9]+)" src="\/payroll-payslip.js/)?.[1];
+ check(()=>assert(nonce&&response.headers.get('Content-Security-Policy').includes("'nonce-"+nonce+"'")));
+ for(const text of ['Teacher payslip','Ms Ada','2026-10','230.00','20.00','5.00','245.00','Teaching record','Class class-group','Bank account number']){
+  check(()=>assert(html.includes(text),'payslip includes '+text));
+ }
+ for(const text of ['SAL-ONE','Agreed correction','session-group','rateVersionId','Student A','Student B']){
+  check(()=>assert(!html.includes(text),'payslip excludes private ledger data '+text));
+ }
+ const zh=await print(generated.payrollId,admin,'zh'),zhHtml=await zh.text();
+ check(()=>assert(zhHtml.includes('老师薪资单')&&zhHtml.includes('应发薪资')));
+ check(()=>assert.deepEqual(sqlite.prepare('SELECT * FROM payroll_runs WHERE id=?').get(generated.payrollId),before,'printing never changes payroll'));
+ if(process.env.PAYSLIP_TEST_FIXTURE)fs.writeFileSync(process.env.PAYSLIP_TEST_FIXTURE,JSON.stringify({
+  html,headers:Object.fromEntries(response.headers),detail,
+ }));
+}
+expect(await post({...paymentBody,revision:rev,operationId:op(),amountCents:14501}),400,'overpayment denied');expect(await post({...paymentBody,amountCents:9000}),409,'operation body mismatch');expect(await post({...paymentBody,revision:rev,operationId:op(),paidAt:'2026-02-30'}),400,'invalid payment calendar date');expect(await post({...paymentBody,revision:rev,operationId:op(),paidAt:'2026-10-20T24:00:00Z'}),400,'invalid payment clock');expect(await post({...paymentBody,revision:rev,operationId:op(),paidAt:'2099-01-01'}),400,'future payment');
+expect(await post({action:'adjust',payrollId:generated.payrollId,revision:rev,operationId:op(),kind:'deduction',amountCents:15000,reason:'Would fall below paid'}),400,'deduction cannot fall below already disbursed');expect(await post({action:'adjust',payrollId:generated.payrollId,revision:rev,operationId:op(),kind:'bonus',amountCents:1,reason:''}),400,'adjustment reason required');
+const reverseBody={action:'reversePayment',payrollId:generated.payrollId,revision:rev,paymentId:payment.eventId,operationId:op(),effectiveAt:'2026-10-21',reason:'Incorrect registration'};
+expect(await post({...reverseBody,effectiveAt:'2026-10-19'}),400,'reverse cannot precede payment');expect(await post(reverseBody),200,'immutable payment reversal');expect(await post(reverseBody),200,'reversal replay');rev++;
+expect(await post({...reverseBody,revision:rev,operationId:op()}),409,'double reversal denied');detail=expect(await get({view:'detail',payrollId:generated.payrollId}),200,'reversal restores balance');check(()=>assert.equal(detail.summary.paidCents,0));check(()=>assert.equal(detail.events.find(e=>e.id===payment.eventId).reversedAt,'2026-10-20T16:00:00.000Z'));check(()=>assert.equal(detail.payroll.revision,3,'original document revision stays frozen'));check(()=>assert.equal(detail.summary.revision,rev));
+const payRace=await Promise.all([post({...paymentBody,revision:rev,amountCents:18000,operationId:op()}),post({...paymentBody,revision:rev,amountCents:18000,operationId:op()})]);check(()=>assert.deepEqual(payRace.map(r=>r.status).sort(),[200,409]));rev++;
+check(()=>assert.equal(sqlite.prepare('SELECT document_json FROM payroll_runs WHERE id=?').get(generated.payrollId).document_json,frozen,'original snapshot remains byte-identical'));
+// Missing rates, upcoming classes and unconfirmed past attendance remain pending.
+const missing=expect(await post({action:'generate',teacherId:tid['Ms Missing'],month:'2026-10',operationId:op()}),200,'missing rate draft'),future=expect(await post({action:'generate',teacherId:tid['Ms Future'],month:'2026-10',operationId:op()}),200,'upcoming draft'),pending=expect(await post({action:'generate',teacherId:tid['Ms Pending'],month:'2026-10',operationId:op()}),200,'unreviewed draft');
+for(const [runId,label]of[[missing.payrollId,'missing'],[future.payrollId,'future'],[pending.payrollId,'pending']]){const d=expect(await get({view:'detail',payrollId:runId}),200,label+' review');check(()=>assert.equal(d.summary.baseTotalCents,0));expect(await post({action:'confirm',payrollId:runId,revision:d.summary.revision,expectedSourceHash:d.payroll.sourceHash,operationId:op()}),409,label+' blocks confirmation');}
+expect(await post(rateBody('Ms Future',10000)),200,'future teacher rate');expect(await post({action:'refresh',payrollId:future.payrollId,revision:1,operationId:op()}),200,'refresh upcoming');const futureDetail=expect(await get({view:'detail',payrollId:future.payrollId}),200,'future only blockers');check(()=>assert.equal(futureDetail.summary.baseTotalCents,10000));check(()=>assert.equal(futureDetail.review.pendingCount,0));check(()=>assert.equal(futureDetail.review.upcomingCount,1));expect(await post({action:'confirm',payrollId:future.payrollId,revision:2,expectedSourceHash:futureDetail.payroll.sourceHash,operationId:op()}),409,'future classes specifically block confirmation');
+check(()=>assert.deepEqual(futureDetail.summary.draftPreview,{confirmedCents:10000,projectedCents:10000,projectedTotalCents:20000,projectedCount:1,missingRateCount:0,unresolvedCount:0,complete:true}));check(()=>assert.equal(futureDetail.summary.totalCents,10000,'forecast never changes payable balance'));
+const forecastBase={...groupLine,status:'pending',amountCents:null,teachingStatus:'pending',plannedStart:'2026-10-01T12:00:00Z',plannedEnd:'2026-10-01T13:00:00Z',actualStart:null,actualEnd:null,hourlyRateCents:10001,rateVersionId:'fictional-rate'};
+check(()=>assert.equal(payrollContract.payrollDraftPreview([forecastBase]).projectedCents,10001,'past pending attendance uses explicitly labelled scheduled forecast'));
+check(()=>assert.equal(payrollContract.payrollDraftPreview([{...forecastBase,teachingStatus:'taught',actualStart:'2026-10-01T12:00:00Z',actualEnd:'2026-10-01T12:30:00Z'}]).projectedCents,5001,'unreviewed taught time prefers actual teacher duration'));
+check(()=>assert.deepEqual(payrollContract.payrollDraftPreview([{...forecastBase,hourlyRateCents:null,rateVersionId:null}]),{confirmedCents:0,projectedCents:0,projectedTotalCents:0,projectedCount:0,missingRateCount:1,unresolvedCount:1,complete:false},'missing rate is unresolved, never an assumed zero salary'));
+check(()=>assert.equal(payrollContract.payrollDraftPreview([{...forecastBase,teachingStatus:'taught',actualStart:null,actualEnd:null}]).complete,false,'invalid actual teaching interval is not replaced with assumed teaching'));
+check(()=>assert.equal(payrollContract.payrollDraftPreview([{...forecastBase,plannedEnd:'2026-10-01T11:00:00Z'}]).unresolvedCount,1));
+check(()=>assert.equal(payrollContract.payrollDraftPreview([]).complete,false,'empty or unlinked legacy draft is never presented as a complete zero estimate'));
+check(()=>assert.deepEqual(payrollContract.payrollDraftPreview([],2),{confirmedCents:0,projectedCents:0,projectedTotalCents:0,projectedCount:0,missingRateCount:0,unresolvedCount:2,complete:false},'unlinked-only draft keeps unresolved legacy teaching explicit'));
+check(()=>assert.deepEqual(payrollContract.payrollDraftPreview([{...forecastBase,teachingStatus:'teacher_absent'},{...forecastBase,status:'excluded',teachingStatus:'not_taught'}]),{confirmedCents:0,projectedCents:0,projectedTotalCents:0,projectedCount:0,missingRateCount:0,unresolvedCount:0,complete:true},'excluded teaching is never projected'));
+expect(await post(rateBody('Ms Fraction',10001)),200,'fractional cents rate');const fraction=expect(await post({action:'generate',teacherId:tid['Ms Fraction'],month:'2026-10',operationId:op()}),200,'fractional rate salary'),fractionDetail=expect(await get({view:'detail',payrollId:fraction.payrollId}),200,'per line rounding');check(()=>assert.equal(fractionDetail.summary.baseTotalCents,167));
+// An explicit full profile is required. Existing finance/fees powers never grant payroll.
+const protectedTables=['payroll_teachers','payroll_rate_scopes','payroll_rate_versions','payroll_runs','payroll_operations','payroll_events'],snapshot=()=>JSON.stringify(protectedTables.map(t=>[t,sqlite.prepare('SELECT * FROM '+t+' ORDER BY rowid').all()]));
+for(const [label,configure]of[
+ ['no profile',()=>sqlite.prepare('DELETE FROM admin_permission_profiles WHERE group_id=? AND account_id=?').run(gid,admin.id)],
+ ['legacy profile',()=>grant(permissions.LEGACY_ADMIN_GRANTS,admin,'legacy')],
+ ['student fee grants',()=>grant(['invoices.view','payments.view','payments.record','fees.view'])],
+ ['incomplete payroll dependency',()=>grant(['payroll.pay'])],
+ ['unapplied draft only',()=>{grant([]);sqlite.prepare('UPDATE admin_permission_profiles SET draft_grants_json=? WHERE group_id=? AND account_id=?').run(JSON.stringify(grants),gid,admin.id);}]
+]){configure();const before=snapshot();expect(await get({view:'teachers'}),403,label+' read denied');expect(await post({...paymentBody,revision:rev,operationId:op(),amountCents:1}),403,label+' write denied');check(()=>assert.equal(snapshot(),before,label+' causes no mutation'));}
+grant([]);globalThis.__payrollEnvironment.ADMIN_PERMISSIONS_MODE='preparation';expect(await get({view:'teachers'}),403,'recovery preparation mode cannot widen new financial grants');expect(await get({view:'teachers'},chief),200,'chief remains privileged in preparation mode');globalThis.__payrollEnvironment.ADMIN_PERMISSIONS_MODE='enforced';
+grant(grants);expect(await get({view:'teachers'},owner),200,'owner privileged');expect(await get({view:'teachers'},chief),200,'group chief privileged');
+grant(['payroll.view']);expect(await get({view:'detail',payrollId:generated.payrollId}),200,'payroll view independent from invoice grants');expect(await get({view:'rates',teacherId:tid['Ms Ada']}),403,'view cannot read private rate configuration');expect(await post({...paymentBody,revision:rev,operationId:op(),amountCents:1}),403,'view cannot disburse');grant(grants);
+beforeBatch=()=>grant(['payroll.view']);expect(await post({...paymentBody,revision:rev,operationId:op(),amountCents:1}),409,'payment permission revoked at batch boundary');grant(grants);
+const sessionHelpers=(await load('lib/account-session.ts')).module,sessionActor=sessionHelpers.bindAccountSession({...admin},'fictional-payroll-session');sqlite.prepare('INSERT INTO sessions(token_hash,account_id,expires_at) VALUES(?,?,?)').run('fictional-payroll-session',admin.id,'2099-01-01T00:00:00Z');expect(await get({view:'teachers'},sessionActor),200,'bound session valid');beforeBatch=()=>sqlite.prepare('DELETE FROM sessions WHERE token_hash=?').run('fictional-payroll-session');expect(await post({...paymentBody,revision:rev,operationId:op(),amountCents:1},sessionActor),409,'logout at batch boundary');expect(await get({view:'teachers'},sessionActor),403,'logged out session denied');
+beforeBatch=()=>sqlite.prepare('UPDATE accounts SET disabled_at=? WHERE id=?').run(now,admin.id);expect(await post({...paymentBody,revision:rev,operationId:op(),amountCents:1}),409,'disabled at batch boundary');sqlite.prepare('UPDATE accounts SET disabled_at=NULL WHERE id=?').run(admin.id);
+// New teachers cannot silently change an already generated salary source during CAS.
+const rateRace=rateBody('Ms Ada',17000,'2026-10-01',2);beforeBatch=()=>sqlite.prepare('UPDATE payroll_rate_scopes SET revision=revision+1 WHERE group_id=? AND teacher_id=? AND scope_key=?').run(gid,tid['Ms Ada'],'class-default');expect(await post(rateRace),409,'rate revision changed at write boundary');sqlite.prepare('UPDATE payroll_rate_scopes SET revision=revision-1 WHERE group_id=? AND teacher_id=? AND scope_key=?').run(gid,tid['Ms Ada'],'');
+// Ledger and original inputs cannot be edited or deleted.
+check(()=>assert.throws(()=>sqlite.prepare('DELETE FROM payroll_events WHERE id=?').run(payment.eventId),/payroll_immutable/));check(()=>assert.throws(()=>sqlite.prepare('UPDATE payroll_rate_versions SET amount_cents=1 WHERE id=?').run(override.rateId),/payroll_immutable/));check(()=>assert.throws(()=>sqlite.prepare("UPDATE payroll_runs SET document_json='{}' WHERE id=?").run(generated.payrollId),/payroll_immutable/));
+check(()=>assert.throws(()=>sqlite.prepare('UPDATE payroll_runs SET paid_cents=paid_cents+1 WHERE id=?').run(generated.payrollId),/payroll_immutable/,'cached balances cannot diverge from the event ledger'));check(()=>assert.throws(()=>sqlite.prepare('DELETE FROM payroll_operations WHERE group_id=?').run(gid),/payroll_immutable/));
+const currentList=expect(await get({view:'list'}),200,'list defaults to current Malaysian month'),teacherList=expect(await get({view:'list',teacherId:tid['Ms Ada']}),200,'teacher filter');check(()=>assert.equal(currentList.items.length,5));check(()=>assert.equal(teacherList.total,1));
+// Historical teaching names remain visible for reconciliation without GET restoring a roster entry.
+for(const name of['Ms Cancelled Only','Ms Other Month'])sqlite.prepare('INSERT INTO teachers(group_id,name,created_at) VALUES(?,?,?)').run(gid,name,now);
+session('roster-cancelled','Ms Cancelled Only','2026-10-10T12:00:00Z','2026-10-10T13:00:00Z',{status:'cancelled'});session('roster-other-month','Ms Other Month','2026-09-10T12:00:00Z','2026-09-10T13:00:00Z');session('roster-history','Ms Historical','2026-10-10T12:00:00Z','2026-10-10T13:00:00Z');
+sqlite.prepare('INSERT INTO lessons(id,group_id,student,subject,teacher_name,planned_start,planned_end,status,created_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run('legacy-unlinked',gid,'Student A','Mathematics','Ms Legacy','2026-10-11T12:00:00Z','2026-10-11T13:00:00Z','completed',owner.id,now);
+for(const [lessonId,lessonGroup,teacherName,start,end,status]of[['mixed-legacy',gid,'Ms Fraction','2026-10-11T12:00:00Z','2026-10-11T13:00:00Z','completed'],['mixed-legacy-cancelled',gid,'Ms Fraction','2026-10-12T12:00:00Z','2026-10-12T13:00:00Z','cancelled'],['mixed-legacy-other-month',gid,'Ms Fraction','2026-09-11T12:00:00Z','2026-09-11T13:00:00Z','completed'],['mixed-legacy-other-group',foreign,'Ms Fraction','2026-10-11T12:00:00Z','2026-10-11T13:00:00Z','completed']])sqlite.prepare('INSERT INTO lessons(id,group_id,student,subject,teacher_name,planned_start,planned_end,status,created_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(lessonId,lessonGroup,'Student A','Mathematics',teacherName,start,end,status,owner.id,now);
+// Deliberately model pre-link imported records; normal inserts are auto-linked by current schema.
+for(const lessonId of['legacy-unlinked','mixed-legacy','mixed-legacy-cancelled','mixed-legacy-other-month','mixed-legacy-other-group']){sqlite.prepare('UPDATE lessons SET session_id=NULL WHERE id=?').run(lessonId);sqlite.prepare('DELETE FROM class_sessions WHERE id=?').run('one:'+lessonId);}
+const mixedDraft=expect(await get({view:'detail',payrollId:fraction.payrollId}),200,'mixed linked and unlinked draft preview');check(()=>assert.equal(mixedDraft.summary.draftPreview.confirmedCents,167,'known earned subtotal retained'));check(()=>assert.equal(mixedDraft.summary.draftPreview.projectedTotalCents,167));check(()=>assert.equal(mixedDraft.summary.draftPreview.unresolvedCount,1,'unlinked count scoped to same teacher group month and excludes cancellation'));check(()=>assert.equal(mixedDraft.summary.draftPreview.complete,false));check(()=>assert.equal(mixedDraft.summary.baseTotalCents,167,'read-only reconciliation never changes original financial snapshot'));
+const beforePreview=snapshot(),monthlyTeachers=expect(await get({view:'teachers',month:'2026-10'}),200,'historical teachers in monthly selector'),missingTeacher=monthlyTeachers.items.find(t=>t.teacherName==='Ms Historical');check(()=>assert.equal(missingTeacher.rosterMissing,true));check(()=>assert.equal(missingTeacher.active,false));check(()=>assert(monthlyTeachers.items.some(t=>t.teacherName==='Ms Legacy'&&t.rosterMissing)));check(()=>assert.equal(snapshot(),beforePreview,'all preview GETs remain read-only'));
+const historicalList=expect(await get({view:'list',month:'2026-10'}),200,'uncreated historical salary candidate');check(()=>assert.equal(historicalList.total,7));check(()=>assert.equal(historicalList.items.find(t=>t.teacherName==='Ms Historical').status,'not_generated'));check(()=>assert(!historicalList.items.some(t=>['Ms Cancelled Only','Ms Other Month','Foreign Teacher'].includes(t.teacherName))));
+check(()=>assert.equal(historicalList.items.find(t=>t.id===fraction.payrollId).draftPreview.complete,false,'list preview also includes unresolved legacy rows'));
+const selectedHistory=expect(await get({view:'list',month:'2026-10',teacherId:missingTeacher.teacherId}),200,'filter missing historical roster entry');check(()=>assert.equal(selectedHistory.total,1));check(()=>assert.equal(selectedHistory.items[0].teacherName,'Ms Historical'));expect(await post({action:'generate',teacherId:missingTeacher.teacherId,month:'2026-10',operationId:op()}),404,'history never silently creates teacher roster or salary');
+const foreignFilter=expect(await get({view:'list',month:'2026-10',teacherId:foreignRoster.items[0].teacherId}),200,'foreign teacher filter reveals nothing'),foreignMonth=expect(await get({view:'list',month:'2026-10'},outsider),200,'foreign monthly list remains isolated');check(()=>assert.equal(foreignFilter.total,0));check(()=>assert.equal(foreignMonth.total,1));check(()=>assert.equal(foreignMonth.items[0].teacherName,'Ms Fraction'));check(()=>assert.equal(foreignMonth.items[0].status,'not_generated'));
+sqlite.prepare("UPDATE class_sessions SET status='cancelled' WHERE id='session-missing'").run();const retained=expect(await get({view:'list',month:'2026-10'}),200,'existing draft retained without current source sessions');check(()=>assert(retained.items.some(t=>t.id===missing.payrollId&&t.status==='draft')));check(()=>assert.equal(sqlite.prepare('SELECT document_json FROM payroll_runs WHERE id=?').get(generated.payrollId).document_json,frozen,'monthly previews never rewrite confirmed snapshot'));
+for(let i=0;i<23;i++)session('paged-teacher-'+i,'Ms Paged '+String(i).padStart(2,'0'),'2026-10-10T12:00:00Z','2026-10-10T13:00:00Z',{teachingStatus:'pending',reviewed:false,actualStart:null,actualEnd:null});
+const salariesPage1=expect(await get({view:'list',month:'2026-10',page:'1'}),200,'month people first page'),salariesPage2=expect(await get({view:'list',month:'2026-10',page:'2'}),200,'month people second page');check(()=>assert.equal(salariesPage1.total,30));check(()=>assert.equal(salariesPage1.items.length,20));check(()=>assert.equal(salariesPage2.items.length,10));check(()=>assert.equal(new Set([...salariesPage1.items,...salariesPage2.items].map(t=>t.teacherId)).size,30,'stable people pagination has no duplicates'));
+const teachersPage1=expect(await get({view:'teachers',month:'2026-10',page:'1'}),200,'month selector first page'),teachersPage2=expect(await get({view:'teachers',month:'2026-10',page:'2'}),200,'month selector second page');check(()=>assert.equal(teachersPage1.total,32));check(()=>assert.equal(teachersPage1.items.length,20));check(()=>assert.equal(teachersPage2.items.length,12));check(()=>assert.equal(new Set([...teachersPage1.items,...teachersPage2.items].map(t=>t.teacherId)).size,32));check(()=>assert.equal(snapshot(),beforePreview,'lists, filters and missing-roster rejects never mutate payroll history'));
+expect(await get({view:'teachers',month:'2026-13'}),400,'invalid selector month rejected');
+for(let i=0;i<23;i++){expect(await post({action:'adjust',payrollId:generated.payrollId,revision:rev++,operationId:op(),kind:'bonus',amountCents:1,reason:'Fixture '+i}),200,'paged event');}const page2=expect(await get({view:'detail',payrollId:generated.payrollId,page:'2'}),200,'bounded event paging');check(()=>assert.equal(page2.events.length,8));check(()=>assert.equal(page2.total,28));
+sqlite.prepare('INSERT INTO lessons(id,group_id,student,subject,teacher_name,planned_start,planned_end,status,created_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run('pure-legacy-only',gid,'Student A','Mathematics','Ms Cancelled Only','2026-10-13T12:00:00Z','2026-10-13T13:00:00Z','completed',owner.id,now);sqlite.prepare('UPDATE lessons SET session_id=NULL WHERE id=?').run('pure-legacy-only');sqlite.prepare('DELETE FROM class_sessions WHERE id=?').run('one:pure-legacy-only');
+const pureLegacyTeacher=await service.payrollTeacherId(gid,'Ms Cancelled Only'),pureLegacyRun=expect(await post({action:'generate',teacherId:pureLegacyTeacher,month:'2026-10',operationId:op()}),200,'unlinked-only draft remains explicitly unresolved'),beforePureRead=snapshot(),pureLegacyDetail=expect(await get({view:'detail',payrollId:pureLegacyRun.payrollId}),200,'unlinked-only draft details');check(()=>assert.equal(pureLegacyDetail.payroll.sourceLines.length,0));check(()=>assert.equal(pureLegacyDetail.summary.draftPreview.complete,false));check(()=>assert.equal(pureLegacyDetail.summary.draftPreview.unresolvedCount,1));check(()=>assert.equal(snapshot(),beforePureRead));
+
+// Classroom modes, independently agreed monthly totals, and disposable salary drafts.
+expect(await post({action:'saveRate',teacherId:tid['Ms Ada'],classroomId:null,amountCents:1,effectiveFrom:'2026-10-01',revision:0,operationId:op()}),400,'new global default cannot price existing or new classrooms');
+sqlite.prepare('INSERT INTO teachers(group_id,name,created_at) VALUES(?,?,?)').run(gid,'Ms Modes',now);
+const modesId=await service.payrollTeacherId(gid,'Ms Modes');
+for(const classId of['mode-hour','mode-lesson','mode-month','mode-mixed']){classroom(classId,'Ms Modes');sqlite.prepare("UPDATE classrooms SET created_at='2020-01-01T00:00:00Z' WHERE id=?").run(classId);}
+const modeRate=(classroomId,mode,amountCents,revision=0,effectiveFrom='2026-10-01')=>({action:'saveRate',teacherId:modesId,classroomId,mode,amountCents,revision,effectiveFrom,operationId:op()});
+expect(await post(modeRate('mode-hour','hour',10000)),200,'class hourly remuneration');expect(await post(modeRate('mode-lesson','lesson',2500)),200,'class per lesson remuneration');expect(await post(modeRate('mode-month','month',62000)),200,'class fixed monthly remuneration');
+session('mode-hour-session','Ms Modes','2026-10-11T12:00:00Z','2026-10-11T13:00:00Z',{classroomId:'mode-hour'});
+session('mode-lesson-session','Ms Modes','2026-10-12T12:00:00Z','2026-10-12T13:30:00Z',{classroomId:'mode-lesson'});
+session('mode-month-one','Ms Modes','2026-10-13T12:00:00Z','2026-10-13T13:00:00Z',{classroomId:'mode-month'});
+session('mode-month-two','Ms Modes','2026-10-14T12:00:00Z','2026-10-14T13:00:00Z',{classroomId:'mode-month'});
+session('mode-month-pending','Ms Modes','2026-10-18T12:00:00Z','2026-10-18T13:00:00Z',{classroomId:'mode-month',teachingStatus:'pending',reviewed:false,actualStart:null,actualEnd:null});
+const modeRun=expect(await post({action:'generate',teacherId:modesId,month:'2026-10',operationId:op()}),200,'generate three remuneration modes');
+let modesDetail=expect(await get({view:'detail',payrollId:modeRun.payrollId}),200,'mixed classroom mode details');
+check(()=>assert.equal(modesDetail.payroll.calculationVersion,2));check(()=>assert.equal(modesDetail.payroll.monthlyLines.length,1));check(()=>assert.equal(modesDetail.summary.baseTotalCents,12500));check(()=>assert.equal(modesDetail.summary.draftPreview.projectedCents,62000));check(()=>assert.equal(modesDetail.summary.draftPreview.projectedTotalCents,74500));check(()=>assert.equal(modesDetail.payroll.sourceLines.find(l=>l.sessionId==='mode-lesson-session').amountCents,2500,'90 minute lesson has one per lesson fee'));check(()=>assert(modesDetail.payroll.sourceLines.filter(l=>l.classroomId==='mode-month').every(l=>l.amountCents===0||l.amountCents===null),'monthly remuneration never multiplied by classroom session count'));
+expect(await post({action:'confirm',payrollId:modeRun.payrollId,revision:1,expectedSourceHash:modesDetail.payroll.sourceHash,operationId:op()}),409,'monthly salary cannot confirm incomplete attendance');
+sqlite.prepare("UPDATE class_sessions SET teaching_status='taught',actual_start=planned_start,actual_end=planned_end,attendance_reviewed_at=?,revision=revision+1 WHERE id='mode-month-pending'").run(now);
+expect(await post({action:'refresh',payrollId:modeRun.payrollId,revision:1,operationId:op()}),200,'refresh complete month');
+modesDetail=expect(await get({view:'detail',payrollId:modeRun.payrollId}),200,'monthly amount counted once when teaching confirmed');check(()=>assert.equal(modesDetail.summary.baseTotalCents,74500));
+expect(await post(modeRate('mode-month','month',70000,1,'2026-10-15')),200,'midmonth monthly rate remains versioned');expect(await post({action:'refresh',payrollId:modeRun.payrollId,revision:2,operationId:op()}),200,'refresh changed monthly agreement');modesDetail=expect(await get({view:'detail',payrollId:modeRun.payrollId}),200,'monthly change requires amount review');
+let monthLine=modesDetail.payroll.monthlyLines[0];check(()=>assert.equal(payrollContract.payrollDraftPreview([],0,[monthLine]).unresolvedCount,1,'one unresolved monthly line counts once even with both missing estimate and warnings'));check(()=>assert(monthLine.warnings.includes('monthly_rate_changed')));check(()=>assert(monthLine.warnings.includes('partial_month')));check(()=>assert.equal(monthLine.amountCents,null));check(()=>assert.equal(modesDetail.summary.baseTotalCents,12500));check(()=>assert.equal(modesDetail.summary.draftPreview.complete,false));
+const reviewBody={action:'reviewMonth',teacherId:modesId,classroomId:'mode-month',month:'2026-10',revision:monthLine.reviewRevision,amountCents:35000,reason:'Agreed partial month total',expectedSourceHash:monthLine.sourceHash,operationId:op()};
+expect(await post({...reviewBody,reason:''}),400,'monthly review needs explanation');expect(await post({...reviewBody,expectedSourceHash:'outdated'}),409,'monthly review rejects stale source');
+expect(await post(reviewBody),200,'agree exact monthly classroom total');expect(await post(reviewBody),200,'monthly review replay');
+expect(await post({action:'refresh',payrollId:modeRun.payrollId,revision:3,operationId:op()}),200,'apply reviewed monthly total');modesDetail=expect(await get({view:'detail',payrollId:modeRun.payrollId}),200,'monthly agreement snapshot');check(()=>assert.equal(modesDetail.summary.baseTotalCents,47500));check(()=>assert.equal(modesDetail.payroll.monthlyLines[0].amountCents,35000));check(()=>assert.equal(modesDetail.payroll.monthlyLines[0].reviewReason,'Agreed partial month total'));
+const deletionBody={action:'deleteDraft',payrollId:modeRun.payrollId,revision:4,operationId:op()},originalRunRow=sqlite.prepare('SELECT * FROM payroll_runs WHERE id=?').get(modeRun.payrollId);
+grant(['payroll.view','payroll.edit']);expect(await post(deletionBody),403,'edit grant does not imply draft deletion');grant(grants);
+expect(await post({...deletionBody,revision:3}),409,'draft deletion rejects stale revision');expect(await post(deletionBody),200,'explicitly delete unconfirmed salary draft');expect(await post(deletionBody),200,'draft deletion replay');check(()=>assert.equal(sqlite.prepare('SELECT count(*) n FROM payroll_runs WHERE id=?').get(modeRun.payrollId).n,0));
+const deletedSnapshot=JSON.parse(sqlite.prepare('SELECT run_snapshot_json FROM payroll_deleted_drafts WHERE payroll_id=?').get(modeRun.payrollId).run_snapshot_json);check(()=>assert.deepEqual(deletedSnapshot,JSON.parse(JSON.stringify(originalRunRow)),'deleted draft keeps every original SQL field'));
+expect(await post({action:'generate',teacherId:modesId,month:'2026-10',operationId:op()}),200,'deleted teacher month can generate a new draft id');
+expect(await post({action:'refresh',payrollId:modeRun.payrollId,revision:4,operationId:op()}),404,'deleted salary is absent');
+const recreated=(await get({view:'list',teacherId:modesId,month:'2026-10'})).data.items[0];check(()=>assert.notEqual(recreated.id,modeRun.payrollId));
+let recreatedDetail=expect(await get({view:'detail',payrollId:recreated.id}),200,'recreated salary details');
+expect(await post({action:'confirm',payrollId:recreated.id,revision:1,expectedSourceHash:recreatedDetail.payroll.sourceHash,operationId:op()}),200,'confirm agreed monthly salary');
+const monthlyPrint=await print(recreated.id),monthlyHtml=await monthlyPrint.text();
+check(()=>assert.equal(monthlyPrint.status,200));
+check(()=>assert(monthlyHtml.includes('Fixed monthly pay')&&monthlyHtml.includes('350.00')&&monthlyHtml.includes('475.00')));
+check(()=>assert(monthlyHtml.includes('Included in monthly pay')&&monthlyHtml.includes(' / lesson')&&monthlyHtml.includes(' / hour')));
+check(()=>assert(!monthlyHtml.includes('Agreed partial month total'),'internal monthly review notes stay private'));
+expect(await post({action:'deleteDraft',payrollId:recreated.id,revision:2,operationId:op()}),409,'confirmed salary cannot be deleted');
+check(()=>assert.throws(()=>sqlite.prepare('DELETE FROM payroll_deleted_drafts WHERE payroll_id=?').run(modeRun.payrollId),/payroll_immutable/));
+check(()=>assert.throws(()=>sqlite.prepare('DELETE FROM payroll_runs WHERE id=?').run(recreated.id),/payroll_immutable/));
+// Hour/month switching in one classroom is one reviewed classroom total, never additive.
+expect(await post(modeRate('mode-mixed','hour',10000)),200,'mixed classroom initial hourly rate');expect(await post(modeRate('mode-mixed','month',60000,1,'2026-10-15')),200,'mixed classroom switches to monthly');
+session('mode-mixed-hour','Ms Modes','2026-10-10T12:00:00Z','2026-10-10T13:00:00Z',{classroomId:'mode-mixed'});session('mode-mixed-month','Ms Modes','2026-10-19T12:00:00Z','2026-10-19T13:00:00Z',{classroomId:'mode-mixed'});
+// Use a separate month to test removing obsolete monthly fields from refreshed drafts.
+expect(await post(modeRate('mode-hour','month',50000,1,'2026-11-01')),200,'future monthly agreement');session('mode-switch-month','Ms Modes','2026-11-10T12:00:00Z','2026-11-10T13:00:00Z',{classroomId:'mode-hour'});
+const switchRun=expect(await post({action:'generate',teacherId:modesId,month:'2026-11',operationId:op()}),200,'future month draft uses monthly fields');expect(await post(modeRate('mode-hour','hour',15000,2,'2026-11-01')),200,'change future agreement to hourly');expect(await post({action:'refresh',payrollId:switchRun.payrollId,revision:1,operationId:op()}),200,'refresh monthly draft to hourly');const switched=expect(await get({view:'detail',payrollId:switchRun.payrollId}),200,'hourly refresh removes obsolete month lines');check(()=>assert.equal('monthlyLines' in switched.payroll,false));check(()=>assert.equal('calculationVersion' in switched.payroll,false));check(()=>assert.equal(switched.summary.baseTotalCents,15000));
+const classRead=expect(await get({view:'classroom',classroomId:'mode-lesson'}),200,'classroom remuneration settings');check(()=>assert.equal(classRead.rates[0].mode,'lesson'));expect(await get({view:'classroom',classroomId:'class-foreign'}),404,'cross-group class remuneration denied');grant(['payroll.view']);expect(await get({view:'classroom',classroomId:'mode-lesson'}),200,'view grant can read classroom remuneration');expect(await post(modeRate('mode-lesson','lesson',3000,1)),403,'read-only grant cannot edit classroom remuneration');grant(grants);
+
+
+// An approved whole-month total resolves only price gaps, never attendance facts.
+sqlite.prepare('INSERT INTO teachers(group_id,name,created_at) VALUES(?,?,?)').run(gid,'Ms Partial',now);classroom('partial-price','Ms Partial');sqlite.prepare("UPDATE classrooms SET created_at='2020-01-01T00:00:00Z' WHERE id='partial-price'").run();
+const partialId=await service.payrollTeacherId(gid,'Ms Partial');
+expect(await post({action:'saveRate',teacherId:partialId,classroomId:'partial-price',mode:'month',amountCents:50000,revision:0,effectiveFrom:'2026-10-15',operationId:op()}),200,'monthly agreement begins midmonth without invented earlier hourly price');
+session('partial-earlier','Ms Partial','2026-10-10T12:00:00Z','2026-10-10T13:00:00Z',{classroomId:'partial-price'});session('partial-later','Ms Partial','2026-10-20T12:00:00Z','2026-10-20T13:00:00Z',{classroomId:'partial-price'});
+const partialRun=expect(await post({action:'generate',teacherId:partialId,month:'2026-10',operationId:op()}),200,'midmonth draft with earlier missing price');let partialDetail=expect(await get({view:'detail',payrollId:partialRun.payrollId}),200,'midmonth price gap');check(()=>assert(partialDetail.review.missingRateCount>0));
+let partialMonth=partialDetail.payroll.monthlyLines[0];
+expect(await post({action:'reviewMonth',teacherId:partialId,classroomId:'partial-price',month:'2026-10',revision:0,amountCents:42000,reason:'Whole month negotiated total',expectedSourceHash:partialMonth.sourceHash,operationId:op()}),200,'whole month review can cover earlier price gap');
+expect(await post({action:'refresh',payrollId:partialRun.payrollId,revision:1,operationId:op()}),200,'refresh whole month negotiated total');partialDetail=expect(await get({view:'detail',payrollId:partialRun.payrollId}),200,'reviewed earlier price gap resolved');check(()=>assert.equal(partialDetail.review.missingRateCount,0));check(()=>assert.equal(partialDetail.summary.baseTotalCents,42000));check(()=>assert.equal(partialDetail.payroll.sourceLines.find(l=>l.sessionId==='partial-earlier').status,'ready'));
+sqlite.prepare("UPDATE class_sessions SET attendance_reviewed_at=NULL WHERE id='partial-earlier'").run();partialDetail=expect(await get({view:'detail',payrollId:partialRun.payrollId}),200,'teaching evidence changed after monthly agreement');check(()=>assert.equal(partialDetail.review.sourceChanged,true));
+expect(await post({action:'refresh',payrollId:partialRun.payrollId,revision:2,operationId:op()}),200,'refresh invalidates stale monthly review');partialDetail=expect(await get({view:'detail',payrollId:partialRun.payrollId}),200,'unconfirmed attendance still blocks');partialMonth=partialDetail.payroll.monthlyLines[0];
+expect(await post({action:'reviewMonth',teacherId:partialId,classroomId:'partial-price',month:'2026-10',revision:partialMonth.reviewRevision,amountCents:42000,reason:'Amount confirmed, attendance remains pending',expectedSourceHash:partialMonth.sourceHash,operationId:op()}),200,'new monthly review revision is appended');
+expect(await post({action:'refresh',payrollId:partialRun.payrollId,revision:3,operationId:op()}),200,'refresh second reviewed amount');partialDetail=expect(await get({view:'detail',payrollId:partialRun.payrollId}),200,'latest monthly review selected');check(()=>assert.equal(partialDetail.payroll.monthlyLines[0].reviewRevision,2));check(()=>assert(partialDetail.payroll.sourceLines.find(l=>l.sessionId==='partial-earlier').warnings.includes('attendance_unconfirmed')));check(()=>assert.equal(partialDetail.review.missingRateCount,0));expect(await post({action:'confirm',payrollId:partialRun.payrollId,revision:4,expectedSourceHash:partialDetail.payroll.sourceHash,operationId:op()}),409,'whole month amount never bypasses actual attendance confirmation');
+// MYT October 2 is a partial opening even though the persisted UTC date is October 1.
+sqlite.prepare('INSERT INTO teachers(group_id,name,created_at) VALUES(?,?,?)').run(gid,'Ms Timezone',now);classroom('timezone-partial','Ms Timezone');sqlite.prepare("UPDATE classrooms SET created_at='2026-10-01T17:00:00Z' WHERE id='timezone-partial'").run();const timezoneId=await service.payrollTeacherId(gid,'Ms Timezone');expect(await post({action:'saveRate',teacherId:timezoneId,classroomId:'timezone-partial',mode:'month',amountCents:30000,revision:0,effectiveFrom:'2026-10-01',operationId:op()}),200,'timezone class monthly agreement');session('timezone-class-session','Ms Timezone','2026-10-20T12:00:00Z','2026-10-20T13:00:00Z',{classroomId:'timezone-partial'});const timezoneRun=expect(await post({action:'generate',teacherId:timezoneId,month:'2026-10',operationId:op()}),200,'timezone partial month draft'),timezoneDetail=expect(await get({view:'detail',payrollId:timezoneRun.payrollId}),200,'timezone partial month evidence');check(()=>assert(timezoneDetail.payroll.monthlyLines[0].warnings.includes('partial_month')));
+// Old operation replay must not resurrect or point to the removed draft.
+const deletedGenerateOperation=sqlite.prepare("SELECT operation_id,request_hash FROM payroll_operations WHERE action='generate' AND json_extract(result_json,'$.payrollId')=?").get(modeRun.payrollId);expect(await post({action:'generate',teacherId:modesId,month:'2026-10',operationId:deletedGenerateOperation.operation_id}),410,'original generate replay reports removed draft');
+const beforeDeleteRace=snapshot();beforeBatch=()=>grant(['payroll.view']);expect(await post({action:'deleteDraft',payrollId:timezoneRun.payrollId,revision:1,operationId:op()}),409,'deletion rechecks permission at write boundary');grant(grants);check(()=>assert.equal(snapshot(),beforeDeleteRace,'revoked delete cannot create tombstone or remove salary'));
+
+check(()=>assert.deepEqual(sqlite.prepare('PRAGMA foreign_key_check').all(),[]));check(()=>assert.equal(sqlite.prepare('PRAGMA integrity_check').get().integrity_check,'ok'));check(()=>assert.equal(sqlite.prepare('SELECT count(*) n FROM audit WHERE action LIKE ?').get('payroll.%').n,sqlite.prepare('SELECT count(*) n FROM payroll_operations').get().n,'one audit per successful operation'));
+{
+ const origin = 'https://payroll.fixture.test';
+ const endpoint = origin + '/api/payroll/teacher-bank';
+ const body = {teacherName: 'Ms Ada'};
+ const initialBank = {bankName: 'Maybank', accountHolder: '陈老师', accountNumber: '001-23 4567'};
+ const bankRequest = async (data, as = admin, requestOrigin = origin) => {
+  actor = as;
+  return bankRoute.POST(new Request(endpoint, {method: 'POST', headers: {Origin: requestOrigin, 'Content-Type': 'application/json'},
+   body: JSON.stringify({...body, ...data})}));
+ };
+ grant(grants);
+ check(()=>assert.equal((objects.size),0));
+ for (const [user, code] of [[null, 401], [outsider, 404], [teacher, 403], [student, 403]]) {
+  const response = await bankRequest({action:'read'}, user);
+  check(()=>assert.equal(response.status, code));
+ }
+ const forged = await bankRequest({action:'save', bank:initialBank, version:null}, admin, 'https://other.example.test');
+ check(()=>assert.equal(forged.status,403));
+ const invalid = await bankRequest({action:'save', bank:{...initialBank, accountNumber:'12345a'}, version:null});
+ check(()=>assert.equal(invalid.status,400));
+ const savedBank = await bankRequest({action:'save', bank:initialBank, version:null});
+ const {version} = await savedBank.json();
+ check(()=>assert.equal(savedBank.status,200));
+ const bankRead = await bankRequest({action:'read'});
+ const remembered = await bankRead.json();
+ check(()=>assert.equal(bankRead.headers.get('Cache-Control'),'private, no-store'));
+ check(()=>assert.equal(remembered.bank.accountNumber, '001234567', 'preserve leading zeroes'));
+ check(()=>assert.equal(remembered.bank.accountHolder, '陈老师'));
+ const preview = await print(generated.payrollId);
+ const previewHtml = await preview.text();
+ const zhPreview = process.env.PAYSLIP_BANK_TEST_FIXTURE ? await print(generated.payrollId,admin,'zh') : null;
+ const zhHtml = zhPreview ? await zhPreview.text() : null;
+ check(()=>assert(previewHtml.includes('001234567') && previewHtml.includes('Maybank') && previewHtml.includes('name') && previewHtml.includes('value="brand"')));
+ check(()=>assert(previewHtml.includes('<title>Ms Ada 2026-10 salary</title>')));
+ const revision = previewHtml.match(/data-revision="(\d+)"/)[1];
+
+ const routePath = '/api/payroll/' + generated.payrollId + '/print';
+ // Minimal marker stream for exercising the archival API. The browser test
+ // supplies fully encoded JPEG pages and validates the resulting document.
+ const jpeg = Buffer.from([255,216,255,192,0,17,8,6,148,4,166,3,1,17,0,2,17,0,3,17,0,255,217]);
+ const accountLayer = number => JSON.stringify([[{value:number, left:380, top:300, width:140, size:12, account:true}]]);
+ const archiveRequest = async (expectedRevision, bankVersion, {file = jpeg, as = admin, layer = accountLayer('001234567')} = {}) => {
+  actor = as;
+  const form = new FormData();
+  form.set('revision',expectedRevision);
+  form.set('bankVersion',bankVersion);
+  form.set('template','brand');
+  if (layer !== null) form.set('textLayer',layer);
+  form.append('page', new Blob([file], {type:'image/jpeg'}),'one.jpg');
+  return printRoute.POST(new Request(origin + routePath, {method:'POST', headers:{Origin:origin}, body:form}),
+   {params:Promise.resolve({id:generated.payrollId})});
+ };
+ const stale = await archiveRequest('0',version);
+ check(()=>assert.equal(stale.status,409));
+ const oldPreview = await archiveRequest(revision,version,{layer:null});
+ check(()=>assert.equal(oldPreview.status,409,'stale preview cannot create an image-only archive'));
+ const wrongDigits = await archiveRequest(revision,version,{layer:accountLayer('012345678')});
+ check(()=>assert.equal(wrongDigits.status,400,'selectable bank number must match saved profile'));
+ const wrongLayer = await archiveRequest(revision,version,{layer:'[]'});
+ check(()=>assert.equal(wrongLayer.status,400));
+ const badImage = await archiveRequest(revision,version,{file:Buffer.from('%PDF-1.4')});
+ check(()=>assert.equal(badImage.status,400));
+ grant(['payroll.view']);
+ const viewOnly = await archiveRequest(revision,version);
+ check(()=>assert.equal(viewOnly.status,403));
+ grant(grants);
+ const archive = await archiveRequest(revision,version);
+ check(()=>assert.equal(archive.status,200));
+ const pdf = await print(generated.payrollId);
+ const archivedBytes = Buffer.from(await pdf.arrayBuffer());
+ check(()=>assert.equal(pdf.headers.get('Content-Type'),'application/pdf'));
+ check(()=>assert.match(pdf.headers.get('Content-Disposition'), /filename="Ms Ada 2026-10 salary.pdf"/));
+ check(()=>assert(validObjectSignature(archivedBytes,'application/pdf')));
+ check(()=>assert(archivedBytes.includes(Buffer.from('/ToUnicode'))));
+ const secondSave = await bankRequest({action:'save',bank:{...initialBank,bankName:'CIMB Bank',accountNumber:'00987654321'},version});
+ check(()=>assert.equal(secondSave.status,200));
+ const oldWrite = await bankRequest({action:'save',bank:initialBank,version});
+ check(()=>assert.equal(oldWrite.status,409));
+ const retry = await archiveRequest(revision,version,{layer:null});
+ check(()=>assert.equal(retry.status,200));
+ const reopened = await print(generated.payrollId);
+ check(()=>assert.equal(reopened.headers.get('Content-Type'),'application/pdf'));
+ const reopenedBytes = Buffer.from(await reopened.arrayBuffer());
+ check(()=>assert.deepEqual(reopenedBytes, archivedBytes, 'reopen serves the saved bytes'));
+ const deniedFile = await print(generated.payrollId,outsider);
+ check(()=>assert.equal(deniedFile.status,404));
+ const token = __payrollEnvironment.BACKUP_EXPORT_TOKEN;
+ const exportRequest = (query = '', authorized = true) => new Request(origin + '/api/backup-export' + query,
+  {headers: authorized ? {Authorization:'Bearer ' + token} : {}});
+ const backup = await backupRoute.GET(exportRequest());
+ const snapshot = await backup.json();
+ check(()=>assert.equal(snapshotVersion(snapshot),43));
+ const savedObjects = snapshotObjects(snapshot).filter(row=>['teacher-bank','payroll-payslip'].includes(row.kind));
+ check(()=>assert.equal(savedObjects.length,2));
+ for (const row of savedObjects) {
+  const query = '?' + new URLSearchParams({privatePayroll:row.object_key, etag:row.etag});
+  const unauthorized = await backupRoute.GET(exportRequest(query,false));
+  check(()=>assert.equal(unauthorized.status,404));
+  const response = await backupRoute.GET(exportRequest(query));
+  check(()=>assert.equal(response.status,200));
+  const bytes = Buffer.from(await response.arrayBuffer());
+  check(()=>assert(validObjectSignature(bytes,row.mime)));
+ }
+ const legacy = Buffer.from('%PDF-1.4\n% fictional image-only archive\n');
+ await bucket.put('private-payroll/' + gid + '/payslip/' + recreated.id, legacy);
+ const oldFile = await print(recreated.id);
+ const oldBytes = Buffer.from(await oldFile.arrayBuffer());
+ check(()=>assert.deepEqual(oldBytes, legacy, 'existing archive keeps its original bytes'));
+ if (process.env.PAYSLIP_BANK_TEST_FIXTURE) fs.writeFileSync(process.env.PAYSLIP_BANK_TEST_FIXTURE,
+  JSON.stringify({html:previewHtml,headers:Object.fromEntries(preview.headers),revision,
+   zh:{html:zhHtml,headers:Object.fromEntries(zhPreview.headers)}}));
+}
+console.log(JSON.stringify({ok:true,checks,maxBindings}));

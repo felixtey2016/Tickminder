@@ -1,4 +1,7 @@
 "use client";
+import {displayFormatter} from '@/lib/display-preferences';
+import {groupFetch} from "@/lib/group-client";
+
 
 import { useEffect, useState } from "react";
 import { getLanguage, t } from "@/lib/i18n";
@@ -8,7 +11,7 @@ export type ConflictDetail = {
   start: string; end: string; reason: "student" | "teacher" | "both";
   student?: string; teacherName?: string;
 };
-const stamp = (iso: string) => new Intl.DateTimeFormat(getLanguage() === "zh" ? "zh-CN" : "en-GB", {
+const stamp = (iso: string) => displayFormatter(getLanguage() === "zh" ? "zh-CN" : "en-GB",{
   timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "short", day: "numeric",
   hour: "2-digit", minute: "2-digit", hour12: false,
 }).format(new Date(iso));
@@ -20,7 +23,7 @@ export function conflictDescription(conflict: ConflictDetail) {
   return `${t("课程时间冲突")}：${why} · ${stamp(conflict.start)} – ${stamp(conflict.end)}${names}`;
 }
 
-export function ConflictPreview({ value, enabled }: { value: Record<string, unknown>; enabled: boolean }) {
+export function ConflictPreview({ value, enabled,endpoint="/api/conflicts" }: { value: Record<string, unknown>; enabled: boolean;endpoint?:string }) {
   const [result, setResult] = useState<{ conflict?: ConflictDetail; error?: string; available?: boolean; checking?: boolean }>({});
   const key = JSON.stringify(value);
   useEffect(() => {
@@ -29,7 +32,7 @@ export function ConflictPreview({ value, enabled }: { value: Record<string, unkn
     setResult({ checking: true });
     const timer = window.setTimeout(async () => {
       try {
-        const response = await fetch("/api/conflicts", {
+        const response = await groupFetch(endpoint, {
           method: "POST", headers: { "content-type": "application/json" }, body: key,
           signal: controller.signal, cache: "no-store",
         });
@@ -42,12 +45,14 @@ export function ConflictPreview({ value, enabled }: { value: Record<string, unkn
       }
     }, 350);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [key, enabled]);
+  }, [key, enabled,endpoint]);
   if (!enabled) return null;
-  return <p className={`conflict-preview${result.conflict ? " conflict" : ""}`} role={result.conflict ? "alert" : "status"}>
+  return <div className={`conflict-preview${result.conflict ? " conflict" : ""}`}>
+    <p className="conflict-preview-status" role={result.conflict ? "alert" : "status"}>
     {result.checking ? t("正在核对课程时间…") : result.conflict ? conflictDescription(result.conflict) :
       result.error ? `${result.error} · ${t("保存时系统会再检查")}` :
       result.available ? t("目前没有课程冲突的时段；请另外确认老师是否有空") : null}
-    <br/><small>{t("已取消课程不占时段；待确认改期仍按当前已排时间计算。")}</small>
-  </p>;
+    </p>
+    <details className="routine-help"><summary>{t("时间核对规则")}</summary><p>{t("已取消课程不占时段；待确认改期仍按当前已排时间计算。")}</p></details>
+  </div>;
 }

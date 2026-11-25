@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import {orderedSnapshotTables,historicalInsertTriggers,checkRestoredFolderStructure,snapshotVersion,expectedSnapshotTables,snapshotObjects,externalSnapshotSchema} from './backup-order.mjs';
 
 const command = process.argv[2];
 const option = process.argv[3];
@@ -47,18 +48,21 @@ function dpapi(mode, value) {
 }
 
 function validateExport(data) {
-  const expectedTables = data?.format === 'timelyo-d1-v7' ? [...baseTables,...classroomTables,'google_identities','academic_terms','notification_items','notification_deliveries','push_subscriptions','notification_runtime'] : ['timelyo-d1-v4','timelyo-d1-v5','timelyo-d1-v6','timelyo-d1-v7'].includes(data?.format) ? [...baseTables, ...classroomTables, 'google_identities', 'academic_terms'] : data?.format === 'timelyo-d1-v3' ? [...baseTables, ...classroomTables, 'google_identities'] : data?.format === 'timelyo-d1-v2' ? [...baseTables, ...classroomTables] : baseTables;
-  if (!data || !['timelyo-d1-v1', 'timelyo-d1-v2', 'timelyo-d1-v3', 'timelyo-d1-v4', 'timelyo-d1-v5','timelyo-d1-v6','timelyo-d1-v7'].includes(data.format) || !data.tables ||
+  const version=snapshotVersion(data);
+  const expectedTables=expectedSnapshotTables(version,data?.tables);
+  if (!data || !version || !data.tables ||
       Object.keys(data.tables).sort().join('|') !== expectedTables.slice().sort().join('|')) {
     throw new Error('Incomplete database export');
   }
   for (const name of expectedTables) {
     const table = data.tables[name];
-    if (!Array.isArray(table.columns) || !Array.isArray(table.rows)) throw new Error(`Invalid ${name} table`);
+    if (!Array.isArray(table.columns) || !Array.isArray(table.rows) || new Set(table.columns).size!==table.columns.length || table.columns.some(c=>typeof c!=='string'||!/^[a-z][a-z0-9_]*$/.test(c))) throw new Error(`Invalid ${name} table`);
     for (const row of table.rows) {
-      if (table.columns.some((column) => !Object.hasOwn(row, column))) throw new Error(`Incomplete ${name} row`);
+      if (!row || Object.keys(row).sort().join('|')!==table.columns.slice().sort().join('|')) throw new Error(`Incomplete ${name} row`);
     }
   }
+  snapshotObjects(data);
+  externalSnapshotSchema(data);
   return expectedTables;
 }
 
@@ -66,17 +70,28 @@ function sha256(bytes) { return createHash('sha256').update(bytes).digest('hex')
 
 function restoreInMemory(data) {
   const expectedTables = validateExport(data);
+  const version=Number(data.format.slice('timelyo-d1-v'.length));
+  const external=externalSnapshotSchema(data);
   const db = new DatabaseSync(':memory:');
   try {
-    for (const prefix of [...baseMigrations, ...(data.format !== 'timelyo-d1-v1' ? ['0010'] : []), ...(['timelyo-d1-v3','timelyo-d1-v4','timelyo-d1-v5','timelyo-d1-v6','timelyo-d1-v7'].includes(data.format) ? ['0011'] : []), ...(['timelyo-d1-v4','timelyo-d1-v5','timelyo-d1-v6','timelyo-d1-v7'].includes(data.format) ? ['0012'] : []), ...(['timelyo-d1-v5','timelyo-d1-v6','timelyo-d1-v7'].includes(data.format) ? ['0013'] : []), ...(['timelyo-d1-v6','timelyo-d1-v7'].includes(data.format) ? ['0014'] : []), ...(data.format === 'timelyo-d1-v7' ? ['0015'] : [])]) {
-      const file = readdirSync(resolve(projectRoot, 'drizzle')).find((name) => name.startsWith(prefix + '_') && name.endsWith('.sql'));
-      if (!file) throw new Error(`Missing migration ${prefix}`);
-      db.exec(readFileSync(resolve(projectRoot, 'drizzle', file), 'utf8'));
+    for (const prefix of [...baseMigrations,...Array.from({length:Math.min(8,Math.max(0,version-1))},(_,index)=>String(10+index).padStart(4,'0')),...(version>=10?['0019']:[]),...(version>=11?['0020']:[]),...(version>=12?['0021']:[]),...(version>=13?['0022']:[]),...(version>=14?['0023']:[]),...(version>=15?['0024']:[]),...(version>=16?['0025','0026']:[]),...(version>=17?['0027','0028']:[]),...(version>=18?['0029']:[]),...(version>=19?['0030']:[]),...(version>=20?['0031']:[]),...(version>=21?['0032']:[]),...(version>=22?['0033','0034','0035']:[]),...(version>=23?['0036','0037']:[]),...(version>=24?['0039','0040','0041']:[]),...(version>=25?['0042','0043']:[]),...(version>=26?['0044','0045']:[]),...(version>=27?['0046']:[]),...(version>=28?['0047']:[]),...(version>=29?['0048']:[]),...(version>=30?['0049']:[]),...(version>=31?['0050']:[]),...(version>=32?['0051','0052','0053','0054']:[]),...(version>=33?['0055','0056','0057']:[]),...(version>=34?['0058']:[]),...(version>=35?['0059']:[]),...(version>=36?['0060']:[]),...(version>=37?['0061']:[]),...(version>=38?['0062']:[]),...(version>=39?['0063','0064']:[]),...(version>=40?['0065']:[]),...(version>=41?['0066']:[]),...(version>=42?['0067']:[])]) {
+      // Independent releases can share a numeric prefix (both 0036 migrations
+      // are deployed). Replay every matching migration in filename order.
+      const files = readdirSync(resolve(projectRoot, 'drizzle')).filter((name) => name.startsWith(prefix + '_') && name.endsWith('.sql')).sort();
+      if (!files.length) throw new Error(`Missing migration ${prefix}`);
+      for(const file of files)db.exec(readFileSync(resolve(projectRoot, 'drizzle', file), 'utf8'));
     }
+    if(version>=9)db.exec('DELETE FROM tuition_groups');
+    if(version>=18)db.exec('DELETE FROM academic_catalogues');
+    for(const sql of external.tables)db.exec(sql);
+    const triggers=historicalInsertTriggers.map(name=>db.prepare("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND name=?").get(name)).filter(Boolean);
     db.exec('BEGIN');
     try {
-      for (const name of expectedTables) {
-        const { columns, rows } = data.tables[name];
+      for(const trigger of triggers)db.exec(`DROP TRIGGER "${trigger.name}"`);
+      for (const [name,table] of orderedSnapshotTables(data.tables)) {
+        const { columns, rows } = table;
+        if(name==='classroom_content_state')db.exec('DELETE FROM classroom_content_state');
+        if(name==='parent_notification_runtime')db.exec('DELETE FROM parent_notification_runtime');
         const dbColumns = db.prepare(`PRAGMA table_info("${name}")`).all().map((column) => column.name);
         if (columns.slice().sort().join('|') !== dbColumns.slice().sort().join('|')) {
           throw new Error(`Schema mismatch for ${name}`);
@@ -86,6 +101,10 @@ function restoreInMemory(data) {
         const insert = db.prepare(`INSERT INTO "${name}" (${names}) VALUES (${placeholders})`);
         for (const row of rows) insert.run(...columns.map((column) => row[column]));
       }
+      for(const trigger of triggers)db.exec(trigger.sql);
+      // Replay external history without firing registration/revocation effects.
+      for(const sql of external.triggers)db.exec(sql);
+      checkRestoredFolderStructure(db);
       db.exec('COMMIT');
     } catch (error) { db.exec('ROLLBACK'); throw error; }
     for (const name of expectedTables) {

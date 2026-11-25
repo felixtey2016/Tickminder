@@ -1,0 +1,30 @@
+/* Opt-in action areas; ordinary card actions and Quiz controls are unaffected. */
+.form-action-bar { min-width: 0; }
+.form-action-summary { margin: 0 0 8px; color: #675d75; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.form-action-buttons { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+.form-action-buttons > button { min-height: 44px; white-space: normal; }
+.schedule-extra-options,.schedule-roster-preview { min-width: 0; border: 1px solid #e1dbea; border-radius: 8px; padding: 0 12px; }
+.schedule-extra-options > summary,.schedule-roster-preview > summary { min-height: 44px; padding-block: 10px; cursor: pointer; color: #51416c; font-weight: 600; line-height: 1.5; }
+.schedule-extra-options > summary > span { margin-left: 8px; font-size: 12px; font-weight: 400; }
+.schedule-extra-options > div { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(220px,100%),1fr)); gap: 16px; padding-bottom: 14px; }
+.schedule-roster-preview > :not(summary) { margin-block: 0 12px; overflow-wrap: anywhere; }
+.schedule-extra-options > summary:focus-visible,.schedule-roster-preview > summary:focus-visible { outline: 3px solid #cdbbef; outline-offset: 2px; }
+@media (max-width: 760px) {
+ .form-action-bar { position: sticky; bottom: var(--form-keyboard-inset,0px); z-index: 8; margin-top: 4px; padding: 12px 0 max(12px,env(safe-area-inset-bottom)); border-top: 1px solid #e1dbea; background: #fff; box-shadow: 0 -6px 14px #30234408; }
+ .form-action-summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+ [data-form-keyboard-open="true"] > .form-action-bar .form-action-summary { display: none; }
+ .form-action-bar .form-action-buttons > button { flex: 1 1 120px; min-height: 44px; }
+ .form-action-surface :is(input,select,textarea),.invoice-draft-form :is(input,select,textarea) { scroll-margin-top: 148px; scroll-margin-bottom: var(--form-action-reserve,112px); }
+ :is(form,fieldset)[data-form-keyboard-open="true"]::after { content: ""; display: block; grid-column: 1 / -1; height: var(--form-keyboard-inset,0px); }
+ .invoice-draft-form { scroll-padding-bottom: var(--form-action-reserve,112px); }
+ .finance2-dialog.form-action-dialog { top: calc(var(--form-visual-top,0px) + 12px); right: 0; bottom: auto; left: 0; margin: 0 auto; max-height: calc(var(--form-visual-height,100dvh) - 24px); scroll-padding-bottom: var(--form-action-reserve,112px); }
+ .finance2-dialog.form-action-dialog .finance2-dialog-body { padding-bottom: 0; }
+ .finance2-dialog.form-action-dialog .finance2-dialog-body > form { padding-bottom: 0; }
+ .finance2-dialog.form-action-dialog .finance2-dialog-body > form > .finance2-actions:last-child,
+ .finance2-dialog.form-action-dialog .finance2-dialog-body > .finance2-actions:last-child { position: sticky; bottom: 0; z-index: 8; margin: 0 -20px; padding: 12px 20px max(14px,env(safe-area-inset-bottom)); background: #fff; border-top: 1px solid #e1dbea; box-shadow: 0 -6px 14px #30234408; }
+ .finance2-dialog.form-action-dialog :is(input,select,textarea) { scroll-margin-block: 16px var(--form-action-reserve,112px); }
+}
+@media (max-width: 350px) {
+ .finance2-dialog.form-action-dialog .finance2-dialog-body > form > .finance2-actions:last-child,
+ .finance2-dialog.form-action-dialog .finance2-dialog-body > .finance2-actions:last-child { margin-inline: -18px; padding-inline: 18px; }
+}

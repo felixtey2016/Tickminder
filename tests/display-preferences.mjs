@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+const source=fs.readFileSync(new URL('../lib/display-preferences.ts',import.meta.url),'utf8');
+const module=await import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64'));
+const {getDisplayPreferences,saveDisplayPreferences,subscribeDisplayPreferences,displayFormatter,orderedWeekdays,startOfDisplayWeek,DISPLAY_KEY}=module;
+assert.deepEqual(getDisplayPreferences(),{hourCycle:'h23',weekStart:1});
+const window=new EventTarget(),storage=new Map();window.localStorage={getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)};globalThis.window=window;
+let events=0;const unsubscribe=subscribeDisplayPreferences(()=>events++);
+const formatter=displayFormatter('en-GB',{timeZone:'Asia/Kuala_Lumpur',hour:'2-digit',minute:'2-digit',hour12:false}),date=new Date('2026-11-01T06:30:00Z');
+assert.equal(formatter.format(date),'14:30');saveDisplayPreferences({hourCycle:'h12',weekStart:0});assert.match(formatter.format(date),/02:30\s?pm/i);assert(formatter.formatToParts(date).some(p=>p.type==='dayPeriod'));assert.equal(events,1);
+assert.deepEqual(getDisplayPreferences(),{hourCycle:'h12',weekStart:0});assert.deepEqual(orderedWeekdays(['M','T','W','Th','F','S','Su'],0),['Su','M','T','W','Th','F','S']);
+assert.equal(startOfDisplayWeek('2026-11-01',0),'2026-11-01');assert.equal(startOfDisplayWeek('2026-11-01',1),'2026-10-26');assert.equal(startOfDisplayWeek('2027-01-01',0),'2026-12-27');
+saveDisplayPreferences({hourCycle:'h23',weekStart:1});assert.equal(formatter.format(date),'14:30');assert.equal(formatter.format(new Date('2026-11-01T16:00:00Z')),'00:00');
+storage.set(DISPLAY_KEY,'{broken');assert.deepEqual(getDisplayPreferences(),{hourCycle:'h23',weekStart:1});assert.strictEqual(getDisplayPreferences(),getDisplayPreferences());
+unsubscribe();delete globalThis.window;console.log('PASS display preferences: time formats, persistence, safe defaults, week/year boundaries');

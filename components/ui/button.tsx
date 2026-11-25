@@ -1,4 +1,7 @@
+"use client"
 import * as React from "react"
+import { useAdminAction } from "@/app/admin-permission-context"
+import type { AdminGrantKey } from "@/lib/admin-permissions"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"
 
@@ -43,11 +46,15 @@ function Button({
   variant = "default",
   size = "default",
   asChild = false,
+  adminGrant,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
+    adminGrant?: AdminGrantKey
   }) {
+  const can = useAdminAction()
+  if (adminGrant && !can(adminGrant)) return null
   const Comp = asChild ? Slot.Root : "button"
 
   return (

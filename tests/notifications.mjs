@@ -2,18 +2,35 @@ import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import ts from 'typescript';
+import {registerHooks} from 'node:module';
 const sqlite=new DatabaseSync(':memory:');
 for(const f of readdirSync(new URL('../drizzle/',import.meta.url)).filter(n=>n.endsWith('.sql')).sort())sqlite.exec(readFileSync(new URL('../drizzle/'+f,import.meta.url),'utf8'));
 function statement(sql,values=[]){return{bind(...v){return statement(sql,v);},async first(){return sqlite.prepare(sql).get(...values)||null;},async all(){return{results:sqlite.prepare(sql).all(...values)};},async run(){return{meta:sqlite.prepare(sql).run(...values)};},execute(){const s=sqlite.prepare(sql);return /^\s*(SELECT|PRAGMA)/i.test(sql)?{results:s.all(...values)}:{meta:s.run(...values)};}};}
 const d1={prepare:statement,async batch(stmts){sqlite.exec('BEGIN');try{const r=stmts.map(s=>s.execute());sqlite.exec('COMMIT');return r;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
-let account={id:'student-a',role:'student',studentName:'Student A'};
+let account={groupId:'next-genn-edu',id:'student-a',role:'student',studentName:'Student A'};
 const pair=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']),jwk=await crypto.subtle.exportKey('jwk',pair.privateKey);
 const encode=b=>Buffer.from(b).toString('base64url');
 const vapidPublic=encode(await crypto.subtle.exportKey('raw',pair.publicKey));
 const env={DB:d1,VAPID_PUBLIC_KEY:vapidPublic,VAPID_PRIVATE_KEY:jwk.d,VAPID_SUBJECT:'mailto:contact@example.test',NOTIFICATIONS_CRON_TOKEN:'test-clock-secret-'.repeat(3)};
 globalThis.__pushTest={env,learningDb:()=>d1,rows:async(sql,...v)=>(await statement(sql,v).all()).results,first:async(sql,...v)=>statement(sql,v).first(),currentBusinessAccount:async()=>account};
-const stub='data:text/javascript;base64,'+Buffer.from('export const {env,learningDb,rows,first,currentBusinessAccount}=globalThis.__pushTest;').toString('base64');const cache=new Map();
-async function load(file){if(cache.has(file))return cache.get(file);let s=readFileSync(new URL('../'+file,import.meta.url),'utf8');for(const [,spec] of [...s.matchAll(/from ["']([^"']+)["']/g)]){const url=['cloudflare:workers','@/lib/learning-server','@/lib/auth'].includes(spec)?stub:spec.startsWith('@/')?(await load(spec.slice(2)+'.ts')).url:import.meta.resolve(spec);s=s.replaceAll('"'+spec+'"','"'+url+'"');}const url='data:text/javascript;base64,'+Buffer.from(ts.transpileModule(s,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64'),r={url,module:await import(url)};cache.set(file,r);return r;}
+const stub='data:text/javascript;base64,'+Buffer.from('export const {env,learningDb,rows,first,currentBusinessAccount}=globalThis.__pushTest;').toString('base64');
+const applicationRoot=new URL('../',import.meta.url).href;
+// Native ESM resolves current relative/alias imports, including shared cycles.
+// Only the original runtime boundaries above are substituted.
+const hooks=registerHooks({
+ resolve(specifier,context,nextResolve){
+  if(specifier.startsWith('.')&&context.parentURL?.startsWith(applicationRoot)&&new URL(specifier+'.ts',context.parentURL).href===new URL('lib/learning-server.ts',applicationRoot).href)return {url:stub,shortCircuit:true};
+  if(['cloudflare:workers','@/lib/learning-server','@/lib/auth'].includes(specifier))return {url:stub,shortCircuit:true};
+  if(specifier.startsWith('@/'))return {url:new URL(specifier.slice(2)+'.ts',applicationRoot).href,shortCircuit:true};
+  if(specifier.startsWith('.')&&context.parentURL?.startsWith(applicationRoot)&&context.parentURL.endsWith('.ts'))return {url:new URL(/\.[cm]?[jt]sx?$/.test(specifier)?specifier:specifier+'.ts',context.parentURL).href,shortCircuit:true};
+  return nextResolve(specifier,context);
+ },
+ load(url,context,nextLoad){
+  if(url.startsWith(applicationRoot)&&url.endsWith('.ts'))return {format:'module',source:ts.transpileModule(readFileSync(new URL(url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText,shortCircuit:true};
+  return nextLoad(url,context);
+ },
+});
+async function load(file){const url=new URL('../'+file,import.meta.url).href;return {url,module:await import(url)};}
 const engine=(await load('lib/notifications-server.ts')).module,route=(await load('app/api/notifications/route.ts')).module,dispatch=(await load('app/api/notifications/dispatch/route.ts')).module;
 function req(body,origin='https://test.invalid'){return new Request('https://test.invalid/api/notifications',{method:'POST',headers:{origin,'Content-Type':'application/json'},body:JSON.stringify(body)});}
 async function call(body){const r=await route.POST(req(body));return{status:r.status,data:await r.json()};}
@@ -22,7 +39,9 @@ for(const [id,role,teacher,student] of [['student-a','student',null,'Student A']
 sqlite.prepare('INSERT INTO teachers (name,active,created_at) VALUES (?,1,?)').run('Teacher A',at);sqlite.prepare('INSERT INTO teachers (name,active,created_at) VALUES (?,1,?)').run('Teacher B',at);
 for(const name of ['Student A','Student B'])sqlite.prepare('INSERT INTO students (name,name_key,active,created_at) VALUES (?,?,1,?)').run(name,name.toLowerCase(),at);
 for(const [student,teacher] of [['Student A','Teacher A'],['Student B','Teacher B']])sqlite.prepare('INSERT INTO plans (key,student,subject,teacher_name,duration,active,created_at) VALUES (?,?,?,?,1,1,?)').run(student,student,'Science',teacher,at);
-function lesson(id,start,status='scheduled',student='Student A',teacher='Teacher A'){sqlite.prepare('INSERT INTO lessons (id,student,subject,teacher_name,planned_start,planned_end,status,created_by,updated_at) VALUES (?,?,?,?,?,?,?,?,?)').run(id,student,'Science',teacher,new Date(start).toISOString(),new Date(start+3600000).toISOString(),status,'teacher-a',at);}
+// Reminder offsets use separate short lessons so current overlap guards remain
+// active; this fixture does not need one-hour teaching durations.
+function lesson(id,start,status='scheduled',student='Student A',teacher='Teacher A'){sqlite.prepare('INSERT INTO lessons (id,student,subject,teacher_name,planned_start,planned_end,status,created_by,updated_at) VALUES (?,?,?,?,?,?,?,?,?)').run(id,student,'Science',teacher,new Date(start).toISOString(),new Date(start+60000).toISOString(),status,'teacher-a',at);}
 lesson('thirty',now+30*60000);lesson('five',now+5*60000);lesson('start',now);lesson('past',now-5*60000);lesson('cancel',now+30*60000,'cancelled');lesson('foreign',now+30*60000,'scheduled','Student B','Teacher B');
 for(const url of ['http://fcm.googleapis.com/push','https://localhost/push','https://fcm.googleapis.com.attacker.test/push','https://attacker.test/push','https://fcm.googleapis.com:444/push','https://user@fcm.googleapis.com/push'])assert.equal(engine.allowedPushEndpoint(url),false,url);
 for(const url of ['https://fcm.googleapis.com/push','https://updates.push.services.mozilla.com/push','https://web.push.apple.com/push','https://wns2-bl2p.notify.windows.com/push'])assert.equal(engine.allowedPushEndpoint(url),true);
@@ -33,7 +52,7 @@ assert.equal((await call({action:'subscribe',subscription:{...subscription,keys:
 assert.equal((await route.POST(req({action:'subscribe',subscription},'https://attacker.test'))).status,403);
 let response=await call({action:'subscribe',subscription,language:'en'});assert.equal(response.status,200);const subId=response.data.id;
 sqlite.prepare('UPDATE push_subscriptions SET created_at=? WHERE id=?').run(new Date(now-3600000).toISOString(),subId);
-account={id:'student-b',role:'student',studentName:'Student B'};assert.equal((await call({action:'subscribe',subscription})).status,409);
+account={groupId:'next-genn-edu',id:'student-b',role:'student',studentName:'Student B'};assert.equal((await call({action:'subscribe',subscription})).status,409);
 await engine.generateReminders(now);await engine.generateReminders(now);
 assert.equal(sqlite.prepare('SELECT count(*) n FROM notification_items WHERE account_id=?').get('student-a').n,3);
 assert.deepEqual(sqlite.prepare('SELECT offset_minutes m FROM notification_items WHERE account_id=? ORDER BY m').all('student-a').map(x=>x.m),[0,5,30]);
@@ -42,11 +61,26 @@ assert.equal(sqlite.prepare('SELECT count(*) n FROM notification_items WHERE les
 const foreign=(await route.GET());assert.equal((await foreign.json()).items.length,1);const aItem=sqlite.prepare('SELECT id FROM notification_items WHERE account_id=? LIMIT 1').get('student-a').id;
 await call({action:'read',id:aItem});assert.equal(sqlite.prepare('SELECT read_at FROM notification_items WHERE id=?').get(aItem).read_at,null);
 await call({action:'unsubscribe',id:subId});assert.ok(sqlite.prepare('SELECT id FROM push_subscriptions WHERE id=?').get(subId));
-account={id:'teacher-b',role:'teacher',teacherName:'Teacher B'};assert.equal((await (await route.GET()).json()).items.length,1);
-account={id:'student-a',role:'student',studentName:'Student A'};assert.equal((await (await route.GET()).json()).items.length,3);
+account={groupId:'next-genn-edu',id:'teacher-b',role:'teacher',teacherName:'Teacher B'};assert.equal((await (await route.GET()).json()).items.length,1);
+account={groupId:'next-genn-edu',id:'student-a',role:'student',studentName:'Student A'};assert.equal((await (await route.GET()).json()).items.length,3);
 assert.equal((await dispatch.POST(new Request('https://test.invalid/api/notifications/dispatch',{method:'POST',headers:{Authorization:'Bearer wrong'}}))).status,404);
 const originalFetch=globalThis.fetch;let sent=[];
 globalThis.fetch=async(endpoint,payload)=>{assert.ok(engine.allowedPushEndpoint(String(endpoint)));assert.equal(payload.redirect,'manual');assert.ok(payload.signal);assert.equal(payload.headers['Content-Encoding']||payload.headers['content-encoding'],'aes128gcm');assert.ok(payload.body);sent.push({endpoint,payload});return new Response(null,{status:201});};
+// Push preference affects delivery only, including re-enable without replay.
+sqlite.prepare('INSERT INTO notification_preferences(account_id,courses_enabled,updated_at) VALUES(?,0,?)').run('student-a',new Date(now).toISOString());
+await engine.dispatchReminders(now);assert.equal(sent.length,0);assert.equal(sqlite.prepare('SELECT count(*) n FROM notification_items WHERE account_id=?').get('student-a').n,3);
+sqlite.prepare('UPDATE notification_preferences SET courses_enabled=1,courses_since=?').run(new Date(now+1).toISOString());await engine.dispatchReminders(now);assert.equal(sent.length,0);
+sqlite.prepare('DELETE FROM notification_preferences WHERE account_id=?').run('student-a');
+// The learning delivery pipeline must obey its independent category and preserve the inbox.
+const learning=(await load('lib/learning-delivery.ts')).module;
+sqlite.prepare('INSERT INTO homework(id,group_id,owner_id,title,subject,description,starts_at,due_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)').run('preference-fixture','next-genn-edu','teacher-a','Fictional homework','Science','',at,new Date(now+86400000).toISOString(),at);
+sqlite.prepare('INSERT INTO homework_recipients(id,group_id,homework_id,student_name) VALUES(?,?,?,?)').run('preference-recipient','next-genn-edu','preference-fixture','Student A');
+sqlite.prepare('INSERT INTO learning_notifications(id,group_id,account_id,event_id,content_kind,record_id,content_revision,kind,title,subject,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run('preference-notice','next-genn-edu','student-a','preference-event','homework','preference-fixture',1,'homework_updated','Fictional homework','Science',at);
+sqlite.prepare('INSERT INTO notification_preferences(account_id,homework_enabled,updated_at) VALUES(?,0,?)').run('student-a',at);
+await learning.dispatchLearningNotifications(now);assert.equal(sent.length,0);assert.equal(sqlite.prepare('SELECT count(*) n FROM learning_notifications').get().n,1);
+sqlite.prepare('UPDATE notification_preferences SET homework_enabled=1,homework_since=?').run(new Date(now+1).toISOString());await learning.dispatchLearningNotifications(now);assert.equal(sent.length,0);
+sqlite.prepare('DELETE FROM notification_preferences WHERE account_id=?').run('student-a');await learning.dispatchLearningNotifications(now);assert.equal(sent.length,1);assert.equal(sqlite.prepare('SELECT status FROM learning_notification_deliveries').get().status,'sent');
+sqlite.exec("DELETE FROM learning_notification_deliveries;DELETE FROM learning_notifications;DELETE FROM homework_recipients WHERE homework_id='preference-fixture';DELETE FROM homework WHERE id='preference-fixture';");sent=[];
 await Promise.all([engine.dispatchReminders(now),engine.dispatchReminders(now)]);assert.equal(sent.length,3);assert.deepEqual(sent.map(s=>Number(s.payload.headers.TTL || s.payload.headers.ttl)).sort((a,b)=>a-b),[300,600,1500]);assert.ok(sent.every(s=>(s.payload.headers.Urgency || s.payload.headers.urgency)==='high'));assert.equal(sqlite.prepare("SELECT count(*) n FROM notification_deliveries WHERE status='sent'").get().n,3);
 // Decrypt an actual Web Push envelope using the device private key (RFC 8291).
 const bytes=new Uint8Array(sent[0].payload.body),salt=bytes.slice(0,16),sender=bytes.slice(21,21+bytes[20]);
@@ -69,4 +103,29 @@ lesson('retry',now+30*60000);let attempts=0;globalThis.fetch=async()=>{attempts+
 await engine.dispatchReminders(now);assert.equal(attempts,1);await engine.dispatchReminders(now+60000);assert.equal(attempts,2);assert.equal(sqlite.prepare('SELECT count(*) n FROM push_subscriptions').get().n,0);
 const data=(await (await route.GET()).json());assert.equal(data.schedulerReady,true);assert.equal(data.publicKey,vapidPublic);assert.ok(!JSON.stringify(data).includes(jwk.d));
 account=null;assert.equal((await route.GET()).status,401);
-globalThis.fetch=originalFetch;sqlite.close();console.log('PASS notifications: real routes/SQL; course ownership; endpoint SSRF; crypto/key validation; CSRF; foreign IDs; 30/5/start bounds; cancellation/reschedule; atomic concurrent claims; AES128GCM decryption; retry/410; test rate limit; expiry; no personal data in pushes; authenticated centre.');
+globalThis.fetch=originalFetch;
+const inbox=(await load('lib/inbox-server.ts')).module;
+for(const id of ['owner-admin','other-admin'])sqlite.prepare("INSERT INTO accounts (id,email,name,role,created_at) VALUES (?,?,?,'admin',?)").run(id,id+'@example.test',id,at);
+const oldStart=new Date(now+8*86400000).toISOString(),newStart=new Date(now+9*86400000).toISOString();
+lesson('changed',Date.parse(newStart));
+await inbox.recordLessonChange({groupId:'next-genn-edu',lessonId:'changed',actorId:'owner-admin',action:'reschedule',before:{plannedStart:oldStart,note:'Internal note must not be sent'},after:{plannedStart:newStart},at});
+assert.deepEqual(sqlite.prepare('SELECT account_id id FROM site_notifications ORDER BY account_id').all().map(row=>row.id),['other-admin','student-a','teacher-a']);
+account={groupId:'next-genn-edu',id:'student-a',role:'student',studentName:'Student A'};
+let centre=await (await route.GET()).json(),changeItem=centre.items.find(item=>item.kind==='reschedule');
+assert.ok(changeItem);assert.equal(changeItem.previousStart,oldStart);assert.equal(changeItem.plannedStart,newStart);assert.equal(centre.accountId,account.id);assert.equal(centre.unreadCount,centre.items.filter(item=>!item.readAt).length);assert.ok(!JSON.stringify(centre).includes('Internal note'));
+const beforeRead=centre.unreadCount;
+account={groupId:'next-genn-edu',id:'student-b',role:'student',studentName:'Student B'};await call({action:'read',id:changeItem.id});
+assert.equal(sqlite.prepare('SELECT read_at FROM site_notifications WHERE id=?').get(changeItem.id.slice(7)).read_at,null);
+account={groupId:'next-genn-edu',id:'student-a',role:'student',studentName:'Student A'};await call({action:'read',id:changeItem.id});assert.equal((await (await route.GET()).json()).unreadCount,beforeRead-1);
+account={groupId:'next-genn-edu',id:'other-admin',role:'admin'};assert.equal((await (await route.GET()).json()).unreadCount,1);await call({action:'readAll'});assert.equal((await (await route.GET()).json()).unreadCount,0);
+for(let i=0;i<105;i++)await inbox.recordLessonChange({groupId:'next-genn-edu',lessonId:'changed',actorId:'owner-admin',action:'acceptReschedule',before:{originalStart:oldStart,proposedStart:newStart,proposedEnd:new Date(Date.parse(newStart)+3600000).toISOString()},after:{status:'accepted'},at});
+account={groupId:'next-genn-edu',id:'student-a',role:'student',studentName:'Student A'};centre=await (await route.GET()).json();assert.ok(centre.unreadCount>100);assert.equal(centre.items.filter(item=>item.kind==='acceptReschedule').length,100);await call({action:'readAll'});assert.equal((await (await route.GET()).json()).unreadCount,0);
+account={groupId:'next-genn-edu',id:'other-admin',role:'admin'};assert.equal((await (await route.GET()).json()).unreadCount,105,'Read-all is confined to the signed-in account');
+sqlite.prepare("UPDATE plans SET active=0 WHERE student='Student A'").run();account={groupId:'next-genn-edu',id:'student-a',role:'student',studentName:'Student A'};assert.equal((await (await route.GET()).json()).unreadCount,0);assert.equal((await (await route.GET()).json()).items.length,0);
+sqlite.prepare("UPDATE plans SET active=1 WHERE student='Student A'").run();account={groupId:'next-genn-edu',id:'pending',role:'pending'};const deniedPending=await route.GET();assert.equal(deniedPending.status,403);assert.equal((await deniedPending.json()).items,undefined);
+const {navigationBadges}=(await load('lib/navigation-badges.ts')).module;
+const lessonRows=[{id:'missed',status:'scheduled',plannedEnd:new Date(now-60000).toISOString()},{id:'ongoing',status:'scheduled',plannedEnd:new Date(now+60000).toISOString()},{id:'cancelled',status:'cancelled',plannedEnd:oldStart},{id:'absent',status:'student_absent',plannedEnd:oldStart,chargeable:false},{id:'makeup',status:'scheduled',plannedEnd:oldStart,replacementFor:'absent'}];
+const requests=[{lessonId:'ongoing',status:'pending',requestedRole:'student',requestedBy:'student-a'},{lessonId:'ongoing',status:'pending',requestedRole:'teacher',requestedBy:'teacher-a'},{lessonId:'cancelled',status:'pending',requestedRole:'student'},{lessonId:'ongoing',status:'accepted',requestedRole:'student'}];
+assert.deepEqual(navigationBadges('teacher','teacher-a',lessonRows,requests,now),{lessons:1,reschedule:1,overview:0,attention:0});assert.equal(navigationBadges('student','student-a',lessonRows,requests,now).reschedule,1);assert.equal(navigationBadges('admin','owner-admin',lessonRows,requests,now).attention,2);
+lessonRows[0].status='completed';requests[0].status='rejected';assert.equal(navigationBadges('teacher','teacher-a',lessonRows,requests,now).lessons,0);assert.equal(navigationBadges('teacher','teacher-a',lessonRows,requests,now).reschedule,0);
+hooks.deregister();sqlite.close();console.log('PASS notifications: existing push/security checks; durable schedule messages; role/assignment/actor isolation; single/all-read persistence; exact unread counts over 100; no internal audit payload; outstanding-course and incoming-request badge lifecycle.');

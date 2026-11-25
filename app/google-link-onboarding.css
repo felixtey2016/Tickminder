@@ -1,0 +1,10 @@
+.google-link-onboarding .eyebrow{margin:20px 0 8px}
+.google-link-onboarding .account-connect{max-width:100%;min-width:0;display:grid;gap:14px;margin-top:24px}
+.google-link-onboarding .account-connect label{display:grid;gap:8px}
+.google-link-onboarding .account-connect input{width:100%;max-width:100%;min-width:0;min-height:48px;border:1px solid #d9d6ea;border-radius:10px;padding:10px 12px;background:#fff;color:var(--foreground);font:inherit;font-size:16px;line-height:1.5}
+.google-link-onboarding .account-connect input:focus-visible{outline:2px solid #795bc5;outline-offset:2px}
+.google-link-onboarding .account-connect .settings-actions{min-width:0;width:100%}
+.google-link-onboarding .account-connect p{margin:0;font-size:13px}
+.google-link-onboarding-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px}
+.google-link-onboarding-actions>button:first-child{flex:1 1 170px}
+.google-link-onboarding .google-link-onboarding-foot{font-size:12px;margin:16px 0 0}

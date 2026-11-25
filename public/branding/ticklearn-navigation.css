@@ -1,0 +1,177 @@
+html[data-ticklearn-private-hidden] body {visibility:hidden!important}
+
+.ticklearn-app-view {
+  --ticklearn-nav-bg:var(--ui-surface,#fff);
+  --ticklearn-nav-surface:var(--ui-nav-surface,#f1eef7);
+  --ticklearn-nav-ink:var(--ui-text,#322849);
+  --ticklearn-nav-muted:var(--ui-muted,#626575);
+  --ticklearn-nav-active:var(--ui-accent,#512bb2);
+  --ticklearn-nav-selected:var(--ui-nav-active,#e5ddf7);
+  --ticklearn-nav-border:var(--ui-border,#e3dced);
+}
+[data-theme="dark"] .ticklearn-app-view {
+  --ticklearn-nav-bg:#1e192b;
+  --ticklearn-nav-surface:#252034;
+  --ticklearn-nav-ink:#eee7ff;
+  --ticklearn-nav-muted:#c0b5d3;
+  --ticklearn-nav-active:#ddd1ff;
+  --ticklearn-nav-selected:#3c2c59;
+  --ticklearn-nav-border:#443750;
+}
+.ticklearn-product-nav {
+  box-sizing:border-box;
+  position:fixed;
+  z-index:35;
+  display:grid;
+  gap:6px;
+  padding:10px;
+  background:var(--ticklearn-nav-bg);
+}
+.ticklearn-product-nav a {
+  box-sizing:border-box;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  min-width:0;
+  min-height:44px;
+  padding:8px 10px;
+  color:var(--ticklearn-nav-ink);
+  font:600 14px/1.2 var(--ticklearn-font,system-ui),sans-serif;
+  text-decoration:none;
+  border:1px solid var(--ticklearn-nav-border);
+  border-radius:12px;
+  overflow-wrap:anywhere;
+}
+.ticklearn-product-nav a:hover,.ticklearn-product-nav [aria-current="page"] {
+  color:var(--ticklearn-nav-active);
+  background:var(--ticklearn-nav-selected);
+}
+.ticklearn-product-nav a:focus-visible {outline:2px solid var(--ticklearn-nav-active);outline-offset:-2px}
+.ticklearn-product-nav img {display:block;width:min(100%,100px);height:38px;object-fit:contain;flex:none}
+.ticklearn-product-nav .ticklearn-nav-home {width:36px;object-fit:contain}
+.ticklearn-product-nav .ticklearn-nav-settings {display:grid;place-items:center;width:26px;height:38px}
+.ticklearn-product-nav .ticklearn-nav-settings svg {width:24px;height:24px}
+.ticklearn-free-note {font-size:.875rem;margin:10px 0;color:inherit}
+
+.ticklearn-back-slot {display:inline-flex;flex:none}
+.ticklearn-app-view .ticklearn-back-button,.ticklearn-app-view .ticklearn-appearance,
+.ticklearn-portal .ticklearn-appearance {
+  box-sizing:border-box;
+  display:grid;
+  place-items:center;
+  width:44px;
+  height:44px;
+  min-width:44px;
+  min-height:44px;
+  padding:0;
+  border:1px solid var(--ticklearn-nav-border,var(--ui-border));
+  border-radius:12px;
+  background:var(--ticklearn-nav-bg,var(--ui-surface));
+  color:var(--ticklearn-nav-ink,var(--ui-text));
+  text-decoration:none;
+}
+.ticklearn-app-view .ticklearn-back-button--minder {display:flex;width:auto;gap:5px;padding-inline:8px;font-size:clamp(.72rem,3vw,.85rem);font-weight:650;line-height:1.15;text-align:center}
+.ticklearn-back-button--minder span {max-width:7em}
+.ticklearn-back-button svg,.ticklearn-appearance svg {width:19px;height:19px;flex:none}
+.ticklearn-app-view :is(.ticklearn-back-button,.ticklearn-appearance):hover,.ticklearn-portal .ticklearn-appearance:hover {
+  background:var(--ticklearn-nav-selected,var(--ui-accent-soft));
+  color:var(--ticklearn-nav-active,var(--ui-accent));
+}
+.ticklearn-back-button:focus-visible {outline:2px solid var(--ticklearn-nav-active);outline-offset:2px}
+
+@media(min-width:860px){
+  .ticklearn-app-view {margin-inline-start:148px}
+  .ticklearn-product-nav {inset:0 auto 0 0;width:148px;align-content:start;padding-top:24px;border-inline-end:1px solid var(--ticklearn-nav-border);overflow-y:auto}
+}
+@media(max-width:859px){
+  .ticklearn-app-view {--ticklearn-bottom-height:calc(67px + env(safe-area-inset-bottom,0px))}
+  .ticklearn-app-view,.ticklearn-portal.ticklearn-app-view,.tickgame-shell.legal-reader.ticklearn-app-view {padding-bottom:var(--ticklearn-bottom-height)}
+  .ticklearn-product-nav {inset:auto 0 0;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;padding:6px max(6px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-left));border-top:1px solid var(--ticklearn-nav-border);background:var(--ticklearn-nav-surface)}
+  .ticklearn-product-nav a {min-height:54px;gap:3px;padding:5px 1px;border:0;border-radius:8px;font-size:clamp(.66rem,3vw,.75rem);text-align:center;color:var(--ticklearn-nav-muted)}
+  .ticklearn-product-nav img {width:min(100%,66px);height:24px}
+  .ticklearn-product-nav .ticklearn-nav-home,.ticklearn-product-nav .ticklearn-nav-settings {width:26px;height:24px}
+  .tikquiz-shell.ticklearn-app-view .tikquiz-practice-page .quiz-player-nav {bottom:var(--ticklearn-bottom-height)}
+}
+
+.ticklearn-preferences-trigger,.ticklearn-preferences-dialog {
+  --preferences-bg:var(--ticklearn-nav-bg,var(--ui-surface,#fff));
+  --preferences-ink:var(--ticklearn-nav-ink,var(--ui-text,#251740));
+  --preferences-border:var(--ticklearn-nav-border,var(--ui-border,#ded7e8));
+  --preferences-selected:var(--ticklearn-nav-selected,var(--ui-accent-soft,#eee8fc));
+  --preferences-accent:var(--ticklearn-nav-active,var(--ui-accent,#512bb2));
+  color:var(--preferences-ink);
+  font-family:var(--ticklearn-font,system-ui),sans-serif;
+}
+:root[data-theme="dark"] :is(.ticklearn-preferences-trigger,.ticklearn-preferences-dialog) {
+  --preferences-bg:#1e192b;
+  --preferences-ink:#eee7ff;
+  --preferences-border:#443750;
+  --preferences-selected:#3c2c59;
+  --preferences-accent:#ddd1ff;
+}
+.ticklearn-preferences-trigger {
+  box-sizing:border-box;
+  display:grid;
+  place-items:center;
+  flex:0 0 44px;
+  width:44px;
+  height:44px;
+  padding:0;
+  border:1px solid var(--preferences-border);
+  border-radius:12px;
+  background:var(--preferences-bg);
+  cursor:pointer;
+}
+.ticklearn-preferences-trigger svg,.ticklearn-preferences-close svg {width:19px;height:19px}
+.ticklearn-preferences-trigger:hover,.ticklearn-preferences-close:hover {background:var(--preferences-selected);color:var(--preferences-accent)}
+.ticklearn-preferences-trigger:focus-visible,.ticklearn-preferences-dialog button:focus-visible {
+  outline:2px solid var(--preferences-accent);
+  outline-offset:2px;
+}
+.ticklearn-preferences-dialog {
+  position:fixed;
+  inset:0;
+  box-sizing:border-box;
+  width:min(420px,calc(100% - 32px));
+  max-height:calc(100dvh - 32px);
+  margin:auto;
+  padding:0;
+  overflow:auto;
+  background:var(--preferences-bg);
+  border:1px solid var(--preferences-border);
+  border-radius:20px;
+  box-shadow:0 12px 36px #1d134133;
+}
+.ticklearn-preferences-dialog:not([open]) {display:none}
+.ticklearn-preferences-dialog::backdrop {background:#1e193365}
+.ticklearn-preferences-panel {display:grid;gap:16px;padding:18px}
+.ticklearn-preferences-heading {display:flex;align-items:center;justify-content:space-between;gap:12px}
+.ticklearn-preferences-heading h2 {margin:0;font-size:1.15rem;font-weight:700}
+.ticklearn-preferences-close {display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;background:transparent;color:inherit;border:0;border-radius:10px;cursor:pointer}
+.ticklearn-preferences-options {display:flex;flex-wrap:wrap;gap:8px;min-width:0;margin:0;padding:0;border:0}
+.ticklearn-preferences-options legend {margin-bottom:6px;padding:0;font-size:.875rem;font-weight:650}
+.ticklearn-preferences-options button {
+  box-sizing:border-box;
+  flex:1 1 auto;
+  min-height:44px;
+  padding:7px 10px;
+  border:1px solid var(--preferences-border);
+  border-radius:10px;
+  background:var(--preferences-bg);
+  color:inherit;
+  font:inherit;
+  cursor:pointer;
+}
+.ticklearn-preferences-options button[aria-pressed="true"] {
+  border-color:var(--preferences-accent);
+  background:var(--preferences-selected);
+  color:var(--preferences-accent);
+  font-weight:650;
+}
+@media(max-width:600px) {
+  .ticklearn-back-button--minder span {max-width:6em}
+  .ticklearn-preferences-dialog {inset:auto 0 0;width:100%;max-width:none;margin:0;border-radius:22px 22px 0 0}
+  .ticklearn-preferences-panel {padding-bottom:calc(18px + env(safe-area-inset-bottom,0px))}
+}
