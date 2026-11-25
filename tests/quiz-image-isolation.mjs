@@ -59,6 +59,24 @@ try {
  assert.strictEqual(api.getPrivateReadSnapshot(),before,'Domain broadcast must not dispatch legacy global data-changed');
  Channel.current.dispatchEvent(new MessageEvent('message',{data:{...event,id:crypto.randomUUID(),groupId:'other-fictional-group'}}));
  assert.strictEqual(api.getPrivateReadSnapshot('quiz-images'),imageAfter,'Other group image message must be ignored');
+ const oldImage=observed(api.groupFetch('/api/quiz-images?id=fictional-old'));
+ const oldCall=calls.at(-1);
+ const imageWrite=api.groupFetch('/api/quiz-images',{method:'POST'});
+ const blockedCount=calls.length;
+ const during=await Promise.race([observed(api.groupFetch('/api/quiz-images?id=fictional-during')),new Promise(resolve=>setTimeout(()=>resolve({error:new Error('No read barrier')}),30))]);
+ assert.equal(during.error?.name,'PrivateReadInvalidatedError','Same-domain reads are rejected while image writes are open');
+ assert.equal(calls.length,blockedCount,'Blocked image read never starts transport');
+ oldCall.resolve(new Response('old image'));
+ assert.equal((await oldImage).error?.name,'PrivateReadInvalidatedError','Pre-image-write headers cannot deliver stale image data');
+ calls.at(-1).resolve(new Response('{"id":"fictional-new"}'));await imageWrite;
+ const bodyRead=api.groupFetch('/api/quiz-images?id=fictional-body');
+ let body;
+ calls.at(-1).resolve(new Response(new ReadableStream({start(controller){body=controller;}})));
+ const bodyResponse=await bodyRead,bodyResult=observed(bodyResponse.blob());
+ const bodyWrite=api.groupFetch('/api/quiz-images',{method:'POST'});
+ body.enqueue(new TextEncoder().encode('old body'));body.close();
+ assert.equal((await bodyResult).error?.name,'PrivateReadInvalidatedError','Image body is fenced as well as headers');
+ calls.at(-1).resolve(new Response('{"id":"fictional-new"}'));await bodyWrite;
  console.log(JSON.stringify({passed:true,realModules:true,networkRequests:0}));
 } finally {
  flight?.dispose();release?.();Object.assign(globalThis,saved);

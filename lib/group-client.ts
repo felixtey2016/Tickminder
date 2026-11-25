@@ -14,6 +14,9 @@ export function groupFetch(input: RequestInfo | URL, init?: RequestInit) {
   // Narrow allowlist: only the known image upload contract is independent.
   // Unknown routes/methods keep the conservative global mutation path.
   const imageWrite=write&&url.pathname==='/api/quiz-images'&&method==='POST'&&!url.search;
+  const imageRead=local&&url.pathname==='/api/quiz-images'&&method==='GET';
+  const imageContext=getPrivateReadSnapshot('quiz-images');
+  if(imageRead&&imageContext.blocked)return Promise.reject(new PrivateReadInvalidatedError());
   const finish=imageWrite?beginPrivateImageMutation():write?beginPrivateMutation({auth:['/api/auth','/api/password','/api/account-setup','/api/groups'].includes(url.pathname)}):undefined;
   let response:Promise<Response>;
   try{response=fetch(input,{...init,headers});}catch(error){finish?.();observeApiFailure(input,error,method);throw error;}
@@ -29,6 +32,20 @@ export function groupFetch(input: RequestInfo | URL, init?: RequestInit) {
       invalidatePrivateReads('denied',{auth:true,clear:true});
       if(typeof window!=='undefined')queueMicrotask(()=>window.dispatchEvent(new Event('timelyo:auth-refresh')));
     }
+    if(imageRead){
+      const current=()=>{const now=getPrivateReadSnapshot('quiz-images');if(now.epoch!==imageContext.epoch)throw new PrivateReadInvalidatedError(now.clearEpoch!==imageContext.clearEpoch);};
+      current();fenceImageBody(value,current);
+    }
     observeApiResponse(input,value,method);return value;
   },error=>{observeApiFailure(input,error,method);throw error;}).finally(()=>finish?.());
+}
+
+/** Fence decoded bodies and clones, not just the response headers. */
+function fenceImageBody(response:Response,current:()=>void){
+  for(const method of ['json','text','blob','arrayBuffer','formData'] as const){
+    const read=response[method].bind(response);
+    Object.defineProperty(response,method,{value:async()=>{const value=await read();current();return value;}});
+  }
+  const clone=response.clone.bind(response);
+  Object.defineProperty(response,'clone',{value:()=>{current();const copy=clone();fenceImageBody(copy,current);return copy;}});
 }
