@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import ts from 'typescript';
-const source=fs.readFileSync(new URL('../lib/quiz-upload.ts',import.meta.url),'utf8');
-const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+import {build} from 'esbuild';
+const {outputFiles}=await build({entryPoints:[new URL('../lib/quiz-upload.ts',import.meta.url).pathname],bundle:true,platform:'node',format:'esm',write:false});
+const code=outputFiles[0].text;
 const {uploadQuizImages}=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
 const entries=Array.from({length:40},(_,index)=>({path:`images/q${index}.png`,bytes:Uint8Array.of(137,index)}));
 const pause=()=>new Promise(resolve=>setTimeout(resolve,5));

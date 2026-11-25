@@ -1,8 +1,12 @@
+import {beginPrivateImageMutation} from './private-read-lifecycle';
+
 export type QuizUploadEntry={path:string;bytes:Uint8Array};
 
 /** Keep only a small number of image requests in flight. A failed run drains
  * requests already started and retains successful hashes for the next retry. */
 export async function uploadQuizImages(entries:QuizUploadEntry[],cache:Map<string,string>,upload:(entry:QuizUploadEntry)=>Promise<string>,onProgress:(completed:number,total:number)=>void=()=>{}){
+ const finish=beginPrivateImageMutation();
+ try {
  const unique=[...new Map(entries.map(entry=>[entry.path,entry])).values()];
  const replacements=new Map<string,string>(),inflight=new Map<string,Promise<string>>();
  let cursor=0,completed=0,failed=false,failure:unknown;
@@ -26,4 +30,5 @@ export async function uploadQuizImages(entries:QuizUploadEntry[],cache:Map<strin
  await Promise.all(Array.from({length:Math.min(3,unique.length)},()=>worker()));
  if(failed)throw failure;
  return replacements;
+ } finally {finish({changed:false});} // Requests record committed/unknown changes.
 }

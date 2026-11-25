@@ -34,6 +34,21 @@ try {
  calls.at(-1).resolve(new Response('{"id":"fictional-image"}'));await pending;
  assert.strictEqual(api.getPrivateReadSnapshot(),before,'Image completion must preserve the global context');
  courseReply({items:[]});assert.deepEqual((await course).value,{items:[]},'Unrelated in-flight course read survives image writes');
+ // A batch must span gaps between requests, not just overlapping POSTs.
+ messages.length=0;
+ const entries=Array.from({length:7},(_,i)=>({path:`fictional-${i}.png`,bytes:Uint8Array.of(i)}));
+ const upload=api.uploadQuizImages(entries,new Map(),async()=>{
+  const response=await api.groupFetch('/api/quiz-images',{method:'POST'});
+  return (await response.json()).id;
+ });
+ let replied=1;
+ while(replied<8){
+  await new Promise(resolve=>setImmediate(resolve));
+  while(replied<calls.length){calls[replied].resolve(new Response(JSON.stringify({id:'fictional-'+replied})));replied++;}
+ }
+ await upload;
+ assert.equal(messages.length,1,'One drained upload batch must emit one image change, not one per image');
+ assert.strictEqual(api.getPrivateReadSnapshot(),before,'A whole batch must preserve global context');
  console.log(JSON.stringify({passed:true,realModules:true,networkRequests:0}));
 } finally {
  flight?.dispose();release?.();Object.assign(globalThis,saved);
