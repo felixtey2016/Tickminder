@@ -33,7 +33,7 @@ export function groupFetch(input: RequestInfo | URL, init?: RequestInit) {
       const json=value.json.bind(value);value.json=async()=>{const data=await json();current();return data;};
     }
     if(local&&url.pathname!=='/api/auth'&&(value.status===401||value.status===403)){
-      invalidatePrivateReads('denied',{auth:true,clear:true});
+      invalidatePrivateReads('denied',{auth:true,clear:true,broadcast:true});
       if(typeof window!=='undefined')queueMicrotask(()=>window.dispatchEvent(new Event('timelyo:auth-refresh')));
     }
     if(imageRead){

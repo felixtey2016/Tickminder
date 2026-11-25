@@ -121,6 +121,39 @@ try {
  securityBatch({changed:false});
  api.completePrivateAuthCheck(globalBefore.identity,globalBefore.groupId);
  assert.equal(api.getPrivateReadSnapshot('quiz-images').blocked,false,'Every image/security barrier has an exit');
+ // 401/403 on image POST must immediately propagate cross-tab auth invalidation even inside a dirty batch.
+ for(const status of [401,403]){
+  messages.length=0;
+  let authRefreshes=0;const onAuth=()=>authRefreshes++;window.addEventListener('timelyo:auth-refresh',onAuth);
+  const beforeDenied=api.getPrivateReadSnapshot();
+  const deniedBatch=api.beginPrivateImageMutation(),prior=api.beginPrivateImageMutation();prior({changed:true});
+  const pendingRead=observed(flight.read({kind:'courses',identity:beforeDenied.identity,url:'/api/courses?view=lessons',load:()=>new Promise(()=>{}),validate:x=>x}));
+  const deniedUpload=observed(api.groupFetch('/api/quiz-images',{method:'POST'}));
+  calls.at(-1).resolve(new Response('{"error":"fictional-denied"}',{status}));
+  assert.equal((await deniedUpload).error?.name,'PrivateReadInvalidatedError','HTTP '+status+' image POST rejects late body/headers');
+  await new Promise(resolve=>queueMicrotask(resolve));
+  assert.deepEqual(messages.map(m=>m.type),['auth'],'HTTP '+status+' image POST immediately broadcasts auth without waiting for batch drain');
+  assert.equal(api.getPrivateReadSnapshot().blocked,true,'HTTP '+status+' immediately blocks local private reads');
+  assert.ok(api.getPrivateReadSnapshot().clearEpoch>beforeDenied.clearEpoch,'HTTP '+status+' immediately clears local domain');
+  assert.equal((await pendingRead).error?.clear,true,'HTTP '+status+' clears unrelated in-flight course read');
+  assert.equal(authRefreshes,1,'HTTP '+status+' requests local authoritative auth check');
+  deniedBatch({changed:false});
+  assert.deepEqual(messages.map(m=>m.type),['auth'],'Discarded dirty batch emits no domain-write after HTTP '+status);
+  api.completePrivateAuthCheck(beforeDenied.identity,beforeDenied.groupId);
+  // Receiving tab must clear/block/auth-refresh without echoing broadcast.
+  messages.length=0;authRefreshes=0;
+  const rxBefore=api.getPrivateReadSnapshot();
+  const rxRead=observed(flight.read({kind:'courses',identity:rxBefore.identity,url:'/api/courses?view=lessons',load:()=>new Promise(()=>{}),validate:x=>x}));
+  Channel.current.dispatchEvent(new MessageEvent('message',{data:{type:'auth'}}));
+  assert.equal(api.getPrivateReadSnapshot().blocked,true,'Receiver blocks immediately on auth broadcast');
+  assert.ok(api.getPrivateReadSnapshot().clearEpoch>rxBefore.clearEpoch,'Receiver clears immediately on auth broadcast');
+  assert.equal((await rxRead).error?.clear,true,'Receiver rejects in-flight course read on auth broadcast');
+  assert.equal(authRefreshes,1,'Receiver requests authoritative auth on auth broadcast');
+  assert.equal(messages.length,0,'Receiver does not echo auth broadcast');
+  window.removeEventListener('timelyo:auth-refresh',onAuth);
+  api.completePrivateAuthCheck(rxBefore.identity,rxBefore.groupId);
+  assert.equal(api.getPrivateReadSnapshot().blocked,false,'Auth recovery unblocks receiver');
+ }
  console.log(JSON.stringify({passed:true,realModules:true,networkRequests:0}));
 } finally {
  flight?.dispose();release?.();Object.assign(globalThis,saved);

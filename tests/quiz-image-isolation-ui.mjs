@@ -22,7 +22,7 @@ window.fetch=(input,init={})=>{
  const result=()=>new Response(JSON.stringify(data),{headers:{'content-type':'application/json'}});
  return window.holdReads?new Promise(resolve=>window.held.push({resolve:()=>resolve(result()),signal:init.signal})):Promise.resolve(result());
 };
-window.addEventListener('timelyo:auth-refresh',()=>{if(window.autoAuth)queueMicrotask(()=>life.completePrivateAuthCheck(window.identity,actor.groupId));});
+window.addEventListener('timelyo:auth-refresh',()=>{window.authRefreshes=(window.authRefreshes||0)+1;if(window.autoAuth)queueMicrotask(()=>life.completePrivateAuthCheck(window.identity,actor.groupId));});
 window.observer=new BroadcastChannel('tickminder-private-read-lifecycle');window.observer.onmessage=e=>window.messages.push(e.data);
 window.write=(url='/api/courses')=>groupFetch(url,{method:'POST'});
 window.batch=async(count=12)=>{const entries=Array.from({length:count},(_,i)=>({path:'fictional-'+i+'.png',bytes:Uint8Array.of(137,i)}));try{await uploadQuizImages(entries,window.cache,async()=>{const response=await groupFetch('/api/quiz-images',{method:'POST'});if(!response.ok)throw Error('Fictional rejected');return(await response.json()).id;});return true;}catch(error){return error.name;}};
@@ -74,13 +74,54 @@ try {
  const retryBefore=await a.evaluate(()=>window.calls.filter(c=>c.url==='/api/quiz-images').length);
  check(await a.evaluate(()=>window.batch(7))===true,'Explicit retry completes');
  check(await a.evaluate(()=>window.calls.filter(c=>c.url==='/api/quiz-images').length)-retryBefore===7-retained,'Retry does not replay successful image writes');
+ // Explicit 400 and unknown network failure on image POST never refresh unrelated course/calendar views or emit auth broadcasts.
+ const errBeforeA=await counts(a),errBeforeB=await counts(b),errAuthBefore=await b.evaluate(()=>window.messages.filter(m=>m.type==='auth'||m.type==='write').length);
+ const errDomainBefore=await b.evaluate(()=>window.messages.filter(m=>m.type==='domain-write').length);
+ await a.evaluate(()=>{window.nextStatus=400;return window.write('/api/quiz-images');});await b.waitForTimeout(60);
+ assert.deepEqual(await counts(a),errBeforeA,'Explicit 400 image POST adds zero local course/calendar reads');checks++;
+ assert.deepEqual(await counts(b),errBeforeB,'Explicit 400 image POST adds zero other-tab course/calendar reads');checks++;
+ check(await b.evaluate(()=>window.messages.filter(m=>m.type==='domain-write').length)===errDomainBefore,'Explicit 400 emits no domain-write');
+ await a.evaluate(()=>{window.nextStatus=-1;return window.write('/api/quiz-images').catch(()=>{});});await b.waitForTimeout(60);
+ assert.deepEqual(await counts(a),errBeforeA,'Unknown network image POST adds zero local course/calendar reads');checks++;
+ assert.deepEqual(await counts(b),errBeforeB,'Unknown network image POST adds zero other-tab course/calendar reads');checks++;
+ check(await b.evaluate(()=>window.messages.filter(m=>m.type==='domain-write').length)===errDomainBefore+1,'Unknown network image POST revalidates only image domain');
+ check(await b.evaluate(()=>window.messages.filter(m=>m.type==='auth'||m.type==='write').length)===errAuthBefore,'Explicit 400 and unknown network image outcomes emit no global auth/write broadcasts');
  for(const status of [401,403]){
-  await a.evaluate(()=>{window.autoAuth=false;});
-  const clear=await a.evaluate(()=>window.life.getPrivateReadSnapshot().clearEpoch);
-  await a.evaluate(status=>{window.nextStatus=status;return window.write('/api/quiz-images').catch(()=>{});},status);
-  await a.waitForFunction(previous=>window.life.getPrivateReadSnapshot().clearEpoch>previous&&window.course.data===null&&window.workspace.data===null,clear);
-  check(await a.evaluate(()=>window.life.getPrivateReadSnapshot().blocked),'HTTP '+status+' immediately clears and blocks all private hooks');
-  await a.evaluate(()=>{window.autoAuth=true;window.life.completePrivateAuthCheck(window.identity,window.actor.groupId);});await settled(a);
+  for(const page of [a,b]){
+   await page.evaluate(()=>{window.autoAuth=true;if(window.life.getPrivateReadSnapshot().blocked)window.life.completePrivateAuthCheck(window.identity,window.actor.groupId);});
+   await settled(page);
+  }
+  // Keep auth suspended on BOTH pages to observe the security fence before recovery.
+  for(const page of [a,b])await page.evaluate(()=>{
+   window.autoAuth=false;window.holdReads=true;window.authRefreshes=0;
+   window.course.reload();
+  });
+  for(const page of [a,b])await page.waitForFunction(()=>window.held.length>=2);
+  const before=await Promise.all([a,b].map(page=>page.evaluate(()=>({clear:window.life.getPrivateReadSnapshot().clearEpoch,authMessages:window.messages.filter(m=>m.type==='auth').length,domainMessages:window.messages.filter(m=>m.type==='domain-write').length}))));
+  if(status===403){
+   // Verify 403 inside a multi-image batch propagates immediately without emitting domain-write.
+   await a.evaluate(()=>{window.cache.clear();window.nextStatus=403;return window.batch(5);});
+  }else{
+   await a.evaluate(status=>{window.nextStatus=status;return window.write('/api/quiz-images').catch(()=>{});},status);
+  }
+  await b.waitForTimeout(100);
+  for(const [i,page] of [a,b].entries()){
+   const state=await page.evaluate(()=>({clear:window.life.getPrivateReadSnapshot().clearEpoch,blocked:window.life.getPrivateReadSnapshot().blocked,course:window.course.data,calendar:window.workspace.data,aborted:window.held.every(read=>read.signal.aborted),authRefreshes:window.authRefreshes}));
+   check(state.clear>before[i].clear&&state.blocked&&state.course===null&&state.calendar===null,'HTTP '+status+' clears and blocks BOTH private views on tab '+i);
+   check(state.aborted,'HTTP '+status+' aborts in-flight course/calendar reads on tab '+i);
+   check(state.authRefreshes===1,'HTTP '+status+' requests authoritative auth once on tab '+i);
+   // The fictional transport deliberately ignores abort and delivers stale data.
+   await page.evaluate(()=>{window.holdReads=false;window.held.splice(0).forEach(read=>read.resolve());});
+  }
+  await b.waitForTimeout(50);
+  for(const page of [a,b])check(await page.evaluate(()=>window.course.data===null&&window.workspace.data===null),'Late denied-generation results cannot repopulate private views');
+  check(await b.evaluate(()=>window.messages.filter(m=>m.type==='auth').length)===before[1].authMessages+1,'One immediate auth broadcast, independent of image success/batch');
+  check(await a.evaluate(()=>window.messages.filter(m=>m.type==='auth').length)===before[0].authMessages+1,'Receiving tab does not echo auth broadcasts');
+  check(await b.evaluate(()=>window.messages.filter(m=>m.type==='domain-write').length)===before[1].domainMessages,'Denied HTTP '+status+' emits no image domain-write');
+  for(const page of [a,b]){
+   await page.evaluate(()=>{window.autoAuth=true;window.life.completePrivateAuthCheck(window.identity,window.actor.groupId);});await settled(page);
+   check(await page.evaluate(()=>!window.life.getPrivateReadSnapshot().blocked&&!!window.course.data&&!!window.workspace.data),'Verified auth recovery rereads both views');
+  }
  }
  check(errors.length===0,'No unhandled browser/React errors');
  console.log(JSON.stringify({passed:true,checks,realReact:true,nativeBroadcastChannel:true,tabs:2,extraCourseReadsFromImages:0,extraCalendarReadsFromImages:0,remoteApiRequests:0,productionQueries:0}));

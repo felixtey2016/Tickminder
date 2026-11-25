@@ -35,10 +35,11 @@ export function beginPrivateImageMutation(){
     }
   };
 }
-export function invalidatePrivateReads(reason:string,{auth=false,clear=false,authFence=false}:{auth?:boolean;clear?:boolean;authFence?:boolean}={}){
+export function invalidatePrivateReads(reason:string,{auth=false,clear=false,authFence=false,broadcast:propagate=false}:{auth?:boolean;clear?:boolean;authFence?:boolean;broadcast?:boolean}={}){
   if(auth)authPending=true;
   const changed=['data-changed','write-start','write-end','cross-tab-write','manual-refresh'].includes(reason);
   publish({epoch:snapshot.epoch+1,authEpoch:snapshot.authEpoch+(auth||authFence?1:0),clearEpoch:snapshot.clearEpoch+(clear?1:0),dataEpoch:snapshot.dataEpoch+(changed?1:0)});
+  if(propagate&&auth)broadcast(true);
 }
 export function setPrivateReadIdentity(identity:string,groupId:string|null|undefined){
   const group=groupId||null;
@@ -62,7 +63,12 @@ export function failPrivateAuthCheck(expectedEpoch:number,message:string){
   if(expectedEpoch===snapshot.authEpoch&&authPending)publish({authError:message});
 }
 let channel:BroadcastChannel|null=null,eventUsers=0,removeEvents:(()=>void)|null=null;
-function broadcast(auth:boolean){channel?.postMessage({type:auth?'auth':'write'});}
+function broadcast(auth:boolean){
+  if(channel){channel.postMessage({type:auth?'auth':'write'});return;}
+  if(!auth||typeof window==='undefined'||typeof BroadcastChannel==='undefined')return;
+  const once=new BroadcastChannel('tickminder-private-read-lifecycle');
+  try{once.postMessage({type:'auth'});}finally{once.close();}
+}
 function broadcastImages(){channel?.postMessage({type:'domain-write',version:1,domain:'quiz-images',groupId:snapshot.groupId,id:crypto.randomUUID()});}
 export function beginPrivateMutation({auth=false,deferAuth=false}:{auth?:boolean;deferAuth?:boolean}={}){
   if(auth)snapshot=Object.freeze({...snapshot,deferredAuth:deferAuth,authError:''});
