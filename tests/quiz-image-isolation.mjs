@@ -49,6 +49,16 @@ try {
  await upload;
  assert.equal(messages.length,1,'One drained upload batch must emit one image change, not one per image');
  assert.strictEqual(api.getPrivateReadSnapshot(),before,'A whole batch must preserve global context');
+ const imageBefore=api.getPrivateReadSnapshot('quiz-images');
+ const event=messages[0];
+ Channel.current.dispatchEvent(new MessageEvent('message',{data:event}));
+ const imageAfter=api.getPrivateReadSnapshot('quiz-images');
+ assert.equal(imageAfter.epoch,imageBefore.epoch+1,'Receiver advances image domain exactly once');
+ Channel.current.dispatchEvent(new MessageEvent('message',{data:event}));
+ assert.strictEqual(api.getPrivateReadSnapshot('quiz-images'),imageAfter,'Duplicate event ID must not advance any domain twice');
+ assert.strictEqual(api.getPrivateReadSnapshot(),before,'Domain broadcast must not dispatch legacy global data-changed');
+ Channel.current.dispatchEvent(new MessageEvent('message',{data:{...event,id:crypto.randomUUID(),groupId:'other-fictional-group'}}));
+ assert.strictEqual(api.getPrivateReadSnapshot('quiz-images'),imageAfter,'Other group image message must be ignored');
  console.log(JSON.stringify({passed:true,realModules:true,networkRequests:0}));
 } finally {
  flight?.dispose();release?.();Object.assign(globalThis,saved);

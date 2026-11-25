@@ -90,7 +90,15 @@ export function installPrivateReadEvents(){
     if(snapshot.deferredAuth||document.visibilityState==='hidden'||Date.now()-lastForeground<300)return;
     lastForeground=Date.now();invalidatePrivateReads('foreground',{auth:true});window.dispatchEvent(new Event('timelyo:auth-refresh'));
   };
+  // Bounded replay window; invalidation envelopes contain no private payload.
+  const seen=new Set<string>();
   const message=(event:MessageEvent)=>{
+    const data=event.data;
+    if(data?.type==='domain-write'&&data.version===1&&data.domain==='quiz-images'){
+      if(data.groupId!==snapshot.groupId||typeof data.id!=='string'||!/^[a-f0-9-]{36}$/.test(data.id)||seen.has(data.id))return;
+      seen.add(data.id);if(seen.size>256)seen.delete(seen.values().next().value!);
+      publishImages(true);return;
+    }
     if(event.data?.type==='auth'){invalidatePrivateReads('cross-tab-auth',{auth:true,clear:true});window.dispatchEvent(new Event('timelyo:auth-refresh'));}
     else if(event.data?.type==='write'){invalidatePrivateReads('cross-tab-write',{authFence:true});window.dispatchEvent(new Event('tickminder:data-changed'));if(authPending&&!snapshot.deferredAuth)window.dispatchEvent(new Event('timelyo:auth-refresh'));}
   };
