@@ -111,6 +111,16 @@ try {
  const oldBatch=api.beginPrivateImageMutation(),oldMember=api.beginPrivateImageMutation();oldMember();
  api.setPrivateReadIdentity('fictional-final','fictional-final-group');oldBatch({changed:false});
  assert.equal(messages.length,0,'Dirty data from an old group must not be announced as a change in the new group');
+ const securityBatch=api.beginPrivateImageMutation();
+ const globalBefore=api.getPrivateReadSnapshot();
+ const pendingCourse=observed(flight.read({kind:'courses',identity:globalBefore.identity,url:'/api/courses?view=lessons',load:()=>new Promise(()=>{}),validate:x=>x}));
+ Channel.current.dispatchEvent(new MessageEvent('message',{data:{type:'auth'}}));
+ assert.equal(api.getPrivateReadSnapshot().blocked,true,'Cross-tab security invalidation is synchronous even inside an image batch');
+ assert.ok(api.getPrivateReadSnapshot().clearEpoch>globalBefore.clearEpoch,'Security invalidation immediately clears every domain');
+ assert.equal((await pendingCourse).error?.clear,true,'Security rejects unrelated in-flight course data even during image batch');
+ securityBatch({changed:false});
+ api.completePrivateAuthCheck(globalBefore.identity,globalBefore.groupId);
+ assert.equal(api.getPrivateReadSnapshot('quiz-images').blocked,false,'Every image/security barrier has an exit');
  console.log(JSON.stringify({passed:true,realModules:true,networkRequests:0}));
 } finally {
  flight?.dispose();release?.();Object.assign(globalThis,saved);
