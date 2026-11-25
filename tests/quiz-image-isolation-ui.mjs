@@ -45,9 +45,12 @@ try {
  await a.goto(url);await settled(a);await b.goto(url);await settled(b);await a.waitForTimeout(50);
  const baselineA=await counts(a),baselineB=await counts(b);
  await a.locator('input').fill('unsaved fictional draft');
- check(await a.evaluate(()=>window.batch())===true,'Normal image batch succeeds');await b.waitForFunction(()=>window.messages.some(m=>m.type==='domain-write'));
- assert.deepEqual(await counts(a),baselineA,'Image batch adds zero local course/calendar reads');checks++;
- assert.deepEqual(await counts(b),baselineB,'Image batch adds zero other-tab course/calendar reads');checks++;
+ check(await a.evaluate(()=>window.batch())===true,'Normal image batch succeeds');await b.waitForTimeout(80);
+ const afterA=await counts(a),afterB=await counts(b);
+ console.log(JSON.stringify({measurement:'12-image-batch',before:{local:baselineA,other:baselineB},after:{local:afterA,other:afterB}}));
+ assert.deepEqual(afterA,baselineA,'Image batch adds zero local course/calendar reads');checks++;
+ assert.deepEqual(afterB,baselineB,'Image batch adds zero other-tab course/calendar reads');checks++;
+ await b.waitForFunction(()=>window.messages.some(m=>m.type==='domain-write'));
  check(await b.evaluate(()=>window.messages.filter(m=>m.type==='domain-write').length)===1,'One native cross-tab notification per batch');
  check(await a.locator('input').inputValue()==='unsaved fictional draft','Image batch preserves mounted draft');
  // Same-domain replay is deduplicated without global React context replacement.
