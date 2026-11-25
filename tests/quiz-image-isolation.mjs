@@ -85,6 +85,19 @@ try {
  assert.equal(messages.length,1,'Unknown outcome revalidates only the image domain without replaying POST');
  assert.equal(api.getPrivateReadSnapshot('quiz-images').blocked,false,'Failure releases image barrier');
  assert.strictEqual(api.getPrivateReadSnapshot(),before,'Failed/unknown image write must not change global context');
+ const staleWrite=observed(api.groupFetch('/api/quiz-images',{method:'POST'}));
+ const staleCall=calls.at(-1);
+ api.setPrivateReadIdentity('fictional-rebound','fictional-other');api.setClientGroup('fictional-other');
+ staleCall.resolve(new Response('{"id":"old-group-image"}'));
+ assert.equal((await staleWrite).error?.name,'PrivateReadInvalidatedError','Late upload headers from old identity/group cannot enter draft/cache');
+ const delayedBody=api.groupFetch('/api/quiz-images',{method:'POST'});
+ let uploadBody;
+ calls.at(-1).resolve(new Response(new ReadableStream({start(controller){uploadBody=controller;}})));
+ const uploadResponse=await delayedBody,lateJson=observed(uploadResponse.json());
+ api.invalidatePrivateReads('fictional-revocation',{auth:true,clear:true});
+ uploadBody.enqueue(new TextEncoder().encode('{"id":"old-permission-image"}'));uploadBody.close();
+ assert.equal((await lateJson).error?.name,'PrivateReadInvalidatedError','Late upload JSON after revocation cannot be cached');
+ api.completePrivateAuthCheck('fictional-rebound','fictional-other');
  console.log(JSON.stringify({passed:true,realModules:true,networkRequests:0}));
 } finally {
  flight?.dispose();release?.();Object.assign(globalThis,saved);
