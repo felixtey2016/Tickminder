@@ -25,7 +25,7 @@ export async function GET(){
     const {account,group,name}=await actor(),contact=await own(account.id,group.id);
     const verified=Boolean(contact&&contact.identity_role===account.role&&contact.identity_name===name);
     const suggestion=await db().prepare('SELECT phone FROM whatsapp_contact_requests WHERE account_id=? AND group_id=? AND identity_role=? AND identity_name=?').bind(account.id,group.id,account.role,name).first<{phone:string}>();
-    return json({verified,phone:verified?contact!.phone:'',suggestedPhone:suggestion?.phone||'',role:account.role,newStudent:account.role==='pending',botAccess:account.role==='admin'?'contact_only':'participant',website:'https://tickminder.com'});
+    return json({verified,phone:verified?contact!.phone:'',suggestedPhone:suggestion?.phone||'',role:account.role,newStudent:account.role==='pending',botAccess:account.role==='admin'?'contact_only':'participant',website:'https://tickminder-staging-alt.tickminder-qa-ngedu.workers.dev'});
   }catch(error){return json({error:(error as Error).message},403);}
 }
 export async function POST(request:Request){

@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "tickminder-recovery",
-  "account_id": "2199d150c756b2abfd96507da5ff1d8e",
+  "name": "tickminder-staging",
+  "account_id": "6a436390d3f306fc5c163952bba080ff",
   "main": "worker-entry.ts",
   "compatibility_date": "2026-10-10",
   "compatibility_flags": [
@@ -9,76 +9,42 @@
   ],
   "workers_dev": true,
   "preview_urls": false,
-  "routes": [
-    {
-      "pattern": "www.tickminder.com",
-      "custom_domain": true
-    },
-    {
-      "pattern": "tickminder.com",
-      "custom_domain": true
-    },
-    {
-      "pattern": "study.tickminder.com",
-      "custom_domain": true
-    },
-    {
-      "pattern": "watch.tickminder.com",
-      "custom_domain": true
-    },
-    {
-      "pattern": "tickplay.tickminder.com",
-      "custom_domain": true
-    },
-    {
-      "pattern": "tickgame.tickminder.com",
-      "custom_domain": true
-    },
-    {
-      "pattern": "play-tickgame.tickminder.com",
-      "custom_domain": true
-    }
-  ],
   "assets": {
     "binding": "ASSETS"
   },
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "tickminder-recovery-db",
-      "database_id": "10893827-25a7-4a36-a823-ecb561b711b4",
+      "database_name": "tickminder-staging-db",
+      "database_id": "3e49d57b-7f11-4eae-84aa-69d47fef258f",
       "migrations_dir": "drizzle"
     }
   ],
   "r2_buckets": [
     {
       "binding": "BUCKET",
-      "bucket_name": "tickminder-recovery-files"
-    },
-    {
-      "binding": "DIAGNOSTICS",
-      "bucket_name": "tickminder-diagnostics"
+      "bucket_name": "tickminder-qa-files"
     },
     {
       "binding": "TICKGAME_ASSETS",
-      "bucket_name": "tickgame-assets"
+      "bucket_name": "tickminder-qa-game-assets"
+    },
+    {
+      "binding": "DIAGNOSTICS",
+      "bucket_name": "tickminder-qa-diagnostics"
     }
   ],
   "vars": {
     "PDF_MAX_BYTES": "10485760",
     "PDF_TOTAL_STORAGE_LIMIT_BYTES": "1073741824",
     "ADMIN_PERMISSIONS_MODE": "enforced",
-    "WATCH_PREVIEW_APP_ORIGIN": "https://www.tickminder.com",
-    "WATCH_PREVIEW_APP_ALIASES": "https://tickminder.com",
-    "WATCH_PREVIEW_ORIGIN": "https://tickplay.tickminder.com",
-    "WATCH_PREVIEW_LEGACY_ORIGIN": "https://watch.tickminder.com",
-    "DIAGNOSTICS_FEED_URL": "https://tickminder-lesson-reminder-clock.felixtey2016.workers.dev/diagnostics/feed"
+    "WATCH_PREVIEW_APP_ORIGIN": "https://tickminder-staging.tickminder-qa-ngedu.workers.dev",
+    "WATCH_PREVIEW_APP_ALIASES": "https://tickminder-staging-alt.tickminder-qa-ngedu.workers.dev",
+    "WATCH_PREVIEW_ORIGIN": "https://tickplay-staging.tickminder-qa-ngedu.workers.dev",
+    "GOOGLE_CLIENT_ID": "243216576516-0urb3bjvshr14oj1jg67eqfq766vlctd.apps.googleusercontent.com"
   },
   "triggers": {
-    "crons": [
-      "* * * * *",
-      "0 19 * * *"
-    ]
+    "crons": []
   },
   "version_metadata": {
     "binding": "CF_VERSION_METADATA"

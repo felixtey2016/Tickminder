@@ -10,8 +10,8 @@ export const metadata: Metadata = {
   title: `About ${BRAND_NAME}`,
   description: `${BRAND_NAME} brings tuition centre schedules, attendance, class files, homework, quizzes and authorised financial records together.`,
   alternates: {
-    canonical: "https://www.tickminder.com/about",
-    languages: { en: "https://www.tickminder.com/about", "zh-CN": "https://www.tickminder.com/about?lang=zh" },
+    canonical: "https://tickminder-staging.tickminder-qa-ngedu.workers.dev/about",
+    languages: { en: "https://tickminder-staging.tickminder-qa-ngedu.workers.dev/about", "zh-CN": "https://tickminder-staging.tickminder-qa-ngedu.workers.dev/about?lang=zh" },
   },
 };
 

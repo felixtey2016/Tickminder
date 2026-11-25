@@ -1,12 +1,12 @@
 import {tikQuizRoute} from './tikquiz-route';
 
-export const tickLearnOrigin = 'https://learn.tickminder.com';
-export const tickLearnAccountOrigin = 'https://www.tickminder.com';
-export const tickLearnStudyOrigin = 'https://study.tickminder.com';
+export const tickLearnOrigin = 'https://ticklearn-marketing-staging.tickminder-qa-ngedu.workers.dev';
+export const tickLearnAccountOrigin = 'https://tickminder-staging.tickminder-qa-ngedu.workers.dev';
+export const tickLearnStudyOrigin = 'https://ticklearn-staging.tickminder-qa-ngedu.workers.dev';
 export const tickLearnGoogleCookie = '__Host-ticklearn-google-session';
-export const tickMinderApexOrigin = 'https://tickminder.com';
-export const tickLearnPlayOrigin = 'https://tickplay.tickminder.com';
-export const tickLearnGameOrigin = 'https://tickgame.tickminder.com';
+export const tickMinderApexOrigin = 'https://tickminder-staging-alt.tickminder-qa-ngedu.workers.dev';
+export const tickLearnPlayOrigin = 'https://tickplay-staging.tickminder-qa-ngedu.workers.dev';
+export const tickLearnGameOrigin = 'https://tickgame-staging.tickminder-qa-ngedu.workers.dev';
 export const tickLearnSignupReason = 'ticklearn_signup';
 
 export const tickLearnLanguages = ['zh', 'en', 'ms'] as const;

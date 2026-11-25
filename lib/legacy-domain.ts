@@ -1,5 +1,5 @@
 const LEGACY_HOST = "tuition-lesson-hub.zezhou2009.chatgpt.site";
-const CURRENT_HOST = "www.tickminder.com";
+const CURRENT_HOST = "tickminder-staging.tickminder-qa-ngedu.workers.dev";
 
 export function legacyRedirectTarget(requestUrl: string, method: string): string | null {
   const url = new URL(requestUrl);

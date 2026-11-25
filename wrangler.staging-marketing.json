@@ -1,0 +1,10 @@
+{
+  "name": "ticklearn-marketing-staging",
+  "account_id": "6a436390d3f306fc5c163952bba080ff",
+  "compatibility_date": "2026-11-25",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./sites/ticklearn-marketing"
+  }
+}

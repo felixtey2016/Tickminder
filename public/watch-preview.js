@@ -39,7 +39,7 @@
     if(theme!=='light'&&theme!=='dark')return;
     appearance.theme = theme;
     document.cookie = '__Host-tickminder_watch_theme=' + appearance.theme + '; Max-Age=31536000; Path=/; Secure; SameSite=Lax';
-    document.cookie = 'ticklearn_theme=' + appearance.theme + '; Max-Age=31536000; Domain=tickminder.com; Path=/; Secure; SameSite=Lax';
+    document.cookie = 'ticklearn_theme=' + appearance.theme + '; Max-Age=31536000; Domain=tickminder-qa-ngedu.workers.dev; Path=/; Secure; SameSite=Lax';
     try {localStorage.setItem('tickminder-watch-theme', appearance.theme);} catch {}
     applyAppearance();
   });

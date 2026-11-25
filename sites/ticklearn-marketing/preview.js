@@ -144,9 +144,9 @@ const picker=document.getElementById('language');
 const languageSheet=document.getElementById('language-sheet');
 const languageNames={zh:'中文',en:'English',ms:'Melayu'};
 const languageChoices=[...document.querySelectorAll('[data-language-choice]')];
-const authBase="https://study.tickminder.com/ticklearn/";
-const customDomain=location.origin==='https://learn.tickminder.com';
-const products={"play":"https://tickplay.tickminder.com/","quiz":"https://study.tickminder.com/quizzes","game":"https://tickgame.tickminder.com/","study":"https://study.tickminder.com/ticklearn/study"};
+const authBase="https://ticklearn-staging.tickminder-qa-ngedu.workers.dev/ticklearn/";
+const customDomain=location.origin==='https://ticklearn-marketing-staging.tickminder-qa-ngedu.workers.dev';
+const products={"play":"https://tickplay-staging.tickminder-qa-ngedu.workers.dev/","quiz":"https://ticklearn-staging.tickminder-qa-ngedu.workers.dev/quizzes","game":"https://tickgame-staging.tickminder-qa-ngedu.workers.dev/","study":"https://ticklearn-staging.tickminder-qa-ngedu.workers.dev/ticklearn/study"};
 const requested=params.get('next');
 const studyLabels={zh:'进入学习首页',en:'Learning Home',ms:'Laman Belajar'};
 let activeSession=null;
@@ -228,7 +228,7 @@ else if(customDomain){
  };
  const primaryOrigin=new URL(authBase).origin;
  void signedIn(primaryOrigin).then(async active=>{
-  activeSession=active?'study':await signedIn('https://www.tickminder.com')?'www':await signedIn('https://tickminder.com')?'apex':null;
+  activeSession=active?'study':await signedIn('https://tickminder-staging.tickminder-qa-ngedu.workers.dev')?'www':await signedIn('https://tickminder-staging-alt.tickminder-qa-ngedu.workers.dev')?'apex':null;
   updateAuthLinks();
  });
 }

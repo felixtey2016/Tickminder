@@ -14,8 +14,8 @@ function sharedTheme() {
 
 function rememberSharedTheme(theme:'light'|'dark') {
   const host=window.location.hostname;
-  if(host==='tickminder.com'||host.endsWith('.tickminder.com')) {
-    document.cookie=cookieName+'='+theme+'; Max-Age=31536000; Domain=tickminder.com; Path=/; Secure; SameSite=Lax';
+  if(host.endsWith('.tickminder-qa-ngedu.workers.dev')) {
+    document.cookie=cookieName+'='+theme+'; Max-Age=31536000; Domain=tickminder-qa-ngedu.workers.dev; Path=/; Secure; SameSite=Lax';
   }
 }
 

@@ -83,7 +83,7 @@ export function QuizPracticeStart({source,onClose,onOpen}:{source:PracticeSource
   {a&&a.timeLimitSeconds!==null&&a.timeLimitSeconds>0&&<p className="quiz-note">{t('quiz.timerContinues')}</p>}
   {source.assignmentId&&<p className="quiz-note">{t('quiz.assignedReleaseNotice')}</p>}
   {error&&<p className="quiz-error" role="alert" data-error-popup-ignore>{t(error)}</p>}
-  {error==='quiz.freeLimit'&&<p className="quiz-note">{t('quiz.freeTuition')} <a href={'https://learn.tickminder.com/tuition?lang='+getLanguage()}>{t('quiz.freeTuitionLink')} →</a></p>}
+  {error==='quiz.freeLimit'&&<p className="quiz-note">{t('quiz.freeTuition')} <a href={'https://ticklearn-marketing-staging.tickminder-qa-ngedu.workers.dev/tuition?lang='+getLanguage()}>{t('quiz.freeTuitionLink')} →</a></p>}
   <div className="quiz-confirm-actions"><Button variant="outline" disabled={busy} onClick={onClose}>{t('quiz.cancel')}</Button><Button disabled={busy||error==='quiz.freeLimit'} onClick={()=>void start()}><Play size={17}/>{t(operation.current?'quiz.retry':'quiz.practiceStart')}</Button></div></DialogContent></Dialog>;
 }
 
