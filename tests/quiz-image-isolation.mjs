@@ -77,6 +77,14 @@ try {
  body.enqueue(new TextEncoder().encode('old body'));body.close();
  assert.equal((await bodyResult).error?.name,'PrivateReadInvalidatedError','Image body is fenced as well as headers');
  calls.at(-1).resolve(new Response('{"id":"fictional-new"}'));await bodyWrite;
+ messages.length=0;
+ const rejected=api.groupFetch('/api/quiz-images',{method:'POST'});
+ calls.at(-1).resolve(new Response('{"error":"fictional-rejected"}',{status:400}));await rejected;
+ assert.equal(messages.length,0,'Known rejected image write must not claim committed data change');
+ const unknown=observed(api.groupFetch('/api/quiz-images',{method:'POST'}));calls.at(-1).reject(new TypeError('fictional offline'));await unknown;
+ assert.equal(messages.length,1,'Unknown outcome revalidates only the image domain without replaying POST');
+ assert.equal(api.getPrivateReadSnapshot('quiz-images').blocked,false,'Failure releases image barrier');
+ assert.strictEqual(api.getPrivateReadSnapshot(),before,'Failed/unknown image write must not change global context');
  console.log(JSON.stringify({passed:true,realModules:true,networkRequests:0}));
 } finally {
  flight?.dispose();release?.();Object.assign(globalThis,saved);

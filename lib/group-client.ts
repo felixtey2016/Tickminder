@@ -17,10 +17,13 @@ export function groupFetch(input: RequestInfo | URL, init?: RequestInit) {
   const imageRead=local&&url.pathname==='/api/quiz-images'&&method==='GET';
   const imageContext=getPrivateReadSnapshot('quiz-images');
   if(imageRead&&imageContext.blocked)return Promise.reject(new PrivateReadInvalidatedError());
-  const finish=imageWrite?beginPrivateImageMutation():write?beginPrivateMutation({auth:['/api/auth','/api/password','/api/account-setup','/api/groups'].includes(url.pathname)}):undefined;
+  let imageChanged=true; // Network/5xx outcome can have committed; never replay it.
+  const endImage=imageWrite?beginPrivateImageMutation():undefined;
+  const finish=endImage?()=>endImage({changed:imageChanged}):write?beginPrivateMutation({auth:['/api/auth','/api/password','/api/account-setup','/api/groups'].includes(url.pathname)}):undefined;
   let response:Promise<Response>;
   try{response=fetch(input,{...init,headers});}catch(error){finish?.();observeApiFailure(input,error,method);throw error;}
   return response.then(value=>{
+    if(imageWrite)imageChanged=value.ok||value.status>=500;
     if(authRead){
       const current=()=>{if(authEpoch!==getPrivateReadSnapshot().authEpoch)throw new PrivateReadInvalidatedError(true);};
       current();
