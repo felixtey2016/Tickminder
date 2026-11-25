@@ -1,5 +1,5 @@
 import {observeApiResponse,observeApiFailure} from "./diagnostics-client";
-import {beginPrivateMutation,invalidatePrivateReads,getPrivateReadSnapshot} from './private-read-lifecycle';
+import {beginPrivateMutation,beginPrivateImageMutation,invalidatePrivateReads,getPrivateReadSnapshot} from './private-read-lifecycle';
 import {PrivateReadInvalidatedError} from './private-read-flight';
 let currentGroupId: string | null = null;
 export function setClientGroup(id: string | null | undefined) { currentGroupId = id || null; }
@@ -11,7 +11,10 @@ export function groupFetch(input: RequestInfo | URL, init?: RequestInit) {
   const base=typeof location==='undefined'?'https://tickminder.invalid':location.origin,url=new URL(raw,base),local=url.origin===base;
   const write=local&&url.pathname.startsWith('/api/')&&!['GET','HEAD','OPTIONS'].includes(method);
   const authRead=local&&url.pathname==='/api/auth'&&method==='GET',authEpoch=getPrivateReadSnapshot().authEpoch;
-  const finish=write?beginPrivateMutation({auth:['/api/auth','/api/password','/api/account-setup','/api/groups'].includes(url.pathname)}):undefined;
+  // Narrow allowlist: only the known image upload contract is independent.
+  // Unknown routes/methods keep the conservative global mutation path.
+  const imageWrite=write&&url.pathname==='/api/quiz-images'&&method==='POST'&&!url.search;
+  const finish=imageWrite?beginPrivateImageMutation():write?beginPrivateMutation({auth:['/api/auth','/api/password','/api/account-setup','/api/groups'].includes(url.pathname)}):undefined;
   let response:Promise<Response>;
   try{response=fetch(input,{...init,headers});}catch(error){finish?.();observeApiFailure(input,error,method);throw error;}
   return response.then(value=>{

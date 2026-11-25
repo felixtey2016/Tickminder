@@ -2,12 +2,37 @@
 export type PrivateReadSnapshot = Readonly<{identity:string; groupId:string|null; epoch:number; authEpoch:number; clearEpoch:number; dataEpoch:number; blocked:boolean;authError:string;deferredAuth:boolean}>;
 let snapshot:PrivateReadSnapshot=Object.freeze({identity:'',groupId:null,epoch:0,authEpoch:0,clearEpoch:0,dataEpoch:0,blocked:false,authError:'',deferredAuth:false});
 let writes=0,authPending=false;
-const listeners=new Set<()=>void>();
-export function getPrivateReadSnapshot(){return snapshot;}
-export function subscribePrivateReadLifecycle(listener:()=>void){listeners.add(listener);return()=>{listeners.delete(listener);};}
+export type PrivateReadDomain='global'|'quiz-images';
+const listeners=new Set<()=>void>(),imageListeners=new Set<()=>void>();
+let imageSnapshot=snapshot,imageWrites=0,imageDirty=false;
+export function getPrivateReadSnapshot(domain:PrivateReadDomain='global'){return domain==='quiz-images'?imageSnapshot:snapshot;}
+export function subscribePrivateReadLifecycle(listener:()=>void,domain:PrivateReadDomain='global'){
+  const target=domain==='quiz-images'?imageListeners:listeners;
+  target.add(listener);return()=>{target.delete(listener);};
+}
+function publishImages(changed=false){
+  imageSnapshot=Object.freeze({...snapshot,epoch:imageSnapshot.epoch+1,dataEpoch:imageSnapshot.dataEpoch+(changed?1:0),blocked:snapshot.blocked||imageWrites>0});
+  for(const listener of [...imageListeners])listener();
+}
 function publish(update:Partial<PrivateReadSnapshot>={}){
   snapshot=Object.freeze({...snapshot,...update,blocked:authPending||writes>0});
+  publishImages(true); // Global/security boundaries always fence every domain.
   for(const listener of [...listeners])listener();
+}
+/** Local barriers nest: a batch owns one barrier until every upload has drained.
+ * Only settled successful/unknown outcomes produce one cross-tab domain change. */
+export function beginPrivateImageMutation(){
+  const context=snapshot;
+  if(imageWrites++===0)publishImages();
+  let finished=false;
+  return({changed=true}:{changed?:boolean}={})=>{
+    if(finished)return;finished=true;
+    if(changed&&context.clearEpoch===snapshot.clearEpoch)imageDirty=true;
+    if(--imageWrites===0){
+      const dirty=imageDirty;imageDirty=false;publishImages(dirty);
+      if(dirty)broadcastImages();
+    }
+  };
 }
 export function invalidatePrivateReads(reason:string,{auth=false,clear=false,authFence=false}:{auth?:boolean;clear?:boolean;authFence?:boolean}={}){
   if(auth)authPending=true;
@@ -37,6 +62,7 @@ export function failPrivateAuthCheck(expectedEpoch:number,message:string){
 }
 let channel:BroadcastChannel|null=null,eventUsers=0,removeEvents:(()=>void)|null=null;
 function broadcast(auth:boolean){channel?.postMessage({type:auth?'auth':'write'});}
+function broadcastImages(){channel?.postMessage({type:'domain-write',version:1,domain:'quiz-images',groupId:snapshot.groupId,id:crypto.randomUUID()});}
 export function beginPrivateMutation({auth=false,deferAuth=false}:{auth?:boolean;deferAuth?:boolean}={}){
   if(auth)snapshot=Object.freeze({...snapshot,deferredAuth:deferAuth,authError:''});
   writes++;invalidatePrivateReads('write-start',{auth,authFence:true,clear:auth});broadcast(auth);
