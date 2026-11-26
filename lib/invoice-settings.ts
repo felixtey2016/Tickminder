@@ -7,6 +7,7 @@ import { adminPermissionPredicate } from './admin-permission-access';
 import { adminActorGuard, authorityGuard } from './admin-authority';
 import { requireBillingManager } from './billing-server';
 import { pdfLimits } from './pdf-storage';
+import { quizImageStorageBytesSql } from './storage-quota';
 import { inspectInvoiceLogo, INVOICE_LOGO_MAX_BYTES, InvoiceLogoError } from './invoice-logo';
 
 export type InvoiceTemplate = 'standard' | 'centered' | 'brand';
@@ -74,7 +75,8 @@ export async function uploadInvoiceLogo(actor:Account,file:File,expectedValue:un
  try{await learningDb().batch([
   adminActorGuard(actor,true),revisionGuard(groupId,expected),
   learningDb().prepare('INSERT OR IGNORE INTO storage_quota(group_id,id,used_bytes) VALUES(?,1,0)').bind(groupId),
-  authorityGuard({sql:'EXISTS(SELECT 1 FROM storage_quota WHERE group_id=? AND id=1 AND used_bytes+?<=?)',args:[groupId,bytes.length,pdfLimits().total]},'invoice_logo_storage_limit'),
+  authorityGuard({sql:`EXISTS(SELECT 1 FROM storage_quota WHERE group_id=? AND id=1
+    AND used_bytes + ${quizImageStorageBytesSql} + ? <= ?)`,args:[groupId,groupId,bytes.length,pdfLimits().total]},'invoice_logo_storage_limit'),
   learningDb().prepare('INSERT INTO invoice_brand_assets(id,group_id,object_key,bytes,width,height,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)').bind(id,groupId,objectKey,bytes.length,dimensions.width,dimensions.height,now,actor.id),
   learningDb().prepare('UPDATE storage_quota SET used_bytes=used_bytes+? WHERE group_id=? AND id=1').bind(bytes.length,groupId),
   settingWrite(groupId,actor.id,settings,now),audit(groupId,actor,settings,'invoice.logo',now),
