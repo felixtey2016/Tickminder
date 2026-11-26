@@ -154,6 +154,57 @@ try {
   api.completePrivateAuthCheck(rxBefore.identity,rxBefore.groupId);
   assert.equal(api.getPrivateReadSnapshot().blocked,false,'Auth recovery unblocks receiver');
  }
+ // /api/quizzes mutations (POST/PUT/PATCH/DELETE) share the isolated quiz domain.
+ let globalInvalidations=0;const unsubGlobal=api.subscribePrivateReadLifecycle(()=>{globalInvalidations++;});
+ let quizDomainEvents=0;const unsubQuiz=api.subscribePrivateReadLifecycle(()=>{quizDomainEvents++;},'quizzes');
+ const quizBefore=api.getPrivateReadSnapshot(),quizDomainBefore=api.getPrivateReadSnapshot('quizzes');
+ for(const method of ['POST','PUT','PATCH','DELETE']){
+  messages.length=0;
+  const inFlightCourse=observed(flight.read({kind:'courses',identity:quizBefore.identity,url:'/api/courses?view=lessons',load:()=>new Promise(resolve=>globalThis.courseReply=resolve),validate:x=>x}));
+  const oldQuizRead=observed(api.groupFetch('/api/quizzes?bank=0'));
+  const oldQuizCall=calls.at(-1);
+  const quizMut=api.groupFetch('/api/quizzes'+(method==='DELETE'?'?id=fictional-quiz':''),{method});
+  assert.strictEqual(api.getPrivateReadSnapshot(),quizBefore,method+' /api/quizzes must preserve global snapshot while in-flight');
+  assert.equal(api.getPrivateReadSnapshot('quizzes').blocked,true,method+' /api/quizzes blocks same-domain quiz reads while open');
+  const blockedQuiz=await observed(api.groupFetch('/api/quizzes?id=fictional-quiz'));
+  assert.equal(blockedQuiz.error?.name,'PrivateReadInvalidatedError','Concurrent GET /api/quizzes is blocked during '+method);
+  oldQuizCall.resolve(new Response('{"items":[]}'));
+  assert.equal((await oldQuizRead).error?.name,'PrivateReadInvalidatedError','Pre-write GET /api/quizzes is fenced on '+method);
+  calls.at(-1).resolve(new Response('{"ok":true}'));await quizMut;
+  assert.strictEqual(api.getPrivateReadSnapshot(),quizBefore,method+' /api/quizzes completion must preserve global snapshot');
+  assert.deepEqual(messages.map(m=>m.type),['domain-write'],method+' /api/quizzes emits only domain-write');
+  courseReply({items:[]});assert.deepEqual((await inFlightCourse).value,{items:[]},'Course read survives '+method+' /api/quizzes');
+ }
+ assert.equal(globalInvalidations,0,'Global listener never fires for /api/quizzes mutations');
+ assert.ok(quizDomainEvents>0&&api.getPrivateReadSnapshot('quizzes').epoch>quizDomainBefore.epoch,'Quiz domain listener and epoch advance on /api/quizzes mutations');
+ // 400 vs network failure on /api/quizzes
+ messages.length=0;
+ const quizRejected=api.groupFetch('/api/quizzes',{method:'POST'});
+ calls.at(-1).resolve(new Response('{"error":"bad"}',{status:400}));await quizRejected;
+ assert.equal(messages.length,0,'400 on /api/quizzes emits no domain-write');
+ assert.equal(globalInvalidations,0,'400 on /api/quizzes does not invalidate global');
+ const quizNetFail=observed(api.groupFetch('/api/quizzes',{method:'DELETE'}));
+ calls.at(-1).reject(new TypeError('fictional offline'));await quizNetFail;
+ assert.deepEqual(messages.map(m=>m.type),['domain-write'],'Network failure on /api/quizzes revalidates only quiz domain');
+ assert.equal(globalInvalidations,0,'Network failure on /api/quizzes does not invalidate global');
+ // 401/403 on /api/quizzes still triggers global auth invalidation + cross-tab auth refresh.
+ for(const [status,method] of [[401,'POST'],[403,'DELETE']]){
+  messages.length=0;
+  let authRefreshes=0;const onAuth=()=>authRefreshes++;window.addEventListener('timelyo:auth-refresh',onAuth);
+  const beforeDenied=api.getPrivateReadSnapshot();
+  const pendingRead=observed(flight.read({kind:'courses',identity:beforeDenied.identity,url:'/api/courses?view=lessons',load:()=>new Promise(()=>{}),validate:x=>x}));
+  const deniedQuiz=observed(api.groupFetch('/api/quizzes',{method}));
+  calls.at(-1).resolve(new Response('{"error":"denied"}',{status}));
+  assert.equal((await deniedQuiz).error?.name,'PrivateReadInvalidatedError','HTTP '+status+' '+method+' /api/quizzes rejects');
+  await new Promise(resolve=>queueMicrotask(resolve));
+  assert.deepEqual(messages.map(m=>m.type),['auth'],'HTTP '+status+' '+method+' /api/quizzes broadcasts auth');
+  assert.equal(api.getPrivateReadSnapshot().blocked,true,'HTTP '+status+' /api/quizzes blocks global reads');
+  assert.equal((await pendingRead).error?.clear,true,'HTTP '+status+' /api/quizzes clears unrelated course read');
+  assert.equal(authRefreshes,1,'HTTP '+status+' /api/quizzes triggers auth-refresh');
+  window.removeEventListener('timelyo:auth-refresh',onAuth);
+  api.completePrivateAuthCheck(beforeDenied.identity,beforeDenied.groupId);
+ }
+ unsubGlobal();unsubQuiz();
  console.log(JSON.stringify({passed:true,realModules:true,networkRequests:0}));
 } finally {
  flight?.dispose();release?.();Object.assign(globalThis,saved);

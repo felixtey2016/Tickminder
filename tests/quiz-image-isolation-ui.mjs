@@ -17,14 +17,14 @@ window.actor=actor;window.identity=workspaceIdentityKey(actor);setClientGroup(ac
 window.fetch=(input,init={})=>{
  const url=new URL(String(input),location.origin),method=init.method||'GET';const call={url:url.pathname,method,signal:init.signal};window.calls.push(call);
  if(url.pathname==='/api/diagnostics/ingest')return Promise.resolve(new Response('{}'));
- if(method!=='GET')return new Promise((resolve,reject)=>setTimeout(()=>{const status=url.pathname==='/api/quiz-images'?(window.nextStatus||200):200;window.nextStatus=0;if(status===-1){reject(new TypeError('Fictional offline'));return;}resolve(new Response(JSON.stringify({id:'fictional-image-'+window.calls.length}),{status,headers:{'content-type':'application/json'}}));},8));
+ if(method!=='GET')return new Promise((resolve,reject)=>setTimeout(()=>{const status=(url.pathname==='/api/quiz-images'||url.pathname==='/api/quizzes')?(window.nextStatus||200):200;window.nextStatus=0;if(status===-1){reject(new TypeError('Fictional offline'));return;}resolve(new Response(JSON.stringify({id:'fictional-image-'+window.calls.length}),{status,headers:{'content-type':'application/json'}}));},8));
  const data=url.pathname==='/api/courses'?{items:[{id:'fictional-course'}],page:1,pages:1,total:1,pageSize:20,revision:1,teacherStudentPairs:[]}:{view:'calendar',account:actor,data:{items:[]},revision:1};
  const result=()=>new Response(JSON.stringify(data),{headers:{'content-type':'application/json'}});
  return window.holdReads?new Promise(resolve=>window.held.push({resolve:()=>resolve(result()),signal:init.signal})):Promise.resolve(result());
 };
 window.addEventListener('timelyo:auth-refresh',()=>{window.authRefreshes=(window.authRefreshes||0)+1;if(window.autoAuth)queueMicrotask(()=>life.completePrivateAuthCheck(window.identity,actor.groupId));});
 window.observer=new BroadcastChannel('tickminder-private-read-lifecycle');window.observer.onmessage=e=>window.messages.push(e.data);
-window.write=(url='/api/courses')=>groupFetch(url,{method:'POST'});
+window.write=(url='/api/courses',method='POST')=>groupFetch(url,{method});
 window.batch=async(count=12)=>{const entries=Array.from({length:count},(_,i)=>({path:'fictional-'+i+'.png',bytes:Uint8Array.of(137,i)}));try{await uploadQuizImages(entries,window.cache,async()=>{const response=await groupFetch('/api/quiz-images',{method:'POST'});if(!response.ok)throw Error('Fictional rejected');return(await response.json()).id;});return true;}catch(error){return error.name;}};
 function App(){useLayoutEffect(()=>{life.setPrivateReadIdentity(window.identity,actor.groupId);return life.installPrivateReadEvents();},[]);const course=useCoursePage({view:'lessons',mode:'month',month:'2026-11'}),workspace=useWorkspaceData('calendar',actor);window.course=course;window.workspace=workspace;return <div>{course.data&&<input aria-label='draft' defaultValue='fictional draft'/>}<p>{JSON.stringify({course:!!course.data,workspace:!!workspace.data})}</p></div>;}
 createRoot(document.getElementById('root')).render(<App/>);`;
@@ -53,6 +53,13 @@ try {
  await b.waitForFunction(()=>window.messages.some(m=>m.type==='domain-write'));
  check(await b.evaluate(()=>window.messages.filter(m=>m.type==='domain-write').length)===1,'One native cross-tab notification per batch');
  check(await a.locator('input').inputValue()==='unsaved fictional draft','Image batch preserves mounted draft');
+ // /api/quizzes save/share/import/delete (POST/PUT/PATCH/DELETE) also isolate calendar/courses across tabs.
+ const quizMsgBefore=await b.evaluate(()=>window.messages.length);
+ for(const method of ['POST','PUT','PATCH','DELETE'])await a.evaluate(m=>window.write('/api/quizzes',m),method);
+ await b.waitForTimeout(80);
+ assert.deepEqual(await counts(a),baselineA,'/api/quizzes mutations add zero local course/calendar reads');checks++;
+ assert.deepEqual(await counts(b),baselineB,'/api/quizzes mutations add zero other-tab course/calendar reads');checks++;
+ check(await b.evaluate(prev=>window.messages.slice(prev).every(m=>m.type==='domain-write')&&window.messages.slice(prev).length===4,quizMsgBefore),'/api/quizzes mutations emit only domain-write across tabs');
  // Same-domain replay is deduplicated without global React context replacement.
  const duplicate=await b.evaluate(()=>window.messages.find(m=>m.type==='domain-write'));
  const epoch=await b.evaluate(()=>window.life.getPrivateReadSnapshot('quiz-images').epoch);
@@ -86,7 +93,7 @@ try {
  assert.deepEqual(await counts(b),errBeforeB,'Unknown network image POST adds zero other-tab course/calendar reads');checks++;
  check(await b.evaluate(()=>window.messages.filter(m=>m.type==='domain-write').length)===errDomainBefore+1,'Unknown network image POST revalidates only image domain');
  check(await b.evaluate(()=>window.messages.filter(m=>m.type==='auth'||m.type==='write').length)===errAuthBefore,'Explicit 400 and unknown network image outcomes emit no global auth/write broadcasts');
- for(const status of [401,403]){
+ for(const [status,target] of [[401,'/api/quiz-images'],[403,'batch'],[401,'/api/quizzes'],[403,'/api/quizzes']]){
   for(const page of [a,b]){
    await page.evaluate(()=>{window.autoAuth=true;if(window.life.getPrivateReadSnapshot().blocked)window.life.completePrivateAuthCheck(window.identity,window.actor.groupId);});
    await settled(page);
@@ -98,11 +105,11 @@ try {
   });
   for(const page of [a,b])await page.waitForFunction(()=>window.held.length>=2);
   const before=await Promise.all([a,b].map(page=>page.evaluate(()=>({clear:window.life.getPrivateReadSnapshot().clearEpoch,authMessages:window.messages.filter(m=>m.type==='auth').length,domainMessages:window.messages.filter(m=>m.type==='domain-write').length}))));
-  if(status===403){
+  if(target==='batch'){
    // Verify 403 inside a multi-image batch propagates immediately without emitting domain-write.
    await a.evaluate(()=>{window.cache.clear();window.nextStatus=403;return window.batch(5);});
   }else{
-   await a.evaluate(status=>{window.nextStatus=status;return window.write('/api/quiz-images').catch(()=>{});},status);
+   await a.evaluate(([status,target])=>{window.nextStatus=status;return window.write(target,target==='/api/quizzes'?'DELETE':'POST').catch(()=>{});},[status,target]);
   }
   await b.waitForTimeout(100);
   for(const [i,page] of [a,b].entries()){

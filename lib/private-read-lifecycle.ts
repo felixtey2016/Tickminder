@@ -2,39 +2,40 @@
 export type PrivateReadSnapshot = Readonly<{identity:string; groupId:string|null; epoch:number; authEpoch:number; clearEpoch:number; dataEpoch:number; blocked:boolean;authError:string;deferredAuth:boolean}>;
 let snapshot:PrivateReadSnapshot=Object.freeze({identity:'',groupId:null,epoch:0,authEpoch:0,clearEpoch:0,dataEpoch:0,blocked:false,authError:'',deferredAuth:false});
 let writes=0,authPending=false;
-export type PrivateReadDomain='global'|'quiz-images';
-const listeners=new Set<()=>void>(),imageListeners=new Set<()=>void>();
-let imageSnapshot=snapshot,imageWrites=0,imageDirty=false;
-export function getPrivateReadSnapshot(domain:PrivateReadDomain='global'){return domain==='quiz-images'?imageSnapshot:snapshot;}
+export type PrivateReadDomain='global'|'quiz-images'|'quizzes';
+const listeners=new Set<()=>void>(),quizListeners=new Set<()=>void>();
+let quizSnapshot=snapshot,quizWrites=0,quizDirty=false;
+export function getPrivateReadSnapshot(domain:PrivateReadDomain='global'){return domain==='global'?snapshot:quizSnapshot;}
 export function subscribePrivateReadLifecycle(listener:()=>void,domain:PrivateReadDomain='global'){
-  const target=domain==='quiz-images'?imageListeners:listeners;
+  const target=domain==='global'?listeners:quizListeners;
   target.add(listener);return()=>{target.delete(listener);};
 }
-function publishImages(changed=false){
-  imageSnapshot=Object.freeze({...snapshot,epoch:imageSnapshot.epoch+1,dataEpoch:imageSnapshot.dataEpoch+(changed?1:0),blocked:snapshot.blocked||imageWrites>0});
-  for(const listener of [...imageListeners])listener();
+function publishQuiz(changed=false){
+  quizSnapshot=Object.freeze({...snapshot,epoch:quizSnapshot.epoch+1,dataEpoch:quizSnapshot.dataEpoch+(changed?1:0),blocked:snapshot.blocked||quizWrites>0});
+  for(const listener of [...quizListeners])listener();
 }
 function publish(update:Partial<PrivateReadSnapshot>={}){
-  if(update.clearEpoch!==undefined&&update.clearEpoch!==snapshot.clearEpoch)imageDirty=false;
+  if(update.clearEpoch!==undefined&&update.clearEpoch!==snapshot.clearEpoch)quizDirty=false;
   snapshot=Object.freeze({...snapshot,...update,blocked:authPending||writes>0});
-  publishImages(true); // Global/security boundaries always fence every domain.
+  publishQuiz(true); // Global/security boundaries always fence every domain.
   for(const listener of [...listeners])listener();
 }
-/** Local barriers nest: a batch owns one barrier until every upload has drained.
+/** Local barriers nest: a batch owns one barrier until every quiz/image write has drained.
  * Only settled successful/unknown outcomes produce one cross-tab domain change. */
-export function beginPrivateImageMutation(){
+export function beginPrivateQuizMutation(){
   const context=snapshot;
-  if(imageWrites++===0)publishImages();
+  if(quizWrites++===0)publishQuiz();
   let finished=false;
   return({changed=true}:{changed?:boolean}={})=>{
     if(finished)return;finished=true;
-    if(changed&&context.clearEpoch===snapshot.clearEpoch)imageDirty=true;
-    if(--imageWrites===0){
-      const dirty=imageDirty;imageDirty=false;publishImages(dirty);
-      if(dirty)broadcastImages();
+    if(changed&&context.clearEpoch===snapshot.clearEpoch)quizDirty=true;
+    if(--quizWrites===0){
+      const dirty=quizDirty;quizDirty=false;publishQuiz(dirty);
+      if(dirty)broadcastQuiz();
     }
   };
 }
+export const beginPrivateImageMutation=beginPrivateQuizMutation;
 export function invalidatePrivateReads(reason:string,{auth=false,clear=false,authFence=false,broadcast:propagate=false}:{auth?:boolean;clear?:boolean;authFence?:boolean;broadcast?:boolean}={}){
   if(auth)authPending=true;
   const changed=['data-changed','write-start','write-end','cross-tab-write','manual-refresh'].includes(reason);
@@ -69,7 +70,7 @@ function broadcast(auth:boolean){
   const once=new BroadcastChannel('tickminder-private-read-lifecycle');
   try{once.postMessage({type:'auth'});}finally{once.close();}
 }
-function broadcastImages(){channel?.postMessage({type:'domain-write',version:1,domain:'quiz-images',groupId:snapshot.groupId,id:crypto.randomUUID()});}
+function broadcastQuiz(){channel?.postMessage({type:'domain-write',version:1,domain:'quiz-images',groupId:snapshot.groupId,id:crypto.randomUUID()});}
 export function beginPrivateMutation({auth=false,deferAuth=false}:{auth?:boolean;deferAuth?:boolean}={}){
   if(auth)snapshot=Object.freeze({...snapshot,deferredAuth:deferAuth,authError:''});
   writes++;invalidatePrivateReads('write-start',{auth,authFence:true,clear:auth});broadcast(auth);
@@ -101,10 +102,10 @@ export function installPrivateReadEvents(){
   const seen=new Set<string>();
   const message=(event:MessageEvent)=>{
     const data=event.data;
-    if(data?.type==='domain-write'&&data.version===1&&data.domain==='quiz-images'){
+    if(data?.type==='domain-write'&&data.version===1&&(data.domain==='quiz-images'||data.domain==='quizzes')){
       if(data.groupId!==snapshot.groupId||typeof data.id!=='string'||!/^[a-f0-9-]{36}$/.test(data.id)||seen.has(data.id))return;
       seen.add(data.id);if(seen.size>256)seen.delete(seen.values().next().value!);
-      publishImages(true);return;
+      publishQuiz(true);return;
     }
     if(event.data?.type==='auth'){invalidatePrivateReads('cross-tab-auth',{auth:true,clear:true});window.dispatchEvent(new Event('timelyo:auth-refresh'));}
     else if(event.data?.type==='write'){invalidatePrivateReads('cross-tab-write',{authFence:true});window.dispatchEvent(new Event('tickminder:data-changed'));if(authPending&&!snapshot.deferredAuth)window.dispatchEvent(new Event('timelyo:auth-refresh'));}

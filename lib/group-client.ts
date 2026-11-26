@@ -1,5 +1,5 @@
 import {observeApiResponse,observeApiFailure} from "./diagnostics-client";
-import {beginPrivateMutation,beginPrivateImageMutation,invalidatePrivateReads,getPrivateReadSnapshot} from './private-read-lifecycle';
+import {beginPrivateMutation,beginPrivateQuizMutation,invalidatePrivateReads,getPrivateReadSnapshot} from './private-read-lifecycle';
 import {PrivateReadInvalidatedError} from './private-read-flight';
 let currentGroupId: string | null = null;
 export function setClientGroup(id: string | null | undefined) { currentGroupId = id || null; }
@@ -11,20 +11,20 @@ export function groupFetch(input: RequestInfo | URL, init?: RequestInit) {
   const base=typeof location==='undefined'?'https://tickminder.invalid':location.origin,url=new URL(raw,base),local=url.origin===base;
   const write=local&&url.pathname.startsWith('/api/')&&!['GET','HEAD','OPTIONS'].includes(method);
   const authRead=local&&url.pathname==='/api/auth'&&method==='GET',authEpoch=getPrivateReadSnapshot().authEpoch;
-  // Narrow allowlist: only the known image upload contract is independent.
+  // Narrow allowlist: only the known quiz & quiz-image contracts are independent.
   // Unknown routes/methods keep the conservative global mutation path.
-  const imageWrite=write&&url.pathname==='/api/quiz-images'&&method==='POST'&&!url.search;
-  const imageRead=local&&url.pathname==='/api/quiz-images'&&method==='GET';
-  const imageContext=getPrivateReadSnapshot('quiz-images');
-  if(imageRead&&imageContext.blocked)return Promise.reject(new PrivateReadInvalidatedError());
-  if(imageWrite&&getPrivateReadSnapshot().blocked)return Promise.reject(new PrivateReadInvalidatedError());
-  let imageChanged=true; // Network/5xx outcome can have committed; never replay it.
-  const endImage=imageWrite?beginPrivateImageMutation():undefined;
-  const finish=endImage?()=>endImage({changed:imageChanged}):write?beginPrivateMutation({auth:['/api/auth','/api/password','/api/account-setup','/api/groups'].includes(url.pathname)}):undefined;
+  const quizWrite=write&&((url.pathname==='/api/quiz-images'&&method==='POST'&&!url.search)||(url.pathname==='/api/quizzes'&&['POST','PUT','PATCH','DELETE'].includes(method)));
+  const quizRead=local&&(url.pathname==='/api/quiz-images'||url.pathname==='/api/quizzes')&&method==='GET';
+  const quizContext=getPrivateReadSnapshot('quizzes');
+  if(quizRead&&quizContext.blocked)return Promise.reject(new PrivateReadInvalidatedError());
+  if(quizWrite&&getPrivateReadSnapshot().blocked)return Promise.reject(new PrivateReadInvalidatedError());
+  let quizChanged=true; // Network/5xx outcome can have committed; never replay it.
+  const endQuiz=quizWrite?beginPrivateQuizMutation():undefined;
+  const finish=endQuiz?()=>endQuiz({changed:quizChanged}):write?beginPrivateMutation({auth:['/api/auth','/api/password','/api/account-setup','/api/groups'].includes(url.pathname)}):undefined;
   let response:Promise<Response>;
   try{response=fetch(input,{...init,headers});}catch(error){finish?.();observeApiFailure(input,error,method);throw error;}
   return response.then(value=>{
-    if(imageWrite)imageChanged=value.ok||value.status>=500;
+    if(quizWrite)quizChanged=value.ok||value.status>=500;
     if(authRead){
       const current=()=>{if(authEpoch!==getPrivateReadSnapshot().authEpoch)throw new PrivateReadInvalidatedError(true);};
       current();
@@ -36,11 +36,11 @@ export function groupFetch(input: RequestInfo | URL, init?: RequestInit) {
       invalidatePrivateReads('denied',{auth:true,clear:true,broadcast:true});
       if(typeof window!=='undefined')queueMicrotask(()=>window.dispatchEvent(new Event('timelyo:auth-refresh')));
     }
-    if(imageRead){
-      const current=()=>{const now=getPrivateReadSnapshot('quiz-images');if(now.epoch!==imageContext.epoch)throw new PrivateReadInvalidatedError(now.clearEpoch!==imageContext.clearEpoch);};
+    if(quizRead){
+      const current=()=>{const now=getPrivateReadSnapshot('quizzes');if(now.epoch!==quizContext.epoch)throw new PrivateReadInvalidatedError(now.clearEpoch!==quizContext.clearEpoch);};
       current();fenceImageBody(value,current);
     }
-    if(imageWrite){
+    if(quizWrite){
       const current=()=>{if(getPrivateReadSnapshot().authEpoch!==authEpoch)throw new PrivateReadInvalidatedError(true);};
       current();fenceImageBody(value,current);
     }
