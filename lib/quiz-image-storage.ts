@@ -18,7 +18,7 @@ export async function cleanupRevokedQuizUpload(actor:Account,id:string,objectKey
   AND NOT EXISTS(SELECT 1 FROM quiz_version_images vi WHERE vi.image_id=quiz_images.id) AND NOT (${permitted}) RETURNING id`)
   .bind(id,actor.groupId,actor.id,objectKey,actor.groupId,actor.id,...grants.flatMap(item=>item.args)).first<{id:string}>();
  if(!removed)return;
- // Quiz quota derives directly from image rows, so only the deleted row's bytes
- // are released. R2 cleanup never touches another reservation's unique key.
+ // The delete releases this reservation's bytes in the same D1 statement.
+ // R2 cleanup only touches the reservation's unique key.
  try{await pdfBucket().delete(objectKey);}catch{console.error('Revoked Quiz upload object cleanup requires retry');}
 }

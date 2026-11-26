@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { foreignKey, index, integer, real, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { check, foreignKey, index, integer, real, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 // Immutable teacher pay and expense ledgers are exposed only by their guarded APIs.
 export const payrollTeachers=sqliteTable('payroll_teachers',{
@@ -483,6 +483,11 @@ export const quizVersionImages=sqliteTable("quiz_version_images",{
  versionId:text("version_id").notNull().references(()=>quizVersions.id),
  imageId:text("image_id").notNull().references(()=>quizImages.id),groupId:text("group_id").notNull().references(()=>tuitionGroups.id),
 },t=>[primaryKey({columns:[t.versionId,t.imageId]})]);
+
+export const quizImageStorageUsage = sqliteTable("quiz_image_storage_usage", {
+  groupId: text("group_id").primaryKey().notNull().references(() => tuitionGroups.id, { onDelete: "cascade" }),
+  usedBytes: integer("used_bytes").notNull(),
+}, table => [check("quiz_image_storage_usage_nonnegative", sql`${table.usedBytes} >= 0`)]);
 
 export const quizPracticeAssignments=sqliteTable("quiz_practice_assignments",{
  id:text("id").primaryKey(),groupId:text("group_id").notNull().references(()=>tuitionGroups.id),quizId:text("quiz_id").notNull().references(()=>quizzes.id),versionId:text("version_id").notNull().references(()=>quizVersions.id),createdBy:text("created_by").notNull().references(()=>accounts.id),title:text("title").notNull(),subject:text("subject").notNull(),classroomId:text("classroom_id"),immediate:integer("immediate",{mode:"boolean"}).notNull().default(false),createdAt:text("created_at").notNull(),withdrawnAt:text("withdrawn_at"),settingsJson:text("settings_json").notNull().default("{}"),revision:integer("revision").notNull().default(1),scoresReleasedAt:text("scores_released_at"),answersReleasedAt:text("answers_released_at"),operationId:text("operation_id").notNull().unique(),requestHash:text("request_hash").notNull(),
