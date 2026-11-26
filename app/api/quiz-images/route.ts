@@ -8,6 +8,7 @@ import {learningDb} from '@/lib/learning-server';
 import {pdfBucket,pdfLimits} from '@/lib/pdf-storage';
 import {QuizError,quizImageMime} from '@/lib/quiz';
 import {quizSharedAccess} from '@/lib/quiz-sharing-access';
+import {quizImageStorageBytesSql} from '@/lib/storage-quota';
 export async function POST(request:Request){try{
  if(new URL(request.url).origin!==request.headers.get('origin'))throw new QuizError('quiz.forbidden',403);
  const actor=await quizActor();let permissionKey:AdminGrantKey='quizzes.create';
@@ -18,7 +19,29 @@ export async function POST(request:Request){try{
  const existing=await db.prepare(`SELECT id,status,object_key FROM quiz_images WHERE group_id=? AND owner_id=? AND sha256=? AND ${authority}`).bind(actor.groupId,actor.id,hash,...authorityValues).first<{id:string;status:string;object_key:string}>();
  if(existing?.status==='ready')return quizResponse({id:existing.id,replayed:true});
  const id=existing?.id||crypto.randomUUID(),objectKey=existing?.object_key||'quiz/'+crypto.randomUUID();
- if(!existing){try{const inserted=await db.prepare(`INSERT INTO quiz_images(id,group_id,owner_id,object_key,filename,mime,bytes,sha256,status,created_at) SELECT ?,?,?,?,?,?,?,?,'uploading',? WHERE coalesce((SELECT used_bytes FROM storage_quota WHERE group_id=? AND id=1),0)+(SELECT coalesce(sum(bytes),0) FROM quiz_images WHERE group_id=?)+?<=? AND ${authority}`).bind(id,actor.groupId,actor.id,objectKey,file.name.replace(/[\r\n]/g,'').slice(0,160),mime,bytes.length,hash,new Date().toISOString(),actor.groupId,actor.groupId,bytes.length,pdfLimits().total,...authorityValues).run();if(!inserted.meta.changes){if(!await db.prepare(`SELECT 1 WHERE ${authority}`).bind(...authorityValues).first())throw new QuizError('quiz.forbidden',403);throw new QuizError('quiz.storageFull',409);}}catch(e){if(/UNIQUE constraint/.test(String(e))){const completed=await db.prepare(`SELECT id FROM quiz_images WHERE group_id=? AND owner_id=? AND sha256=? AND status='ready' AND ${authority}`).bind(actor.groupId,actor.id,hash,...authorityValues).first<{id:string}>();if(completed)return quizResponse({id:completed.id,replayed:true});throw new QuizError('quiz.uploadBusy',409);}throw e;}}
+ if(!existing){
+  try {
+   // Inserting the reservation and incrementing the group's counter are one D1 write.
+   const inserted = await db.prepare(`INSERT INTO quiz_images(id,group_id,owner_id,object_key,filename,mime,bytes,sha256,status,created_at)
+    SELECT ?,?,?,?,?,?,?,?,'uploading',?
+    WHERE coalesce((SELECT used_bytes FROM storage_quota WHERE group_id=? AND id=1),0)
+      + ${quizImageStorageBytesSql} + ? <= ? AND ${authority}`)
+    .bind(id,actor.groupId,actor.id,objectKey,file.name.replace(/[\r\n]/g,'').slice(0,160),mime,bytes.length,hash,new Date().toISOString(),
+      actor.groupId,actor.groupId,bytes.length,pdfLimits().total,...authorityValues).run();
+   if(!inserted.meta.changes){
+    if(!await db.prepare(`SELECT 1 WHERE ${authority}`).bind(...authorityValues).first())throw new QuizError('quiz.forbidden',403);
+    throw new QuizError('quiz.storageFull',409);
+   }
+  } catch(e) {
+   if(/UNIQUE constraint/.test(String(e))){
+    const completed=await db.prepare(`SELECT id FROM quiz_images WHERE group_id=? AND owner_id=? AND sha256=? AND status='ready' AND ${authority}`)
+     .bind(actor.groupId,actor.id,hash,...authorityValues).first<{id:string}>();
+    if(completed)return quizResponse({id:completed.id,replayed:true});
+    throw new QuizError('quiz.uploadBusy',409);
+   }
+   throw e;
+  }
+ }
  // Resumable content-hash uploads: a failed R2 put keeps its reserved row; a
  // retry resumes the same object instead of leaking another quota reservation.
  await bucket.put(objectKey,bytes,{httpMetadata:{contentType:mime}});const ready=await db.prepare(`UPDATE quiz_images SET status='ready' WHERE id=? AND group_id=? AND owner_id=? AND sha256=? AND ${authority}`).bind(id,actor.groupId,actor.id,hash,...authorityValues).run();if(!ready.meta.changes){await cleanupRevokedQuizUpload(actor,id,objectKey);throw new QuizError('quiz.forbidden',403);}return quizResponse({id});
