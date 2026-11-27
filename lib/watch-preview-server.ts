@@ -6,7 +6,7 @@ import {isOwnerAccount, OWNER_EMAIL} from './owner';
 import {watchVideoCursor, watchVideoFields, watchVideoFilters, type WatchVideo} from './watch-preview-video';
 import {currentTickLearnWatchViewer} from './ticklearn-account';
 import {DEFAULT_GROUP_ID} from './group-data';
-import {malaysiaDayStart, tickLearnFreeDailyVideoLimit, tickLearnFreeVideoLimit} from './ticklearn-free';
+import {malaysiaDayStart, tickLearnFreeDailyVideoLimit, tickLearnFreeUnlimited, tickLearnFreeVideoLimit} from './ticklearn-free';
 import {tickLearnSignupReason} from './ticklearn-routes';
 
 export const WATCH_COOKIE = '__Host-tickminder_watch';
@@ -136,6 +136,7 @@ const pageSize = 12;
 const cursorFor = (video: WatchVideo) => video.createdAt + '~' + video.id;
 
 export function watchFreeVideoSql(alias: string) {
+  if (tickLearnFreeUnlimited()) return '1';
   return `${alias}.id IN (SELECT id FROM watch_preview_videos WHERE group_id=${alias}.group_id
     ORDER BY created_at,id LIMIT ${tickLearnFreeVideoLimit()})`;
 }

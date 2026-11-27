@@ -1,5 +1,5 @@
 import {learningDb} from './learning-server';
-import {malaysiaDayStart,tickLearnFreeDailyLimit,tickLearnFreeQuizLimit} from './ticklearn-free';
+import {malaysiaDayStart,tickLearnFreeDailyLimit,tickLearnFreeQuizLimit,tickLearnFreeUnlimited} from './ticklearn-free';
 import {quizActor,readQuiz} from './quiz-server';
 import {QuizError} from './quiz';
 import {validQuizLinkId} from './quiz-link';
@@ -14,7 +14,7 @@ type RecentPractice = {
 };
 
 export type TickLearnDashboardData = {
-  plan: {daily: number; remaining: number; quizzes: number} | null;
+  plan: {unlimited:true} | {unlimited?:false; daily:number; remaining:number; quizzes:number} | null;
   completed: number;
   accuracy: number | null;
   streak: number;
@@ -85,7 +85,9 @@ export async function readTickLearnDashboard(at = Date.now()): Promise<TickLearn
   const daily = tickLearnFreeDailyLimit();
   return {
     plan: actor.role === 'learner'
-      ? {daily,remaining:Math.max(0,daily-(counts?.used ?? 0)),quizzes:tickLearnFreeQuizLimit()} : null,
+      ? tickLearnFreeUnlimited() ? {unlimited:true}
+        : {daily,remaining:Math.max(0,daily-(counts?.used ?? 0)),quizzes:tickLearnFreeQuizLimit()}
+      : null,
     completed: counts?.completed ?? 0,
     accuracy: counts?.graded ? Math.round(100 * (counts.correct ?? 0) / counts.graded) : null,
     streak,

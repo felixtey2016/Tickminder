@@ -34,8 +34,10 @@ export function TickLearnDashboard({language,name,data,minderEntry}:{language:Ti
         <h2 id="ticklearn-current-plan">{copy.plan}</h2>
         <strong>{data.plan ? copy.free : copy.pro}</strong>
         {data.plan ? <>
-          <p>{copy.quizzes(data.plan.quizzes)}</p>
-          <p>{copy.quota(data.plan.remaining,data.plan.daily)}</p>
+          {data.plan.unlimited ? <p>{copy.freeUnlimited}</p> : <>
+            <p>{copy.quizzes(data.plan.quizzes)}</p>
+            <p>{copy.quota(data.plan.remaining,data.plan.daily)}</p>
+          </>}
           <a href={tickLearnOrigin+'/tuition?lang='+language} className="ticklearn-dashboard-link">{copy.tuition}</a>
         </> : <p>{copy.unlimited}</p>}
       </section>}

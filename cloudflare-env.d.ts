@@ -8,6 +8,7 @@ declare namespace Cloudflare {
     DIAGNOSTICS_FEED_URL?: string;
     CF_VERSION_METADATA?: {id:string;tag?:string;timestamp?:string};
     GOOGLE_CLIENT_ID?: string;
+    TICKLEARN_FREE_UNLIMITED?: string;
     TICKLEARN_FREE_QUIZZES?: string;
     TICKLEARN_FREE_DAILY_QUIZZES?: string;
     TICKLEARN_FREE_VIDEOS?: string;

@@ -23,7 +23,7 @@ function icon(name: keyof typeof symbols) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${symbols[name]}</svg>`;
 }
 
-export function watchPreviewPage(language: Language, managementUrl: string, entryPath: string, catalogUrl: string, theme: 'light' | 'dark' | null, video: WatchVideo | null | undefined, options: PlaylistSection & {canEditVideos: boolean; params: URLSearchParams; personal: WatchPersonalSection|null; name: string; freeQuota?: {remaining?: number; blocked: boolean}; learning?:boolean; minderEntry?:TickMinderEntry}) {
+export function watchPreviewPage(language: Language, managementUrl: string, entryPath: string, catalogUrl: string, theme: 'light' | 'dark' | null, video: WatchVideo | null | undefined, options: PlaylistSection & {canEditVideos: boolean; params: URLSearchParams; personal: WatchPersonalSection|null; name: string; freeQuota?: {remaining?: number; blocked: boolean; unlimited?: boolean}; learning?:boolean; minderEntry?:TickMinderEntry}) {
   const t = (zh: string, en: string) => language === 'zh' ? zh : en;
   const management = escapeHtml(managementUrl);
   const preferences = preferencesCopy[language];
@@ -111,7 +111,7 @@ export function watchPreviewPage(language: Language, managementUrl: string, entr
    <div class="library-head">
     <div>
      <h1 id="library-title">${t('视频库','Video library')}</h1>
-     ${remaining === undefined ? '' : `<p class="muted">${t(`免费方案 · 今日还可看 ${remaining} / ${dailyLimit} 部新视频`, `Free plan · ${remaining} of ${dailyLimit} new videos left today`)}</p>`}
+     ${options.freeQuota?.unlimited ? `<p class="muted">${t('免费方案 · 不限观看次数','Free plan · Unlimited video viewing')}</p>` : remaining === undefined ? '' : `<p class="muted">${t(`免费方案 · 今日还可看 ${remaining} / ${dailyLimit} 部新视频`, `Free plan · ${remaining} of ${dailyLimit} new videos left today`)}</p>`}
     </div>
     ${options.canEditVideos ? `<button type="button" class="primary-button" id="add-video">${icon('plus')}${t('添加视频','Add video')}</button>` : ''}
    </div>

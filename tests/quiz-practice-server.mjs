@@ -16,7 +16,7 @@ let actor=null;globalThis.__quizPracticeRuntime={learningDb:()=>db,rows:async(sq
 const stub='data:text/javascript;base64,'+Buffer.from('export const {learningDb,rows,first,currentBusinessAccount,currentIdentity,pdfBucket,pdfLimits,OWNER_EMAIL,isOwnerAccount,operationHash}=globalThis.__quizPracticeRuntime;').toString('base64'),cache=new Map();
 globalThis.__quizPracticeRuntime.OWNER_EMAIL='platform-owner@example.test';
 const runtimeFiles=new Set(['lib/auth.ts','lib/learning-server.ts','lib/owner.ts','lib/learning-operations.ts','lib/pdf-storage.ts']);
-const load=createFixtureLoader({runtimeUrl:stub,environmentUrl:'data:text/javascript,export const env={DB:globalThis.__quizPracticeRuntime.learningDb()};'});
+const load=createFixtureLoader({runtimeUrl:stub,environmentUrl:'data:text/javascript,export const env={DB:globalThis.__quizPracticeRuntime.learningDb(),get TICKLEARN_FREE_UNLIMITED(){return globalThis.__quizPracticeRuntime.unlimited}};'});
 process.on('uncaughtException',error=>{console.error(error.name+': '+error.message);console.error(String(error.stack).split('\n').filter(s=>!s.includes('data:text/')).slice(0,9).join('\n'));process.exit(1);});
 const route=(await load('app/api/quiz-practice/route.ts')).module,server=(await load('lib/quiz-server.ts')).module,quiz=(await load('lib/quiz.ts')).module,images=(await load('app/api/quiz-images/route.ts')).module,practice=(await load('lib/quiz-practice.ts')).module,catalogRoute=(await load('app/api/quizzes/route.ts')).module;
 const now=new Date().toISOString(),g='practice-group-a',other='practice-group-b';
@@ -159,6 +159,22 @@ for(const quizId of ids.slice(0,3)){
 assert.equal((await post({action:'start',quizId:ids[0],operationId:op()},learner)).data.attempt.id,freeAttempts[0],'resuming does not use another attempt');
 assert.equal((await post({action:'start',quizId:ids[3],operationId:op()},learner)).data.error,'quiz.freeLimit');
 assert.equal((await post({action:'start',assignmentId,operationId:op()},learner)).status,403,'no tuition assignments before conversion');
+
+globalThis.__quizPracticeRuntime.unlimited='1';
+try {
+ assert.equal((await catalogGet('?bank=1&preview=1&id='+locked,learner)).status,200,'unlimited learners can open a published quiz outside the former pool');
+ assert.equal((await catalogGet('?bank=1&preview=1&id='+importBody.id,learner)).status,404,'unlimited learners cannot open private drafts');
+ for(const quizId of [ids[3],ids[4],locked]){
+  const result=await post({action:'start',quizId,operationId:op()},learner);
+  assert.equal(result.status,200,JSON.stringify(result.data));
+  const attemptId=result.data.attempt.id;
+  sqlite.prepare('DELETE FROM quiz_practice_events WHERE attempt_id=?').run(attemptId);
+  sqlite.prepare('DELETE FROM quiz_practice_operations WHERE record_id=?').run(attemptId);
+  sqlite.prepare('DELETE FROM quiz_practice_attempts WHERE id=?').run(attemptId);
+ }
+ const {readTickLearnDashboard}= (await load('lib/ticklearn-dashboard.ts')).module;
+ assert.deepEqual((await readTickLearnDashboard()).plan,{unlimited:true});
+} finally { delete globalThis.__quizPracticeRuntime.unlimited; }
 
 const adminUsers=(await load('app/api/ticklearn/users/route.ts')).module;
 const tuition=account('ticklearn-admin-001','admin','TickLearn Admin','next-genn-edu');

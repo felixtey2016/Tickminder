@@ -17,7 +17,7 @@ import { studentContactRequired } from "@/lib/student-contact";
 import { GOOGLE_LINK_PROMPT_SKIPPED, googleLinkOnboardingEligible } from "@/lib/google-link-onboarding";
 import {watchPreviewConfig, watchPreviewEntry} from "@/lib/watch-preview-config";
 import {isTickLearnAccount} from '@/lib/ticklearn-account';
-import {tickLearnFreeDailyLimit,tickLearnFreeQuizLimit} from '@/lib/ticklearn-free';
+import {tickLearnFreeDailyLimit,tickLearnFreeQuizLimit,tickLearnFreeUnlimited} from '@/lib/ticklearn-free';
 
 async function authPayload(request: Request, account: Account | null | undefined, local: {username: string; mustChangePassword?: boolean | number} | null | undefined, google: {email: string} | null | undefined) {
   const group=account?await selectedGroup(account):null;
@@ -29,7 +29,9 @@ async function authPayload(request: Request, account: Account | null | undefined
   const watch = canWatch && group?.active && local && !local.mustChangePassword ? watchPreviewConfig(env) : null;
   const watchPreview = watch ? watchPreviewEntry(watch, new URL(request.url).origin) : undefined;
   const learn = account && isTickLearnAccount(account) ? account.role === 'learner'
-    ? {tickLearnFree: {dailyAttempts:tickLearnFreeDailyLimit(), quizzes:tickLearnFreeQuizLimit()}}
+    ? {tickLearnFree: tickLearnFreeUnlimited()
+      ? {unlimited:true}
+      : {dailyAttempts:tickLearnFreeDailyLimit(),quizzes:tickLearnFreeQuizLimit()}}
     : {tickLearnEnrolled:true} : {};
   return { account: account ? { groupId:group?.id || account.groupId,groupName:group?.name || null,groupUnavailable:Boolean(account && !group),id: account.id, email: google?.email || account.email, name: account.name, nameConfirmedAt: account.nameConfirmedAt, contactPhone:account.contactPhone, contactPhoneKind:account.contactPhoneKind, contactPhoneUpdatedAt:account.contactPhoneUpdatedAt, requiresStudentPhone:studentContactRequired(account,Boolean(group?.active&&local&&!local.mustChangePassword)), role: account.role, isOwner: isOwnerAccount(account), isGroupChief:hierarchy.isGroupChief, canManageAdministrators:Boolean(local&&!local.mustChangePassword&&hierarchy.canManageAdministrators), teacherName: account.teacherName, studentName: account.studentName, googleLinked: Boolean(google), emailLoginAvailable: Boolean(google && local), requiresAccountSetup: Boolean(google && !local), username: local?.username || null, mustChangePassword: Boolean(local?.mustChangePassword), showGoogleLinkOnboarding, ...(watchPreview?{watchPreview}:{}), ...(permission?{adminPermissions:permission}:{}), ...learn, ...lifecycleView(account) } : null, clientId: env.GOOGLE_CLIENT_ID || null };
 }

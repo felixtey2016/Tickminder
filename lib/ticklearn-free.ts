@@ -1,5 +1,7 @@
 import {env} from 'cloudflare:workers';
 
+export const tickLearnFreeUnlimited = () => env.TICKLEARN_FREE_UNLIMITED === '1';
+
 function limit(value: string | undefined, fallback: number, maximum: number) {
   const count = Number(value);
   return value && Number.isSafeInteger(count) && count > 0 && count <= maximum ? count : fallback;

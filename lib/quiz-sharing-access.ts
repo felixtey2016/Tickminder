@@ -1,5 +1,5 @@
 import type {Account} from './auth';
-import {tickLearnFreeQuizLimit} from './ticklearn-free';
+import {tickLearnFreeQuizLimit,tickLearnFreeUnlimited} from './ticklearn-free';
 
 // Arguments are trusted SQL expressions assembled by services, never request text.
 export function quizShareTargetEligibleSql(groupSql:string,ownerIdSql:string,targetIdSql:string){
@@ -23,7 +23,9 @@ export function quizSharedAccessSql({quizAlias:q='q',versionAlias:v='v',actorIdS
 }
 
 export function tickLearnPublicQuizSql(q='q',v='v'){
- return `(${quizPublicVersionSql(q,v)} AND ${q}.shared_revision=${v}.revision AND ${q}.id IN (
+ const current = `${q}.deleted_at IS NULL AND ${q}.shared_revision=${v}.revision AND ${quizPublicVersionSql(q,v)}`;
+ if(tickLearnFreeUnlimited())return `(${current} AND EXISTS(SELECT 1 FROM tuition_groups live_group WHERE live_group.id=${q}.group_id AND live_group.active=1))`;
+ return `(${current} AND ${q}.id IN (
   SELECT free_q.id FROM quizzes free_q JOIN tuition_groups free_group ON free_group.id=free_q.group_id AND free_group.active=1
   JOIN quiz_versions free_v ON free_v.quiz_id=free_q.id AND free_v.group_id=free_q.group_id AND free_v.revision=free_q.shared_revision
   WHERE free_q.deleted_at IS NULL AND ${quizPublicVersionSql('free_q','free_v')}

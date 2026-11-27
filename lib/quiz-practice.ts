@@ -11,7 +11,7 @@ import {quizAssignmentNoticeStatements} from '@/lib/quiz-assignment-notices';
 import {practiceQuestions,shuffledQuizItems} from '@/lib/quiz-sampling';
 import {quizSharedAccess,quizCreatorSql} from '@/lib/quiz-sharing-access';
 import {DEFAULT_GROUP_ID} from '@/lib/group-data';
-import {malaysiaDayStart,tickLearnFreeDailyLimit} from '@/lib/ticklearn-free';
+import {malaysiaDayStart,tickLearnFreeDailyLimit,tickLearnFreeUnlimited} from '@/lib/ticklearn-free';
 import {tickLearnSignupReason} from '@/lib/ticklearn-routes';
 import type {PracticeAttempt,PracticeAttemptSummary,PracticeAssignment,PracticeResult,PracticeTargetOptions,PracticeState,PracticeEvent,QuizAssignmentSettings,PracticeRecipient} from '@/lib/quiz-practice-types';
 
@@ -188,14 +188,14 @@ export async function startPractice(a:Account,data:Record<string,unknown>){
   live={sql:`EXISTS(SELECT 1 FROM quizzes sq JOIN quiz_versions sv ON sv.quiz_id=sq.id JOIN tuition_groups sg ON sg.id=sq.group_id AND sg.active=1 WHERE sq.id=? AND sv.id=? AND sq.deleted_at IS NULL AND sq.public_blocked_at IS NULL AND ((${bank?0:1}=1 AND sq.group_id=? AND sq.owner_id=? AND sv.revision=sq.revision) OR ${shared.sql})) AND NOT EXISTS(SELECT 1 FROM quiz_practice_attempts p WHERE p.group_id=? AND p.account_id=? AND p.quiz_id=? AND p.assignment_id IS NULL AND p.status='in_progress' AND p.discarded_at IS NULL)`,values:[quizId,versionId,g,a.id,...shared.args,g,a.id,quizId]};
  }
  const order=makePracticeOrder({...content,shuffleQuestions:policy.shuffleQuestions,shuffleOptions:policy.shuffleOptions}),selectedContent=orderedPracticeContent(content,JSON.stringify(order)),now=new Date().toISOString(),attemptId=crypto.randomUUID(),deadline=policy.timeLimitSeconds?new Date(Date.parse(now)+policy.timeLimitSeconds*1000).toISOString():null,total=Math.round(selectedContent.questions.reduce((n,q)=>n+q.points,0)*100)/100;
- const free=a.role==='learner',quota=`(SELECT count(*) FROM quiz_practice_attempts
+ const limited=a.role==='learner'&&!tickLearnFreeUnlimited(),quota=`(SELECT count(*) FROM quiz_practice_attempts
    WHERE group_id=? AND account_id=? AND assignment_id IS NULL AND started_at>=?) < ?`;
  const quotaValues=[g,a.id,malaysiaDayStart(Date.parse(now)),tickLearnFreeDailyLimit()];
- const insert=db.prepare(`INSERT INTO quiz_practice_attempts(id,group_id,account_id,student_name,quiz_id,version_id,assignment_id,immediate,order_json,started_at,deadline_at,updated_at,total_score,operation_id,request_hash,attempt_number) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,(SELECT count(*)+1 FROM quiz_practice_attempts numbered WHERE numbered.group_id=? AND numbered.quiz_id=? AND numbered.assignment_id IS ? AND ${assignmentId?'numbered.student_name=?':'numbered.account_id=?'}) WHERE ${practiceAuthority} AND ${live.sql}${free?' AND '+quota:''}`).bind(attemptId,g,a.id,a.role==='student'?a.studentName:null,quizId,versionId,assignmentId,immediate?1:0,JSON.stringify(order),now,deadline,now,total,replay.operation,replay.hash,g,quizId,assignmentId,assignmentId?a.studentName:a.id,...practiceAuthorityValues(a),...live.values,...(free?quotaValues:[])),guard=operationGuard(replay.operation);
+ const insert=db.prepare(`INSERT INTO quiz_practice_attempts(id,group_id,account_id,student_name,quiz_id,version_id,assignment_id,immediate,order_json,started_at,deadline_at,updated_at,total_score,operation_id,request_hash,attempt_number) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,(SELECT count(*)+1 FROM quiz_practice_attempts numbered WHERE numbered.group_id=? AND numbered.quiz_id=? AND numbered.assignment_id IS ? AND ${assignmentId?'numbered.student_name=?':'numbered.account_id=?'}) WHERE ${practiceAuthority} AND ${live.sql}${limited?' AND '+quota:''}`).bind(attemptId,g,a.id,a.role==='student'?a.studentName:null,quizId,versionId,assignmentId,immediate?1:0,JSON.stringify(order),now,deadline,now,total,replay.operation,replay.hash,g,quizId,assignmentId,assignmentId?a.studentName:a.id,...practiceAuthorityValues(a),...live.values,...(limited?quotaValues:[])),guard=operationGuard(replay.operation);
  try {
   const result=await db.batch([insert,operationStatement(a,replay.operation,replay.hash,attemptId,'start',now),eventStatement(a,replay.operation,g,assignmentId,attemptId,'start',null,{startedAt:now,personalDeadlineAt:deadline,versionId},now,guard),...adminPermissionStatements(a,'quizzes.view')]);
   if(!result[0].meta.changes){
-   if(free&&!await db.prepare(`SELECT 1 WHERE ${quota}`).bind(...quotaValues).first())throw new QuizError('quiz.freeLimit',429);
+   if(limited&&!await db.prepare(`SELECT 1 WHERE ${quota}`).bind(...quotaValues).first())throw new QuizError('quiz.freeLimit',429);
    throw new QuizError('quiz.conflict',409);
   }
  }catch(error){if(adminPermissionFailure(error))throw error;const retry=await operationReplay(a,data);if(retry.prior)return getPracticeAttempt(a,retry.prior.record_id);throw error;}

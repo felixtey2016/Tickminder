@@ -24,7 +24,7 @@ export type Account = AdminPermissionAccount & {
     pendingExpiresAt?: string | null;
     activatedAt?: string | null;
     role: "admin" | "teacher" | "student" | "parent" | "pending" | "learner";
-    tickLearnFree?: {dailyAttempts:number; quizzes:number};
+    tickLearnFree?: {unlimited:true} | {unlimited?:false; dailyAttempts:number; quizzes:number};
     tickLearnEnrolled?: boolean;
     isOwner?: boolean;
     isGroupChief?: boolean;

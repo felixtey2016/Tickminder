@@ -215,9 +215,10 @@ export default function TikQuizEntry({initialPath, account, language, changeLang
         </div>
       </div></header>}
       <main className={'tikquiz-content' + (playing ? ' tikquiz-content-player' : '')}>
-        {free && section==='bank' && <p className="ticklearn-free-note">{label(
-          `免费方案 · 可访问 ${free.quizzes} 份测验 · 每天最多作答 ${free.dailyAttempts} 次`,
-          `Free plan · ${free.quizzes} quizzes · Up to ${free.dailyAttempts} attempts a day`)}</p>}
+        {free && section==='bank' && <p className="ticklearn-free-note">{free.unlimited
+          ? label('免费方案 · 不限刷题次数','Free plan · Unlimited quiz attempts')
+          : label(`免费方案 · 可访问 ${free.quizzes} 份测验 · 每天最多作答 ${free.dailyAttempts} 次`,
+            `Free plan · ${free.quizzes} quizzes · Up to ${free.dailyAttempts} attempts a day`)}</p>}
         {showTabs && <nav aria-label={TICK_QUIZ_NAME} className="tikquiz-nav">
           {nav.filter(item => item.visible).map(item => <a key={item.section} href={quizHref(tikQuizPath(item.section))}
             aria-current={section === item.section ? 'page' : undefined}

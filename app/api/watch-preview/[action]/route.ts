@@ -1,3 +1,4 @@
+import {tickLearnFreeUnlimited} from '@/lib/ticklearn-free';
 import {env} from 'cloudflare:workers';
 import {WatchPreviewConfig, watchPreviewConfig} from '@/lib/watch-preview-config';
 import {
@@ -164,10 +165,11 @@ export async function GET(request: Request, {params}: Context) {
     if (action === 'facets') return json({facets:await watchVideoFacets(account.groupId,free)});
     if (requestedTheme) return redirect(watchEntry(config, catalogParams, videoId, playlistId, playlistIndex, personal), [themeCookie(requestedTheme)]);
     const video = action === 'video' && videoId ? await watchVideoDetail(account.groupId, videoId,free) : undefined;
-    const quotaBlocked = free && video && request.method === 'GET'
+    const unlimited = free && tickLearnFreeUnlimited();
+    const quotaBlocked = free && !unlimited && video && request.method === 'GET'
       ? !await openFreeWatchVideo(account.accountId, video.id)
       : false;
-    const remaining = free && action === 'view' ? await remainingFreeWatchVideos(account.accountId) : undefined;
+    const remaining = free && !unlimited && action === 'view' ? await remainingFreeWatchVideos(account.accountId) : undefined;
     const playlists = action === 'playlists' ? await watchPlaylists(account.groupId, catalogParams) : undefined;
     const position = Number(url.searchParams.get('position'));
     const offset = Number.isSafeInteger(position) && position >= 0 && position <= 100 ? position : 0;
@@ -177,7 +179,7 @@ export async function GET(request: Request, {params}: Context) {
     const learning = learnMode || free;
     const managementUrl = learning ? tickLearnHomeItem(lang,minderEntry).href : appOrigin+(account.role==='admin'?'/manage':'/');
     const html = watchPreviewPage(lang, managementUrl, config.entryPath, catalogUrl, theme, video, {
-      freeQuota: free ? {remaining, blocked:quotaBlocked} : undefined,
+      freeQuota: free ? {remaining, blocked:quotaBlocked, unlimited} : undefined,
       learning, minderEntry,
       canEditVideos: account.role === 'admin',
       canEditPlaylists: playlist !== null && canEditWatchPlaylist(account, playlist),

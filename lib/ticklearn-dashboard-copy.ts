@@ -4,7 +4,7 @@ export const dashboardCopy = {
   zh: {
     welcome: '欢迎回来，开始今天的 SPM 自主学习！',
     subtitle: '看一节视频、刷一份题、玩一局游戏，每天进步一点点。',
-    plan: '当前方案', free: '免费方案', pro: '高级方案', unlimited: '无限次作答', tuition: '了解一对一补习',
+    plan: '当前方案', free: '免费方案', pro: '高级方案', unlimited: '无限次作答', freeUnlimited: '不限刷题和观看次数', tuition: '了解一对一补习',
     quizzes: (count: number) => `可访问 ${count} 份测验`,
     quota: (remaining: number,total: number) => `今日剩余刷题：${remaining} / ${total} 次`,
     spm: (days: number) => `距离 SPM 2026 笔试还有 ${days} 天`, examInProgress: 'SPM 2026 笔试进行中',
@@ -22,7 +22,7 @@ export const dashboardCopy = {
   en: {
     welcome: 'Welcome back! Ready for today’s SPM study?',
     subtitle: 'Watch a lesson, finish a quiz, or play a game—small steps every day.',
-    plan: 'Current Plan', free: 'Free Plan', pro: 'Pro Plan', unlimited: 'Unlimited attempts', tuition: 'Explore 1-to-1 tuition',
+    plan: 'Current Plan', free: 'Free Plan', pro: 'Pro Plan', unlimited: 'Unlimited attempts', freeUnlimited: 'Unlimited quiz attempts and video viewing', tuition: 'Explore 1-to-1 tuition',
     quizzes: (count: number) => `Access to ${count} quizzes`,
     quota: (remaining: number,total: number) => `Attempts left today: ${remaining} / ${total}`,
     spm: (days: number) => `${days} ${days === 1 ? 'day' : 'days'} until the 2026 SPM written exams`,
@@ -41,7 +41,7 @@ export const dashboardCopy = {
   ms: {
     welcome: 'Selamat kembali! Jom mula ulang kaji SPM hari ini!',
     subtitle: 'Tonton satu video, jawab satu kuiz, atau main satu permainan—sedikit demi sedikit lama-lama jadi bukit.',
-    plan: 'Pelan Semasa', free: 'Pelan Percuma', pro: 'Pelan Pro', unlimited: 'Cubaan tanpa had', tuition: 'Terokai tuisyen 1-ke-1',
+    plan: 'Pelan Semasa', free: 'Pelan Percuma', pro: 'Pelan Pro', unlimited: 'Cubaan tanpa had', freeUnlimited: 'Cubaan kuiz dan tontonan video tanpa had', tuition: 'Terokai tuisyen 1-ke-1',
     quizzes: (count: number) => `Akses kepada ${count} kuiz`,
     quota: (remaining: number,total: number) => `Baki cubaan hari ini: ${remaining} / ${total}`,
     spm: (days: number) => `${days} hari lagi sebelum peperiksaan bertulis SPM 2026`,
